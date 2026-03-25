@@ -43,6 +43,8 @@ try:
         whatif_mixed_scenario,
         whatif_weekly_plan,
         generate_decision_report,
+        calculate_marginal_bed_value,
+        optimize_discharge_plan,
     )
     _DECISION_SUPPORT_AVAILABLE = True
 except ImportError:
@@ -1808,6 +1810,156 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
             f"期待月次粗利: {fmt_yen(_optimal_los['expected_monthly_profit'])}\n\n"
             f"現在の設定: {avg_los} 日"
         )
+
+        st.markdown("---")
+
+        # --- 💰 収益最大化アドバイザー ---
+        st.subheader("\U0001f4b0 収益最大化アドバイザー")
+
+        # 限界価値分析
+        _marginal = calculate_marginal_bed_value(_cli_params)
+        _gross_a = _marginal["phase_gross"]["A"]
+        _gross_b = _marginal["phase_gross"]["B"]
+        _gross_c = _marginal["phase_gross"]["C"]
+        _lifetime = _marginal["new_admission_lifetime_profit"]
+        _daily_avg = _marginal["new_admission_daily_avg"]
+        _breakeven = _marginal["breakeven_days"]
+
+        # 限界価値パネル
+        st.markdown("##### 限界価値分析")
+        _mv_c1, _mv_c2, _mv_c3 = st.columns(3)
+        _mv_c1.metric("A群 粗利/日", fmt_yen(int(_gross_a)))
+        _mv_c2.metric("B群 粗利/日", fmt_yen(int(_gross_b)), delta="稼ぎ頭")
+        _mv_c3.metric("C群 粗利/日", fmt_yen(int(_gross_c)), delta="最高効率")
+
+        _mv_c4, _mv_c5, _mv_c6 = st.columns(3)
+        _mv_c4.metric("新規1名 生涯期待粗利", fmt_yen(_lifetime))
+        _mv_c5.metric("新規1名 日平均粗利", fmt_yen(_daily_avg))
+        _mv_c6.metric("損益分岐日数", f"{_breakeven}日")
+
+        # C群 vs 新規の判断基準
+        if _gross_c > _daily_avg:
+            st.warning(
+                f"**C群延長({fmt_yen(int(_gross_c))}/日) > 新規平均({fmt_yen(_daily_avg)}/日)**\n\n"
+                f"差額 +{fmt_yen(int(_gross_c - _daily_avg))}/日 → "
+                f"空床がある限りC群は持たせる方が得。退院させるのは満床で入院を断る場合のみ。"
+            )
+        else:
+            st.success(
+                f"**新規平均({fmt_yen(_daily_avg)}/日) >= C群延長({fmt_yen(int(_gross_c))}/日)**\n\n"
+                f"→ 回転させて新規を入れる方が効率的。"
+            )
+
+        st.markdown("---")
+
+        # 今日の最適プラン
+        st.markdown("##### 今日の最適プラン")
+
+        _demand_default = 5
+        _opt_plan = optimize_discharge_plan(
+            _raw_df, _day_idx, _cli_params, expected_daily_demand=_demand_default
+        )
+        _cs = _opt_plan["current_state"]
+        _rec = _opt_plan["recommendation"]
+        _aft = _opt_plan["after_state"]
+        _econ = _opt_plan["economics"]
+
+        _opt_col1, _opt_col2 = st.columns(2)
+        with _opt_col1:
+            st.markdown(
+                f"**現状:** 稼働率 {_cs['occupancy']*100:.1f}% | "
+                f"空床 {_cs['empty_beds']}床 | "
+                f"A群{_cs['a']}名 B群{_cs['b']}名 C群{_cs['c']}名"
+            )
+        with _opt_col2:
+            st.markdown(f"**入院需要（既定値）:** 約{_demand_default}名/日")
+
+        # 推奨アクション
+        _rec_text = (
+            f"**推奨: C群退院 {_rec['c_discharge']}名"
+        )
+        if _rec["b_discharge"] > 0:
+            _rec_text += f" / B群退院 {_rec['b_discharge']}名"
+        _rec_text += f" / 新規入院 {_rec['new_admissions']}名**"
+
+        if _rec["total_discharge"] == 0:
+            st.success(_rec_text)
+        else:
+            st.warning(_rec_text)
+
+        # 理由
+        for _r in _opt_plan["reasoning"]:
+            st.markdown(f"- {_r}")
+
+        # 経済効果
+        _econ_cols = st.columns(4)
+        _econ_cols[0].metric(
+            "退院による粗利減",
+            fmt_yen(_econ["daily_lost_profit"]),
+            delta=f"-{fmt_yen(_econ['daily_lost_profit'])}" if _econ["daily_lost_profit"] > 0 else "0",
+            delta_color="inverse",
+        )
+        _econ_cols[1].metric(
+            "新規入院の初日粗利",
+            fmt_yen(_econ["daily_gained_profit"]),
+        )
+        _econ_cols[2].metric(
+            "日次純効果",
+            fmt_yen(_econ["daily_net_impact"]),
+            delta=f"{_econ['daily_net_impact']:+,}円",
+            delta_color="normal",
+        )
+        _econ_cols[3].metric(
+            "新規の将来期待粗利",
+            fmt_yen(_econ["future_gain_from_new"]),
+        )
+
+        # 実施後の状態
+        st.markdown(
+            f"**実施後:** 在院{_aft['total']}名 / "
+            f"稼働率{_aft['occupancy']*100:.1f}%"
+        )
+
+        st.markdown("---")
+
+        # 需要別シミュレーション
+        st.markdown("##### 需要別シミュレーション")
+        _demand_slider = st.slider(
+            "入院需要予測（名/日）", min_value=1, max_value=15, value=5,
+            key="revenue_advisor_demand",
+        )
+
+        _demand_results = []
+        for _d in range(1, _demand_slider + 1):
+            _d_plan = optimize_discharge_plan(
+                _raw_df, _day_idx, _cli_params, expected_daily_demand=_d
+            )
+            _demand_results.append({
+                "需要": f"{_d}名",
+                "推奨C群退院": f"{_d_plan['recommendation']['c_discharge']}名",
+                "推奨B群退院": f"{_d_plan['recommendation']['b_discharge']}名",
+                "推奨入院": f"{_d_plan['recommendation']['new_admissions']}名",
+                "翌日稼働率": f"{_d_plan['after_state']['occupancy']*100:.1f}%",
+                "日次粗利変化": fmt_yen(_d_plan['economics']['daily_net_impact']),
+            })
+
+        _demand_df = pd.DataFrame(_demand_results)
+        st.dataframe(_demand_df, use_container_width=True, hide_index=True)
+
+        # C群退院が発生する閾値を見つける
+        _threshold = None
+        for _d in range(1, 16):
+            _d_plan = optimize_discharge_plan(
+                _raw_df, _day_idx, _cli_params, expected_daily_demand=_d
+            )
+            if _d_plan["recommendation"]["c_discharge"] > 0:
+                _threshold = _d
+                break
+
+        if _threshold:
+            st.info(f"**ポイント:** 需要{_threshold}名以上でC群退院が必要になります")
+        else:
+            st.info("**ポイント:** 現在の空床数では需要15名まで退院調整不要です")
 
 # --- タブ6: What-if分析（シミュレーションモードのみ） ---
 if "\U0001f52e What-if分析" in _tab_idx:

@@ -1674,6 +1674,220 @@ def whatif_weekly_plan(
     }
 
 
+# ======================== 収益最大化アドバイザー ============================ #
+
+
+def calculate_marginal_bed_value(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    各フェーズの1床1日あたりの限界価値を計算し、
+    退院・保持の経済的判断基準を提供する。
+
+    Args:
+        params: パラメータ辞書（phase_a_revenue/cost, phase_b_*, phase_c_*,
+                avg_length_of_stay 等を含む）。
+
+    Returns:
+        dict: phase_gross, new_admission_lifetime_profit,
+              new_admission_daily_avg, c_hold_daily_value,
+              c_replace_day1_impact, c_replace_lifetime_impact,
+              breakeven_days, opportunity_cost_per_day。
+    """
+    gross_a = params["phase_a_revenue"] - params["phase_a_cost"]
+    gross_b = params["phase_b_revenue"] - params["phase_b_cost"]
+    gross_c = params["phase_c_revenue"] - params["phase_c_cost"]
+
+    avg_los = params.get("avg_length_of_stay", 18)
+    a_days = min(5, avg_los)
+    b_days = min(9, max(0, avg_los - 5))
+    c_days = max(0, avg_los - 14)
+
+    # 新規入院1名の生涯期待粗利
+    lifetime_profit = a_days * gross_a + b_days * gross_b + c_days * gross_c
+    # 新規入院1名の日平均粗利
+    daily_avg_profit = lifetime_profit / max(avg_los, 1)
+
+    # C群を1日延長する純価値（機会損失なしの場合）
+    c_hold_value = gross_c
+    # C群を退院させて新規を入れた場合の損益変化
+    replace_day1_impact = -gross_c + gross_a  # 当日の損益変化
+    replace_lifetime_impact = lifetime_profit - gross_c  # 生涯で見た純効果
+
+    # 損益分岐日数: 何日で新規入院の累積粗利がC群延長を上回るか
+    breakeven_days = 0
+    cum_new = 0
+    cum_hold = 0
+    for d in range(1, 60):
+        cum_hold += gross_c
+        if d <= 5:
+            cum_new += gross_a
+        elif d <= 14:
+            cum_new += gross_b
+        else:
+            cum_new += gross_c
+        if cum_new >= cum_hold and breakeven_days == 0:
+            breakeven_days = d
+
+    return {
+        "phase_gross": {"A": gross_a, "B": gross_b, "C": gross_c},
+        "new_admission_lifetime_profit": int(lifetime_profit),
+        "new_admission_daily_avg": int(daily_avg_profit),
+        "c_hold_daily_value": gross_c,
+        "c_replace_day1_impact": replace_day1_impact,
+        "c_replace_lifetime_impact": int(replace_lifetime_impact),
+        "breakeven_days": breakeven_days,
+        "opportunity_cost_per_day": params.get("opportunity_cost", 10000),
+    }
+
+
+def optimize_discharge_plan(
+    df: pd.DataFrame,
+    day_index: int,
+    params: dict[str, Any],
+    expected_daily_demand: int = 5,
+) -> dict[str, Any]:
+    """
+    収益を最大化する退院計画を自動生成する。
+
+    需要（入院希望患者数）と現在の稼働率から、
+    C群の退院数と新規入院数の最適バランスを算出する。
+
+    Args:
+        df: simulate_bed_control() の戻り値 DataFrame。
+        day_index: 評価対象日のインデックス。
+        params: パラメータ辞書。
+        expected_daily_demand: 1日あたりの入院需要（期待値）。
+
+    Returns:
+        dict: current_state, recommendation, after_state,
+              economics, reasoning, marginal_values。
+    """
+    row = df.iloc[day_index]
+    num_beds = params["num_beds"]
+    target_lower = params.get("target_occupancy_lower", 0.90)
+    target_upper = params.get("target_occupancy_upper", 0.95)
+
+    current_total = int(row["total_patients"])
+    current_a = int(row["phase_a_count"])
+    current_b = int(row["phase_b_count"])
+    current_c = int(row["phase_c_count"])
+    current_occupancy = row["occupancy_rate"]
+
+    empty_beds = num_beds - current_total
+    marginal = calculate_marginal_bed_value(params)
+
+    # === 最適退院数の計算 ===
+    optimal_c_discharge = 0
+    optimal_b_discharge = 0
+    reasoning: list[str] = []
+
+    if current_occupancy < target_lower:
+        # 稼働率が低い → 退院させない、入院を増やす
+        reasoning.append(
+            f"稼働率{current_occupancy*100:.1f}%は目標下限{target_lower*100:.0f}%未満"
+        )
+        reasoning.append("→ 退院は最小限にし、新規入院を積極受入")
+        optimal_c_discharge = 0
+        recommended_admissions = min(expected_daily_demand, empty_beds)
+
+    elif current_occupancy <= target_upper:
+        # 目標レンジ内
+        if expected_daily_demand > empty_beds:
+            # 需要が空床を超える → C群から退院させて受入枠を確保
+            need_beds = expected_daily_demand - empty_beds
+            optimal_c_discharge = min(need_beds, current_c)
+            reasoning.append(
+                f"入院需要{expected_daily_demand}名に対し空床{empty_beds}床"
+            )
+            reasoning.append(
+                f"→ C群から{optimal_c_discharge}名退院させて受入枠を確保"
+            )
+            recommended_admissions = min(
+                expected_daily_demand, empty_beds + optimal_c_discharge
+            )
+        else:
+            # 需要 ≤ 空床 → 退院不要、そのまま受入
+            reasoning.append(
+                f"空床{empty_beds}床で入院需要{expected_daily_demand}名を収容可能"
+            )
+            reasoning.append(
+                "→ C群は退院させず持たせる（粗利1.9万/日を継続獲得）"
+            )
+            optimal_c_discharge = 0
+            recommended_admissions = expected_daily_demand
+
+    else:
+        # 稼働率が高い
+        over_count = current_total - int(num_beds * target_upper)
+        optimal_c_discharge = min(max(over_count, 0), current_c)
+        if optimal_c_discharge < max(over_count, 0):
+            optimal_b_discharge = min(
+                max(over_count, 0) - optimal_c_discharge,
+                max(0, current_b - int(current_total * 0.25)),
+            )
+        reasoning.append(
+            f"稼働率{current_occupancy*100:.1f}%が目標上限{target_upper*100:.0f}%超過"
+        )
+        reasoning.append(f"→ C群{optimal_c_discharge}名の退院調整を推奨")
+        if optimal_b_discharge > 0:
+            reasoning.append(
+                f"→ B群後半（12日目以降）から{optimal_b_discharge}名も検討"
+            )
+        recommended_admissions = min(
+            expected_daily_demand,
+            empty_beds + optimal_c_discharge + optimal_b_discharge,
+        )
+
+    # === 経済効果の計算 ===
+    total_discharge = optimal_c_discharge + optimal_b_discharge
+
+    # 退院による粗利減少
+    lost_profit = (
+        optimal_c_discharge * marginal["phase_gross"]["C"]
+        + optimal_b_discharge * marginal["phase_gross"]["B"]
+    )
+
+    # 新規入院による粗利増加（初日はA群）
+    gained_profit = recommended_admissions * marginal["phase_gross"]["A"]
+
+    # 将来利益（新規入院の生涯期待値）
+    future_gain = recommended_admissions * marginal["new_admission_lifetime_profit"]
+
+    # 最適後の状態
+    new_total = current_total - total_discharge + recommended_admissions
+    new_occupancy = new_total / max(num_beds, 1)
+
+    return {
+        "current_state": {
+            "total": current_total,
+            "occupancy": current_occupancy,
+            "a": current_a,
+            "b": current_b,
+            "c": current_c,
+            "empty_beds": empty_beds,
+        },
+        "recommendation": {
+            "c_discharge": optimal_c_discharge,
+            "b_discharge": optimal_b_discharge,
+            "total_discharge": total_discharge,
+            "new_admissions": recommended_admissions,
+        },
+        "after_state": {
+            "total": new_total,
+            "occupancy": round(new_occupancy, 4),
+        },
+        "economics": {
+            "daily_lost_profit": int(lost_profit),
+            "daily_gained_profit": int(gained_profit),
+            "daily_net_impact": int(gained_profit - lost_profit),
+            "future_gain_from_new": int(future_gain),
+            "c_hold_value_per_day": marginal["c_hold_daily_value"],
+            "breakeven_days": marginal["breakeven_days"],
+        },
+        "reasoning": reasoning,
+        "marginal_values": marginal,
+    }
+
+
 def generate_decision_report(
     df: pd.DataFrame,
     params: dict[str, Any],
@@ -1752,6 +1966,9 @@ def generate_decision_report(
 
     summary_text = "\n".join(lines)
 
+    # 収益最大化アドバイザー
+    optimization = optimize_discharge_plan(df, last_idx, params)
+
     return {
         "ward_status": ward_status,
         "forecast": forecast,
@@ -1760,6 +1977,7 @@ def generate_decision_report(
         "optimal_los": optimal_los,
         "trends": trends,
         "whatif_discharge_2c": whatif_2c,
+        "optimization": optimization,
         "summary_text": summary_text,
     }
 
