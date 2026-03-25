@@ -46,6 +46,36 @@ try:
 except ImportError:
     pass
 
+# ヘルプコンテンツモジュール
+_HELP_AVAILABLE = False
+try:
+    from help_content import HELP_TEXTS
+    _HELP_AVAILABLE = True
+except ImportError:
+    HELP_TEXTS = {}
+
+# 日次データ管理モジュール（独立モジュール）
+_DATA_MANAGER_AVAILABLE = False
+try:
+    from bed_data_manager import (
+        create_empty_dataframe as dm_create_empty_dataframe,
+        validate_record,
+        add_record,
+        update_record,
+        delete_record,
+        calculate_daily_metrics,
+        predict_occupancy_from_history,
+        predict_monthly_kpi,
+        generate_weekly_summary,
+        export_to_csv as dm_export_to_csv,
+        import_from_csv,
+        generate_sample_data,
+        DEFAULT_REVENUE_PARAMS,
+    )
+    _DATA_MANAGER_AVAILABLE = True
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
 # 戦略名マッピング（日本語 → CLI英語名）
 # ---------------------------------------------------------------------------
@@ -332,6 +362,11 @@ compare_all = st.sidebar.checkbox("全戦略比較", value=False)
 # --- 実行ボタン ---
 run_button = st.sidebar.button("シミュレーション実行", type="primary", use_container_width=True)
 
+# --- サイドバー最下部: 使い方ガイド ---
+if _HELP_AVAILABLE and "sidebar_about" in HELP_TEXTS:
+    with st.sidebar.expander("📖 使い方ガイド"):
+        st.markdown(HELP_TEXTS["sidebar_about"])
+
 # ---------------------------------------------------------------------------
 # パラメータ辞書の組み立て（UI値を保持、CLI変換は _build_cli_params で行う）
 # ---------------------------------------------------------------------------
@@ -369,6 +404,13 @@ if "sim_df" not in st.session_state:
     st.session_state.sim_df_raw = None
     st.session_state.sim_params = None
 
+# 日次データ管理用セッション状態
+if "daily_data" not in st.session_state:
+    if _DATA_MANAGER_AVAILABLE:
+        st.session_state.daily_data = dm_create_empty_dataframe()
+    else:
+        st.session_state.daily_data = pd.DataFrame()
+
 # ---------------------------------------------------------------------------
 # シミュレーション実行
 # ---------------------------------------------------------------------------
@@ -405,12 +447,7 @@ if run_button:
 # ---------------------------------------------------------------------------
 # 結果未実行の場合の案内
 # ---------------------------------------------------------------------------
-if st.session_state.sim_df is None:
-    st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
-    st.stop()
-
-df = st.session_state.sim_df
-summary = st.session_state.sim_summary
+_simulation_available = st.session_state.sim_df is not None
 
 # ---------------------------------------------------------------------------
 # ヘルパー: 金額フォーマット
@@ -437,12 +474,445 @@ tab_names = [
 if st.session_state.comparison is not None:
     tab_names.append("戦略比較")
 tab_names.append("データ")
+# 日次データ管理タブ（データ管理モジュールが利用可能な場合のみ）
+if _DATA_MANAGER_AVAILABLE:
+    tab_names.append("📋 日次データ入力")
+    tab_names.append("🔮 実績分析・予測")
 
 tabs = st.tabs(tab_names)
+
+# =====================================================================
+# 日次データ管理タブ（シミュレーション未実行でも利用可能）
+# st.stop() の前に配置することで、シミュレーション未実行でも表示される
+# =====================================================================
+if _DATA_MANAGER_AVAILABLE:
+    _dm_tab_daily_idx = len(tab_names) - 2  # 📋 日次データ入力
+    _dm_tab_analysis_idx = len(tab_names) - 1  # 🔮 実績分析・予測
+
+    # ----- タブ: 📋 日次データ入力 -----
+    with tabs[_dm_tab_daily_idx]:
+        st.subheader("📋 日次データ入力")
+
+        # --- データ管理セクション ---
+        st.markdown("#### データ管理")
+        dm_col1, dm_col2, dm_col3 = st.columns(3)
+
+        with dm_col1:
+            uploaded_file = st.file_uploader(
+                "CSVアップロード", type=["csv"], key="dm_csv_upload",
+                help="以前ダウンロードしたCSVファイルをアップロードしてデータを復元します"
+            )
+            if uploaded_file is not None:
+                csv_content = uploaded_file.getvalue().decode("utf-8")
+                imported_df, import_error = import_from_csv(csv_content)
+                if import_error:
+                    st.warning(f"インポート警告: {import_error}")
+                if len(imported_df) > 0:
+                    st.session_state.daily_data = imported_df
+                    st.success(f"{len(imported_df)}件のデータをインポートしました。")
+                elif not import_error:
+                    st.info("CSVにデータがありません。")
+
+        with dm_col2:
+            if st.button("サンプルデータ生成（30日分）", key="dm_gen_sample",
+                         help="デモ用に過去30日分のダミーデータを生成します"):
+                st.session_state.daily_data = generate_sample_data(num_days=30, num_beds=total_beds)
+                st.success("サンプルデータ（30日分）を生成しました。")
+                st.rerun()
+
+        with dm_col3:
+            if len(st.session_state.daily_data) > 0:
+                csv_str = dm_export_to_csv(st.session_state.daily_data)
+                st.download_button(
+                    label="CSVダウンロード",
+                    data=csv_str.encode("utf-8-sig"),
+                    file_name="bed_daily_data.csv",
+                    mime="text/csv",
+                    key="dm_csv_download",
+                )
+            else:
+                st.info("データなし")
+
+        st.markdown("---")
+
+        # --- データ入力フォーム ---
+        st.markdown("#### 新しいデータを追加")
+        with st.form("dm_add_record_form", clear_on_submit=True):
+            form_col1, form_col2 = st.columns(2)
+            with form_col1:
+                input_date = st.date_input("日付", value=pd.Timestamp.now().normalize())
+            with form_col2:
+                input_total = st.number_input("在院患者数", min_value=0, max_value=94, value=85, step=1)
+
+            form_col3, form_col4 = st.columns(2)
+            with form_col3:
+                input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
+            with form_col4:
+                input_discharges = st.number_input("退院数", min_value=0, max_value=30, value=5, step=1)
+
+            form_col5, form_col6, form_col7 = st.columns(3)
+            with form_col5:
+                input_phase_a = st.number_input("A群（1-5日目）", min_value=0, max_value=94, value=13, step=1)
+            with form_col6:
+                input_phase_b = st.number_input("B群（6-14日目）", min_value=0, max_value=94, value=38, step=1)
+            with form_col7:
+                input_phase_c = st.number_input("C群（15日目〜）", min_value=0, max_value=94, value=34, step=1)
+
+            form_col8, form_col9 = st.columns(2)
+            with form_col8:
+                input_avg_los = st.number_input("平均在院日数（任意）", min_value=0.0, max_value=60.0,
+                                                 value=0.0, step=0.1,
+                                                 help="0の場合は空欄として扱います")
+            with form_col9:
+                input_notes = st.text_input("備考（任意）", value="")
+
+            submitted = st.form_submit_button("追加", type="primary", use_container_width=True)
+
+            if submitted:
+                new_record = {
+                    "date": pd.Timestamp(input_date),
+                    "total_patients": int(input_total),
+                    "new_admissions": int(input_admissions),
+                    "discharges": int(input_discharges),
+                    "phase_a_count": int(input_phase_a),
+                    "phase_b_count": int(input_phase_b),
+                    "phase_c_count": int(input_phase_c),
+                    "avg_los": float(input_avg_los) if input_avg_los > 0 else pd.NA,
+                    "notes": input_notes,
+                }
+                is_valid, error_msg = validate_record(
+                    new_record, existing_df=st.session_state.daily_data
+                )
+                if is_valid:
+                    st.session_state.daily_data = add_record(
+                        st.session_state.daily_data, new_record
+                    )
+                    st.success(f"{input_date} のデータを追加しました。")
+                    st.rerun()
+                else:
+                    st.error(f"入力エラー:\n{error_msg}")
+
+        st.markdown("---")
+
+        # --- データ一覧・編集 ---
+        st.markdown("#### 記録データ一覧")
+        if len(st.session_state.daily_data) > 0:
+            display_data = st.session_state.daily_data.copy()
+            display_data["date"] = pd.to_datetime(display_data["date"])
+            display_data = display_data.sort_values("date", ascending=False).reset_index(drop=True)
+
+            # 表示用にフォーマット
+            display_data["date_str"] = display_data["date"].dt.strftime("%Y-%m-%d")
+
+            # st.data_editor で編集可能テーブル
+            edited_df = st.data_editor(
+                display_data[["date_str", "total_patients", "new_admissions", "discharges",
+                              "phase_a_count", "phase_b_count", "phase_c_count",
+                              "avg_los", "notes"]].rename(columns={
+                    "date_str": "日付",
+                    "total_patients": "在院患者数",
+                    "new_admissions": "新規入院",
+                    "discharges": "退院",
+                    "phase_a_count": "A群",
+                    "phase_b_count": "B群",
+                    "phase_c_count": "C群",
+                    "avg_los": "平均在院日数",
+                    "notes": "備考",
+                }),
+                use_container_width=True,
+                height=min(400, 50 + len(display_data) * 35),
+                num_rows="fixed",
+                key="dm_data_editor",
+            )
+
+            edit_col1, edit_col2 = st.columns(2)
+            with edit_col1:
+                if st.button("変更を保存", key="dm_save_edits", type="primary"):
+                    # 編集内容を反映
+                    try:
+                        updated = st.session_state.daily_data.copy()
+                        updated = updated.sort_values("date", ascending=False).reset_index(drop=True)
+                        col_map_rev = {
+                            "在院患者数": "total_patients",
+                            "新規入院": "new_admissions",
+                            "退院": "discharges",
+                            "A群": "phase_a_count",
+                            "B群": "phase_b_count",
+                            "C群": "phase_c_count",
+                            "平均在院日数": "avg_los",
+                            "備考": "notes",
+                        }
+                        for ja_col, en_col in col_map_rev.items():
+                            if ja_col in edited_df.columns:
+                                updated[en_col] = edited_df[ja_col].values
+                        updated = updated.sort_values("date").reset_index(drop=True)
+                        st.session_state.daily_data = updated
+                        st.success("変更を保存しました。")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"保存エラー: {e}")
+
+            with edit_col2:
+                # 削除用：日付を選択
+                delete_dates = display_data["date_str"].tolist()
+                if delete_dates:
+                    del_date = st.selectbox("削除する日付", delete_dates, key="dm_del_date")
+                    if st.button("選択した日付を削除", key="dm_delete_btn"):
+                        st.session_state.daily_data = delete_record(
+                            st.session_state.daily_data, del_date
+                        )
+                        st.success(f"{del_date} のデータを削除しました。")
+                        st.rerun()
+
+            st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
+        else:
+            st.info("データがありません。CSVをアップロードするか、サンプルデータを生成してください。")
+
+    # ----- タブ: 🔮 実績分析・予測 -----
+    with tabs[_dm_tab_analysis_idx]:
+        st.subheader("🔮 実績分析・予測")
+
+        if len(st.session_state.daily_data) < 3:
+            st.warning("分析には最低3日分のデータが必要です。「📋 日次データ入力」タブでデータを追加してください。")
+        else:
+            _analysis_df = st.session_state.daily_data.copy()
+            _metrics_df = calculate_daily_metrics(_analysis_df, num_beds=total_beds)
+
+            # --- 上部: 実績サマリー ---
+            st.markdown("#### 直近7日間のサマリー")
+            _recent7 = _metrics_df.tail(min(7, len(_metrics_df)))
+
+            s_col1, s_col2, s_col3 = st.columns(3)
+            with s_col1:
+                avg_occ = float(_recent7["occupancy_rate"].mean()) * 100
+                st.metric("平均稼働率", f"{avg_occ:.1f}%")
+            with s_col2:
+                total_adm = int(_recent7["new_admissions"].sum())
+                st.metric("入院合計", f"{total_adm}名")
+            with s_col3:
+                total_dis = int(_recent7["discharges"].sum())
+                st.metric("退院合計", f"{total_dis}名")
+
+            s_col4, s_col5, s_col6 = st.columns(3)
+            with s_col4:
+                avg_a = float(_recent7["phase_a_ratio"].mean()) * 100
+                st.metric("A群平均", f"{avg_a:.1f}%")
+            with s_col5:
+                avg_b = float(_recent7["phase_b_ratio"].mean()) * 100
+                st.metric("B群平均", f"{avg_b:.1f}%")
+            with s_col6:
+                avg_c = float(_recent7["phase_c_ratio"].mean()) * 100
+                st.metric("C群平均", f"{avg_c:.1f}%")
+
+            st.markdown("---")
+
+            # --- 中部: 実績グラフ ---
+            st.markdown("#### 実績グラフ")
+
+            # 稼働率推移
+            fig_occ, ax_occ = plt.subplots(figsize=(12, 4))
+            dates = _metrics_df["date"]
+            ax_occ.plot(dates, _metrics_df["occupancy_rate"] * 100,
+                        color="#2C3E50", linewidth=2, label="稼働率（実績）")
+            ax_occ.plot(dates, _metrics_df["occupancy_7d_ma"] * 100,
+                        color="#E67E22", linewidth=1.5, linestyle="--", label="7日移動平均")
+            ax_occ.axhspan(target_lower * 100, target_upper * 100,
+                           alpha=0.15, color="#F39C12",
+                           label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%)")
+            ax_occ.set_ylabel("稼働率 (%)")
+            ax_occ.set_title("稼働率推移")
+            ax_occ.legend(loc="lower right", fontsize=8)
+            ax_occ.grid(True, alpha=0.3)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig_occ)
+
+            # 入退院数推移（棒グラフ）
+            fig_ad, ax_ad = plt.subplots(figsize=(12, 4))
+            x_pos = np.arange(len(_metrics_df))
+            bar_width = 0.35
+            ax_ad.bar(x_pos - bar_width / 2,
+                      _metrics_df["new_admissions"].astype(float),
+                      bar_width, label="入院", color="#27AE60", alpha=0.8)
+            ax_ad.bar(x_pos + bar_width / 2,
+                      _metrics_df["discharges"].astype(float),
+                      bar_width, label="退院", color="#E74C3C", alpha=0.8)
+            # x軸ラベルを日付に
+            tick_step = max(1, len(_metrics_df) // 10)
+            ax_ad.set_xticks(x_pos[::tick_step])
+            ax_ad.set_xticklabels(
+                [d.strftime("%m/%d") for d in _metrics_df["date"].iloc[::tick_step]],
+                rotation=45
+            )
+            ax_ad.set_ylabel("人数")
+            ax_ad.set_title("入退院数推移")
+            ax_ad.legend()
+            ax_ad.grid(True, alpha=0.3, axis="y")
+            plt.tight_layout()
+            st.pyplot(fig_ad)
+
+            # フェーズ構成比推移（積み上げ面グラフ）
+            fig_phase, ax_phase = plt.subplots(figsize=(12, 4))
+            ax_phase.stackplot(
+                _metrics_df["date"],
+                _metrics_df["phase_a_ratio"].astype(float) * 100,
+                _metrics_df["phase_b_ratio"].astype(float) * 100,
+                _metrics_df["phase_c_ratio"].astype(float) * 100,
+                labels=["A群（急性期）", "B群（回復期）", "C群（安定期）"],
+                colors=["#E74C3C", "#27AE60", "#2980B9"],
+                alpha=0.7,
+            )
+            ax_phase.set_ylabel("構成比 (%)")
+            ax_phase.set_title("フェーズ構成比推移")
+            ax_phase.legend(loc="upper right", fontsize=8)
+            ax_phase.set_ylim(0, 100)
+            ax_phase.grid(True, alpha=0.3)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig_phase)
+
+            st.markdown("---")
+
+            # --- 中下部: 稼働率予測 ---
+            st.markdown("#### 向こう7日間の稼働率予測")
+            _pred_df = predict_occupancy_from_history(
+                _analysis_df, num_beds=total_beds, horizon=7
+            )
+
+            if len(_pred_df) > 0:
+                fig_pred, ax_pred = plt.subplots(figsize=(12, 4))
+
+                # 過去実績（実線）
+                ax_pred.plot(_metrics_df["date"], _metrics_df["occupancy_rate"] * 100,
+                             color="#2C3E50", linewidth=2, label="実績")
+
+                # 予測（破線）
+                # 実績の最後と予測の最初をつなぐ
+                pred_dates = pd.concat([
+                    pd.Series([_metrics_df["date"].iloc[-1]]),
+                    _pred_df["date"]
+                ])
+                pred_values = pd.concat([
+                    pd.Series([float(_metrics_df["occupancy_rate"].iloc[-1]) * 100]),
+                    _pred_df["predicted_occupancy"] * 100
+                ])
+                ax_pred.plot(pred_dates, pred_values,
+                             color="#E74C3C", linewidth=2, linestyle="--", label="予測")
+
+                # 目標レンジ
+                all_dates = pd.concat([_metrics_df["date"], _pred_df["date"]])
+                ax_pred.axhspan(target_lower * 100, target_upper * 100,
+                                alpha=0.10, color="#F39C12",
+                                label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%)")
+
+                # 信頼度を色で表示
+                for _, row in _pred_df.iterrows():
+                    color = {"high": "#27AE60", "medium": "#F39C12", "low": "#E74C3C"}
+                    ax_pred.scatter(row["date"], row["predicted_occupancy"] * 100,
+                                    color=color.get(row["confidence"], "#999"),
+                                    s=40, zorder=5)
+
+                ax_pred.set_ylabel("稼働率 (%)")
+                ax_pred.set_title("稼働率予測（実績 + 予測）")
+                ax_pred.legend(loc="lower right", fontsize=8)
+                ax_pred.grid(True, alpha=0.3)
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig_pred)
+
+                st.caption("予測根拠: 直近14日の入退院ペースから推計。●の色: 🟢高信頼 🟡中信頼 🔴低信頼")
+
+                # 予測テーブル
+                pred_display = _pred_df.copy()
+                pred_display["date"] = pred_display["date"].dt.strftime("%Y-%m-%d (%a)")
+                pred_display["predicted_occupancy"] = (pred_display["predicted_occupancy"] * 100).round(1)
+                pred_display = pred_display.rename(columns={
+                    "date": "日付",
+                    "predicted_patients": "予測患者数",
+                    "predicted_occupancy": "予測稼働率(%)",
+                    "confidence": "信頼度",
+                })
+                st.dataframe(pred_display, use_container_width=True, hide_index=True)
+            else:
+                st.info("予測に十分なデータがありません。")
+
+            st.markdown("---")
+
+            # --- 下部: 月次着地予想 ---
+            st.markdown("#### 今月の着地予想")
+            _monthly_kpi = predict_monthly_kpi(
+                _analysis_df, num_beds=total_beds,
+                revenue_params=DEFAULT_REVENUE_PARAMS,
+            )
+
+            if _monthly_kpi:
+                kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+                with kpi_col1:
+                    st.metric("月末予想稼働率", f"{_monthly_kpi['月末予想稼働率']}%")
+                    st.metric("月末予想在院患者数", f"{_monthly_kpi['月末予想在院患者数']}名")
+                with kpi_col2:
+                    st.metric("今月入院数（実績）", f"{_monthly_kpi['今月入院数_実績']}名")
+                    st.metric("今月入院数（予測込み）", f"{_monthly_kpi['今月入院数_合計']}名")
+                with kpi_col3:
+                    gross_profit = _monthly_kpi["推定月次粗利"]
+                    if abs(gross_profit) >= 10000:
+                        st.metric("推定月次粗利", f"¥{gross_profit/10000:,.1f}万")
+                    else:
+                        st.metric("推定月次粗利", f"¥{gross_profit:,}")
+                    st.metric("推定平均在院日数", f"{_monthly_kpi['推定平均在院日数']}日")
+
+                st.caption(f"残り{_monthly_kpi['残り日数']}日 | 予測入院数: {_monthly_kpi['今月入院数_予測']}名")
+
+            st.markdown("---")
+
+            # --- 最下部: 週次トレンド ---
+            st.markdown("#### 週次トレンド")
+            _weekly = generate_weekly_summary(_analysis_df, num_beds=total_beds)
+
+            if _weekly:
+                weekly_display = []
+                for w in _weekly:
+                    row = {
+                        "期間": f"{w['week_start']}〜{w['week_end']}",
+                        "日数": w["days"],
+                        "平均稼働率(%)": w["avg_occupancy_rate"],
+                        "入院合計": w["total_admissions"],
+                        "退院合計": w["total_discharges"],
+                        "A群(%)": w["avg_phase_a_ratio"],
+                        "B群(%)": w["avg_phase_b_ratio"],
+                        "C群(%)": w["avg_phase_c_ratio"],
+                    }
+                    if w["prev_week_occupancy_change"] is not None:
+                        row["前週比(pt)"] = f"{w['prev_week_occupancy_change']:+.1f}"
+                    else:
+                        row["前週比(pt)"] = "-"
+                    weekly_display.append(row)
+
+                st.dataframe(
+                    pd.DataFrame(weekly_display),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("週次サマリーを生成するにはデータが不足しています。")
+
+# =====================================================================
+# シミュレーション結果タブ（シミュレーション実行後のみ）
+# =====================================================================
+if not _simulation_available:
+    with tabs[0]:
+        st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
+    st.stop()
+
+df = st.session_state.sim_df
+summary = st.session_state.sim_summary
 
 # ===== タブ1: 日次推移 =====
 with tabs[0]:
     st.subheader("日次推移")
+    if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
+        with st.expander("📖 このタブの見方と活用法"):
+            st.markdown(HELP_TEXTS["tab_daily"])
 
     # --- 稼働率推移 ---
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -508,6 +978,9 @@ with tabs[0]:
 # ===== タブ2: フェーズ構成 =====
 with tabs[1]:
     st.subheader("フェーズ構成")
+    if _HELP_AVAILABLE and "tab_phase" in HELP_TEXTS:
+        with st.expander("📖 このタブの見方と活用法"):
+            st.markdown(HELP_TEXTS["tab_phase"])
 
     # --- A/B/C構成比の積み上げ面グラフ ---
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -565,6 +1038,9 @@ with tabs[1]:
 # ===== タブ3: 収支分析 =====
 with tabs[2]:
     st.subheader("収支分析")
+    if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
+        with st.expander("📖 このタブの見方と活用法"):
+            st.markdown(HELP_TEXTS["tab_finance"])
 
     # --- メトリクスカード ---
     c1, c2, c3, c4 = st.columns(4)
@@ -618,6 +1094,9 @@ with tabs[2]:
 # ===== タブ4: 経営判断フラグ =====
 with tabs[3]:
     st.subheader("経営判断フラグ")
+    if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
+        with st.expander("📖 このタブの見方と活用法"):
+            st.markdown(HELP_TEXTS["tab_flags"])
 
     # --- フラグ一覧テーブル ---
     flag_df = df[["日", "稼働率", "在院患者数", "経営判断フラグ"]].copy()
@@ -691,6 +1170,9 @@ with tabs[4]:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
     else:
         st.subheader("\U0001f3af 意思決定ダッシュボード")
+        if _HELP_AVAILABLE and "tab_decision" in HELP_TEXTS:
+            with st.expander("📖 このタブの見方と活用法"):
+                st.markdown(HELP_TEXTS["tab_decision"])
         _raw_df = st.session_state.sim_df_raw
         _cli_params = st.session_state.sim_params
 
@@ -802,6 +1284,9 @@ with tabs[5]:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
     else:
         st.subheader("\U0001f52e What-if分析")
+        if _HELP_AVAILABLE and "tab_whatif" in HELP_TEXTS:
+            with st.expander("📖 このタブの見方と活用法"):
+                st.markdown(HELP_TEXTS["tab_whatif"])
         _raw_df = st.session_state.sim_df_raw
         _cli_params = st.session_state.sim_params
 
@@ -879,6 +1364,9 @@ with tabs[6]:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
     else:
         st.subheader("\U0001f4c8 トレンド分析")
+        if _HELP_AVAILABLE and "tab_trends" in HELP_TEXTS:
+            with st.expander("📖 このタブの見方と活用法"):
+                st.markdown(HELP_TEXTS["tab_trends"])
         _raw_df = st.session_state.sim_df_raw
         _cli_params = st.session_state.sim_params
 
@@ -976,6 +1464,9 @@ tab_offset = 7
 if st.session_state.comparison is not None:
     with tabs[tab_offset]:
         st.subheader("全戦略比較")
+        if _HELP_AVAILABLE and "tab_strategy_compare" in HELP_TEXTS:
+            with st.expander("📖 このタブの見方と活用法"):
+                st.markdown(HELP_TEXTS["tab_strategy_compare"])
         comparison = st.session_state.comparison
 
         # --- 比較テーブル ---
@@ -1055,6 +1546,9 @@ if st.session_state.comparison is not None:
 data_tab_idx = tab_offset if st.session_state.comparison is not None else 7
 with tabs[data_tab_idx]:
     st.subheader("日次データ")
+    if _HELP_AVAILABLE and "tab_data" in HELP_TEXTS:
+        with st.expander("📖 このタブの見方と活用法"):
+            st.markdown(HELP_TEXTS["tab_data"])
 
     # データ表示
     display_df = df.copy()

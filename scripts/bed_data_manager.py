@@ -1,0 +1,632 @@
+"""
+日次ベッドコントロールデータ管理モジュール
+
+おもろまちメディカルセンター（94床）の日次稼働データを
+記録・分析・予測するための独立モジュール。
+CLI版シミュレーターには依存しない。
+
+個人情報は一切含めない（集計値のみ）。
+"""
+
+from __future__ import annotations
+
+import io
+from datetime import date, datetime, timedelta
+import numpy as np
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# データ構造定義
+# ---------------------------------------------------------------------------
+DAILY_RECORD_COLUMNS = [
+    "date",              # 日付 (YYYY-MM-DD)
+    "total_patients",    # 在院患者数
+    "new_admissions",    # 新規入院数
+    "discharges",        # 退院数
+    "phase_a_count",     # A群患者数（1-5日目）
+    "phase_b_count",     # B群患者数（6-14日目）
+    "phase_c_count",     # C群患者数（15日目以降）
+    "avg_los",           # 平均在院日数（任意、空欄可）
+    "notes",             # 備考（任意）
+]
+
+# デフォルトの収益・コストパラメータ（CLI版と同一）
+DEFAULT_REVENUE_PARAMS = {
+    "phase_a_revenue": 30000,
+    "phase_a_cost": 28000,
+    "phase_b_revenue": 30000,
+    "phase_b_cost": 13000,
+    "phase_c_revenue": 30000,
+    "phase_c_cost": 11000,
+}
+
+
+# ---------------------------------------------------------------------------
+# DataFrame作成・操作
+# ---------------------------------------------------------------------------
+def create_empty_dataframe() -> pd.DataFrame:
+    """空のDataFrameを作成（カラム定義済み）。"""
+    df = pd.DataFrame(columns=DAILY_RECORD_COLUMNS)
+    # 型を明示的に設定
+    df["date"] = pd.to_datetime(df["date"])
+    for col in ["total_patients", "new_admissions", "discharges",
+                 "phase_a_count", "phase_b_count", "phase_c_count"]:
+        df[col] = df[col].astype("Int64")  # nullable int
+    df["avg_los"] = df["avg_los"].astype("Float64")  # nullable float
+    df["notes"] = df["notes"].astype("string")
+    return df
+
+
+def validate_record(record: dict, existing_df: pd.DataFrame | None = None) -> tuple[bool, str]:
+    """
+    入力値のバリデーション。
+
+    Args:
+        record: 検証するレコード辞書
+        existing_df: 重複日付チェック用の既存DataFrame（任意）
+
+    Returns:
+        (有効かbool, エラーメッセージstr)
+    """
+    errors = []
+
+    # 日付チェック
+    try:
+        if isinstance(record.get("date"), str):
+            pd.to_datetime(record["date"])
+        elif not isinstance(record.get("date"), (date, datetime, pd.Timestamp)):
+            errors.append("日付が無効です。")
+    except (ValueError, TypeError):
+        errors.append("日付の形式が無効です（YYYY-MM-DD）。")
+
+    # 在院患者数チェック
+    tp = record.get("total_patients")
+    if tp is None or not isinstance(tp, (int, np.integer)):
+        errors.append("在院患者数は整数で入力してください。")
+    elif not (0 <= tp <= 94):
+        errors.append(f"在院患者数は0〜94の範囲で入力してください（入力値: {tp}）。")
+
+    # 入退院数チェック
+    for key, label in [("new_admissions", "新規入院数"), ("discharges", "退院数")]:
+        val = record.get(key)
+        if val is None or not isinstance(val, (int, np.integer)):
+            errors.append(f"{label}は整数で入力してください。")
+        elif val < 0:
+            errors.append(f"{label}は0以上で入力してください。")
+
+    # フェーズ合計チェック
+    pa = record.get("phase_a_count")
+    pb = record.get("phase_b_count")
+    pc = record.get("phase_c_count")
+    if all(isinstance(v, (int, np.integer)) for v in [pa, pb, pc, tp] if v is not None):
+        if pa is not None and pb is not None and pc is not None and tp is not None:
+            phase_sum = int(pa) + int(pb) + int(pc)
+            diff = abs(phase_sum - int(tp))
+            if diff > 2:
+                errors.append(
+                    f"A群+B群+C群の合計({phase_sum})と在院患者数({tp})の差が"
+                    f"{diff}あります（許容誤差: ±2）。"
+                )
+
+    # 重複日付チェック
+    if existing_df is not None and len(existing_df) > 0:
+        try:
+            check_date = pd.to_datetime(record["date"])
+            if check_date in existing_df["date"].values:
+                errors.append(f"日付 {check_date.strftime('%Y-%m-%d')} のデータは既に存在します。")
+        except (ValueError, TypeError, KeyError):
+            pass  # 日付エラーは上で既にキャッチ済み
+
+    if errors:
+        return False, "\n".join(errors)
+    return True, ""
+
+
+def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
+    """レコードを追加し日付順にソート。"""
+    record_copy = record.copy()
+    record_copy["date"] = pd.to_datetime(record_copy["date"])
+    if "notes" not in record_copy or record_copy["notes"] is None:
+        record_copy["notes"] = ""
+    new_row = pd.DataFrame([record_copy])
+    # カラム型を合わせる
+    for col in ["total_patients", "new_admissions", "discharges",
+                 "phase_a_count", "phase_b_count", "phase_c_count"]:
+        if col in new_row.columns:
+            new_row[col] = new_row[col].astype("Int64")
+    new_row["avg_los"] = new_row["avg_los"].astype("Float64")
+    new_row["notes"] = new_row["notes"].astype("string")
+
+    df = pd.concat([df, new_row], ignore_index=True)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    return df
+
+
+def update_record(df: pd.DataFrame, date_str: str, updates: dict) -> pd.DataFrame:
+    """既存レコードを修正。"""
+    target_date = pd.to_datetime(date_str)
+    mask = df["date"] == target_date
+    if mask.sum() == 0:
+        raise ValueError(f"日付 {date_str} のレコードが見つかりません。")
+    for key, value in updates.items():
+        if key in df.columns and key != "date":
+            df.loc[mask, key] = value
+    return df
+
+
+def delete_record(df: pd.DataFrame, date_str: str) -> pd.DataFrame:
+    """レコードを削除。"""
+    target_date = pd.to_datetime(date_str)
+    df = df[df["date"] != target_date].reset_index(drop=True)
+    return df
+
+
+# ---------------------------------------------------------------------------
+# メトリクス計算
+# ---------------------------------------------------------------------------
+def calculate_daily_metrics(df: pd.DataFrame, num_beds: int = 94) -> pd.DataFrame:
+    """
+    記録データから自動計算カラムを追加。
+
+    追加カラム:
+        occupancy_rate, phase_a_ratio, phase_b_ratio, phase_c_ratio,
+        daily_net_change, occupancy_7d_ma, admission_7d_ma, discharge_7d_ma
+    """
+    if len(df) == 0:
+        return df.copy()
+
+    result = df.copy()
+    result["date"] = pd.to_datetime(result["date"])
+    result = result.sort_values("date").reset_index(drop=True)
+
+    # 稼働率
+    result["occupancy_rate"] = result["total_patients"] / num_beds
+
+    # フェーズ構成比（ゼロ除算対応）
+    tp = result["total_patients"].replace(0, np.nan)
+    result["phase_a_ratio"] = result["phase_a_count"] / tp
+    result["phase_b_ratio"] = result["phase_b_count"] / tp
+    result["phase_c_ratio"] = result["phase_c_count"] / tp
+
+    # 日次純増減
+    result["daily_net_change"] = result["new_admissions"] - result["discharges"]
+
+    # 7日移動平均
+    result["occupancy_7d_ma"] = result["occupancy_rate"].rolling(7, min_periods=1).mean()
+    result["admission_7d_ma"] = result["new_admissions"].rolling(7, min_periods=1).mean()
+    result["discharge_7d_ma"] = result["discharges"].rolling(7, min_periods=1).mean()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 予測
+# ---------------------------------------------------------------------------
+def predict_occupancy_from_history(
+    df: pd.DataFrame, num_beds: int = 94, horizon: int = 7
+) -> pd.DataFrame:
+    """
+    過去データから向こうN日の稼働率を予測。
+
+    方法:
+      - 直近14日間の入退院データから1日あたり純増減の移動平均を算出
+      - 直近7日のトレンド（線形回帰の傾き）を算出
+      - 曜日別補正（7日以上のデータがある場合）
+      - confidence列を付与
+
+    Args:
+        df: 日次データ（date, total_patients, new_admissions, discharges必須）
+        num_beds: 総病床数
+        horizon: 予測日数
+
+    Returns:
+        予測DataFrame（date, predicted_patients, predicted_occupancy, confidence）
+    """
+    if len(df) < 3:
+        return pd.DataFrame(columns=[
+            "date", "predicted_patients", "predicted_occupancy", "confidence"
+        ])
+
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    work = work.sort_values("date").reset_index(drop=True)
+
+    # 直近14日分（データがそれ未満ならあるだけ使う）
+    recent = work.tail(min(14, len(work))).copy()
+    recent["net_change"] = recent["new_admissions"] - recent["discharges"]
+
+    # 純増減の移動平均
+    net_change_ma = float(recent["net_change"].mean())
+
+    # 直近7日の線形トレンド（傾き）
+    trend_data = work.tail(min(7, len(work))).copy()
+    if len(trend_data) >= 3:
+        x = np.arange(len(trend_data), dtype=float)
+        y = trend_data["total_patients"].astype(float).values
+        # 線形回帰
+        slope = np.polyfit(x, y, 1)[0]
+    else:
+        slope = 0.0
+
+    # 曜日別補正（7日以上のデータがある場合）
+    dow_adjustment = {}
+    if len(work) >= 7:
+        work["dow"] = work["date"].dt.dayofweek
+        work["_net"] = work["new_admissions"] - work["discharges"]
+        dow_mean = work.groupby("dow")["_net"].mean()
+        overall_mean = work["_net"].mean()
+        for dow in range(7):
+            if dow in dow_mean.index:
+                dow_adjustment[dow] = float(dow_mean[dow] - overall_mean)
+            else:
+                dow_adjustment[dow] = 0.0
+
+    # 予測生成
+    last_date = work["date"].iloc[-1]
+    last_patients = float(work["total_patients"].iloc[-1])
+
+    # トレンドと移動平均の加重平均（トレンド30%, MA70%）
+    blended_daily_change = 0.3 * slope + 0.7 * net_change_ma
+
+    predictions = []
+    current_patients = last_patients
+
+    for i in range(1, horizon + 1):
+        pred_date = last_date + timedelta(days=i)
+        dow = pred_date.dayofweek
+
+        daily_change = blended_daily_change
+        if dow_adjustment:
+            daily_change += dow_adjustment.get(dow, 0.0)
+
+        current_patients += daily_change
+        # 0〜num_beds にクリップ
+        current_patients = max(0, min(num_beds, current_patients))
+
+        occupancy = current_patients / num_beds
+
+        # 信頼度（データ量と予測距離で判定）
+        if len(work) >= 14 and i <= 3:
+            confidence = "high"
+        elif len(work) >= 7 and i <= 5:
+            confidence = "medium"
+        else:
+            confidence = "low"
+
+        predictions.append({
+            "date": pred_date,
+            "predicted_patients": round(current_patients, 1),
+            "predicted_occupancy": round(occupancy, 4),
+            "confidence": confidence,
+        })
+
+    return pd.DataFrame(predictions)
+
+
+def predict_monthly_kpi(
+    df: pd.DataFrame,
+    num_beds: int = 94,
+    revenue_params: dict | None = None,
+) -> dict:
+    """
+    過去データから今月の着地予想を算出。
+
+    Returns:
+        dict: 月末予想稼働率, 月末予想在院患者数, 今月の入院数合計,
+              推定平均在院日数, 推定月次粗利
+    """
+    if len(df) == 0:
+        return {}
+
+    if revenue_params is None:
+        revenue_params = DEFAULT_REVENUE_PARAMS.copy()
+
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    work = work.sort_values("date").reset_index(drop=True)
+
+    today = pd.Timestamp.now().normalize()
+    current_month_start = today.replace(day=1)
+
+    # 今月のデータ
+    month_data = work[work["date"] >= current_month_start].copy()
+
+    # 月末日
+    if today.month == 12:
+        month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+
+    remaining_days = max(0, (month_end - today).days)
+
+    # 実績
+    actual_admissions = int(month_data["new_admissions"].sum()) if len(month_data) > 0 else 0
+
+    # 予測
+    pred = predict_occupancy_from_history(df, num_beds=num_beds, horizon=remaining_days)
+
+    if len(pred) > 0:
+        end_patients = pred["predicted_patients"].iloc[-1]
+        end_occupancy = pred["predicted_occupancy"].iloc[-1]
+    elif len(work) > 0:
+        end_patients = float(work["total_patients"].iloc[-1])
+        end_occupancy = end_patients / num_beds
+    else:
+        end_patients = 0
+        end_occupancy = 0.0
+
+    # 残り日数の入院予測（直近7日平均）
+    recent_admissions = work.tail(min(7, len(work)))
+    daily_admission_avg = float(recent_admissions["new_admissions"].mean()) if len(recent_admissions) > 0 else 0
+    predicted_remaining_admissions = round(daily_admission_avg * remaining_days)
+    total_admissions = actual_admissions + predicted_remaining_admissions
+
+    # 推定平均在院日数
+    avg_los_values = work["avg_los"].dropna()
+    estimated_avg_los = float(avg_los_values.mean()) if len(avg_los_values) > 0 else 18.0
+
+    # 推定月次粗利
+    # 今月実績分の粗利
+    actual_gross_profit = 0.0
+    if len(month_data) > 0:
+        for _, row in month_data.iterrows():
+            pa = int(row.get("phase_a_count", 0) or 0)
+            pb = int(row.get("phase_b_count", 0) or 0)
+            pc = int(row.get("phase_c_count", 0) or 0)
+            actual_gross_profit += (
+                pa * (revenue_params["phase_a_revenue"] - revenue_params["phase_a_cost"])
+                + pb * (revenue_params["phase_b_revenue"] - revenue_params["phase_b_cost"])
+                + pc * (revenue_params["phase_c_revenue"] - revenue_params["phase_c_cost"])
+            )
+
+    # 残り日数分は直近のフェーズ構成比で推定
+    if len(work) >= 3:
+        recent = work.tail(min(7, len(work)))
+        avg_a = float(recent["phase_a_count"].mean())
+        avg_b = float(recent["phase_b_count"].mean())
+        avg_c = float(recent["phase_c_count"].mean())
+    else:
+        # フォールバック: 全体平均
+        avg_a = float(work["phase_a_count"].mean()) if len(work) > 0 else 0
+        avg_b = float(work["phase_b_count"].mean()) if len(work) > 0 else 0
+        avg_c = float(work["phase_c_count"].mean()) if len(work) > 0 else 0
+
+    predicted_daily_profit = (
+        avg_a * (revenue_params["phase_a_revenue"] - revenue_params["phase_a_cost"])
+        + avg_b * (revenue_params["phase_b_revenue"] - revenue_params["phase_b_cost"])
+        + avg_c * (revenue_params["phase_c_revenue"] - revenue_params["phase_c_cost"])
+    )
+    predicted_gross_profit = actual_gross_profit + predicted_daily_profit * remaining_days
+
+    return {
+        "月末予想稼働率": round(float(end_occupancy) * 100, 1),
+        "月末予想在院患者数": round(float(end_patients), 1),
+        "今月入院数_実績": actual_admissions,
+        "今月入院数_予測": predicted_remaining_admissions,
+        "今月入院数_合計": total_admissions,
+        "推定平均在院日数": round(estimated_avg_los, 1),
+        "推定月次粗利": int(round(predicted_gross_profit)),
+        "残り日数": remaining_days,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 週次サマリー
+# ---------------------------------------------------------------------------
+def generate_weekly_summary(df: pd.DataFrame, num_beds: int = 94) -> list[dict]:
+    """
+    週次サマリーを生成（過去の週ごとに集計）。
+
+    Returns:
+        list[dict]: 週ごとのサマリー辞書リスト
+            - week_start, week_end
+            - avg_occupancy_rate
+            - total_admissions, total_discharges
+            - avg_phase_a_ratio, avg_phase_b_ratio, avg_phase_c_ratio
+            - prev_week_occupancy_change（前週比）
+    """
+    if len(df) == 0:
+        return []
+
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    work = work.sort_values("date").reset_index(drop=True)
+
+    # 週番号で集約（ISO週）
+    work["year_week"] = work["date"].dt.isocalendar().year.astype(str) + "-W" + \
+                        work["date"].dt.isocalendar().week.astype(str).str.zfill(2)
+
+    summaries = []
+    prev_occupancy = None
+
+    for yw, group in work.groupby("year_week", sort=True):
+        avg_occ = float(group["total_patients"].mean()) / num_beds
+        total_adm = int(group["new_admissions"].sum())
+        total_dis = int(group["discharges"].sum())
+
+        tp = group["total_patients"].replace(0, np.nan)
+        avg_a = float((group["phase_a_count"] / tp).mean()) if tp.notna().any() else 0
+        avg_b = float((group["phase_b_count"] / tp).mean()) if tp.notna().any() else 0
+        avg_c = float((group["phase_c_count"] / tp).mean()) if tp.notna().any() else 0
+
+        occ_change = None
+        if prev_occupancy is not None:
+            occ_change = round((avg_occ - prev_occupancy) * 100, 1)
+
+        summaries.append({
+            "week_label": yw,
+            "week_start": group["date"].min().strftime("%m/%d"),
+            "week_end": group["date"].max().strftime("%m/%d"),
+            "days": len(group),
+            "avg_occupancy_rate": round(avg_occ * 100, 1),
+            "total_admissions": total_adm,
+            "total_discharges": total_dis,
+            "avg_phase_a_ratio": round(avg_a * 100, 1),
+            "avg_phase_b_ratio": round(avg_b * 100, 1),
+            "avg_phase_c_ratio": round(avg_c * 100, 1),
+            "prev_week_occupancy_change": occ_change,
+        })
+        prev_occupancy = avg_occ
+
+    return summaries
+
+
+# ---------------------------------------------------------------------------
+# CSV入出力
+# ---------------------------------------------------------------------------
+def export_to_csv(df: pd.DataFrame) -> str:
+    """CSV文字列を返す（ダウンロード用、UTF-8 BOM付き）。"""
+    work = df.copy()
+    if "date" in work.columns:
+        work["date"] = pd.to_datetime(work["date"]).dt.strftime("%Y-%m-%d")
+    buf = io.StringIO()
+    work.to_csv(buf, index=False, encoding="utf-8")
+    return buf.getvalue()
+
+
+def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
+    """
+    CSVからインポート（バリデーション付き）。
+
+    Returns:
+        (DataFrame, エラーメッセージ) — エラーがなければ空文字列
+    """
+    try:
+        buf = io.StringIO(csv_content)
+        raw = pd.read_csv(buf)
+    except Exception as e:
+        return create_empty_dataframe(), f"CSVの読み込みに失敗しました: {e}"
+
+    # カラムチェック
+    required = ["date", "total_patients", "new_admissions", "discharges",
+                 "phase_a_count", "phase_b_count", "phase_c_count"]
+    missing = [c for c in required if c not in raw.columns]
+    if missing:
+        return create_empty_dataframe(), f"必須カラムが不足しています: {', '.join(missing)}"
+
+    # 型変換
+    try:
+        raw["date"] = pd.to_datetime(raw["date"])
+    except Exception:
+        return create_empty_dataframe(), "date列の日付変換に失敗しました。YYYY-MM-DD形式で記載してください。"
+
+    for col in ["total_patients", "new_admissions", "discharges",
+                 "phase_a_count", "phase_b_count", "phase_c_count"]:
+        raw[col] = pd.to_numeric(raw[col], errors="coerce").astype("Int64")
+
+    if "avg_los" in raw.columns:
+        raw["avg_los"] = pd.to_numeric(raw["avg_los"], errors="coerce").astype("Float64")
+    else:
+        raw["avg_los"] = pd.array([pd.NA] * len(raw), dtype="Float64")
+
+    if "notes" not in raw.columns:
+        raw["notes"] = ""
+    raw["notes"] = raw["notes"].fillna("").astype("string")
+
+    # 既知カラムだけ残す
+    raw = raw[[c for c in DAILY_RECORD_COLUMNS if c in raw.columns]]
+
+    # 重複日付チェック
+    dup = raw["date"].duplicated()
+    if dup.any():
+        dup_dates = raw.loc[dup, "date"].dt.strftime("%Y-%m-%d").tolist()
+        return create_empty_dataframe(), f"重複日付があります: {', '.join(dup_dates)}"
+
+    raw = raw.sort_values("date").reset_index(drop=True)
+
+    # 値レンジの警告（エラーではなく警告）
+    warnings = []
+    out_of_range = raw[(raw["total_patients"] < 0) | (raw["total_patients"] > 94)]
+    if len(out_of_range) > 0:
+        warnings.append(f"在院患者数が0-94の範囲外のレコードが{len(out_of_range)}件あります。")
+
+    return raw, "\n".join(warnings) if warnings else ""
+
+
+# ---------------------------------------------------------------------------
+# サンプルデータ生成（デモ・テスト用）
+# ---------------------------------------------------------------------------
+def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42) -> pd.DataFrame:
+    """
+    デモ用サンプルデータを生成（個人情報なし、集計値のみ）。
+
+    稼働率85-97%の範囲でランダム変動。
+    入退院はポアソン分布（平均5名/日）。
+    A/B/C構成比は在院日数分布から算出。
+    週末は入院がやや少ない。
+    """
+    rng = np.random.default_rng(seed)
+    today = pd.Timestamp.now().normalize()
+    start_date = today - timedelta(days=num_days - 1)
+
+    records = []
+    # 初期患者数（稼働率90%付近）
+    current_patients = int(num_beds * 0.90)
+
+    for i in range(num_days):
+        d = start_date + timedelta(days=i)
+        dow = d.dayofweek  # 0=月, 6=日
+
+        # 入院数（週末はやや少ない）
+        if dow >= 5:  # 土日
+            admission_mean = 3.5
+        elif dow == 0:  # 月曜
+            admission_mean = 6.0
+        else:
+            admission_mean = 5.0
+        new_admissions = int(rng.poisson(admission_mean))
+
+        # 退院数（退院は在院患者数に比例、週末はやや少ない）
+        discharge_rate = 0.055 if dow < 5 else 0.035
+        expected_discharges = current_patients * discharge_rate
+        discharges_raw = int(rng.poisson(max(1, expected_discharges)))
+        discharges = min(discharges_raw, current_patients)
+
+        # 患者数更新
+        current_patients = current_patients + new_admissions - discharges
+        current_patients = max(0, min(num_beds, current_patients))
+
+        # フェーズ構成比（リアルな分布を想定）
+        # A群: 約15%, B群: 約45%, C群: 約40%（±変動あり）
+        a_ratio = rng.normal(0.15, 0.03)
+        b_ratio = rng.normal(0.45, 0.05)
+        a_ratio = max(0.05, min(0.30, a_ratio))
+        b_ratio = max(0.25, min(0.60, b_ratio))
+        c_ratio = 1.0 - a_ratio - b_ratio
+        c_ratio = max(0.10, c_ratio)
+
+        # 正規化
+        total_ratio = a_ratio + b_ratio + c_ratio
+        a_ratio /= total_ratio
+        b_ratio /= total_ratio
+        c_ratio /= total_ratio
+
+        phase_a = int(round(current_patients * a_ratio))
+        phase_b = int(round(current_patients * b_ratio))
+        phase_c = current_patients - phase_a - phase_b  # 端数調整
+
+        # 平均在院日数（やや変動）
+        avg_los_val = round(rng.normal(17.5, 1.5), 1)
+        avg_los_val = max(12.0, min(25.0, avg_los_val))
+
+        records.append({
+            "date": d,
+            "total_patients": current_patients,
+            "new_admissions": new_admissions,
+            "discharges": discharges,
+            "phase_a_count": phase_a,
+            "phase_b_count": phase_b,
+            "phase_c_count": phase_c,
+            "avg_los": avg_los_val,
+            "notes": "",
+        })
+
+    df = pd.DataFrame(records)
+    for col in ["total_patients", "new_admissions", "discharges",
+                 "phase_a_count", "phase_b_count", "phase_c_count"]:
+        df[col] = df[col].astype("Int64")
+    df["avg_los"] = df["avg_los"].astype("Float64")
+    df["notes"] = df["notes"].astype("string")
+
+    return df
