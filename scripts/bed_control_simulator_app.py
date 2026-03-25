@@ -47,8 +47,9 @@ try:
         optimize_discharge_plan,
     )
     _DECISION_SUPPORT_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as _e:
+    import traceback as _tb
+    _DECISION_SUPPORT_ERROR = f"{_e}\n{_tb.format_exc()}"
 
 # ヘルプコンテンツモジュール
 _HELP_AVAILABLE = False
@@ -1634,6 +1635,8 @@ with tabs[_tab_idx["経営判断フラグ"]]:
 with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
     if not _DECISION_SUPPORT_AVAILABLE:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
+        if "_DECISION_SUPPORT_ERROR" in dir():
+            st.code(_DECISION_SUPPORT_ERROR)
     else:
         st.subheader("\U0001f3af 意思決定ダッシュボード")
         if _HELP_AVAILABLE and "tab_decision" in HELP_TEXTS:
@@ -1966,6 +1969,8 @@ if "\U0001f52e What-if分析" in _tab_idx:
     with tabs[_tab_idx["\U0001f52e What-if分析"]]:
         if not _DECISION_SUPPORT_AVAILABLE:
             st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
+        if "_DECISION_SUPPORT_ERROR" in dir():
+            st.code(_DECISION_SUPPORT_ERROR)
         else:
             st.subheader("\U0001f52e What-if分析")
             if _HELP_AVAILABLE and "tab_whatif" in HELP_TEXTS:
@@ -2359,6 +2364,8 @@ if "\U0001f52e What-if分析" in _tab_idx:
 with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
     if not _DECISION_SUPPORT_AVAILABLE:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
+        if "_DECISION_SUPPORT_ERROR" in dir():
+            st.code(_DECISION_SUPPORT_ERROR)
     else:
         st.subheader("\U0001f4c8 トレンド分析")
         if _HELP_AVAILABLE and "tab_trends" in HELP_TEXTS:
