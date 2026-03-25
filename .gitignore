@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+
+# Output (generated files)
+output/*.csv
+output/*.png
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
