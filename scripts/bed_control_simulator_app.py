@@ -411,6 +411,12 @@ if "daily_data" not in st.session_state:
     else:
         st.session_state.daily_data = pd.DataFrame()
 
+if "demo_data" not in st.session_state:
+    st.session_state.demo_data = pd.DataFrame()
+
+if "data_mode" not in st.session_state:
+    st.session_state.data_mode = "📊 実データ入力モード"
+
 # ---------------------------------------------------------------------------
 # シミュレーション実行
 # ---------------------------------------------------------------------------
@@ -493,189 +499,279 @@ if _DATA_MANAGER_AVAILABLE:
     with tabs[_dm_tab_daily_idx]:
         st.subheader("📋 日次データ入力")
 
-        # --- データ管理セクション ---
-        st.markdown("#### データ管理")
-        dm_col1, dm_col2, dm_col3 = st.columns(3)
-
-        with dm_col1:
-            uploaded_file = st.file_uploader(
-                "CSVアップロード", type=["csv"], key="dm_csv_upload",
-                help="以前ダウンロードしたCSVファイルをアップロードしてデータを復元します"
-            )
-            if uploaded_file is not None:
-                csv_content = uploaded_file.getvalue().decode("utf-8")
-                imported_df, import_error = import_from_csv(csv_content)
-                if import_error:
-                    st.warning(f"インポート警告: {import_error}")
-                if len(imported_df) > 0:
-                    st.session_state.daily_data = imported_df
-                    st.success(f"{len(imported_df)}件のデータをインポートしました。")
-                elif not import_error:
-                    st.info("CSVにデータがありません。")
-
-        with dm_col2:
-            if st.button("サンプルデータ生成（30日分）", key="dm_gen_sample",
-                         help="デモ用に過去30日分のダミーデータを生成します"):
-                st.session_state.daily_data = generate_sample_data(num_days=30, num_beds=total_beds)
-                st.success("サンプルデータ（30日分）を生成しました。")
-                st.rerun()
-
-        with dm_col3:
-            if len(st.session_state.daily_data) > 0:
-                csv_str = dm_export_to_csv(st.session_state.daily_data)
-                st.download_button(
-                    label="CSVダウンロード",
-                    data=csv_str.encode("utf-8-sig"),
-                    file_name="bed_daily_data.csv",
-                    mime="text/csv",
-                    key="dm_csv_download",
-                )
-            else:
-                st.info("データなし")
+        # --- モード切替 ---
+        st.radio(
+            "データモード",
+            ["📊 実データ入力モード", "🎮 デモモード（サンプルデータ）"],
+            key="data_mode",
+        )
+        _is_demo_mode = st.session_state.data_mode == "🎮 デモモード（サンプルデータ）"
 
         st.markdown("---")
 
-        # --- データ入力フォーム ---
-        st.markdown("#### 新しいデータを追加")
-        with st.form("dm_add_record_form", clear_on_submit=True):
-            form_col1, form_col2 = st.columns(2)
-            with form_col1:
-                input_date = st.date_input("日付", value=pd.Timestamp.now().normalize())
-            with form_col2:
-                input_total = st.number_input("在院患者数", min_value=0, max_value=94, value=85, step=1)
+        if _is_demo_mode:
+            # ============================================================
+            # デモモード
+            # ============================================================
+            st.info("これはデモデータです。実際の病棟データではありません。")
 
-            form_col3, form_col4 = st.columns(2)
-            with form_col3:
-                input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
-            with form_col4:
-                input_discharges = st.number_input("退院数", min_value=0, max_value=30, value=5, step=1)
-
-            form_col5, form_col6, form_col7 = st.columns(3)
-            with form_col5:
-                input_phase_a = st.number_input("A群（1-5日目）", min_value=0, max_value=94, value=13, step=1)
-            with form_col6:
-                input_phase_b = st.number_input("B群（6-14日目）", min_value=0, max_value=94, value=38, step=1)
-            with form_col7:
-                input_phase_c = st.number_input("C群（15日目〜）", min_value=0, max_value=94, value=34, step=1)
-
-            form_col8, form_col9 = st.columns(2)
-            with form_col8:
-                input_avg_los = st.number_input("平均在院日数（任意）", min_value=0.0, max_value=60.0,
-                                                 value=0.0, step=0.1,
-                                                 help="0の場合は空欄として扱います")
-            with form_col9:
-                input_notes = st.text_input("備考（任意）", value="")
-
-            submitted = st.form_submit_button("追加", type="primary", use_container_width=True)
-
-            if submitted:
-                new_record = {
-                    "date": pd.Timestamp(input_date),
-                    "total_patients": int(input_total),
-                    "new_admissions": int(input_admissions),
-                    "discharges": int(input_discharges),
-                    "phase_a_count": int(input_phase_a),
-                    "phase_b_count": int(input_phase_b),
-                    "phase_c_count": int(input_phase_c),
-                    "avg_los": float(input_avg_los) if input_avg_los > 0 else pd.NA,
-                    "notes": input_notes,
-                }
-                is_valid, error_msg = validate_record(
-                    new_record, existing_df=st.session_state.daily_data
-                )
-                if is_valid:
-                    st.session_state.daily_data = add_record(
-                        st.session_state.daily_data, new_record
-                    )
-                    st.success(f"{input_date} のデータを追加しました。")
+            dm_demo_col1, dm_demo_col2 = st.columns(2)
+            with dm_demo_col1:
+                if st.button("サンプルデータ生成（30日分）", key="dm_gen_sample",
+                             help="デモ用に過去30日分のダミーデータを生成します"):
+                    st.session_state.demo_data = generate_sample_data(num_days=30, num_beds=total_beds)
+                    st.success("サンプルデータ（30日分）を生成しました。")
                     st.rerun()
+
+            with dm_demo_col2:
+                if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
+                    _demo_csv_str = dm_export_to_csv(st.session_state.demo_data)
+                    _demo_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+                    st.download_button(
+                        label="CSVダウンロード",
+                        data=_demo_csv_str.encode("utf-8-sig"),
+                        file_name=f"bed_daily_data_デモ_{_demo_date_str}.csv",
+                        mime="text/csv",
+                        key="dm_demo_csv_download",
+                    )
                 else:
-                    st.error(f"入力エラー:\n{error_msg}")
+                    st.info("データなし")
 
-        st.markdown("---")
+            st.markdown("---")
 
-        # --- データ一覧・編集 ---
-        st.markdown("#### 記録データ一覧")
-        if len(st.session_state.daily_data) > 0:
-            display_data = st.session_state.daily_data.copy()
-            display_data["date"] = pd.to_datetime(display_data["date"])
-            display_data = display_data.sort_values("date", ascending=False).reset_index(drop=True)
+            # --- デモデータ一覧（閲覧のみ） ---
+            st.markdown("#### デモデータ一覧（閲覧専用）")
+            if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
+                _demo_display = st.session_state.demo_data.copy()
+                _demo_display["date"] = pd.to_datetime(_demo_display["date"])
+                _demo_display = _demo_display.sort_values("date", ascending=False).reset_index(drop=True)
+                _demo_display["date_str"] = _demo_display["date"].dt.strftime("%Y-%m-%d")
 
-            # 表示用にフォーマット
-            display_data["date_str"] = display_data["date"].dt.strftime("%Y-%m-%d")
+                _demo_cols_to_show = ["date_str", "total_patients", "new_admissions", "discharges",
+                                      "phase_a_count", "phase_b_count", "phase_c_count",
+                                      "avg_los", "notes"]
+                _demo_cols_available = [c for c in _demo_cols_to_show if c in _demo_display.columns]
+                st.dataframe(
+                    _demo_display[_demo_cols_available].rename(columns={
+                        "date_str": "日付",
+                        "total_patients": "在院患者数",
+                        "new_admissions": "新規入院",
+                        "discharges": "退院",
+                        "phase_a_count": "A群",
+                        "phase_b_count": "B群",
+                        "phase_c_count": "C群",
+                        "avg_los": "平均在院日数",
+                        "notes": "備考",
+                    }),
+                    use_container_width=True,
+                    height=min(400, 50 + len(_demo_display) * 35),
+                    hide_index=True,
+                )
+                st.caption(f"合計 {len(st.session_state.demo_data)} 件のデモレコード")
+            else:
+                st.info("デモデータがありません。「サンプルデータ生成」ボタンを押してください。")
 
-            # st.data_editor で編集可能テーブル
-            edited_df = st.data_editor(
-                display_data[["date_str", "total_patients", "new_admissions", "discharges",
-                              "phase_a_count", "phase_b_count", "phase_c_count",
-                              "avg_los", "notes"]].rename(columns={
-                    "date_str": "日付",
-                    "total_patients": "在院患者数",
-                    "new_admissions": "新規入院",
-                    "discharges": "退院",
-                    "phase_a_count": "A群",
-                    "phase_b_count": "B群",
-                    "phase_c_count": "C群",
-                    "avg_los": "平均在院日数",
-                    "notes": "備考",
-                }),
-                use_container_width=True,
-                height=min(400, 50 + len(display_data) * 35),
-                num_rows="fixed",
-                key="dm_data_editor",
-            )
-
-            edit_col1, edit_col2 = st.columns(2)
-            with edit_col1:
-                if st.button("変更を保存", key="dm_save_edits", type="primary"):
-                    # 編集内容を反映
-                    try:
-                        updated = st.session_state.daily_data.copy()
-                        updated = updated.sort_values("date", ascending=False).reset_index(drop=True)
-                        col_map_rev = {
-                            "在院患者数": "total_patients",
-                            "新規入院": "new_admissions",
-                            "退院": "discharges",
-                            "A群": "phase_a_count",
-                            "B群": "phase_b_count",
-                            "C群": "phase_c_count",
-                            "平均在院日数": "avg_los",
-                            "備考": "notes",
-                        }
-                        for ja_col, en_col in col_map_rev.items():
-                            if ja_col in edited_df.columns:
-                                updated[en_col] = edited_df[ja_col].values
-                        updated = updated.sort_values("date").reset_index(drop=True)
-                        st.session_state.daily_data = updated
-                        st.success("変更を保存しました。")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"保存エラー: {e}")
-
-            with edit_col2:
-                # 削除用：日付を選択
-                delete_dates = display_data["date_str"].tolist()
-                if delete_dates:
-                    del_date = st.selectbox("削除する日付", delete_dates, key="dm_del_date")
-                    if st.button("選択した日付を削除", key="dm_delete_btn"):
-                        st.session_state.daily_data = delete_record(
-                            st.session_state.daily_data, del_date
-                        )
-                        st.success(f"{del_date} のデータを削除しました。")
-                        st.rerun()
-
-            st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
         else:
-            st.info("データがありません。CSVをアップロードするか、サンプルデータを生成してください。")
+            # ============================================================
+            # 実データ入力モード
+            # ============================================================
+
+            # --- データ管理セクション ---
+            st.markdown("#### データ管理")
+            dm_col1, dm_col2 = st.columns(2)
+
+            with dm_col1:
+                uploaded_file = st.file_uploader(
+                    "CSVアップロード", type=["csv"], key="dm_csv_upload",
+                    help="以前ダウンロードしたCSVファイルをアップロードしてデータを復元します"
+                )
+                if uploaded_file is not None:
+                    csv_content = uploaded_file.getvalue().decode("utf-8")
+                    imported_df, import_error = import_from_csv(csv_content)
+                    if import_error:
+                        st.warning(f"インポート警告: {import_error}")
+                    if len(imported_df) > 0:
+                        st.session_state.daily_data = imported_df
+                        st.success(f"{len(imported_df)}件のデータをインポートしました。")
+                    elif not import_error:
+                        st.info("CSVにデータがありません。")
+
+            with dm_col2:
+                if len(st.session_state.daily_data) > 0:
+                    csv_str = dm_export_to_csv(st.session_state.daily_data)
+                    _real_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+                    st.download_button(
+                        label="CSVダウンロード",
+                        data=csv_str.encode("utf-8-sig"),
+                        file_name=f"bed_daily_data_実データ_{_real_date_str}.csv",
+                        mime="text/csv",
+                        key="dm_csv_download",
+                    )
+                else:
+                    st.info("データなし")
+
+            st.markdown("---")
+
+            # --- データ入力フォーム ---
+            st.markdown("#### 新しいデータを追加")
+            with st.form("dm_add_record_form", clear_on_submit=True):
+                form_col1, form_col2 = st.columns(2)
+                with form_col1:
+                    input_date = st.date_input("日付", value=pd.Timestamp.now().normalize())
+                with form_col2:
+                    input_total = st.number_input("在院患者数", min_value=0, max_value=94, value=85, step=1)
+
+                form_col3, form_col4 = st.columns(2)
+                with form_col3:
+                    input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
+                with form_col4:
+                    input_discharges = st.number_input("退院数", min_value=0, max_value=30, value=5, step=1)
+
+                form_col5, form_col6, form_col7 = st.columns(3)
+                with form_col5:
+                    input_phase_a = st.number_input("A群（1-5日目）", min_value=0, max_value=94, value=13, step=1)
+                with form_col6:
+                    input_phase_b = st.number_input("B群（6-14日目）", min_value=0, max_value=94, value=38, step=1)
+                with form_col7:
+                    input_phase_c = st.number_input("C群（15日目〜）", min_value=0, max_value=94, value=34, step=1)
+
+                form_col8, form_col9 = st.columns(2)
+                with form_col8:
+                    input_avg_los = st.number_input("平均在院日数（任意）", min_value=0.0, max_value=60.0,
+                                                     value=0.0, step=0.1,
+                                                     help="0の場合は空欄として扱います")
+                with form_col9:
+                    input_notes = st.text_input("備考（任意）", value="")
+
+                submitted = st.form_submit_button("追加", type="primary", use_container_width=True)
+
+                if submitted:
+                    new_record = {
+                        "date": pd.Timestamp(input_date),
+                        "total_patients": int(input_total),
+                        "new_admissions": int(input_admissions),
+                        "discharges": int(input_discharges),
+                        "phase_a_count": int(input_phase_a),
+                        "phase_b_count": int(input_phase_b),
+                        "phase_c_count": int(input_phase_c),
+                        "avg_los": float(input_avg_los) if input_avg_los > 0 else pd.NA,
+                        "notes": input_notes,
+                        "data_source": "manual",
+                    }
+                    is_valid, error_msg = validate_record(
+                        new_record, existing_df=st.session_state.daily_data
+                    )
+                    if is_valid:
+                        st.session_state.daily_data = add_record(
+                            st.session_state.daily_data, new_record
+                        )
+                        st.success(f"{input_date} のデータを追加しました。")
+                        st.rerun()
+                    else:
+                        st.error(f"入力エラー:\n{error_msg}")
+
+            st.markdown("---")
+
+            # --- データ一覧・編集 ---
+            st.markdown("#### 記録データ一覧")
+            if len(st.session_state.daily_data) > 0:
+                display_data = st.session_state.daily_data.copy()
+                display_data["date"] = pd.to_datetime(display_data["date"])
+                display_data = display_data.sort_values("date", ascending=False).reset_index(drop=True)
+
+                # 表示用にフォーマット
+                display_data["date_str"] = display_data["date"].dt.strftime("%Y-%m-%d")
+
+                # st.data_editor で編集可能テーブル（data_sourceカラムは非表示）
+                _display_cols = ["date_str", "total_patients", "new_admissions", "discharges",
+                                  "phase_a_count", "phase_b_count", "phase_c_count",
+                                  "avg_los", "notes"]
+                _display_cols_available = [c for c in _display_cols if c in display_data.columns]
+                edited_df = st.data_editor(
+                    display_data[_display_cols_available].rename(columns={
+                        "date_str": "日付",
+                        "total_patients": "在院患者数",
+                        "new_admissions": "新規入院",
+                        "discharges": "退院",
+                        "phase_a_count": "A群",
+                        "phase_b_count": "B群",
+                        "phase_c_count": "C群",
+                        "avg_los": "平均在院日数",
+                        "notes": "備考",
+                    }),
+                    use_container_width=True,
+                    height=min(400, 50 + len(display_data) * 35),
+                    num_rows="fixed",
+                    key="dm_data_editor",
+                )
+
+                edit_col1, edit_col2 = st.columns(2)
+                with edit_col1:
+                    if st.button("変更を保存", key="dm_save_edits", type="primary"):
+                        # 編集内容を反映
+                        try:
+                            updated = st.session_state.daily_data.copy()
+                            updated = updated.sort_values("date", ascending=False).reset_index(drop=True)
+                            col_map_rev = {
+                                "在院患者数": "total_patients",
+                                "新規入院": "new_admissions",
+                                "退院": "discharges",
+                                "A群": "phase_a_count",
+                                "B群": "phase_b_count",
+                                "C群": "phase_c_count",
+                                "平均在院日数": "avg_los",
+                                "備考": "notes",
+                            }
+                            for ja_col, en_col in col_map_rev.items():
+                                if ja_col in edited_df.columns:
+                                    updated[en_col] = edited_df[ja_col].values
+                            updated = updated.sort_values("date").reset_index(drop=True)
+                            st.session_state.daily_data = updated
+                            st.success("変更を保存しました。")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"保存エラー: {e}")
+
+                with edit_col2:
+                    # 削除用：日付を選択
+                    delete_dates = display_data["date_str"].tolist()
+                    if delete_dates:
+                        del_date = st.selectbox("削除する日付", delete_dates, key="dm_del_date")
+                        if st.button("選択した日付を削除", key="dm_delete_btn"):
+                            st.session_state.daily_data = delete_record(
+                                st.session_state.daily_data, del_date
+                            )
+                            st.success(f"{del_date} のデータを削除しました。")
+                            st.rerun()
+
+                st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
+            else:
+                st.warning(
+                    "まずデータを入力してください。操作方法がわからない場合は"
+                    "「🎮 デモモード（サンプルデータ）」でお試しください。"
+                )
 
     # ----- タブ: 🔮 実績分析・予測 -----
     with tabs[_dm_tab_analysis_idx]:
         st.subheader("🔮 実績分析・予測")
 
-        if len(st.session_state.daily_data) < 3:
-            st.warning("分析には最低3日分のデータが必要です。「📋 日次データ入力」タブでデータを追加してください。")
+        # データモードに応じてデータソースを切り替え
+        _is_analysis_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
+        if _is_analysis_demo:
+            _active_data = st.session_state.demo_data if isinstance(st.session_state.demo_data, pd.DataFrame) else pd.DataFrame()
         else:
-            _analysis_df = st.session_state.daily_data.copy()
+            _active_data = st.session_state.daily_data
+
+        if _is_analysis_demo:
+            st.warning("⚠️ デモデータによる分析です。実際の病棟データではありません。")
+
+        if not isinstance(_active_data, pd.DataFrame) or len(_active_data) < 3:
+            if _is_analysis_demo:
+                st.warning("分析には最低3日分のデモデータが必要です。「📋 日次データ入力」タブでサンプルデータを生成してください。")
+            else:
+                st.warning("分析には最低3日分のデータが必要です。「📋 日次データ入力」タブでデータを追加してください。")
+        else:
+            _analysis_df = _active_data.copy()
             _metrics_df = calculate_daily_metrics(_analysis_df, num_beds=total_beds)
 
             # --- 上部: 実績サマリー ---

@@ -128,6 +128,8 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
     record_copy["date"] = pd.to_datetime(record_copy["date"])
     if "notes" not in record_copy or record_copy["notes"] is None:
         record_copy["notes"] = ""
+    if "data_source" not in record_copy:
+        record_copy["data_source"] = "manual"
     new_row = pd.DataFrame([record_copy])
     # カラム型を合わせる
     for col in ["total_patients", "new_admissions", "discharges",
@@ -527,6 +529,9 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
     # 既知カラムだけ残す
     raw = raw[[c for c in DAILY_RECORD_COLUMNS if c in raw.columns]]
 
+    # data_source カラムを追加（インポートデータ）
+    raw["data_source"] = "imported"
+
     # 重複日付チェック
     dup = raw["date"].duplicated()
     if dup.any():
@@ -628,5 +633,6 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
         df[col] = df[col].astype("Int64")
     df["avg_los"] = df["avg_los"].astype("Float64")
     df["notes"] = df["notes"].astype("string")
+    df["data_source"] = "demo"
 
     return df
