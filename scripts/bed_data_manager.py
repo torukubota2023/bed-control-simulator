@@ -552,6 +552,77 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
 # ---------------------------------------------------------------------------
 # サンプルデータ生成（デモ・テスト用）
 # ---------------------------------------------------------------------------
+def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """
+    実績データをシミュレーション出力と同じカラム構造に変換するブリッジ関数。
+
+    Args:
+        actual_df: 日次データ（date, total_patients, new_admissions, discharges,
+                   phase_a_count, phase_b_count, phase_c_count を含むDataFrame）
+        params: パラメータ辞書（num_beds, phase_a_revenue, phase_a_cost 等を含む）
+
+    Returns:
+        シミュレーション出力と同じカラム構造のDataFrame
+    """
+    if len(actual_df) == 0:
+        return pd.DataFrame()
+
+    df = actual_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    num_beds = params.get("num_beds", 94)
+
+    # 基本カラム
+    df["day"] = range(1, len(df) + 1)
+
+    # 数値型に変換（nullable Int64 を通常の float に）
+    for col in ["total_patients", "new_admissions", "discharges",
+                "phase_a_count", "phase_b_count", "phase_c_count"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(float)
+
+    df["occupancy_rate"] = df["total_patients"] / num_beds
+    tp_safe = df["total_patients"].clip(lower=1)
+    df["phase_a_ratio"] = df["phase_a_count"] / tp_safe
+    df["phase_b_ratio"] = df["phase_b_count"] / tp_safe
+    df["phase_c_ratio"] = df["phase_c_count"] / tp_safe
+
+    # 収益・コスト計算
+    df["daily_revenue"] = (
+        df["phase_a_count"] * params.get("phase_a_revenue", 30000)
+        + df["phase_b_count"] * params.get("phase_b_revenue", 30000)
+        + df["phase_c_count"] * params.get("phase_c_revenue", 30000)
+    )
+    df["daily_cost"] = (
+        df["phase_a_count"] * params.get("phase_a_cost", 28000)
+        + df["phase_b_count"] * params.get("phase_b_cost", 13000)
+        + df["phase_c_count"] * params.get("phase_c_cost", 11000)
+    )
+    df["daily_profit"] = df["daily_revenue"] - df["daily_cost"]
+
+    df["empty_beds"] = (num_beds - df["total_patients"]).clip(lower=0)
+    df["excess_demand"] = 0  # 実データでは不明
+    df["opportunity_loss"] = df["empty_beds"] * params.get("opportunity_cost", 10000)
+
+    # フラグ
+    target_lower = params.get("target_occupancy_lower", 0.90)
+    target_upper = params.get("target_occupancy_upper", 0.95)
+    df["flag_low_occupancy"] = df["occupancy_rate"] < target_lower
+    df["flag_high_occupancy"] = df["occupancy_rate"] > target_upper
+    df["flag_excess_a"] = df["phase_a_ratio"] > 0.35
+    df["flag_shortage_b"] = df["phase_b_ratio"] < 0.25
+    df["flag_stagnant_c"] = df["phase_c_ratio"] > 0.30
+
+    # 推奨退院数・保持許容数
+    target_upper_patients = int(num_beds * target_upper)
+    target_lower_patients = int(num_beds * target_lower)
+    df["recommended_discharges"] = (df["total_patients"] - target_upper_patients).clip(lower=0)
+    df["allowable_holds"] = (target_lower_patients - df["total_patients"]).clip(lower=0)
+
+    return df
+
+
 def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42) -> pd.DataFrame:
     """
     デモ用サンプルデータを生成（個人情報なし、集計値のみ）。

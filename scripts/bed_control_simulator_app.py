@@ -70,6 +70,7 @@ try:
         export_to_csv as dm_export_to_csv,
         import_from_csv,
         generate_sample_data,
+        convert_actual_to_display,
         DEFAULT_REVENUE_PARAMS,
     )
     _DATA_MANAGER_AVAILABLE = True
@@ -309,10 +310,25 @@ def run_comparison(_params_hashable: tuple, params_dict_orig: dict):
 
 
 # ---------------------------------------------------------------------------
+# サイドバー: データソース選択（グローバルモード切替）
+# ---------------------------------------------------------------------------
+st.sidebar.header("📊 データソース")
+data_source_mode = st.sidebar.radio(
+    "分析に使うデータ",
+    ["🔬 シミュレーション（予測モデル）", "📋 実績データ（日次入力）"],
+    help="シミュレーション：パラメータに基づく予測モデル\n実績データ：日次入力した実際の病棟データ",
+    key="data_source_mode",
+)
+_is_actual_data_mode = data_source_mode == "📋 実績データ（日次入力）"
+
+st.sidebar.markdown("---")
+
+# ---------------------------------------------------------------------------
 # サイドバー: パラメータ入力
 # ---------------------------------------------------------------------------
 st.sidebar.header("パラメータ設定")
 
+# 病床数は両モードで必要
 st.sidebar.subheader("病棟基本条件")
 total_beds = st.sidebar.number_input("病床数", min_value=10, max_value=200, value=94)
 target_lower = st.sidebar.slider("目標稼働率下限", 0.80, 1.00, 0.90, step=0.01, format="%.2f")
@@ -322,11 +338,20 @@ target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step
 if target_upper < target_lower:
     st.sidebar.warning("目標稼働率上限が下限より低く設定されています。値を確認してください。")
 
-days_in_month = st.sidebar.number_input("月の日数", min_value=28, max_value=31, value=30)
-monthly_admissions = st.sidebar.number_input("月間新規入院数", min_value=50, max_value=300, value=150)
-avg_los = st.sidebar.slider("平均在院日数", 10, 30, 18)
-discharge_adj = st.sidebar.number_input("退院調整日数", min_value=0, max_value=5, value=2)
-admission_var = st.sidebar.slider("入院流入変動係数", 0.50, 1.50, 1.00, step=0.05, format="%.2f")
+# シミュレーションモード専用のパラメータ
+if not _is_actual_data_mode:
+    days_in_month = st.sidebar.number_input("月の日数", min_value=28, max_value=31, value=30)
+    monthly_admissions = st.sidebar.number_input("月間新規入院数", min_value=50, max_value=300, value=150)
+    avg_los = st.sidebar.slider("平均在院日数", 10, 30, 18)
+    discharge_adj = st.sidebar.number_input("退院調整日数", min_value=0, max_value=5, value=2)
+    admission_var = st.sidebar.slider("入院流入変動係数", 0.50, 1.50, 1.00, step=0.05, format="%.2f")
+else:
+    # 実データモード用のデフォルト値（params_dict構築に必要）
+    days_in_month = 30
+    monthly_admissions = 150
+    avg_los = 18
+    discharge_adj = 2
+    admission_var = 1.0
 
 # --- 患者フェーズ別パラメータ ---
 with st.sidebar.expander("患者フェーズ別パラメータ"):
@@ -350,17 +375,22 @@ with st.sidebar.expander("追加パラメータ"):
     suppression_threshold = st.slider("新規入院抑制閾値", 0.80, 1.00, 0.97, step=0.01, format="%.2f")
     random_seed = st.number_input("乱数シード", value=42, step=1)
 
-# --- 戦略選択 ---
-st.sidebar.subheader("戦略選択")
-strategy = st.sidebar.radio(
-    "シミュレーション戦略",
-    ["バランス戦略", "回転重視戦略", "安定維持戦略"],
-    index=0,
-)
-compare_all = st.sidebar.checkbox("全戦略比較", value=False)
+# --- 戦略選択・実行ボタン（シミュレーションモードのみ） ---
+if not _is_actual_data_mode:
+    st.sidebar.subheader("戦略選択")
+    strategy = st.sidebar.radio(
+        "シミュレーション戦略",
+        ["バランス戦略", "回転重視戦略", "安定維持戦略"],
+        index=0,
+    )
+    compare_all = st.sidebar.checkbox("全戦略比較", value=False)
 
-# --- 実行ボタン ---
-run_button = st.sidebar.button("シミュレーション実行", type="primary", use_container_width=True)
+    # --- 実行ボタン ---
+    run_button = st.sidebar.button("シミュレーション実行", type="primary", use_container_width=True)
+else:
+    strategy = "バランス戦略"
+    compare_all = False
+    run_button = False
 
 # --- サイドバー最下部: 使い方ガイド ---
 if _HELP_AVAILABLE and "sidebar_about" in HELP_TEXTS:
@@ -451,6 +481,65 @@ if run_button:
             st.stop()
 
 # ---------------------------------------------------------------------------
+# 実データモード: 実績データからシミュレーション互換DataFrameを生成
+# ---------------------------------------------------------------------------
+_actual_data_available = False
+if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
+    # データモードに応じてデータソースを選択
+    _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
+    if _is_demo:
+        _source_data = st.session_state.demo_data if isinstance(st.session_state.demo_data, pd.DataFrame) else pd.DataFrame()
+    else:
+        _source_data = st.session_state.daily_data
+
+    if isinstance(_source_data, pd.DataFrame) and len(_source_data) >= 1:
+        # パラメータ辞書を構築（CLI版互換 + 実データ変換用）
+        # _build_cli_params を使って完全なパラメータセットを取得
+        _actual_params = _build_cli_params(params_dict)
+        _actual_raw_df = convert_actual_to_display(_source_data, _actual_params)
+        _actual_display_df = _rename_df(_actual_raw_df)
+
+        # サマリー生成（実データ用）
+        _actual_summary = {
+            "月次収益": int(_actual_raw_df["daily_revenue"].sum()),
+            "月次コスト": int(_actual_raw_df["daily_cost"].sum()),
+            "月次粗利": int(_actual_raw_df["daily_profit"].sum()),
+            "平均稼働率": round(float(_actual_raw_df["occupancy_rate"].mean()) * 100, 1),
+            "月間入院数": int(_actual_raw_df["new_admissions"].sum()),
+            "月間退院数": int(_actual_raw_df["discharges"].sum()),
+            "目標レンジ内日数": int(
+                ((_actual_raw_df["occupancy_rate"] >= target_lower)
+                 & (_actual_raw_df["occupancy_rate"] <= target_upper)).sum()
+            ),
+            "目標レンジ内率": round(
+                float(
+                    ((_actual_raw_df["occupancy_rate"] >= target_lower)
+                     & (_actual_raw_df["occupancy_rate"] <= target_upper)).mean()
+                ) * 100, 1
+            ),
+            "A群平均構成比": round(float(_actual_raw_df["phase_a_ratio"].mean()) * 100, 1),
+            "B群平均構成比": round(float(_actual_raw_df["phase_b_ratio"].mean()) * 100, 1),
+            "C群平均構成比": round(float(_actual_raw_df["phase_c_ratio"].mean()) * 100, 1),
+            "平均在院日数": 0,  # 実データから取得
+            "フラグ集計": {},
+        }
+        # 平均在院日数（実データに avg_los がある場合）
+        if "avg_los" in _source_data.columns:
+            _avg_los_vals = pd.to_numeric(_source_data["avg_los"], errors="coerce").dropna()
+            if len(_avg_los_vals) > 0:
+                _actual_summary["平均在院日数"] = round(float(_avg_los_vals.mean()), 1)
+
+        # フラグ集計
+        _actual_summary = _enrich_summary(_actual_summary, _actual_display_df)
+
+        # セッション状態にも保存（意思決定ダッシュボード等で使用）
+        st.session_state.actual_df = _actual_display_df
+        st.session_state.actual_summary = _actual_summary
+        st.session_state.actual_df_raw = _actual_raw_df
+        st.session_state.actual_params = _actual_params
+        _actual_data_available = True
+
+# ---------------------------------------------------------------------------
 # 結果未実行の場合の案内
 # ---------------------------------------------------------------------------
 _simulation_available = st.session_state.sim_df is not None
@@ -473,27 +562,40 @@ def fmt_yen_full(val: int) -> str:
 # ---------------------------------------------------------------------------
 # タブ構成
 # ---------------------------------------------------------------------------
-tab_names = [
-    "日次推移", "フェーズ構成", "収支分析", "経営判断フラグ",
-    "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
-]
-if st.session_state.comparison is not None:
-    tab_names.append("戦略比較")
-tab_names.append("データ")
-# 日次データ管理タブ（データ管理モジュールが利用可能な場合のみ）
-if _DATA_MANAGER_AVAILABLE:
-    tab_names.append("📋 日次データ入力")
-    tab_names.append("🔮 実績分析・予測")
+if _is_actual_data_mode:
+    # 実績データモード: What-if分析・戦略比較は非表示
+    tab_names = [
+        "日次推移", "フェーズ構成", "収支分析", "経営判断フラグ",
+        "\U0001f3af 意思決定ダッシュボード", "\U0001f4c8 トレンド分析",
+    ]
+    tab_names.append("データ")
+    if _DATA_MANAGER_AVAILABLE:
+        tab_names.append("📋 日次データ入力")
+        tab_names.append("🔮 実績分析・予測")
+else:
+    # シミュレーションモード（従来通り）
+    tab_names = [
+        "日次推移", "フェーズ構成", "収支分析", "経営判断フラグ",
+        "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
+    ]
+    if st.session_state.comparison is not None:
+        tab_names.append("戦略比較")
+    tab_names.append("データ")
+    if _DATA_MANAGER_AVAILABLE:
+        tab_names.append("📋 日次データ入力")
+        tab_names.append("🔮 実績分析・予測")
 
 tabs = st.tabs(tab_names)
+# タブ名→インデックスのマッピング
+_tab_idx = {name: i for i, name in enumerate(tab_names)}
 
 # =====================================================================
 # 日次データ管理タブ（シミュレーション未実行でも利用可能）
 # st.stop() の前に配置することで、シミュレーション未実行でも表示される
 # =====================================================================
 if _DATA_MANAGER_AVAILABLE:
-    _dm_tab_daily_idx = len(tab_names) - 2  # 📋 日次データ入力
-    _dm_tab_analysis_idx = len(tab_names) - 1  # 🔮 実績分析・予測
+    _dm_tab_daily_idx = _tab_idx["📋 日次データ入力"]
+    _dm_tab_analysis_idx = _tab_idx["🔮 実績分析・予測"]
 
     # ----- タブ: 📋 日次データ入力 -----
     with tabs[_dm_tab_daily_idx]:
@@ -993,19 +1095,39 @@ if _DATA_MANAGER_AVAILABLE:
                 st.info("週次サマリーを生成するにはデータが不足しています。")
 
 # =====================================================================
-# シミュレーション結果タブ（シミュレーション実行後のみ）
+# シミュレーション結果タブ / 実績データタブ
 # =====================================================================
-if not _simulation_available:
-    with tabs[0]:
-        st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
-    st.stop()
-
-df = st.session_state.sim_df
-summary = st.session_state.sim_summary
+if _is_actual_data_mode:
+    # 実績データモード
+    if not _actual_data_available:
+        with tabs[0]:
+            st.info(
+                "実績データがありません。「📋 日次データ入力」タブでデータを入力するか、"
+                "デモデータを生成してください。"
+            )
+        st.stop()
+    df = st.session_state.actual_df
+    summary = st.session_state.actual_summary
+    _active_raw_df = st.session_state.actual_df_raw
+    _active_cli_params = st.session_state.actual_params
+    # 実データモードでは days_in_month をデータ日数に合わせる
+    days_in_month = len(df)
+else:
+    # シミュレーションモード
+    if not _simulation_available:
+        with tabs[0]:
+            st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
+        st.stop()
+    df = st.session_state.sim_df
+    summary = st.session_state.sim_summary
+    _active_raw_df = st.session_state.sim_df_raw
+    _active_cli_params = st.session_state.sim_params
 
 # ===== タブ1: 日次推移 =====
-with tabs[0]:
+with tabs[_tab_idx["日次推移"]]:
     st.subheader("日次推移")
+    if _is_actual_data_mode:
+        st.info(f"📋 実績データモード（{len(df)}日分のデータを表示中）")
     if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_daily"])
@@ -1072,10 +1194,57 @@ with tabs[0]:
 
 
 # ===== タブ2: フェーズ構成 =====
-with tabs[1]:
+with tabs[_tab_idx["フェーズ構成"]]:
     st.subheader("フェーズ構成")
+
+    # --- A/B/C群の定義パネル（常時表示） ---
+    _col_a, _col_b, _col_c = st.columns(3)
+    with _col_a:
+        st.markdown(
+            '<div style="background:#FFF0F0;padding:12px;border-radius:8px;border-left:4px solid #E74C3C;">'
+            '<b style="color:#E74C3C;">🔴 A群（急性期）</b><br>'
+            '<b>入院1〜5日目</b><br>'
+            '<span style="font-size:0.9em;">'
+            '検査・診断・治療開始フェーズ<br>'
+            '収益 30,000円 − コスト 28,000円<br>'
+            '<b>粗利 2,000円/日</b>（最小）<br><br>'
+            '入院初期は検査が集中し、包括払いではコストが収益を圧迫。'
+            '<b>35%超で要注意</b>。ただしA群がないとB群が育たない。'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+    with _col_b:
+        st.markdown(
+            '<div style="background:#F0FFF0;padding:12px;border-radius:8px;border-left:4px solid #27AE60;">'
+            '<b style="color:#27AE60;">🟢 B群（回復期）★稼ぎ頭</b><br>'
+            '<b>入院6〜14日目</b><br>'
+            '<span style="font-size:0.9em;">'
+            '治療安定・回復フェーズ<br>'
+            '収益 30,000円 − コスト 13,000円<br>'
+            '<b>粗利 17,000円/日</b>（最大）<br><br>'
+            '検査一巡でコスト低下。収益は変わらず粗利が最大化する'
+            '「ゴールデンタイム」。<b>目標 45%前後</b>。'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+    with _col_c:
+        st.markdown(
+            '<div style="background:#F0F0FF;padding:12px;border-radius:8px;border-left:4px solid #2980B9;">'
+            '<b style="color:#2980B9;">🔵 C群（退院準備期）＝需給調整弁</b><br>'
+            '<b>入院15日目以降</b><br>'
+            '<span style="font-size:0.9em;">'
+            '医学的安定・退院調整フェーズ<br>'
+            '収益 30,000円 − コスト 11,000円<br>'
+            '<b>粗利 19,000円/日</b>（中）<br><br>'
+            '粗利は高いが長期滞在は機会損失。稼働率低下時は保持、'
+            '高騰時は退院促進。<b>30%超で滞留注意</b>。'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+    st.caption("💡 包括払いのため収益は一律。コストだけが変動 → フェーズ構成が経営を左右します")
+
     if _HELP_AVAILABLE and "tab_phase" in HELP_TEXTS:
-        with st.expander("📖 このタブの見方と活用法"):
+        with st.expander("📖 さらに詳しい活用法を見る"):
             st.markdown(HELP_TEXTS["tab_phase"])
 
     # --- A/B/C構成比の積み上げ面グラフ ---
@@ -1132,7 +1301,7 @@ with tabs[1]:
 
 
 # ===== タブ3: 収支分析 =====
-with tabs[2]:
+with tabs[_tab_idx["収支分析"]]:
     st.subheader("収支分析")
     if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
@@ -1188,7 +1357,7 @@ with tabs[2]:
 
 
 # ===== タブ4: 経営判断フラグ =====
-with tabs[3]:
+with tabs[_tab_idx["経営判断フラグ"]]:
     st.subheader("経営判断フラグ")
     if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
@@ -1259,9 +1428,9 @@ with tabs[3]:
         )
 
 
-# ===== タブ5-7: 意思決定支援タブ（3つ） =====
+# ===== タブ5-7: 意思決定支援タブ =====
 # --- タブ5: 意思決定ダッシュボード ---
-with tabs[4]:
+with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
     if not _DECISION_SUPPORT_AVAILABLE:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
     else:
@@ -1269,8 +1438,8 @@ with tabs[4]:
         if _HELP_AVAILABLE and "tab_decision" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_decision"])
-        _raw_df = st.session_state.sim_df_raw
-        _cli_params = st.session_state.sim_params
+        _raw_df = _active_raw_df
+        _cli_params = _active_cli_params
 
         # --- 病棟状態カード ---
         _day_idx = len(_raw_df) - 1  # 最終日を評価対象
@@ -1374,88 +1543,89 @@ with tabs[4]:
             f"現在の設定: {avg_los} 日"
         )
 
-# --- タブ6: What-if分析 ---
-with tabs[5]:
-    if not _DECISION_SUPPORT_AVAILABLE:
-        st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
-    else:
-        st.subheader("\U0001f52e What-if分析")
-        if _HELP_AVAILABLE and "tab_whatif" in HELP_TEXTS:
-            with st.expander("📖 このタブの見方と活用法"):
-                st.markdown(HELP_TEXTS["tab_whatif"])
-        _raw_df = st.session_state.sim_df_raw
-        _cli_params = st.session_state.sim_params
-
-        _scenario_type = st.radio(
-            "シナリオ選択",
-            ["退院シナリオ", "入院需要変動シナリオ"],
-            horizontal=True,
-            key="whatif_scenario_type",
-        )
-
-        if _scenario_type == "退院シナリオ":
-            st.markdown("#### 退院シナリオ")
-            _wi_day = st.slider("対象日", 1, len(_raw_df), value=len(_raw_df), key="wi_day")
-            _wi_n = st.slider("退院人数", 1, 10, value=2, key="wi_n_discharge")
-            _wi_phase = st.radio("対象フェーズ", ["A", "B", "C"], index=2, horizontal=True, key="wi_phase")
-
-            if st.button("シナリオ実行", key="btn_whatif_discharge"):
-                _wi_result = whatif_discharge(_raw_df, _wi_day - 1, _cli_params, _wi_n, target_phase=_wi_phase)
-
-                _wc1, _wc2 = st.columns(2)
-                with _wc1:
-                    st.markdown("**Before（現状）**")
-                    st.metric("稼働率", f"{_wi_result['baseline_occupancy']*100:.1f}%")
-                    st.metric("日次粗利", fmt_yen(int(_wi_result["baseline_profit"])))
-                with _wc2:
-                    st.markdown("**After（シナリオ）**")
-                    _occ_delta = (_wi_result["scenario_occupancy"] - _wi_result["baseline_occupancy"]) * 100
-                    _profit_delta = _wi_result["scenario_profit"] - _wi_result["baseline_profit"]
-                    st.metric("稼働率", f"{_wi_result['scenario_occupancy']*100:.1f}%",
-                              delta=f"{_occ_delta:+.1f}%")
-                    st.metric("日次粗利", fmt_yen(int(_wi_result["scenario_profit"])),
-                              delta=fmt_yen(int(_profit_delta)))
-
-                _rec = _wi_result.get("recommendation", "")
-                if "推奨" in _rec or "有効" in _rec:
-                    st.info(f"**推奨:** {_rec}")
-                elif "注意" in _rec or "リスク" in _rec:
-                    st.warning(f"**注意:** {_rec}")
-                else:
-                    st.info(f"**分析結果:** {_rec}")
-
+# --- タブ6: What-if分析（シミュレーションモードのみ） ---
+if "\U0001f52e What-if分析" in _tab_idx:
+    with tabs[_tab_idx["\U0001f52e What-if分析"]]:
+        if not _DECISION_SUPPORT_AVAILABLE:
+            st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
         else:
-            st.markdown("#### 入院需要変動シナリオ")
-            _surge_pct = st.slider("変動率", -50, 50, value=0, step=5, format="%d%%", key="wi_surge_pct")
+            st.subheader("\U0001f52e What-if分析")
+            if _HELP_AVAILABLE and "tab_whatif" in HELP_TEXTS:
+                with st.expander("📖 このタブの見方と活用法"):
+                    st.markdown(HELP_TEXTS["tab_whatif"])
+            _raw_df = _active_raw_df
+            _cli_params = _active_cli_params
 
-            if st.button("シナリオ実行", key="btn_whatif_surge"):
-                _surge_result = whatif_admission_surge(_cli_params, surge_pct=_surge_pct / 100.0,
-                                                       strategy=STRATEGY_MAP[strategy])
+            _scenario_type = st.radio(
+                "シナリオ選択",
+                ["退院シナリオ", "入院需要変動シナリオ"],
+                horizontal=True,
+                key="whatif_scenario_type",
+            )
 
-                _sc1, _sc2 = st.columns(2)
-                with _sc1:
-                    st.markdown("**Before（現状）**")
-                    st.metric("稼働率", f"{_surge_result['baseline_occupancy']*100:.1f}%")
-                    st.metric("月次粗利", fmt_yen(int(_surge_result["baseline_profit"])))
-                with _sc2:
-                    st.markdown("**After（シナリオ）**")
-                    _s_occ_delta = (_surge_result["scenario_occupancy"] - _surge_result["baseline_occupancy"]) * 100
-                    _s_profit_delta = _surge_result["scenario_profit"] - _surge_result["baseline_profit"]
-                    st.metric("稼働率", f"{_surge_result['scenario_occupancy']*100:.1f}%",
-                              delta=f"{_s_occ_delta:+.1f}%")
-                    st.metric("月次粗利", fmt_yen(int(_surge_result["scenario_profit"])),
-                              delta=fmt_yen(int(_s_profit_delta)))
+            if _scenario_type == "退院シナリオ":
+                st.markdown("#### 退院シナリオ")
+                _wi_day = st.slider("対象日", 1, len(_raw_df), value=len(_raw_df), key="wi_day")
+                _wi_n = st.slider("退院人数", 1, 10, value=2, key="wi_n_discharge")
+                _wi_phase = st.radio("対象フェーズ", ["A", "B", "C"], index=2, horizontal=True, key="wi_phase")
 
-                _s_rec = _surge_result.get("recommendation", "")
-                if "推奨" in _s_rec or "有効" in _s_rec:
-                    st.info(f"**推奨:** {_s_rec}")
-                elif "注意" in _s_rec or "リスク" in _s_rec:
-                    st.warning(f"**注意:** {_s_rec}")
-                else:
-                    st.info(f"**分析結果:** {_s_rec}")
+                if st.button("シナリオ実行", key="btn_whatif_discharge"):
+                    _wi_result = whatif_discharge(_raw_df, _wi_day - 1, _cli_params, _wi_n, target_phase=_wi_phase)
 
-# --- タブ7: トレンド分析 ---
-with tabs[6]:
+                    _wc1, _wc2 = st.columns(2)
+                    with _wc1:
+                        st.markdown("**Before（現状）**")
+                        st.metric("稼働率", f"{_wi_result['baseline_occupancy']*100:.1f}%")
+                        st.metric("日次粗利", fmt_yen(int(_wi_result["baseline_profit"])))
+                    with _wc2:
+                        st.markdown("**After（シナリオ）**")
+                        _occ_delta = (_wi_result["scenario_occupancy"] - _wi_result["baseline_occupancy"]) * 100
+                        _profit_delta = _wi_result["scenario_profit"] - _wi_result["baseline_profit"]
+                        st.metric("稼働率", f"{_wi_result['scenario_occupancy']*100:.1f}%",
+                                  delta=f"{_occ_delta:+.1f}%")
+                        st.metric("日次粗利", fmt_yen(int(_wi_result["scenario_profit"])),
+                                  delta=fmt_yen(int(_profit_delta)))
+
+                    _rec = _wi_result.get("recommendation", "")
+                    if "推奨" in _rec or "有効" in _rec:
+                        st.info(f"**推奨:** {_rec}")
+                    elif "注意" in _rec or "リスク" in _rec:
+                        st.warning(f"**注意:** {_rec}")
+                    else:
+                        st.info(f"**分析結果:** {_rec}")
+
+            else:
+                st.markdown("#### 入院需要変動シナリオ")
+                _surge_pct = st.slider("変動率", -50, 50, value=0, step=5, format="%d%%", key="wi_surge_pct")
+
+                if st.button("シナリオ実行", key="btn_whatif_surge"):
+                    _surge_result = whatif_admission_surge(_cli_params, surge_pct=_surge_pct / 100.0,
+                                                           strategy=STRATEGY_MAP[strategy])
+
+                    _sc1, _sc2 = st.columns(2)
+                    with _sc1:
+                        st.markdown("**Before（現状）**")
+                        st.metric("稼働率", f"{_surge_result['baseline_occupancy']*100:.1f}%")
+                        st.metric("月次粗利", fmt_yen(int(_surge_result["baseline_profit"])))
+                    with _sc2:
+                        st.markdown("**After（シナリオ）**")
+                        _s_occ_delta = (_surge_result["scenario_occupancy"] - _surge_result["baseline_occupancy"]) * 100
+                        _s_profit_delta = _surge_result["scenario_profit"] - _surge_result["baseline_profit"]
+                        st.metric("稼働率", f"{_surge_result['scenario_occupancy']*100:.1f}%",
+                                  delta=f"{_s_occ_delta:+.1f}%")
+                        st.metric("月次粗利", fmt_yen(int(_surge_result["scenario_profit"])),
+                                  delta=fmt_yen(int(_s_profit_delta)))
+
+                    _s_rec = _surge_result.get("recommendation", "")
+                    if "推奨" in _s_rec or "有効" in _s_rec:
+                        st.info(f"**推奨:** {_s_rec}")
+                    elif "注意" in _s_rec or "リスク" in _s_rec:
+                        st.warning(f"**注意:** {_s_rec}")
+                    else:
+                        st.info(f"**分析結果:** {_s_rec}")
+
+# --- タブ: トレンド分析 ---
+with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
     if not _DECISION_SUPPORT_AVAILABLE:
         st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
     else:
@@ -1463,8 +1633,8 @@ with tabs[6]:
         if _HELP_AVAILABLE and "tab_trends" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_trends"])
-        _raw_df = st.session_state.sim_df_raw
-        _cli_params = st.session_state.sim_params
+        _raw_df = _active_raw_df
+        _cli_params = _active_cli_params
 
         _trend_window = st.slider("移動平均ウィンドウ（日）", 3, 14, value=7, key="trend_window")
         _trends = calculate_trends(_raw_df, _cli_params, window=_trend_window)
@@ -1555,10 +1725,9 @@ with tabs[6]:
             st.success("現在、警告はありません。")
 
 
-# ===== タブ8: 戦略比較（条件付き） =====
-tab_offset = 7
-if st.session_state.comparison is not None:
-    with tabs[tab_offset]:
+# ===== タブ: 戦略比較（条件付き、シミュレーションモードのみ） =====
+if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
+    with tabs[_tab_idx["戦略比較"]]:
         st.subheader("全戦略比較")
         if _HELP_AVAILABLE and "tab_strategy_compare" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
@@ -1635,12 +1804,10 @@ if st.session_state.comparison is not None:
         with col3:
             st.success(f"**レンジ内最大:** {best_range[0]}\n\n{best_range[1]['目標レンジ内率']:.1f}%")
 
-    tab_offset += 1
 
 
 # ===== タブ: データ =====
-data_tab_idx = tab_offset if st.session_state.comparison is not None else 7
-with tabs[data_tab_idx]:
+with tabs[_tab_idx["データ"]]:
     st.subheader("日次データ")
     if _HELP_AVAILABLE and "tab_data" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
@@ -1665,10 +1832,17 @@ with tabs[data_tab_idx]:
 # フッター
 # ---------------------------------------------------------------------------
 st.markdown("---")
-st.caption(
-    f"戦略: **{strategy}** | "
-    f"病床数: {total_beds} | "
-    f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}% | "
-    f"月間入院: {monthly_admissions}件 | "
-    f"平均在院日数: {avg_los}日"
-)
+if _is_actual_data_mode:
+    st.caption(
+        f"データソース: **実績データ** | "
+        f"病床数: {total_beds} | "
+        f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}%"
+    )
+else:
+    st.caption(
+        f"戦略: **{strategy}** | "
+        f"病床数: {total_beds} | "
+        f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}% | "
+        f"月間入院: {monthly_admissions}件 | "
+        f"平均在院日数: {avg_los}日"
+    )
