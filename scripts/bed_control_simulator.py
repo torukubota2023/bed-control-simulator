@@ -1442,6 +1442,238 @@ def whatif_admission_surge(
     }
 
 
+def whatif_mixed_scenario(
+    df: pd.DataFrame,
+    day_index: int,
+    params: dict[str, Any],
+    discharge_a: int = 0,
+    discharge_b: int = 0,
+    discharge_c: int = 0,
+    new_admissions: int = 0,
+) -> dict[str, Any]:
+    """
+    現場のリアルな退院シナリオをシミュレーション。
+    A/B/C群それぞれの退院人数と新規入院数を指定して、
+    稼働率・粗利・フェーズ構成の変化を計算する。
+    """
+    row = df.iloc[day_index]
+
+    # ベースライン
+    baseline_patients = int(row["total_patients"])
+    baseline_a = int(row["phase_a_count"])
+    baseline_b = int(row["phase_b_count"])
+    baseline_c = int(row["phase_c_count"])
+
+    # 退院人数のバリデーション（各群の在院数を超えないように）
+    actual_discharge_a = min(discharge_a, baseline_a)
+    actual_discharge_b = min(discharge_b, baseline_b)
+    actual_discharge_c = min(discharge_c, baseline_c)
+    total_discharge = actual_discharge_a + actual_discharge_b + actual_discharge_c
+
+    # 新規入院のバリデーション（空床数を超えないように）
+    remaining_after_discharge = baseline_patients - total_discharge
+    available_beds = max(0, params["num_beds"] - remaining_after_discharge)
+    actual_new_admissions = min(new_admissions, available_beds)
+
+    # シナリオ後の状態
+    new_a = baseline_a - actual_discharge_a + actual_new_admissions  # 新規入院はA群
+    new_b = baseline_b - actual_discharge_b
+    new_c = baseline_c - actual_discharge_c
+    new_total = new_a + new_b + new_c
+    new_occupancy = new_total / params["num_beds"]
+
+    # 粗利計算
+    gross = {
+        "A": params["phase_a_revenue"] - params["phase_a_cost"],
+        "B": params["phase_b_revenue"] - params["phase_b_cost"],
+        "C": params["phase_c_revenue"] - params["phase_c_cost"],
+    }
+
+    baseline_profit = (
+        baseline_a * gross["A"] + baseline_b * gross["B"] + baseline_c * gross["C"]
+    )
+    scenario_profit = new_a * gross["A"] + new_b * gross["B"] + new_c * gross["C"]
+
+    # フェーズ構成比
+    new_total_safe = max(new_total, 1)
+
+    # 推奨判定
+    target_lower = params.get("target_occupancy_lower", 0.90)
+    target_upper = params.get("target_occupancy_upper", 0.95)
+
+    messages: list[str] = []
+    if new_occupancy < target_lower:
+        messages.append(
+            f"⚠️ 稼働率が{new_occupancy*100:.1f}%に低下し目標下限{target_lower*100:.0f}%を下回ります"
+        )
+    elif new_occupancy > target_upper:
+        messages.append(
+            f"⚠️ 稼働率が{new_occupancy*100:.1f}%で目標上限{target_upper*100:.0f}%を超過しています"
+        )
+    else:
+        messages.append(f"✅ 稼働率{new_occupancy*100:.1f}%は目標レンジ内です")
+
+    # B群比率チェック
+    new_b_ratio = new_b / new_total_safe
+    if new_b_ratio < 0.25:
+        messages.append("⚠️ B群比率が25%未満。退院を急がず回復期患者を確保すべき")
+
+    # A群比率チェック
+    new_a_ratio = new_a / new_total_safe
+    if new_a_ratio > 0.35:
+        messages.append("⚠️ A群が35%超。初期コスト増で粗利圧迫の恐れ")
+
+    return {
+        "scenario_name": (
+            f"退院A:{actual_discharge_a}名 B:{actual_discharge_b}名 "
+            f"C:{actual_discharge_c}名 / 新規入院:{actual_new_admissions}名"
+        ),
+        "baseline": {
+            "total": baseline_patients,
+            "a": baseline_a,
+            "b": baseline_b,
+            "c": baseline_c,
+            "occupancy": row["occupancy_rate"],
+            "daily_profit": int(baseline_profit),
+        },
+        "scenario": {
+            "total": new_total,
+            "a": new_a,
+            "b": new_b,
+            "c": new_c,
+            "occupancy": round(new_occupancy, 4),
+            "daily_profit": int(scenario_profit),
+        },
+        "diff": {
+            "total": new_total - baseline_patients,
+            "occupancy": round(new_occupancy - row["occupancy_rate"], 4),
+            "daily_profit": int(scenario_profit - baseline_profit),
+        },
+        "phase_composition_after": {
+            "A": round(new_a / new_total_safe, 3),
+            "B": round(new_b / new_total_safe, 3),
+            "C": round(new_c / new_total_safe, 3),
+        },
+        "messages": messages,
+        "discharge_detail": {
+            "a": actual_discharge_a,
+            "b": actual_discharge_b,
+            "c": actual_discharge_c,
+            "total": total_discharge,
+            "new_admissions": actual_new_admissions,
+        },
+    }
+
+
+def whatif_weekly_plan(
+    df: pd.DataFrame,
+    params: dict[str, Any],
+    daily_plans: list[dict[str, int]],
+) -> dict[str, Any]:
+    """
+    1週間の入退院計画をシミュレーション。
+
+    daily_plans: [{"day_index": int, "discharge_a": int, "discharge_b": int,
+                   "discharge_c": int, "new_admissions": int}, ...]
+    各日の結果を順次計算し、前日の結果が翌日のベースラインになる。
+    """
+    results: list[dict[str, Any]] = []
+    current_state: dict[str, int] | None = None
+
+    for plan in daily_plans:
+        day_idx = plan["day_index"]
+        if day_idx >= len(df):
+            break
+
+        if current_state is None:
+            # 初日はdfのデータを使用
+            row = df.iloc[day_idx]
+            current_a = int(row["phase_a_count"])
+            current_b = int(row["phase_b_count"])
+            current_c = int(row["phase_c_count"])
+            current_total = int(row["total_patients"])
+        else:
+            # 2日目以降は前日のシナリオ結果を使用
+            current_a = current_state["a"]
+            current_b = current_state["b"]
+            current_c = current_state["c"]
+            current_total = current_state["total"]
+
+        # 退院処理
+        d_a = min(plan.get("discharge_a", 0), current_a)
+        d_b = min(plan.get("discharge_b", 0), current_b)
+        d_c = min(plan.get("discharge_c", 0), current_c)
+
+        after_a = current_a - d_a
+        after_b = current_b - d_b
+        after_c = current_c - d_c
+        after_total = after_a + after_b + after_c
+
+        # 新規入院
+        available = max(0, params["num_beds"] - after_total)
+        new_adm = min(plan.get("new_admissions", 0), available)
+
+        final_a = after_a + new_adm  # 新規入院はA群
+        final_b = after_b
+        final_c = after_c
+        final_total = final_a + final_b + final_c
+
+        occupancy = final_total / params["num_beds"]
+
+        gross = {
+            "A": params["phase_a_revenue"] - params["phase_a_cost"],
+            "B": params["phase_b_revenue"] - params["phase_b_cost"],
+            "C": params["phase_c_revenue"] - params["phase_c_cost"],
+        }
+        profit = final_a * gross["A"] + final_b * gross["B"] + final_c * gross["C"]
+
+        day_result = {
+            "day_index": day_idx,
+            "date": (
+                df.iloc[day_idx]["date"] if day_idx < len(df) else f"Day {day_idx + 1}"
+            ),
+            "discharge": {"a": d_a, "b": d_b, "c": d_c, "total": d_a + d_b + d_c},
+            "new_admissions": new_adm,
+            "after": {
+                "a": final_a,
+                "b": final_b,
+                "c": final_c,
+                "total": final_total,
+            },
+            "occupancy": round(occupancy, 4),
+            "daily_profit": int(profit),
+        }
+        results.append(day_result)
+
+        # フェーズ遷移（簡易：B群の一部がC群に、A群の一部がB群に進む）
+        transition_a_to_b = max(0, int(final_a * 0.20))  # A群の20%がB群へ
+        transition_b_to_c = max(0, int(final_b * 0.10))  # B群の10%がC群へ
+
+        current_state = {
+            "a": final_a - transition_a_to_b,
+            "b": final_b + transition_a_to_b - transition_b_to_c,
+            "c": final_c + transition_b_to_c,
+            "total": final_total,
+        }
+
+    # 週間サマリー
+    total_discharge = sum(r["discharge"]["total"] for r in results)
+    total_admission = sum(r["new_admissions"] for r in results)
+    total_profit = sum(r["daily_profit"] for r in results)
+    avg_occupancy = sum(r["occupancy"] for r in results) / max(len(results), 1)
+
+    return {
+        "daily_results": results,
+        "summary": {
+            "total_discharge": total_discharge,
+            "total_admission": total_admission,
+            "total_profit": total_profit,
+            "avg_occupancy": round(avg_occupancy, 4),
+            "days_planned": len(results),
+        },
+    }
+
+
 def generate_decision_report(
     df: pd.DataFrame,
     params: dict[str, Any],
