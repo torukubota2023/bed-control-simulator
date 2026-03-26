@@ -16,3 +16,12 @@ output/*.png
 
 # Claude Code
 .claude/
+.mcp.json
+
+# Node
+node_modules/
+package-lock.json
+package.json
+
+# Cache
+pubmed-cache/
