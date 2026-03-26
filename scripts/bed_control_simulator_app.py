@@ -21,12 +21,18 @@ import matplotlib.ticker as mticker
 # 同ディレクトリのモジュールをインポートできるようにパスを追加
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from bed_control_simulator import (
-    create_default_params,
-    simulate_bed_control,
-    summarize_results,
-    compare_strategies,
-)
+try:
+    from bed_control_simulator import (
+        create_default_params,
+        simulate_bed_control,
+        summarize_results,
+        compare_strategies,
+    )
+    _CORE_AVAILABLE = True
+except Exception as _core_err:
+    _CORE_AVAILABLE = False
+    import traceback as _core_tb
+    _CORE_ERROR = f"{_core_err}\n{_core_tb.format_exc()}"
 
 # 意思決定支援タブ用の関数（CLI版の実装が遅れている場合に備えtry/except）
 _DECISION_SUPPORT_AVAILABLE = False
@@ -152,6 +158,12 @@ st.set_page_config(
     page_icon="🏥",
     layout="wide",
 )
+
+if not _CORE_AVAILABLE:
+    st.error(f"⚠️ コアモジュールのインポートに失敗しました\n\n{_CORE_ERROR}")
+    st.info("Python のバージョン: " + sys.version)
+    st.info("sys.path: " + str(sys.path))
+    st.stop()
 
 st.title("🏥 ベッドコントロールシミュレーター")
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
