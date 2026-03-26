@@ -498,11 +498,13 @@ def summarize_results(df: pd.DataFrame) -> dict[str, Any]:
             total_opportunity_loss, total_recommended_discharges,
             days_in_target_range, max_occupancy, min_occupancy
     """
-    # 平均在院日数の概算
-    # 仮定：月間総患者日数 / 退院数 ≒ 平均在院日数
-    total_discharges = df["discharges"].sum()
-    total_patient_days = df["total_patients"].sum()
-    estimated_avg_los = total_patient_days / max(total_discharges, 1)
+    # 平均在院日数（厚生労働省 病院報告の定義に準拠）
+    # 平均在院日数 = 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)
+    total_patient_days = df["total_patients"].sum()       # 在院患者延日数
+    total_new_admissions = df["new_admissions"].sum()     # 新入院患者数
+    total_discharges = df["discharges"].sum()             # 退院患者数
+    denominator = (total_new_admissions + total_discharges) / 2
+    estimated_avg_los = total_patient_days / max(denominator, 1)
 
     params = create_default_params()  # 目標レンジ取得用
 

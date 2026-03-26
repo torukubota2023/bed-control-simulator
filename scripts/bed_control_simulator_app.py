@@ -525,14 +525,17 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             "A群平均構成比": round(float(_actual_raw_df["phase_a_ratio"].mean()) * 100, 1),
             "B群平均構成比": round(float(_actual_raw_df["phase_b_ratio"].mean()) * 100, 1),
             "C群平均構成比": round(float(_actual_raw_df["phase_c_ratio"].mean()) * 100, 1),
-            "平均在院日数": 0,  # 実データから取得
+            "平均在院日数": 0,  # 厚労省公式で計算
             "フラグ集計": {},
         }
-        # 平均在院日数（実データに avg_los がある場合）
-        if "avg_los" in _source_data.columns:
-            _avg_los_vals = pd.to_numeric(_source_data["avg_los"], errors="coerce").dropna()
-            if len(_avg_los_vals) > 0:
-                _actual_summary["平均在院日数"] = round(float(_avg_los_vals.mean()), 1)
+        # 平均在院日数（厚生労働省 病院報告の定義に準拠）
+        # 平均在院日数 = 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)
+        _total_patient_days = float(_actual_raw_df["total_patients"].sum())
+        _total_new_admissions = float(_actual_raw_df["new_admissions"].sum())
+        _total_discharges_actual = float(_actual_raw_df["discharges"].sum())
+        _los_denominator = (_total_new_admissions + _total_discharges_actual) / 2
+        if _los_denominator > 0 and _total_patient_days > 0:
+            _actual_summary["平均在院日数"] = round(_total_patient_days / _los_denominator, 1)
 
         # フラグ集計
         _actual_summary = _enrich_summary(_actual_summary, _actual_display_df)
@@ -1062,9 +1065,11 @@ if _DATA_MANAGER_AVAILABLE:
                         st.metric("推定月次粗利", f"¥{gross_profit/10000:,.1f}万")
                     else:
                         st.metric("推定月次粗利", f"¥{gross_profit:,}")
-                    st.metric("推定平均在院日数", f"{_monthly_kpi['推定平均在院日数']}日")
+                    st.metric("推定平均在院日数", f"{_monthly_kpi['推定平均在院日数']}日",
+                             help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
 
                 st.caption(f"残り{_monthly_kpi['残り日数']}日 | 予測入院数: {_monthly_kpi['今月入院数_予測']}名")
+                st.caption("※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠")
 
             st.markdown("---")
 
@@ -1437,11 +1442,14 @@ with tabs[_tab_idx["収支分析"]]:
     c3.metric("月次粗利", fmt_yen(summary["月次粗利"]))
     c4.metric("平均稼働率", f"{summary['平均稼働率']:.1f}%")
 
-    c5, c6, c7, c8 = st.columns(4)
+    c5, c6, c7, c8, c9 = st.columns(5)
     c5.metric("月間入院数", f"{summary['月間入院数']}人")
     c6.metric("月間退院数", f"{summary['月間退院数']}人")
     c7.metric("目標レンジ内日数", f"{summary['目標レンジ内日数']}/{days_in_month}日")
     c8.metric("目標レンジ内率", f"{summary['目標レンジ内率']}%")
+    c9.metric("平均在院日数", f"{summary['平均在院日数']}日",
+              help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
+    st.caption("※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠")
 
     # --- 日次収益・コスト・粗利 ---
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -2476,6 +2484,7 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
         compare_keys = [
             "月次収益", "月次コスト", "月次粗利",
             "平均稼働率", "月間入院数", "月間退院数",
+            "平均在院日数",
             "目標レンジ内日数", "目標レンジ内率",
             "A群平均構成比", "B群平均構成比", "C群平均構成比",
         ]

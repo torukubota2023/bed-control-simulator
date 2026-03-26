@@ -364,9 +364,13 @@ def predict_monthly_kpi(
     predicted_remaining_admissions = round(daily_admission_avg * remaining_days)
     total_admissions = actual_admissions + predicted_remaining_admissions
 
-    # 推定平均在院日数
-    avg_los_values = work["avg_los"].dropna()
-    estimated_avg_los = float(avg_los_values.mean()) if len(avg_los_values) > 0 else 18.0
+    # 推定平均在院日数（厚生労働省 病院報告の定義に準拠）
+    # 平均在院日数 = 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)
+    total_patient_days = float(month_data["total_patients"].sum()) if len(month_data) > 0 else 0
+    total_new_admissions = float(month_data["new_admissions"].sum()) if len(month_data) > 0 else 0
+    total_discharges_month = float(month_data["discharges"].sum()) if len(month_data) > 0 else 0
+    los_denominator = (total_new_admissions + total_discharges_month) / 2
+    estimated_avg_los = total_patient_days / max(los_denominator, 1) if total_patient_days > 0 else 18.0
 
     # 推定月次粗利
     # 今月実績分の粗利
