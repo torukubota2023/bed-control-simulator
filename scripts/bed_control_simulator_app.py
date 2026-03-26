@@ -403,7 +403,7 @@ if not _is_actual_data_mode:
     compare_all = st.sidebar.checkbox("全戦略比較", value=False)
 
     # --- 実行ボタン ---
-    run_button = st.sidebar.button("シミュレーション実行", type="primary", use_container_width=True)
+    run_button = st.sidebar.button("シミュレーション実行", type="primary", width="stretch")
 else:
     strategy = "バランス戦略"
     compare_all = False
@@ -685,7 +685,7 @@ if _DATA_MANAGER_AVAILABLE:
                         "avg_los": "平均在院日数",
                         "notes": "備考",
                     }),
-                    use_container_width=True,
+                    width="stretch",
                     height=min(400, 50 + len(_demo_display) * 35),
                     hide_index=True,
                 )
@@ -765,7 +765,7 @@ if _DATA_MANAGER_AVAILABLE:
                 with form_col9:
                     input_notes = st.text_input("備考（任意）", value="")
 
-                submitted = st.form_submit_button("追加", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("追加", type="primary", width="stretch")
 
                 if submitted:
                     new_record = {
@@ -821,7 +821,7 @@ if _DATA_MANAGER_AVAILABLE:
                         "avg_los": "平均在院日数",
                         "notes": "備考",
                     }),
-                    use_container_width=True,
+                    width="stretch",
                     height=min(400, 50 + len(display_data) * 35),
                     num_rows="fixed",
                     key="dm_data_editor",
@@ -1050,7 +1050,7 @@ if _DATA_MANAGER_AVAILABLE:
                     "predicted_occupancy": "予測稼働率(%)",
                     "confidence": "信頼度",
                 })
-                st.dataframe(pred_display, use_container_width=True, hide_index=True)
+                st.dataframe(pred_display, width="stretch", hide_index=True)
             else:
                 st.info("予測に十分なデータがありません。")
 
@@ -1110,7 +1110,7 @@ if _DATA_MANAGER_AVAILABLE:
 
                 st.dataframe(
                     pd.DataFrame(weekly_display),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
             else:
@@ -1568,7 +1568,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
         return [""] * len(row)
 
     styled = flag_df.style.apply(highlight_flags, axis=1)
-    st.dataframe(styled, use_container_width=True, height=400)
+    st.dataframe(styled, width="stretch", height=400)
 
     # --- 目標レンジ内日数 ---
     st.markdown("---")
@@ -1967,7 +1967,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
             })
 
         _demand_df = pd.DataFrame(_demand_results)
-        st.dataframe(_demand_df, use_container_width=True, hide_index=True)
+        st.dataframe(_demand_df, width="stretch", hide_index=True)
 
         # C群退院が発生する閾値を見つける
         _threshold = None
@@ -2072,7 +2072,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                 _preset_cols = st.columns(len(_presets))
                 for _pi, (_pname, _pvals) in enumerate(_presets.items()):
                     with _preset_cols[_pi]:
-                        if st.button(_pname, key=f"preset_{_pi}", use_container_width=True):
+                        if st.button(_pname, key=f"preset_{_pi}", width="stretch"):
                             st.session_state["wi_mixed_da"] = min(_pvals[0], _wi_cur_a)
                             st.session_state["wi_mixed_db"] = min(_pvals[1], _wi_cur_b)
                             st.session_state["wi_mixed_dc"] = min(_pvals[2], _wi_cur_c)
@@ -2222,7 +2222,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         "C群退院": st.column_config.NumberColumn("C群退院", min_value=0, max_value=30, step=1),
                         "新規入院": st.column_config.NumberColumn("新規入院", min_value=0, max_value=20, step=1),
                     },
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     key="weekly_plan_editor",
                 )
@@ -2268,7 +2268,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                                 "稼働率": f"{_wr['occupancy']*100:.1f}%",
                                 "日次粗利": fmt_yen(_wr["daily_profit"]),
                             })
-                        st.dataframe(pd.DataFrame(_result_table), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(_result_table), width="stretch", hide_index=True)
 
                         # 稼働率・粗利推移グラフ
                         st.markdown("### 📊 稼働率・粗利推移")
@@ -2515,7 +2515,7 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
         for col in ["平均稼働率", "目標レンジ内率", "A群平均構成比", "B群平均構成比", "C群平均構成比"]:
             compare_df[col] = compare_df[col].apply(lambda x: f"{x}%")
 
-        st.dataframe(compare_df, use_container_width=True)
+        st.dataframe(compare_df, width="stretch")
 
         # --- 主要指標の棒グラフ比較 ---
         strategies_list = list(comparison.keys())
@@ -2575,7 +2575,7 @@ with tabs[_tab_idx["データ"]]:
     # データ表示
     display_df = df.copy()
     display_df["稼働率"] = (display_df["稼働率"] * 100).round(1)
-    st.dataframe(display_df, use_container_width=True, height=500)
+    st.dataframe(display_df, width="stretch", height=500)
 
     # CSVダウンロード
     csv_buffer = io.StringIO()
