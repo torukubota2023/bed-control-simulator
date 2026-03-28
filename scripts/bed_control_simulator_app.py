@@ -327,9 +327,9 @@ def _convert_summary(cli_summary: dict, params: dict) -> dict:
         "月間退院数": 0,  # 後で計算
         "目標レンジ内日数": days_in_range,
         "目標レンジ内率": round(days_in_range / max(days_in_month, 1) * 100, 1),
-        "A群平均構成比": round(cli_summary["avg_phase_a_ratio"] * 100, 1),
-        "B群平均構成比": round(cli_summary["avg_phase_b_ratio"] * 100, 1),
-        "C群平均構成比": round(cli_summary["avg_phase_c_ratio"] * 100, 1),
+        "A群平均構成比": round(cli_summary["avg_phase_a_ratio"] * 100, 1) if pd.notna(cli_summary.get("avg_phase_a_ratio")) else 0.0,
+        "B群平均構成比": round(cli_summary["avg_phase_b_ratio"] * 100, 1) if pd.notna(cli_summary.get("avg_phase_b_ratio")) else 0.0,
+        "C群平均構成比": round(cli_summary["avg_phase_c_ratio"] * 100, 1) if pd.notna(cli_summary.get("avg_phase_c_ratio")) else 0.0,
         "平均在院日数": cli_summary["avg_length_of_stay"],
         "フラグ集計": {},  # 後で計算
     }
@@ -603,9 +603,9 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
                      & (_actual_raw_df["occupancy_rate"] <= target_upper)).mean()
                 ) * 100, 1
             ),
-            "A群平均構成比": round(float(_actual_raw_df["phase_a_ratio"].mean()) * 100, 1),
-            "B群平均構成比": round(float(_actual_raw_df["phase_b_ratio"].mean()) * 100, 1),
-            "C群平均構成比": round(float(_actual_raw_df["phase_c_ratio"].mean()) * 100, 1),
+            "A群平均構成比": round(float(_actual_raw_df["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_actual_raw_df["phase_a_ratio"].mean()) else 0.0,
+            "B群平均構成比": round(float(_actual_raw_df["phase_b_ratio"].mean()) * 100, 1) if pd.notna(_actual_raw_df["phase_b_ratio"].mean()) else 0.0,
+            "C群平均構成比": round(float(_actual_raw_df["phase_c_ratio"].mean()) * 100, 1) if pd.notna(_actual_raw_df["phase_c_ratio"].mean()) else 0.0,
             "平均在院日数": 0,  # 厚労省公式で計算
             "フラグ集計": {},
         }
@@ -1186,14 +1186,17 @@ if _DATA_MANAGER_AVAILABLE:
 
             s_col4, s_col5, s_col6 = st.columns(3)
             with s_col4:
-                avg_a = float(_recent7["phase_a_ratio"].mean()) * 100
-                st.metric("A群平均", f"{avg_a:.1f}%")
+                _a_mean = _recent7["phase_a_ratio"].mean()
+                avg_a = float(_a_mean) * 100 if pd.notna(_a_mean) else 0.0
+                st.metric("A群平均", f"{avg_a:.1f}%" if pd.notna(_a_mean) else "N/A")
             with s_col5:
-                avg_b = float(_recent7["phase_b_ratio"].mean()) * 100
-                st.metric("B群平均", f"{avg_b:.1f}%")
+                _b_mean = _recent7["phase_b_ratio"].mean()
+                avg_b = float(_b_mean) * 100 if pd.notna(_b_mean) else 0.0
+                st.metric("B群平均", f"{avg_b:.1f}%" if pd.notna(_b_mean) else "N/A")
             with s_col6:
-                avg_c = float(_recent7["phase_c_ratio"].mean()) * 100
-                st.metric("C群平均", f"{avg_c:.1f}%")
+                _c_mean = _recent7["phase_c_ratio"].mean()
+                avg_c = float(_c_mean) * 100 if pd.notna(_c_mean) else 0.0
+                st.metric("C群平均", f"{avg_c:.1f}%" if pd.notna(_c_mean) else "N/A")
 
             st.markdown("---")
 
@@ -1246,9 +1249,9 @@ if _DATA_MANAGER_AVAILABLE:
             fig_phase, ax_phase = plt.subplots(figsize=(12, 4))
             ax_phase.stackplot(
                 _metrics_df["date"],
-                _metrics_df["phase_a_ratio"].astype(float) * 100,
-                _metrics_df["phase_b_ratio"].astype(float) * 100,
-                _metrics_df["phase_c_ratio"].astype(float) * 100,
+                _metrics_df["phase_a_ratio"].fillna(0).astype(float) * 100,
+                _metrics_df["phase_b_ratio"].fillna(0).astype(float) * 100,
+                _metrics_df["phase_c_ratio"].fillna(0).astype(float) * 100,
                 labels=["A群（急性期）", "B群（回復期）", "C群（安定期）"],
                 colors=["#E74C3C", "#27AE60", "#2980B9"],
                 alpha=0.7,
