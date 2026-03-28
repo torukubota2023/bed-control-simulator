@@ -794,6 +794,33 @@ if _DATA_MANAGER_AVAILABLE:
             # --- データ入力フォーム ---
             st.markdown("#### 新しいデータを追加")
 
+            # 初回セットアップ: データがない場合、A/B/C群の初期値を設定
+            _has_data = len(st.session_state.daily_data) > 0
+            _abc_is_zero = (st.session_state.abc_state["A"] == 0
+                            and st.session_state.abc_state["B"] == 0
+                            and st.session_state.abc_state["C"] == 0)
+
+            if not _has_data and _abc_is_zero:
+                st.warning("⚡ 初回セットアップ：現在の病棟のA/B/C群内訳を入力してください（この入力は初回のみです）")
+                with st.form("abc_initial_setup_form"):
+                    init_col1, init_col2, init_col3 = st.columns(3)
+                    with init_col1:
+                        init_a = st.number_input("A群（1-5日目）現在数", min_value=0, max_value=94, value=13, step=1)
+                    with init_col2:
+                        init_b = st.number_input("B群（6-14日目）現在数", min_value=0, max_value=94, value=38, step=1)
+                    with init_col3:
+                        init_c = st.number_input("C群（15日目〜）現在数", min_value=0, max_value=94, value=34, step=1)
+
+                    init_total = init_a + init_b + init_c
+                    st.info(f"💡 合計: **{init_total}名**（これが初日の在院患者数の基準になります）")
+
+                    if st.form_submit_button("初期値を設定", type="primary", width="stretch"):
+                        st.session_state.abc_state = {"A": init_a, "B": init_b, "C": init_c}
+                        st.success(f"初期値を設定しました。A群:{init_a} B群:{init_b} C群:{init_c}（合計:{init_total}名）")
+                        st.rerun()
+
+                st.markdown("---")
+
             # 現在のA/B/C群状態を表示
             abc_col1, abc_col2, abc_col3, abc_col4 = st.columns(4)
             with abc_col1:
