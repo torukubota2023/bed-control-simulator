@@ -87,11 +87,24 @@ try:
         buckets_to_abc,
         advance_day_buckets,
         DAY_BUCKET_KEYS,
+        WARD_CONFIG,
+        TOTAL_BEDS,
+        get_ward_beds,
+        aggregate_wards,
     )
     _DATA_MANAGER_AVAILABLE = True
 except Exception as _dm_err:
     import traceback as _dm_tb
     _DATA_MANAGER_ERROR = f"{_dm_err}\n{_dm_tb.format_exc()}"
+
+# ベッドマップUI（初期セットアップ用）
+_BED_MAP_AVAILABLE = False
+try:
+    from bed_map_ui import render_bed_map, render_confirmation, bed_data_to_buckets
+    _BED_MAP_AVAILABLE = True
+except Exception as _bm_err:
+    import traceback as _bm_tb
+    _BED_MAP_ERROR = f"{_bm_err}\n{_bm_tb.format_exc()}"
 
 # ---------------------------------------------------------------------------
 # A/B/C群 自動計算ロジック（日齢バケットモデル）
@@ -398,7 +411,9 @@ st.sidebar.header("パラメータ設定")
 
 # 病床数は両モードで必要
 st.sidebar.subheader("病棟基本条件")
-total_beds = st.sidebar.number_input("病床数", min_value=10, max_value=200, value=94)
+st.sidebar.markdown("**病棟構成**")
+st.sidebar.markdown("5F: 47床 / 6F: 47床 / 合計: 94床")
+total_beds = TOTAL_BEDS if _DATA_MANAGER_AVAILABLE else 94
 target_lower = st.sidebar.slider("目標稼働率下限", 0.80, 1.00, 0.90, step=0.01, format="%.2f")
 target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
 
@@ -816,102 +831,99 @@ if _DATA_MANAGER_AVAILABLE:
                             and st.session_state.abc_state["C"] == 0)
 
             if not _has_data and _abc_is_zero:
-                st.info("⚡ 初回セットアップ：現在の入院患者ごとの在院日数を入力してください（この入力は初回のみです）")
+                st.info("⚡ 初回セットアップ：病棟ベッドマップで各患者の在院日数を入力してください（初回のみ）")
 
-                st.markdown("### 🏥 ベッドマップ入力")
-                st.caption("病棟のベッドマップに沿って、各患者の入院日数を入力してください。空きベッドは空欄のままでOKです。")
+                if _BED_MAP_AVAILABLE:
+                    # 病棟選択タブ
+                    setup_tab_5f, setup_tab_6f = st.tabs(["5F病棟", "6F病棟"])
 
-                # ベッド数（サイドバーの病床数を使用）
-                _init_num_beds = total_beds
+                    with setup_tab_5f:
+                        bed_data_5f = render_bed_map("5F")
+                    with setup_tab_6f:
+                        bed_data_6f = render_bed_map("6F")
 
-                # 初期データ: ベッド番号と入院日数の空テーブル
-                if "init_bed_df" not in st.session_state:
-                    _bed_data = []
-                    for _i in range(1, _init_num_beds + 1):
-                        _bed_data.append({"ベッド番号": f"Bed {_i}", "入院日数": None})
-                    st.session_state.init_bed_df = pd.DataFrame(_bed_data)
+                    st.markdown("---")
 
-                # data_editorで表示（スプレッドシート風）
-                _init_edited_df = st.data_editor(
-                    st.session_state.init_bed_df,
-                    column_config={
-                        "ベッド番号": st.column_config.TextColumn(
-                            "ベッド番号",
-                            disabled=True,
-                            width="small",
-                        ),
-                        "入院日数": st.column_config.NumberColumn(
-                            "入院日数（日）",
-                            help="入院何日目かを入力。空きベッドは空欄",
-                            min_value=1,
-                            max_value=365,
-                            step=1,
-                            width="small",
-                        ),
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    num_rows="fixed",
-                    key="init_bed_editor",
-                )
+                    # 両病棟の確認・確定
+                    st.markdown("### 確認・確定")
+                    confirm_col1, confirm_col2 = st.columns(2)
+                    with confirm_col1:
+                        confirmed_5f = render_confirmation("5F", bed_data_5f, WARD_CONFIG["5F"]["rooms"])
+                    with confirm_col2:
+                        confirmed_6f = render_confirmation("6F", bed_data_6f, WARD_CONFIG["6F"]["rooms"])
 
-                # 入力状況サマリー
-                _init_filled = _init_edited_df["入院日数"].notna()
-                _init_patient_count = int(_init_filled.sum())
-                _init_day_list = _init_edited_df.loc[_init_filled, "入院日数"].astype(int).tolist()
+                    if confirmed_5f and confirmed_6f:
+                        # 5Fのバケット計算
+                        buckets_5f = bed_data_to_buckets(bed_data_5f)
+                        a_5f, b_5f, c_5f = buckets_to_abc(buckets_5f)
 
-                # サマリー表示
-                _init_s1, _init_s2, _init_s3, _init_s4 = st.columns(4)
-                with _init_s1:
-                    st.metric("入力済み患者数", f"{_init_patient_count}名")
-                with _init_s2:
-                    _init_a_count = len([d for d in _init_day_list if 1 <= d <= 5])
-                    st.metric("A群（1-5日目）", f"{_init_a_count}名")
-                with _init_s3:
-                    _init_b_count = len([d for d in _init_day_list if 6 <= d <= 14])
-                    st.metric("B群（6-14日目）", f"{_init_b_count}名")
-                with _init_s4:
-                    _init_c_count = len([d for d in _init_day_list if d >= 15])
-                    st.metric("C群（15日目〜）", f"{_init_c_count}名")
+                        # 6Fのバケット計算
+                        buckets_6f = bed_data_to_buckets(bed_data_6f)
+                        a_6f, b_6f, c_6f = buckets_to_abc(buckets_6f)
 
-                # 設定ボタン
-                if st.button("🏥 初期値を設定", type="primary", use_container_width=True, disabled=(_init_patient_count == 0)):
-                    # day_listから日齢バケットを作成
-                    _init_buckets = create_initial_buckets_from_list(_init_day_list)
-                    _init_a, _init_b, _init_c = buckets_to_abc(_init_buckets)
+                        # 合計
+                        total_a = a_5f + a_6f
+                        total_b = b_5f + b_6f
+                        total_c = c_5f + c_6f
 
-                    st.session_state.abc_state = {"A": _init_a, "B": _init_b, "C": _init_c}
-                    st.session_state.day_buckets = _init_buckets
-                    st.session_state._initial_day_buckets = _init_buckets.copy()
-                    st.session_state.init_total_patients = _init_patient_count
+                        # セッションステートに保存
+                        st.session_state.ward_abc_state = {
+                            "5F": {"A": a_5f, "B": b_5f, "C": c_5f},
+                            "6F": {"A": a_6f, "B": b_6f, "C": c_6f},
+                        }
+                        st.session_state.ward_day_buckets = {
+                            "5F": buckets_5f,
+                            "6F": buckets_6f,
+                        }
+                        st.session_state.abc_state = {"A": total_a, "B": total_b, "C": total_c}
+                        st.session_state.day_buckets = {k: buckets_5f[k] + buckets_6f[k] for k in DAY_BUCKET_KEYS}
+                        st.session_state.init_total_patients = sum(1 for v in bed_data_5f.values() if v > 0) + sum(1 for v in bed_data_6f.values() if v > 0)
 
-                    # init_bed_dfをクリア（再表示防止）
-                    if "init_bed_df" in st.session_state:
-                        del st.session_state.init_bed_df
-
-                    st.success(f"✅ 初期値を設定しました！ A群:{_init_a}名 / B群:{_init_b}名 / C群:{_init_c}名 / 合計:{_init_a + _init_b + _init_c}名")
-                    st.rerun()
+                        st.success(f"✅ 初期値を設定しました！ 5F: A{a_5f}/B{b_5f}/C{c_5f} | 6F: A{a_6f}/B{b_6f}/C{c_6f} | 合計: {total_a + total_b + total_c}名")
+                        st.rerun()
+                    elif confirmed_5f or confirmed_6f:
+                        st.warning("両方の病棟を確定してください。")
+                else:
+                    st.warning("ベッドマップUIが利用できません。")
+                    if "_BED_MAP_ERROR" in dir():
+                        st.code(_BED_MAP_ERROR)
 
                 st.markdown("---")
 
             # 現在のA/B/C群状態を表示
-            abc_col1, abc_col2, abc_col3, abc_col4 = st.columns(4)
-            with abc_col1:
-                st.metric("A群（自動計算）", st.session_state.abc_state["A"])
-            with abc_col2:
-                st.metric("B群（自動計算）", st.session_state.abc_state["B"])
-            with abc_col3:
-                st.metric("C群（自動計算）", st.session_state.abc_state["C"])
-            with abc_col4:
-                abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
-                st.metric("合計", abc_total)
+            _ward_abc = st.session_state.get("ward_abc_state", {})
+            if _ward_abc:
+                st.markdown("**病棟別 A/B/C群**")
+                w_col1, w_col2, w_col3 = st.columns(3)
+                for _w_col, _w_name in zip([w_col1, w_col2, w_col3], ["5F", "6F", "合計"]):
+                    with _w_col:
+                        if _w_name == "合計":
+                            _w_abc = st.session_state.abc_state
+                        else:
+                            _w_abc = _ward_abc.get(_w_name, {"A": 0, "B": 0, "C": 0})
+                        _w_total = _w_abc["A"] + _w_abc["B"] + _w_abc["C"]
+                        st.markdown(f"**{_w_name}**: A:{_w_abc['A']} B:{_w_abc['B']} C:{_w_abc['C']} 計:{_w_total}")
+            else:
+                abc_col1, abc_col2, abc_col3, abc_col4 = st.columns(4)
+                with abc_col1:
+                    st.metric("A群（自動計算）", st.session_state.abc_state["A"])
+                with abc_col2:
+                    st.metric("B群（自動計算）", st.session_state.abc_state["B"])
+                with abc_col3:
+                    st.metric("C群（自動計算）", st.session_state.abc_state["C"])
+                with abc_col4:
+                    abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
+                    st.metric("合計", abc_total)
 
             with st.form("dm_add_record_form", clear_on_submit=True):
-                form_col1, form_col2 = st.columns(2)
+                form_col0, form_col1, form_col2 = st.columns(3)
+                with form_col0:
+                    input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
                 with form_col1:
                     input_date = st.date_input("日付", value=pd.Timestamp.now().normalize())
                 with form_col2:
-                    input_total = st.number_input("在院患者総数", min_value=0, max_value=94, value=85, step=1)
+                    _ward_max_beds = 47
+                    input_total = st.number_input("在院患者総数", min_value=0, max_value=_ward_max_beds, value=40, step=1)
 
                 input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
 
@@ -948,6 +960,7 @@ if _DATA_MANAGER_AVAILABLE:
 
                     new_record = {
                         "date": pd.Timestamp(input_date),
+                        "ward": input_ward,
                         "total_patients": int(input_total),
                         "new_admissions": int(input_admissions),
                         "discharges": int(auto_discharges),
