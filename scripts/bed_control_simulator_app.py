@@ -819,6 +819,25 @@ if _DATA_MANAGER_AVAILABLE:
                 else:
                     st.info("データなし")
 
+            # --- 全データクリア ---
+            if len(st.session_state.daily_data) > 0:
+                with st.expander("⚠️ 全データ消去", expanded=False):
+                    st.warning(f"現在 {len(st.session_state.daily_data)} 件のデータがあります。この操作は取り消せません。")
+                    _confirm_text = st.text_input(
+                        "消去するには「全て消去」と入力してください",
+                        key="dm_clear_confirm",
+                    )
+                    if st.button("🗑️ 全データを消去", type="primary", disabled=(_confirm_text != "全て消去"), key="dm_clear_btn"):
+                        st.session_state.daily_data = dm_create_empty_dataframe()
+                        st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
+                        st.session_state.day_buckets = {k: 0 for k in DAY_BUCKET_KEYS}
+                        if "ward_abc_state" in st.session_state:
+                            del st.session_state.ward_abc_state
+                        if "ward_day_buckets" in st.session_state:
+                            del st.session_state.ward_day_buckets
+                        st.success("全データを消去しました。")
+                        st.rerun()
+
             st.markdown("---")
 
             # --- データ入力フォーム ---
