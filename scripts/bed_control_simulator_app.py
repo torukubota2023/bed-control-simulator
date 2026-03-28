@@ -594,10 +594,16 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
         _source_data = st.session_state.daily_data
 
     if isinstance(_source_data, pd.DataFrame) and len(_source_data) >= 1:
+        # 病棟別データがある場合は合算して全体データを作成
+        if "ward" in _source_data.columns and _source_data["ward"].isin(["5F", "6F"]).any():
+            _source_data_all = aggregate_wards(_source_data)
+        else:
+            _source_data_all = _source_data
+
         # パラメータ辞書を構築（CLI版互換 + 実データ変換用）
         # _build_cli_params を使って完全なパラメータセットを取得
         _actual_params = _build_cli_params(params_dict)
-        _actual_raw_df = convert_actual_to_display(_source_data, _actual_params)
+        _actual_raw_df = convert_actual_to_display(_source_data_all, _actual_params)
         _actual_display_df = _rename_df(_actual_raw_df)
 
         # サマリー生成（実データ用）
