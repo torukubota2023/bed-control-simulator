@@ -756,23 +756,25 @@ def _render_comparison_strip(ward_key, ward_raw_dfs, ward_display_dfs, view_beds
         return
     other_wards = [w for w in ["5F", "6F"] if w != ward_key]
     if ward_key == "全体":
-        # 全体表示時は5F, 6Fの比較を表示
         other_wards = ["5F", "6F"]
 
     if not other_wards:
         return
 
-    cols = st.columns(len(other_wards))
-    for i, w in enumerate(other_wards):
-        if w in ward_raw_dfs and len(ward_raw_dfs[w]) > 0:
-            w_df = ward_raw_dfs[w]
-            w_beds = view_beds_fn(w)
-            last_row = w_df.iloc[-1]
-            occ = last_row.get("occupancy_rate", 0)
-            patients = last_row.get("total_patients", 0)
-            with cols[i]:
-                st.caption(f"{w} ({w_beds}床)")
-                st.metric(f"稼働率", f"{occ * 100:.1f}%")
+    # Use an expander so it's not intrusive
+    with st.expander("📊 他病棟の参考値", expanded=False):
+        cols = st.columns(len(other_wards))
+        for i, w in enumerate(other_wards):
+            if w in ward_raw_dfs and len(ward_raw_dfs[w]) > 0:
+                w_df = ward_raw_dfs[w]
+                w_beds = view_beds_fn(w)
+                last_row = w_df.iloc[-1]
+                occ = last_row.get("occupancy_rate", 0) * 100
+                patients = int(last_row.get("total_patients", 0))
+                avg_occ = float(w_df["occupancy_rate"].mean()) * 100
+                with cols[i]:
+                    st.markdown(f"**{w}** ({w_beds}床)")
+                    st.markdown(f"直近稼働率: **{occ:.1f}%** ｜ 平均: **{avg_occ:.1f}%** ｜ 在院: **{patients}名**")
 
 
 # ---------------------------------------------------------------------------
@@ -1301,6 +1303,13 @@ if _DATA_MANAGER_AVAILABLE:
         else:
             _active_data = st.session_state.daily_data
 
+        # Ward selector filtering
+        if not _is_analysis_demo and _selected_ward_key in ("5F", "6F") and "ward" in _active_data.columns:
+            _active_data = _active_data[_active_data["ward"] == _selected_ward_key].copy()
+
+        if _selected_ward_key != "全体":
+            st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+
         if _is_analysis_demo:
             st.warning("⚠️ デモデータによる分析です。実際の病棟データではありません。")
 
@@ -1572,6 +1581,15 @@ with tabs[_tab_idx["日次推移"]]:
         st.info(f"📋 実績データモード（{len(df)}日分のデータを表示中）")
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _selected_ward_key != "全体":
+            # 選択中の病棟の主要KPI
+            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
+            _sel_patients = int(_active_raw_df["total_patients"].mean())
+            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+            _kpi1, _kpi2, _kpi3 = st.columns(3)
+            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
+            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
+            _kpi3.metric("平均在院数", f"{_sel_patients}名")
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
@@ -1715,6 +1733,15 @@ with tabs[_tab_idx["フェーズ構成"]]:
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _selected_ward_key != "全体":
+            # 選択中の病棟の主要KPI
+            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
+            _sel_patients = int(_active_raw_df["total_patients"].mean())
+            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+            _kpi1, _kpi2, _kpi3 = st.columns(3)
+            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
+            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
+            _kpi3.metric("平均在院数", f"{_sel_patients}名")
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
 
@@ -1881,6 +1908,15 @@ with tabs[_tab_idx["収支分析"]]:
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _selected_ward_key != "全体":
+            # 選択中の病棟の主要KPI
+            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
+            _sel_patients = int(_active_raw_df["total_patients"].mean())
+            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+            _kpi1, _kpi2, _kpi3 = st.columns(3)
+            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
+            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
+            _kpi3.metric("平均在院数", f"{_sel_patients}名")
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
@@ -1991,6 +2027,15 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _selected_ward_key != "全体":
+            # 選択中の病棟の主要KPI
+            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
+            _sel_patients = int(_active_raw_df["total_patients"].mean())
+            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+            _kpi1, _kpi2, _kpi3 = st.columns(3)
+            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
+            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
+            _kpi3.metric("平均在院数", f"{_sel_patients}名")
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
