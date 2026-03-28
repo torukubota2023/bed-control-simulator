@@ -450,14 +450,14 @@ else:
 # --- 患者フェーズ別パラメータ ---
 with st.sidebar.expander("患者フェーズ別パラメータ"):
     st.markdown("**A群（急性期: 〜5日目）**")
-    phase_a_rev = st.number_input("A群 日次収益（円）", value=35300, step=1000, key="a_rev")
-    phase_a_cost = st.number_input("A群 日次コスト（円）", value=29000, step=1000, key="a_cost")
+    phase_a_rev = st.number_input("A群 日次収益（円）", value=36000, step=1000, key="a_rev")
+    phase_a_cost = st.number_input("A群 日次コスト（円）", value=26000, step=1000, key="a_cost")
     st.markdown("**B群（回復期: 6〜14日目）**")
-    phase_b_rev = st.number_input("B群 日次収益（円）", value=35900, step=1000, key="b_rev")
-    phase_b_cost = st.number_input("B群 日次コスト（円）", value=14000, step=1000, key="b_cost")
+    phase_b_rev = st.number_input("B群 日次収益（円）", value=36000, step=1000, key="b_rev")
+    phase_b_cost = st.number_input("B群 日次コスト（円）", value=14500, step=1000, key="b_cost")
     st.markdown("**C群（退院準備期: 15日目〜）**")
-    phase_c_rev = st.number_input("C群 日次収益（円）", value=33800, step=1000, key="c_rev")
-    phase_c_cost = st.number_input("C群 日次コスト（円）", value=12000, step=1000, key="c_cost")
+    phase_c_rev = st.number_input("C群 日次収益（円）", value=33400, step=1000, key="c_rev")
+    phase_c_cost = st.number_input("C群 日次コスト（円）", value=13000, step=1000, key="c_cost")
 
 # --- 追加パラメータ ---
 with st.sidebar.expander("追加パラメータ"):
@@ -2321,9 +2321,9 @@ with tabs[_tab_idx["フェーズ構成"]]:
         <p style="margin:4px 0; font-size:0.9em;">
         検査・処置・初期治療が集中<br>
         看護必要度が最も高い<br>
-        初期加算（150点）＋リハ加算2（50点）算定<br>
-        <b>収益 3.5万/日 − コスト 2.9万/日</b><br>
-        <span style="color:#E74C3C;"><b>粗利 0.6万/日（最小）</b></span>
+        初期加算(150点)+リハ栄養口腔連携(110点)+物価対応(49点)算定<br>
+        <b>収入36,000円 / コスト26,000円</b><br>
+        <span style="color:#E74C3C;"><b>粗利10,000円/日（最小）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
         💡 多すぎると初期コストで粗利圧迫<br>
@@ -2339,9 +2339,9 @@ with tabs[_tab_idx["フェーズ構成"]]:
         <p style="margin:4px 0; font-size:0.9em;">
         リハビリ・回復・退院準備<br>
         コストが下がり始める<br>
-        初期加算（150点）＋リハ加算1（110点）算定<br>
-        <b>収益 3.6万/日 − コスト 1.4万/日</b><br>
-        <span style="color:#27AE60;"><b>粗利 2.2万/日（★稼ぎ頭）</b></span>
+        初期加算(150点)+リハ栄養口腔連携(110点)+物価対応(49点)算定<br>
+        <b>収入36,000円 / コスト14,500円</b><br>
+        <span style="color:#27AE60;"><b>粗利21,500円/日（★稼ぎ頭）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
         💡 この層を厚くすることが経営の鍵<br>
@@ -2357,13 +2357,13 @@ with tabs[_tab_idx["フェーズ構成"]]:
         <p style="margin:4px 0; font-size:0.9em;">
         退院調整・転院待ち・在宅準備<br>
         コスト最小だが長期滞留リスク<br>
-        リハ加算2（50点）算定 ※初期加算なし（15日超）<br>
-        <b>収益 3.4万/日 − コスト 1.2万/日</b><br>
-        <span style="color:#2980B9;"><b>粗利 2.2万/日（良好だが要調整）</b></span>
+        物価対応(49点)のみ算定<br>
+        <b>収入33,400円 / コスト13,000円</b><br>
+        <span style="color:#2980B9;"><b>粗利20,400円/日（良好だが要調整）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
         💡 需給調整弁。稼働率維持に活用<br>
-        14日超で初期加算150点が消失 → 日当収益約2,100円減<br>
+        ※14日超で初期加算(1,500円)+リハ栄養口腔連携加算(1,100円)消失<br>
         目安：全体の30〜40%
         </p>
         </div>
@@ -2543,9 +2543,9 @@ with tabs[_tab_idx["収支分析"]]:
     st.subheader("📊 フェーズ別粗利の内訳")
     # 粗利単価: A=2000, B=17000, C=19000
     _profit_per_day = {
-        "A群": _active_cli_params.get("phase_a_revenue", 35300) - _active_cli_params.get("phase_a_cost", 29000),
-        "B群": _active_cli_params.get("phase_b_revenue", 35900) - _active_cli_params.get("phase_b_cost", 14000),
-        "C群": _active_cli_params.get("phase_c_revenue", 33800) - _active_cli_params.get("phase_c_cost", 12000),
+        "A群": _active_cli_params.get("phase_a_revenue", 36000) - _active_cli_params.get("phase_a_cost", 26000),
+        "B群": _active_cli_params.get("phase_b_revenue", 36000) - _active_cli_params.get("phase_b_cost", 14500),
+        "C群": _active_cli_params.get("phase_c_revenue", 33400) - _active_cli_params.get("phase_c_cost", 13000),
     }
     _phase_profit_a = (df["A群_患者数"] * _profit_per_day["A群"]).sum()
     _phase_profit_b = (df["B群_患者数"] * _profit_per_day["B群"]).sum()

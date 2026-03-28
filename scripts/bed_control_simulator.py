@@ -123,12 +123,12 @@ def create_default_params() -> dict[str, Any]:
         "initial_occupancy": 0.90,               # 初期稼働率
 
         # --- 収益・コスト（1日1患者あたり、円） ---
-        "phase_a_revenue": 30000,                 # A群 収益
-        "phase_a_cost": 28000,                    # A群 コスト
-        "phase_b_revenue": 30000,                 # B群 収益
-        "phase_b_cost": 13000,                    # B群 コスト
-        "phase_c_revenue": 30000,                 # C群 収益
-        "phase_c_cost": 11000,                    # C群 コスト
+        "phase_a_revenue": 36000,                 # A群 収益（入院14日以内: 基本3,290点+初期加算150点+リハ栄養口腔連携110点+物価対応49点=3,599点≈36,000円）
+        "phase_a_cost": 26000,                    # A群 コスト（検査・薬剤・画像集中、当院診療科加重平均）
+        "phase_b_revenue": 36000,                 # B群 収益（入院14日以内: A群と同じ加算構造）
+        "phase_b_cost": 14500,                    # B群 コスト（急性期処置終了、残存薬剤・検査のみ）
+        "phase_c_revenue": 33400,                 # C群 収益（15日以降: 初期加算・リハ加算消失で-2,600円/日）
+        "phase_c_cost": 13000,                    # C群 コスト（変動費最小、主に固定人件費）
 
         # --- 加算（将来拡張用、初期値0） ---
         "first_day_bonus": 0,                     # 入院初日加算
@@ -1167,9 +1167,9 @@ def simulate_los_impact(
             c_ratio = 0.0
 
         # 日次粗利 = 実際の患者数（キャップ後） * 各フェーズの粗利加重平均
-        _a_profit = params.get("phase_a_revenue", 35300) - params.get("phase_a_cost", 29000)
-        _b_profit = params.get("phase_b_revenue", 35900) - params.get("phase_b_cost", 14000)
-        _c_profit = params.get("phase_c_revenue", 33800) - params.get("phase_c_cost", 12000)
+        _a_profit = params.get("phase_a_revenue", 36000) - params.get("phase_a_cost", 26000)
+        _b_profit = params.get("phase_b_revenue", 36000) - params.get("phase_b_cost", 14500)
+        _c_profit = params.get("phase_c_revenue", 33400) - params.get("phase_c_cost", 13000)
         daily_profit = new_avg_patients * (
             a_ratio * _a_profit + b_ratio * _b_profit + c_ratio * _c_profit
         )
