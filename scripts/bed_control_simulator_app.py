@@ -804,7 +804,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
     if _sel_last_occ < target_lower * 100:
         st.error(
             f"🔴 **稼働率低下アラート**: 直近稼働率 {_sel_last_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています "
-            f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日）\n\n"
+            f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日・**月{_sel_empty * 34000 * 30 // 10000:.0f}万円**）\n\n"
             "**対策:**\n"
             "- 🏥 新規入院の受入促進（紹介元への連絡、救急受入強化）\n"
             "- 🔄 C群患者の退院延長（平均在院日数21日以内で調整可、粗利21,800円/日を維持）\n"
@@ -1642,7 +1642,7 @@ with tabs[_tab_idx["日次推移"]]:
                 _total_empty = _view_beds - int(_active_raw_df.iloc[-1].get("total_patients", 0))
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日）\n\n"
+                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**月{_total_empty * 34000 * 30 // 10000:.0f}万円**）\n\n"
                     "**対策:** 新規入院促進 + C群退院延長で稼働率維持"
                 )
         if _ward_data_available:
@@ -2080,7 +2080,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
                 _total_empty = _view_beds - int(_active_raw_df.iloc[-1].get("total_patients", 0))
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日）\n\n"
+                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**月{_total_empty * 34000 * 30 // 10000:.0f}万円**）\n\n"
                     "**対策:** 新規入院促進 + C群退院延長で稼働率維持"
                 )
         if _ward_data_available:
@@ -2195,7 +2195,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             # 稼働率に余裕がある場合はC群延長を推奨
             _action_items.append(f"C群{_last_c}名は在院延長で稼働率維持（粗利21,800円/日/名 × 空床よりプラス）")
     if "稼働率低下" in _last_flags:
-        _action_items.append(f"🔴 新規入院の受入準備を強化（空床{_last_empty}床 = 機会損失{_last_empty}×約3.4万円/日）")
+        _action_items.append(f"🔴 新規入院の受入準備を強化（空床{_last_empty}床 = 機会損失 約{_last_empty * 34000 // 10000:.0f}万円/日・月{_last_empty * 34000 * 30 // 10000:.0f}万円）")
         _action_items.append("🔴 C群患者の退院を急がない — 在院延長で稼働率維持を優先")
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
