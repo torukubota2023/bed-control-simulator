@@ -804,10 +804,33 @@ def _render_comparison_strip(ward_key, ward_raw_dfs, ward_display_dfs, view_beds
 # ---------------------------------------------------------------------------
 def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
     """病棟KPIを表示し、稼働率低下時はアラートを表示する"""
-    _sel_occ = float(raw_df["occupancy_rate"].mean()) * 100
-    _sel_patients = int(raw_df["total_patients"].mean())
-    _sel_last_occ = float(raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
-    _sel_empty = view_beds - int(raw_df.iloc[-1].get("total_patients", 0))
+    try:
+        _occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
+        _tp_col = "total_patients" if "total_patients" in raw_df.columns else "在院患者数"
+
+        _occ_mean = raw_df[_occ_col].mean()
+        _sel_occ = float(_occ_mean) * 100 if pd.notna(_occ_mean) else 0.0
+        # occupancy_rate is 0-1 ratio, 稼働率 might already be 0-100
+        if _occ_col == "稼働率" and _sel_occ > 0 and _sel_occ < 1.5:
+            _sel_occ = _sel_occ * 100
+
+        _tp_mean = raw_df[_tp_col].mean()
+        _sel_patients = int(_tp_mean) if pd.notna(_tp_mean) else 0
+
+        _last_row = raw_df.iloc[-1]
+        _last_occ_val = _last_row.get(_occ_col, 0) if hasattr(_last_row, 'get') else _last_row[_occ_col] if _occ_col in raw_df.columns else 0
+        _sel_last_occ = float(_last_occ_val) * 100 if pd.notna(_last_occ_val) else 0.0
+        if _occ_col == "稼働率" and _sel_last_occ > 0 and _sel_last_occ < 1.5:
+            _sel_last_occ = _sel_last_occ * 100
+
+        _last_tp_val = _last_row.get(_tp_col, 0) if hasattr(_last_row, 'get') else _last_row[_tp_col] if _tp_col in raw_df.columns else 0
+        _sel_empty = max(0, view_beds - (int(_last_tp_val) if pd.notna(_last_tp_val) else 0))
+    except Exception:
+        # Fallback if data access fails
+        _sel_occ = 0.0
+        _sel_patients = 0
+        _sel_last_occ = 0.0
+        _sel_empty = 0
 
     _kpi1, _kpi2, _kpi3 = st.columns(3)
 
@@ -835,8 +858,9 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
         return  # トレンドチェック不要
 
     # トレンド予測（稼働率が低下傾向か？）
+    _trend_occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
     if len(raw_df) >= 3:
-        _recent_3 = raw_df["occupancy_rate"].tail(3).values * 100
+        _recent_3 = raw_df[_trend_occ_col].tail(3).values * 100
         _trend_slope = _recent_3[-1] - _recent_3[0]  # 3日間の変化量
         _projected = _sel_last_occ + _trend_slope  # 同じペースで続いた場合の予測
 
@@ -1666,6 +1690,9 @@ else:
         summary = st.session_state.sim_summary
         _active_raw_df = st.session_state.sim_df_raw
         _active_cli_params = st.session_state.sim_params
+        # Ward selected but ward data not available - need to re-run simulation
+        if _selected_ward_key in ("5F", "6F"):
+            _view_beds = get_ward_beds(_selected_ward_key)
 
 # ===== タブ1: 日次推移 =====
 with tabs[_tab_idx["日次推移"]]:
@@ -1679,10 +1706,14 @@ with tabs[_tab_idx["日次推移"]]:
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
             _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-        if _selected_ward_key == "全体" and len(_active_raw_df) > 0:
-            _total_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+        if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
+            _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
+            _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
+            _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
             if _total_last_occ < target_lower * 100:
-                _total_empty = _view_beds - int(_active_raw_df.iloc[-1].get("total_patients", 0))
+                _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
+                _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
                     f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**月{_total_empty * 34000 * 30 // 10000:.0f}万円**）\n\n"
@@ -2123,10 +2154,14 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
             _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-        if _selected_ward_key == "全体" and len(_active_raw_df) > 0:
-            _total_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+        if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
+            _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
+            _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
+            _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
             if _total_last_occ < target_lower * 100:
-                _total_empty = _view_beds - int(_active_raw_df.iloc[-1].get("total_patients", 0))
+                _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
+                _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
                     f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**月{_total_empty * 34000 * 30 // 10000:.0f}万円**）\n\n"
