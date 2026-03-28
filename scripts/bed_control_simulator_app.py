@@ -584,15 +584,16 @@ if run_button:
             st.session_state.sim_df_raw = df
             st.session_state.sim_params = params
 
-            # 病棟別シミュレーション（各47床、病棟特性を反映）
-            # 5F（外科・整形）: 在院日数短め、予定手術中心、入院数やや多め
-            # 6F（内科・ペイン）: 在院日数長め、救急中心、稼働率高め
+            # 病棟別シミュレーション（各47床、デモ用シナリオ）
+            # 5F: 稼働率低下傾向（入院不足）→ アラートが出る状態
+            # 6F: 順調な稼働率（90-95%レンジ安定）
             _ward_param_adj = {
-                "5F": {"avg_los": max(10, params.get("avg_los", 18) - 3),
-                       "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.48),
+                "5F": {"avg_los": max(10, params.get("avg_los", 18) - 4),
+                       "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.35),
+                       "admission_variability": 0.4,
                        "random_seed": (params.get("random_seed") or 42) + 1},
-                "6F": {"avg_los": min(21, params.get("avg_los", 18) + 1),
-                       "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.52),
+                "6F": {"avg_los": min(21, params.get("avg_los", 18)),
+                       "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.55),
                        "random_seed": (params.get("random_seed") or 42) + 2},
             }
             _sim_ward_dfs = {}
