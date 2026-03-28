@@ -896,7 +896,7 @@ if _DATA_MANAGER_AVAILABLE:
                         "date_str": "日付",
                         "total_patients": "在院患者数",
                         "new_admissions": "新規入院",
-                        "discharges": "退院",
+                        "discharges": "退院（自動）",
                         "discharge_a": "A群退院",
                         "discharge_b": "B群退院",
                         "discharge_c": "C群退院",
@@ -905,6 +905,13 @@ if _DATA_MANAGER_AVAILABLE:
                         "phase_c_count": "C群（自動）",
                         "notes": "備考",
                     }),
+                    column_config={
+                        "日付": st.column_config.TextColumn(disabled=True),
+                        "退院（自動）": st.column_config.NumberColumn(disabled=True),
+                        "A群（自動）": st.column_config.NumberColumn(disabled=True),
+                        "B群（自動）": st.column_config.NumberColumn(disabled=True),
+                        "C群（自動）": st.column_config.NumberColumn(disabled=True),
+                    },
                     width="stretch",
                     height=min(400, 50 + len(display_data) * 35),
                     num_rows="fixed",
@@ -921,7 +928,6 @@ if _DATA_MANAGER_AVAILABLE:
                             col_map_rev = {
                                 "在院患者数": "total_patients",
                                 "新規入院": "new_admissions",
-                                "退院": "discharges",
                                 "A群退院": "discharge_a",
                                 "B群退院": "discharge_b",
                                 "C群退院": "discharge_c",
@@ -930,9 +936,34 @@ if _DATA_MANAGER_AVAILABLE:
                             for ja_col, en_col in col_map_rev.items():
                                 if ja_col in edited_df.columns:
                                     updated[en_col] = edited_df[ja_col].values
+
+                            # 退院数を内訳から再計算
+                            updated["discharges"] = (
+                                updated["discharge_a"].fillna(0).astype(int)
+                                + updated["discharge_b"].fillna(0).astype(int)
+                                + updated["discharge_c"].fillna(0).astype(int)
+                            )
+
+                            # A/B/C群を時系列順に再計算
                             updated = updated.sort_values("date").reset_index(drop=True)
+                            a, b, c = 0, 0, 0
+                            for idx in range(len(updated)):
+                                row = updated.iloc[idx]
+                                a, b, c = calculate_abc_groups(
+                                    a, b, c,
+                                    int(row.get("new_admissions", 0) or 0),
+                                    int(row.get("discharge_a", 0) or 0),
+                                    int(row.get("discharge_b", 0) or 0),
+                                    int(row.get("discharge_c", 0) or 0),
+                                )
+                                updated.at[idx, "phase_a_count"] = a
+                                updated.at[idx, "phase_b_count"] = b
+                                updated.at[idx, "phase_c_count"] = c
+
                             st.session_state.daily_data = updated
-                            st.success("変更を保存しました。")
+                            # ABC状態も更新
+                            st.session_state.abc_state = {"A": a, "B": b, "C": c}
+                            st.success("変更を保存しました。A/B/C群と退院数を再計算しました。")
                             st.rerun()
                         except Exception as e:
                             st.error(f"保存エラー: {e}")
