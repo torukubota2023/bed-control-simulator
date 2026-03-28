@@ -795,7 +795,7 @@ def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataF
 
     df["empty_beds"] = (num_beds - df["total_patients"]).clip(lower=0)
     df["excess_demand"] = 0  # 実データでは不明
-    df["opportunity_loss"] = df["empty_beds"] * params.get("opportunity_cost", 10000)
+    df["opportunity_loss"] = df["empty_beds"] * params.get("opportunity_cost", 18000)
 
     # フラグ
     target_lower = params.get("target_occupancy_lower", 0.90)

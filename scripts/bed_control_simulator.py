@@ -135,7 +135,7 @@ def create_default_params() -> dict[str, Any]:
         "rehab_fee": 0,                           # リハビリ加算
 
         # --- 機会損失 ---
-        "opportunity_cost": 10000,                # 空床1日あたり機会損失（円）
+        "opportunity_cost": 18000,                # 空床1日あたり機会損失（円）
 
         # --- 閾値 ---
         "discharge_promotion_threshold": 0.95,    # 退院促進開始の稼働率閾値
@@ -1139,8 +1139,11 @@ def simulate_los_impact(
             c_ratio = 0.0
 
         # 日次粗利 = 実際の患者数（キャップ後） * 各フェーズの粗利加重平均
+        _a_profit = params.get("phase_a_revenue", 35300) - params.get("phase_a_cost", 29000)
+        _b_profit = params.get("phase_b_revenue", 35900) - params.get("phase_b_cost", 14000)
+        _c_profit = params.get("phase_c_revenue", 33800) - params.get("phase_c_cost", 12000)
         daily_profit = new_avg_patients * (
-            a_ratio * 2000 + b_ratio * 17000 + c_ratio * 19000
+            a_ratio * _a_profit + b_ratio * _b_profit + c_ratio * _c_profit
         )
 
         # 機会損失: 空床コスト + 超過需要による機会損失
@@ -1737,7 +1740,7 @@ def calculate_marginal_bed_value(params: dict[str, Any]) -> dict[str, Any]:
         "c_replace_day1_impact": replace_day1_impact,
         "c_replace_lifetime_impact": int(replace_lifetime_impact),
         "breakeven_days": breakeven_days,
-        "opportunity_cost_per_day": params.get("opportunity_cost", 10000),
+        "opportunity_cost_per_day": params.get("opportunity_cost", 18000),
     }
 
 
