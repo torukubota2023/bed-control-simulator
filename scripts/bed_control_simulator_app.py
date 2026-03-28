@@ -813,70 +813,65 @@ if _DATA_MANAGER_AVAILABLE:
                 with form_col2:
                     input_total = st.number_input("在院患者総数", min_value=0, max_value=94, value=85, step=1)
 
-                form_col3, form_col4 = st.columns(2)
-                with form_col3:
-                    input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
-                with form_col4:
-                    input_discharges = st.number_input("新規退院数", min_value=0, max_value=30, value=5, step=1)
+                input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
 
-                st.markdown("**退院内訳**")
+                st.markdown("**退院内訳（各群の退院数を入力 → 退院数は自動合算）**")
                 form_col5, form_col6, form_col7 = st.columns(3)
                 with form_col5:
-                    input_discharge_a = st.number_input("A群相当退院（1-5日目）", min_value=0, max_value=30, value=0, step=1)
+                    input_discharge_a = st.number_input("A群退院（1-5日目）", min_value=0, max_value=30, value=0, step=1)
                 with form_col6:
-                    input_discharge_b = st.number_input("B群相当退院（6-14日目）", min_value=0, max_value=30, value=0, step=1)
+                    input_discharge_b = st.number_input("B群退院（6-14日目）", min_value=0, max_value=30, value=0, step=1)
                 with form_col7:
-                    input_discharge_c = st.number_input("C群相当退院（15日目〜）", min_value=0, max_value=30, value=0, step=1)
+                    input_discharge_c = st.number_input("C群退院（15日目〜）", min_value=0, max_value=30, value=0, step=1)
+
+                # 退院数は内訳から自動合算
+                auto_discharges = input_discharge_a + input_discharge_b + input_discharge_c
+                st.info(f"💡 退院数（自動合算）: **{auto_discharges}名**（A群:{input_discharge_a} + B群:{input_discharge_b} + C群:{input_discharge_c}）")
 
                 input_notes = st.text_input("備考（任意）", value="")
 
                 submitted = st.form_submit_button("追加", type="primary", width="stretch")
 
                 if submitted:
-                    # 退院内訳の合計チェック
-                    discharge_sum = input_discharge_a + input_discharge_b + input_discharge_c
-                    if discharge_sum > input_discharges:
-                        st.error(f"退院内訳の合計（{discharge_sum}）が退院数（{input_discharges}）を超えています。")
+                    # A/B/C群を自動計算
+                    prev_a = st.session_state.abc_state["A"]
+                    prev_b = st.session_state.abc_state["B"]
+                    prev_c = st.session_state.abc_state["C"]
+
+                    new_a, new_b, new_c = calculate_abc_groups(
+                        prev_a, prev_b, prev_c,
+                        input_admissions,
+                        input_discharge_a, input_discharge_b, input_discharge_c
+                    )
+
+                    new_record = {
+                        "date": pd.Timestamp(input_date),
+                        "total_patients": int(input_total),
+                        "new_admissions": int(input_admissions),
+                        "discharges": int(auto_discharges),
+                        "discharge_a": int(input_discharge_a),
+                        "discharge_b": int(input_discharge_b),
+                        "discharge_c": int(input_discharge_c),
+                        "phase_a_count": new_a,
+                        "phase_b_count": new_b,
+                        "phase_c_count": new_c,
+                        "avg_los": pd.NA,
+                        "notes": input_notes,
+                        "data_source": "manual",
+                    }
+                    is_valid, error_msg = validate_record(
+                        new_record, existing_df=st.session_state.daily_data
+                    )
+                    if is_valid:
+                        st.session_state.daily_data = add_record(
+                            st.session_state.daily_data, new_record
+                        )
+                        # ABC状態を更新
+                        st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
+                        st.success(f"{input_date} のデータを追加しました。（A群:{new_a} B群:{new_b} C群:{new_c} / 退院計:{auto_discharges}名）")
+                        st.rerun()
                     else:
-                        # A/B/C群を自動計算
-                        prev_a = st.session_state.abc_state["A"]
-                        prev_b = st.session_state.abc_state["B"]
-                        prev_c = st.session_state.abc_state["C"]
-
-                        new_a, new_b, new_c = calculate_abc_groups(
-                            prev_a, prev_b, prev_c,
-                            input_admissions,
-                            input_discharge_a, input_discharge_b, input_discharge_c
-                        )
-
-                        new_record = {
-                            "date": pd.Timestamp(input_date),
-                            "total_patients": int(input_total),
-                            "new_admissions": int(input_admissions),
-                            "discharges": int(input_discharges),
-                            "discharge_a": int(input_discharge_a),
-                            "discharge_b": int(input_discharge_b),
-                            "discharge_c": int(input_discharge_c),
-                            "phase_a_count": new_a,
-                            "phase_b_count": new_b,
-                            "phase_c_count": new_c,
-                            "avg_los": pd.NA,
-                            "notes": input_notes,
-                            "data_source": "manual",
-                        }
-                        is_valid, error_msg = validate_record(
-                            new_record, existing_df=st.session_state.daily_data
-                        )
-                        if is_valid:
-                            st.session_state.daily_data = add_record(
-                                st.session_state.daily_data, new_record
-                            )
-                            # ABC状態を更新
-                            st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
-                            st.success(f"{input_date} のデータを追加しました。（A群:{new_a} B群:{new_b} C群:{new_c}）")
-                            st.rerun()
-                        else:
-                            st.error(f"入力エラー:\n{error_msg}")
+                        st.error(f"入力エラー:\n{error_msg}")
 
             st.markdown("---")
 

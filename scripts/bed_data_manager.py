@@ -115,29 +115,6 @@ def validate_record(record: dict, existing_df: pd.DataFrame | None = None) -> tu
         if isinstance(dval, (int, np.integer)) and dval < 0:
             errors.append(f"{dlabel}は0以上で入力してください。")
 
-    dis = record.get("discharges")
-    if (isinstance(dis, (int, np.integer))
-            and all(isinstance(v, (int, np.integer)) for v in [da, db, dc])):
-        discharge_sum = int(da) + int(db) + int(dc)
-        if discharge_sum > int(dis):
-            errors.append(
-                f"退院内訳の合計({discharge_sum})が退院数({dis})を超えています。"
-            )
-
-    # フェーズ合計チェック（phase_a/b/c_countが手入力された場合のみ）
-    pa = record.get("phase_a_count")
-    pb = record.get("phase_b_count")
-    pc = record.get("phase_c_count")
-    if all(isinstance(v, (int, np.integer)) for v in [pa, pb, pc, tp] if v is not None):
-        if pa is not None and pb is not None and pc is not None and tp is not None:
-            phase_sum = int(pa) + int(pb) + int(pc)
-            diff = abs(phase_sum - int(tp))
-            if diff > 2:
-                errors.append(
-                    f"A群+B群+C群の合計({phase_sum})と在院患者数({tp})の差が"
-                    f"{diff}あります（許容誤差: ±2）。"
-                )
-
     # 重複日付チェック
     if existing_df is not None and len(existing_df) > 0:
         try:
