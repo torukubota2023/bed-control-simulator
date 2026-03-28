@@ -558,7 +558,22 @@ if "abc_state_initialized" not in st.session_state:
     st.session_state.abc_state_initialized = True
 
 if "demo_data" not in st.session_state:
-    st.session_state.demo_data = pd.DataFrame()
+    # 教育用デモCSVを自動ロード
+    _demo_csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202603.csv")
+    if os.path.exists(_demo_csv_path):
+        try:
+            _auto_demo = pd.read_csv(_demo_csv_path)
+            _auto_demo["date"] = pd.to_datetime(_auto_demo["date"])
+            # 必要カラムの補完
+            if "num_beds" not in _auto_demo.columns:
+                _auto_demo["num_beds"] = _auto_demo["ward"].map(lambda w: get_ward_beds(w))
+            if "occupancy_rate" not in _auto_demo.columns:
+                _auto_demo["occupancy_rate"] = (_auto_demo["total_patients"] / _auto_demo["num_beds"] * 100).round(1)
+            st.session_state.demo_data = _auto_demo.sort_values(["date", "ward"]).reset_index(drop=True)
+        except Exception:
+            st.session_state.demo_data = pd.DataFrame()
+    else:
+        st.session_state.demo_data = pd.DataFrame()
 
 if "data_mode" not in st.session_state:
     st.session_state.data_mode = "📊 実データ入力モード"
@@ -944,22 +959,31 @@ if _DATA_MANAGER_AVAILABLE:
             # ============================================================
             # デモモード
             # ============================================================
-            st.info("これはデモデータです。実際の病棟データではありません。")
+            st.info("🎓 これは教育用デモデータです。5F（稼働率低下傾向）と6F（安定稼働）のシナリオが含まれています。")
 
-            dm_demo_col1, dm_demo_col2 = st.columns(2)
+            # デモデータが既にロード済みかチェック
+            _demo_loaded = isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0
+
+            dm_demo_col1, dm_demo_col2, dm_demo_col3 = st.columns(3)
             with dm_demo_col1:
-                if st.button("サンプルデータ生成（30日分）", key="dm_gen_sample",
-                             help="デモ用に過去30日分のダミーデータを生成します"):
-                    # 病棟別デモデータ生成
+                if _demo_loaded:
+                    _demo_ward_count = st.session_state.demo_data["ward"].nunique() if "ward" in st.session_state.demo_data.columns else 0
+                    _demo_day_count = st.session_state.demo_data["date"].nunique() if "date" in st.session_state.demo_data.columns else 0
+                    st.success(f"✅ デモデータロード済（{_demo_ward_count}病棟 × {_demo_day_count}日分）")
+                else:
+                    st.warning("デモデータが見つかりません")
+            with dm_demo_col2:
+                if st.button("🔄 ランダムデータで再生成（30日分）", key="dm_gen_sample",
+                             help="教育用デモの代わりにランダムなダミーデータを生成します"):
                     _demo_5f = generate_sample_data(num_days=30, num_beds=get_ward_beds("5F"))
                     _demo_5f["ward"] = "5F"
                     _demo_6f = generate_sample_data(num_days=30, num_beds=get_ward_beds("6F"))
                     _demo_6f["ward"] = "6F"
                     st.session_state.demo_data = pd.concat([_demo_5f, _demo_6f], ignore_index=True).sort_values(["date", "ward"]).reset_index(drop=True)
-                    st.success("サンプルデータ（30日分）を生成しました。")
+                    st.success("ランダムサンプルデータ（30日分）を生成しました。")
                     st.rerun()
 
-            with dm_demo_col2:
+            with dm_demo_col3:
                 if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
                     _demo_csv_str = dm_export_to_csv(st.session_state.demo_data)
                     _demo_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
