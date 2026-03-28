@@ -7,7 +7,6 @@ CLI版シミュレーターには依存しない。
 
 個人情報は一切含めない（集計値のみ）。
 """
-# 将来拡張: 日齢バケット（1日目〜15日以上）で管理する設計に拡張可能
 
 from __future__ import annotations
 
@@ -19,6 +18,10 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # データ構造定義
 # ---------------------------------------------------------------------------
+
+# 日齢バケット: 1日目〜14日目は個別、15日目以上はまとめる
+DAY_BUCKET_KEYS = [f"day_{i}" for i in range(1, 15)] + ["day_15plus"]
+# DAY_BUCKET_KEYS = ["day_1", "day_2", ..., "day_14", "day_15plus"]
 DAILY_RECORD_COLUMNS = [
     "date",              # 日付 (YYYY-MM-DD)
     "total_patients",    # 在院患者数
@@ -657,22 +660,190 @@ def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataF
     return df
 
 
+# ---------------------------------------------------------------------------
+# 日齢バケット管理
+# ---------------------------------------------------------------------------
+def advance_day_buckets(prev_buckets: dict, new_admissions: int, discharge_a: int, discharge_b: int, discharge_c: int) -> dict:
+    """
+    日齢バケットを1日進める。
+
+    処理順序（厳守）：
+    1. 日齢進行: 各バケットの患者を翌日に移動
+       - day_1 → day_2, day_2 → day_3, ..., day_14 → day_15plus
+       - day_15plus はそのまま（day_14からの加算あり）
+    2. 新規入院: day_1 に追加
+    3. 退院処理:
+       - A群退院(discharge_a): day_1〜day_5から按分で引く
+       - B群退院(discharge_b): day_6〜day_14から按分で引く
+       - C群退院(discharge_c): day_15plusから引く
+    4. 負の値防止: 全バケットを max(0, x) で制御
+
+    Args:
+        prev_buckets: 前日の日齢バケット辞書 {"day_1": int, "day_2": int, ..., "day_15plus": int}
+        new_admissions: 新規入院数
+        discharge_a: A群相当退院数（1-5日目）
+        discharge_b: B群相当退院数（6-14日目）
+        discharge_c: C群相当退院数（15日目以降）
+
+    Returns:
+        更新後の日齢バケット辞書
+    """
+    new_buckets = {}
+
+    # 1. 日齢進行
+    # day_15plus = 前日のday_15plus + 前日のday_14
+    new_buckets["day_15plus"] = prev_buckets.get("day_15plus", 0) + prev_buckets.get("day_14", 0)
+    # day_14 = 前日のday_13, ..., day_2 = 前日のday_1
+    for i in range(14, 1, -1):
+        new_buckets[f"day_{i}"] = prev_buckets.get(f"day_{i-1}", 0)
+    # day_1 = 0 (新規入院で追加される)
+    new_buckets["day_1"] = 0
+
+    # 2. 新規入院
+    new_buckets["day_1"] += new_admissions
+
+    # 3. 退院処理（按分）
+    # A群退院: day_1〜day_5から按分
+    a_total = sum(new_buckets.get(f"day_{i}", 0) for i in range(1, 6))
+    if a_total > 0 and discharge_a > 0:
+        remaining_discharge = discharge_a
+        for i in range(1, 6):
+            key = f"day_{i}"
+            proportion = new_buckets[key] / a_total
+            subtract = min(round(proportion * discharge_a), new_buckets[key], remaining_discharge)
+            new_buckets[key] -= subtract
+            remaining_discharge -= subtract
+        # 端数処理: 残りがあれば最大バケットから引く
+        if remaining_discharge > 0:
+            for i in sorted(range(1, 6), key=lambda x: new_buckets[f"day_{x}"], reverse=True):
+                key = f"day_{i}"
+                subtract = min(remaining_discharge, new_buckets[key])
+                new_buckets[key] -= subtract
+                remaining_discharge -= subtract
+                if remaining_discharge <= 0:
+                    break
+
+    # B群退院: day_6〜day_14から按分
+    b_total = sum(new_buckets.get(f"day_{i}", 0) for i in range(6, 15))
+    if b_total > 0 and discharge_b > 0:
+        remaining_discharge = discharge_b
+        for i in range(6, 15):
+            key = f"day_{i}"
+            proportion = new_buckets[key] / b_total
+            subtract = min(round(proportion * discharge_b), new_buckets[key], remaining_discharge)
+            new_buckets[key] -= subtract
+            remaining_discharge -= subtract
+        if remaining_discharge > 0:
+            for i in sorted(range(6, 15), key=lambda x: new_buckets[f"day_{x}"], reverse=True):
+                key = f"day_{i}"
+                subtract = min(remaining_discharge, new_buckets[key])
+                new_buckets[key] -= subtract
+                remaining_discharge -= subtract
+                if remaining_discharge <= 0:
+                    break
+
+    # C群退院: day_15plusから引く
+    new_buckets["day_15plus"] = max(0, new_buckets["day_15plus"] - discharge_c)
+
+    # 4. 負の値防止
+    for key in new_buckets:
+        new_buckets[key] = max(0, int(new_buckets[key]))
+
+    return new_buckets
+
+
+def buckets_to_abc(buckets: dict) -> tuple:
+    """日齢バケットからA/B/C群人数を算出"""
+    a = sum(buckets.get(f"day_{i}", 0) for i in range(1, 6))
+    b = sum(buckets.get(f"day_{i}", 0) for i in range(6, 15))
+    c = buckets.get("day_15plus", 0)
+    return a, b, c
+
+
+def create_initial_buckets_from_list(day_list: list) -> dict:
+    """
+    患者ごとの入院日数リストから日齢バケットを作成。
+
+    Args:
+        day_list: [3, 12, 22, 5, 8, ...] 各患者の入院日数
+
+    Returns:
+        日齢バケット辞書
+    """
+    buckets = {key: 0 for key in DAY_BUCKET_KEYS}
+    for days in day_list:
+        days = max(1, int(days))
+        if days >= 15:
+            buckets["day_15plus"] += 1
+        else:
+            buckets[f"day_{days}"] += 1
+    return buckets
+
+
+def _generate_los_distribution(max_days: int, rng) -> list:
+    """
+    リアルな在院日数の確率分布を生成（内部ヘルパー関数）。
+
+    短期（1-5日）が少なめ、中期（6-14日）が最多、長期（15日以上）が一定割合。
+
+    Args:
+        max_days: 最大日数
+        rng: numpy乱数ジェネレータ
+
+    Returns:
+        確率分布リスト（合計1.0）
+    """
+    weights = []
+    for d in range(1, max_days + 1):
+        if d <= 5:
+            # A群相当: 比較的少ない（新規入院直後）
+            w = 1.5
+        elif d <= 14:
+            # B群相当: 最も多い（入院中盤）
+            w = 4.0
+        else:
+            # C群相当: やや多い（長期入院）
+            w = 3.0
+        # 若干のランダム変動
+        w *= rng.uniform(0.8, 1.2)
+        weights.append(w)
+    total = sum(weights)
+    return [w / total for w in weights]
+
+
 def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42) -> pd.DataFrame:
     """
     デモ用サンプルデータを生成（個人情報なし、集計値のみ）。
 
     稼働率85-97%の範囲でランダム変動。
     入退院はポアソン分布（平均5名/日）。
-    A/B/C構成比は在院日数分布から算出。
+    A/B/C構成比は日齢バケットから算出。
     週末は入院がやや少ない。
+
+    Note:
+        日齢バケット履歴は df.attrs["bucket_history"] に格納される。
+        アプリ側では session_state で管理することを推奨。
     """
     rng = np.random.default_rng(seed)
     today = pd.Timestamp.now().normalize()
     start_date = today - timedelta(days=num_days - 1)
 
     records = []
+    bucket_history = []  # 日齢バケット履歴（session_state管理用）
+
     # 初期患者数（稼働率90%付近）
     current_patients = int(num_beds * 0.90)
+
+    # 初日の日齢バケットをランダム生成（1〜30日の範囲で分布）
+    initial_day_list = []
+    for _ in range(current_patients):
+        # リアルな在院日数分布: 短期〜長期まで幅広く
+        los = int(rng.choice(
+            list(range(1, 31)),
+            p=_generate_los_distribution(30, rng),
+        ))
+        initial_day_list.append(los)
+    current_buckets = create_initial_buckets_from_list(initial_day_list)
 
     for i in range(num_days):
         d = start_date + timedelta(days=i)
@@ -693,29 +864,6 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
         discharges_raw = int(rng.poisson(max(1, expected_discharges)))
         discharges = min(discharges_raw, current_patients)
 
-        # 患者数更新
-        current_patients = current_patients + new_admissions - discharges
-        current_patients = max(0, min(num_beds, current_patients))
-
-        # フェーズ構成比（リアルな分布を想定）
-        # A群: 約15%, B群: 約45%, C群: 約40%（±変動あり）
-        a_ratio = rng.normal(0.15, 0.03)
-        b_ratio = rng.normal(0.45, 0.05)
-        a_ratio = max(0.05, min(0.30, a_ratio))
-        b_ratio = max(0.25, min(0.60, b_ratio))
-        c_ratio = 1.0 - a_ratio - b_ratio
-        c_ratio = max(0.10, c_ratio)
-
-        # 正規化
-        total_ratio = a_ratio + b_ratio + c_ratio
-        a_ratio /= total_ratio
-        b_ratio /= total_ratio
-        c_ratio /= total_ratio
-
-        phase_a = int(round(current_patients * a_ratio))
-        phase_b = int(round(current_patients * b_ratio))
-        phase_c = current_patients - phase_a - phase_b  # 端数調整
-
         # 退院内訳を生成（退院数をA/B/Cに分配）
         if discharges > 0:
             # A群退院（短期入院 1-5日目）: 10-20%
@@ -732,6 +880,47 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
             discharge_a = 0
             discharge_b = 0
             discharge_c = 0
+
+        # 日齢バケットの進行（2日目以降はadvance_day_bucketsで更新）
+        if i == 0:
+            # 初日: 初期バケットに新規入院と退院を反映
+            current_buckets["day_1"] = current_buckets.get("day_1", 0) + new_admissions
+            # 退院処理（初日も按分で処理）
+            a_total = sum(current_buckets.get(f"day_{j}", 0) for j in range(1, 6))
+            if a_total > 0 and discharge_a > 0:
+                rem = discharge_a
+                for j in range(1, 6):
+                    key = f"day_{j}"
+                    prop = current_buckets[key] / a_total
+                    sub = min(round(prop * discharge_a), current_buckets[key], rem)
+                    current_buckets[key] -= sub
+                    rem -= sub
+            b_total = sum(current_buckets.get(f"day_{j}", 0) for j in range(6, 15))
+            if b_total > 0 and discharge_b > 0:
+                rem = discharge_b
+                for j in range(6, 15):
+                    key = f"day_{j}"
+                    prop = current_buckets[key] / b_total
+                    sub = min(round(prop * discharge_b), current_buckets[key], rem)
+                    current_buckets[key] -= sub
+                    rem -= sub
+            current_buckets["day_15plus"] = max(0, current_buckets.get("day_15plus", 0) - discharge_c)
+            for key in current_buckets:
+                current_buckets[key] = max(0, int(current_buckets[key]))
+        else:
+            current_buckets = advance_day_buckets(
+                current_buckets, new_admissions, discharge_a, discharge_b, discharge_c
+            )
+
+        # バケットからA/B/C群を算出
+        phase_a, phase_b, phase_c = buckets_to_abc(current_buckets)
+
+        # 患者数更新（バケット合計と整合性を取る）
+        bucket_total = phase_a + phase_b + phase_c
+        current_patients = max(0, min(num_beds, bucket_total))
+
+        # バケット履歴を保存
+        bucket_history.append(current_buckets.copy())
 
         # 平均在院日数（やや変動）
         avg_los_val = round(rng.normal(17.5, 1.5), 1)
@@ -753,6 +942,8 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
         })
 
     df = pd.DataFrame(records)
+    # バケット履歴をDataFrameの属性として保持（session_state管理用）
+    df.attrs["bucket_history"] = bucket_history
     for col in ["total_patients", "new_admissions", "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:

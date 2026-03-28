@@ -83,50 +83,56 @@ try:
         generate_sample_data,
         convert_actual_to_display,
         DEFAULT_REVENUE_PARAMS,
+        create_initial_buckets_from_list,
+        buckets_to_abc,
+        advance_day_buckets,
+        DAY_BUCKET_KEYS,
     )
     _DATA_MANAGER_AVAILABLE = True
 except ImportError:
     pass
 
 # ---------------------------------------------------------------------------
-# A/B/C群 自動計算ロジック
-# 将来拡張: 日齢バケット（1日目〜15日以上）で管理する設計に拡張可能
+# A/B/C群 自動計算ロジック（日齢バケットモデル）
 # ---------------------------------------------------------------------------
-def calculate_abc_groups(prev_a: int, prev_b: int, prev_c: int,
-                         new_admissions: int,
-                         discharge_a: int, discharge_b: int, discharge_c: int) -> tuple[int, int, int]:
-    """前日のA/B/C群から日次更新処理を行い、新しいA/B/C群を返す。
-
-    計算順序（厳守）:
-    1. 日齢進行による遷移（概算）
-       - A → B 移動数 = A_count / 5
-       - B → C 移動数 = B_count / 9
-    2. 新規入院をA群へ追加
-    3. 退院処理
-    4. 負の値防止
+def calculate_abc_groups(prev_abc, new_admissions, discharge_a, discharge_b, discharge_c, prev_buckets=None):
     """
-    # 1. 日齢進行による遷移
-    a_to_b = int(round(prev_a / 5))
-    b_to_c = int(round(prev_b / 9))
+    日齢バケットモデルでA/B/C群を更新する。
+    prev_bucketsがない場合は従来の簡易モデルにフォールバック。
 
-    a_count = prev_a - a_to_b
-    b_count = prev_b + a_to_b - b_to_c
-    c_count = prev_c + b_to_c
+    Args:
+        prev_abc: 前日のA/B/C群辞書 {"A": int, "B": int, "C": int}
+        new_admissions: 新規入院数
+        discharge_a: A群退院数
+        discharge_b: B群退院数
+        discharge_c: C群退院数
+        prev_buckets: 前日の日齢バケット辞書（Noneの場合は簡易モデル）
 
-    # 2. 新規入院をA群へ追加
-    a_count += new_admissions
+    Returns:
+        (abc_dict, new_buckets): A/B/C群辞書と新しいバケット（簡易モデル時はNone）
+    """
+    if prev_buckets is not None and _DATA_MANAGER_AVAILABLE:
+        new_buckets = advance_day_buckets(prev_buckets, new_admissions, discharge_a, discharge_b, discharge_c)
+        a, b, c = buckets_to_abc(new_buckets)
+        return {"A": a, "B": b, "C": c}, new_buckets
+    else:
+        # 従来の簡易モデル（フォールバック）
+        prev_a = prev_abc.get("A", 0)
+        prev_b = prev_abc.get("B", 0)
+        prev_c = prev_abc.get("C", 0)
 
-    # 3. 退院処理
-    a_count -= discharge_a
-    b_count -= discharge_b
-    c_count -= discharge_c
+        a_to_b = int(prev_a / 5)
+        b_to_c = int(prev_b / 9)
 
-    # 4. 負の値防止
-    a_count = max(0, a_count)
-    b_count = max(0, b_count)
-    c_count = max(0, c_count)
+        new_a = prev_a - a_to_b + new_admissions - discharge_a
+        new_b = prev_b + a_to_b - b_to_c - discharge_b
+        new_c = prev_c + b_to_c - discharge_c
 
-    return a_count, b_count, c_count
+        new_a = max(0, int(new_a))
+        new_b = max(0, int(new_b))
+        new_c = max(0, int(new_c))
+
+        return {"A": new_a, "B": new_b, "C": new_c}, None
 
 # ---------------------------------------------------------------------------
 # 戦略名マッピング（日本語 → CLI英語名）
@@ -502,6 +508,10 @@ if "daily_data" not in st.session_state:
 if "abc_state" not in st.session_state:
     st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
 
+# 日齢バケット（日齢バケットモデル用）
+if "day_buckets" not in st.session_state:
+    st.session_state.day_buckets = None
+
 # 既存データからABC状態を復元
 if "abc_state_initialized" not in st.session_state:
     if _DATA_MANAGER_AVAILABLE and isinstance(st.session_state.daily_data, pd.DataFrame) and len(st.session_state.daily_data) > 0:
@@ -794,30 +804,88 @@ if _DATA_MANAGER_AVAILABLE:
             # --- データ入力フォーム ---
             st.markdown("#### 新しいデータを追加")
 
-            # 初回セットアップ: データがない場合、A/B/C群の初期値を設定
+            # 初回セットアップ: データがない場合、ベッドマップから初期値を設定
             _has_data = len(st.session_state.daily_data) > 0
             _abc_is_zero = (st.session_state.abc_state["A"] == 0
                             and st.session_state.abc_state["B"] == 0
                             and st.session_state.abc_state["C"] == 0)
 
             if not _has_data and _abc_is_zero:
-                st.warning("⚡ 初回セットアップ：現在の病棟のA/B/C群内訳を入力してください（この入力は初回のみです）")
-                with st.form("abc_initial_setup_form"):
-                    init_col1, init_col2, init_col3 = st.columns(3)
-                    with init_col1:
-                        init_a = st.number_input("A群（1-5日目）現在数", min_value=0, max_value=94, value=13, step=1)
-                    with init_col2:
-                        init_b = st.number_input("B群（6-14日目）現在数", min_value=0, max_value=94, value=38, step=1)
-                    with init_col3:
-                        init_c = st.number_input("C群（15日目〜）現在数", min_value=0, max_value=94, value=34, step=1)
+                st.info("⚡ 初回セットアップ：現在の入院患者ごとの在院日数を入力してください（この入力は初回のみです）")
 
-                    init_total = init_a + init_b + init_c
-                    st.info(f"💡 合計: **{init_total}名**（これが初日の在院患者数の基準になります）")
+                st.markdown("### 🏥 ベッドマップ入力")
+                st.caption("病棟のベッドマップに沿って、各患者の入院日数を入力してください。空きベッドは空欄のままでOKです。")
 
-                    if st.form_submit_button("初期値を設定", type="primary", width="stretch"):
-                        st.session_state.abc_state = {"A": init_a, "B": init_b, "C": init_c}
-                        st.success(f"初期値を設定しました。A群:{init_a} B群:{init_b} C群:{init_c}（合計:{init_total}名）")
-                        st.rerun()
+                # ベッド数（サイドバーの病床数を使用）
+                _init_num_beds = total_beds
+
+                # 初期データ: ベッド番号と入院日数の空テーブル
+                if "init_bed_df" not in st.session_state:
+                    _bed_data = []
+                    for _i in range(1, _init_num_beds + 1):
+                        _bed_data.append({"ベッド番号": f"Bed {_i}", "入院日数": None})
+                    st.session_state.init_bed_df = pd.DataFrame(_bed_data)
+
+                # data_editorで表示（スプレッドシート風）
+                _init_edited_df = st.data_editor(
+                    st.session_state.init_bed_df,
+                    column_config={
+                        "ベッド番号": st.column_config.TextColumn(
+                            "ベッド番号",
+                            disabled=True,
+                            width="small",
+                        ),
+                        "入院日数": st.column_config.NumberColumn(
+                            "入院日数（日）",
+                            help="入院何日目かを入力。空きベッドは空欄",
+                            min_value=1,
+                            max_value=365,
+                            step=1,
+                            width="small",
+                        ),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    num_rows="fixed",
+                    key="init_bed_editor",
+                )
+
+                # 入力状況サマリー
+                _init_filled = _init_edited_df["入院日数"].notna()
+                _init_patient_count = int(_init_filled.sum())
+                _init_day_list = _init_edited_df.loc[_init_filled, "入院日数"].astype(int).tolist()
+
+                # サマリー表示
+                _init_s1, _init_s2, _init_s3, _init_s4 = st.columns(4)
+                with _init_s1:
+                    st.metric("入力済み患者数", f"{_init_patient_count}名")
+                with _init_s2:
+                    _init_a_count = len([d for d in _init_day_list if 1 <= d <= 5])
+                    st.metric("A群（1-5日目）", f"{_init_a_count}名")
+                with _init_s3:
+                    _init_b_count = len([d for d in _init_day_list if 6 <= d <= 14])
+                    st.metric("B群（6-14日目）", f"{_init_b_count}名")
+                with _init_s4:
+                    _init_c_count = len([d for d in _init_day_list if d >= 15])
+                    st.metric("C群（15日目〜）", f"{_init_c_count}名")
+
+                # 設定ボタン
+                if st.button("🏥 初期値を設定", type="primary", use_container_width=True, disabled=(_init_patient_count == 0)):
+                    # day_listから日齢バケットを作成
+                    _init_buckets = create_initial_buckets_from_list(_init_day_list)
+                    _init_a, _init_b, _init_c = buckets_to_abc(_init_buckets)
+
+                    st.session_state.abc_state = {"A": _init_a, "B": _init_b, "C": _init_c}
+                    st.session_state.day_buckets = _init_buckets
+                    st.session_state._initial_day_buckets = _init_buckets.copy()
+                    st.session_state.init_total_patients = _init_patient_count
+
+                    # init_bed_dfをクリア（再表示防止）
+                    if "init_bed_df" in st.session_state:
+                        del st.session_state.init_bed_df
+
+                    st.success(f"✅ 初期値を設定しました！ A群:{_init_a}名 / B群:{_init_b}名 / C群:{_init_c}名 / 合計:{_init_a + _init_b + _init_c}名")
+                    st.rerun()
 
                 st.markdown("---")
 
@@ -860,16 +928,18 @@ if _DATA_MANAGER_AVAILABLE:
                 submitted = st.form_submit_button("追加", type="primary", width="stretch")
 
                 if submitted:
-                    # A/B/C群を自動計算
-                    prev_a = st.session_state.abc_state["A"]
-                    prev_b = st.session_state.abc_state["B"]
-                    prev_c = st.session_state.abc_state["C"]
+                    # A/B/C群を自動計算（日齢バケットモデル対応）
+                    _prev_buckets = st.session_state.get("day_buckets", None)
 
-                    new_a, new_b, new_c = calculate_abc_groups(
-                        prev_a, prev_b, prev_c,
+                    new_abc, new_buckets = calculate_abc_groups(
+                        st.session_state.abc_state,
                         input_admissions,
-                        input_discharge_a, input_discharge_b, input_discharge_c
+                        input_discharge_a, input_discharge_b, input_discharge_c,
+                        prev_buckets=_prev_buckets,
                     )
+                    new_a = new_abc["A"]
+                    new_b = new_abc["B"]
+                    new_c = new_abc["C"]
 
                     new_record = {
                         "date": pd.Timestamp(input_date),
@@ -893,8 +963,10 @@ if _DATA_MANAGER_AVAILABLE:
                         st.session_state.daily_data = add_record(
                             st.session_state.daily_data, new_record
                         )
-                        # ABC状態を更新
+                        # ABC状態とバケットを更新
                         st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
+                        if new_buckets is not None:
+                            st.session_state.day_buckets = new_buckets
                         st.success(f"{input_date} のデータを追加しました。（A群:{new_a} B群:{new_b} C群:{new_c} / 退院計:{auto_discharges}名）")
                         st.rerun()
                     else:
@@ -971,25 +1043,80 @@ if _DATA_MANAGER_AVAILABLE:
                                 + updated["discharge_c"].fillna(0).astype(int)
                             )
 
-                            # A/B/C群を時系列順に再計算
+                            # A/B/C群を時系列順に再計算（日齢バケットモデル対応）
                             updated = updated.sort_values("date").reset_index(drop=True)
-                            a, b, c = 0, 0, 0
-                            for idx in range(len(updated)):
-                                row = updated.iloc[idx]
-                                a, b, c = calculate_abc_groups(
-                                    a, b, c,
-                                    int(row.get("new_admissions", 0) or 0),
-                                    int(row.get("discharge_a", 0) or 0),
-                                    int(row.get("discharge_b", 0) or 0),
-                                    int(row.get("discharge_c", 0) or 0),
-                                )
-                                updated.at[idx, "phase_a_count"] = a
-                                updated.at[idx, "phase_b_count"] = b
-                                updated.at[idx, "phase_c_count"] = c
+
+                            # 初日のバケットを取得（session_stateに保存された初期バケット）
+                            _edit_buckets = st.session_state.get("day_buckets", None)
+                            _edit_abc = st.session_state.abc_state.copy()
+
+                            # 初期バケットがある場合は初期バケットから再構築
+                            # データの初日からバケットモデルで順次再計算
+                            if _edit_buckets is not None and _DATA_MANAGER_AVAILABLE:
+                                # 初期バケットを復元（init_total_patientsの時点のバケット）
+                                # 全レコードを初期状態から順に再計算
+                                _recalc_buckets = st.session_state.get("_initial_day_buckets", _edit_buckets)
+                                # _initial_day_bucketsが未保存なら現在のday_bucketsを初期として使う
+                                # ただし、初回設定時のバケットを保存しておく必要がある
+                                if "_initial_day_buckets" not in st.session_state and _edit_buckets is not None:
+                                    # 初期バケットがないので、バケットなしで再計算（簡易モデル）
+                                    pass
+
+                                _cur_buckets = st.session_state.get("_initial_day_buckets", None)
+                                if _cur_buckets is not None:
+                                    for idx in range(len(updated)):
+                                        row = updated.iloc[idx]
+                                        _new_buckets = advance_day_buckets(
+                                            _cur_buckets,
+                                            int(row.get("new_admissions", 0) or 0),
+                                            int(row.get("discharge_a", 0) or 0),
+                                            int(row.get("discharge_b", 0) or 0),
+                                            int(row.get("discharge_c", 0) or 0),
+                                        )
+                                        a, b, c = buckets_to_abc(_new_buckets)
+                                        updated.at[idx, "phase_a_count"] = a
+                                        updated.at[idx, "phase_b_count"] = b
+                                        updated.at[idx, "phase_c_count"] = c
+                                        _cur_buckets = _new_buckets
+
+                                    st.session_state.day_buckets = _cur_buckets
+                                    st.session_state.abc_state = {"A": a, "B": b, "C": c}
+                                else:
+                                    # 簡易モデルでフォールバック
+                                    _fb_abc = {"A": 0, "B": 0, "C": 0}
+                                    for idx in range(len(updated)):
+                                        row = updated.iloc[idx]
+                                        _fb_abc, _ = calculate_abc_groups(
+                                            _fb_abc,
+                                            int(row.get("new_admissions", 0) or 0),
+                                            int(row.get("discharge_a", 0) or 0),
+                                            int(row.get("discharge_b", 0) or 0),
+                                            int(row.get("discharge_c", 0) or 0),
+                                            prev_buckets=None,
+                                        )
+                                        updated.at[idx, "phase_a_count"] = _fb_abc["A"]
+                                        updated.at[idx, "phase_b_count"] = _fb_abc["B"]
+                                        updated.at[idx, "phase_c_count"] = _fb_abc["C"]
+                                    st.session_state.abc_state = _fb_abc
+                            else:
+                                # バケットなし: 簡易モデルで再計算
+                                _fb_abc = {"A": 0, "B": 0, "C": 0}
+                                for idx in range(len(updated)):
+                                    row = updated.iloc[idx]
+                                    _fb_abc, _ = calculate_abc_groups(
+                                        _fb_abc,
+                                        int(row.get("new_admissions", 0) or 0),
+                                        int(row.get("discharge_a", 0) or 0),
+                                        int(row.get("discharge_b", 0) or 0),
+                                        int(row.get("discharge_c", 0) or 0),
+                                        prev_buckets=None,
+                                    )
+                                    updated.at[idx, "phase_a_count"] = _fb_abc["A"]
+                                    updated.at[idx, "phase_b_count"] = _fb_abc["B"]
+                                    updated.at[idx, "phase_c_count"] = _fb_abc["C"]
+                                st.session_state.abc_state = _fb_abc
 
                             st.session_state.daily_data = updated
-                            # ABC状態も更新
-                            st.session_state.abc_state = {"A": a, "B": b, "C": c}
                             st.success("変更を保存しました。A/B/C群と退院数を再計算しました。")
                             st.rerun()
                         except Exception as e:
