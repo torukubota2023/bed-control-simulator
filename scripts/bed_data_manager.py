@@ -579,6 +579,48 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
 
     raw = raw.sort_values("date").reset_index(drop=True)
 
+    # phase_a/b/c_count が全てNAの場合、在院患者数と退院内訳から推定
+    _phase_cols = ["phase_a_count", "phase_b_count", "phase_c_count"]
+    if all(c in raw.columns for c in _phase_cols) and raw[_phase_cols].isna().all().all():
+        # 推定ロジック: 退院内訳の比率から在院患者の構成を推定
+        # A群(1-5日目): 新規入院×5日分の蓄積 / 在院日数に応じた割合
+        # 典型的な割合: A群20-25%, B群35-40%, C群35-45%（在院日数18日想定）
+        for idx, row in raw.iterrows():
+            tp = int(row["total_patients"]) if pd.notna(row["total_patients"]) else 0
+            if tp == 0:
+                continue
+            adm = int(row["new_admissions"]) if pd.notna(row["new_admissions"]) else 0
+            # 退院内訳が入力されている場合はその比率をヒントにする
+            da = int(row["discharge_a"]) if pd.notna(row["discharge_a"]) else 0
+            db = int(row["discharge_b"]) if pd.notna(row["discharge_b"]) else 0
+            dc = int(row["discharge_c"]) if pd.notna(row["discharge_c"]) else 0
+            total_d = da + db + dc
+            if total_d > 0 and adm > 0:
+                # 退院構成比に基づく推定（滞在日数の重み付け）
+                # A群: 短期入院が多い → 入院数×2.5日（平均滞在）/ 在院日数
+                est_a = min(int(adm * 2.5), tp)
+                est_c = min(int(tp * dc / max(total_d, 1) * 1.5), tp - est_a)
+                est_b = tp - est_a - est_c
+            else:
+                # デフォルト比率: A群22%, B群38%, C群40%
+                est_a = int(tp * 0.22)
+                est_b = int(tp * 0.38)
+                est_c = tp - est_a - est_b
+            # 負にならないよう補正
+            est_a = max(est_a, 0)
+            est_b = max(est_b, 0)
+            est_c = max(est_c, 0)
+            # 合計がtotal_patientsに一致するよう調整
+            total_est = est_a + est_b + est_c
+            if total_est != tp and total_est > 0:
+                ratio = tp / total_est
+                est_a = int(est_a * ratio)
+                est_b = int(est_b * ratio)
+                est_c = tp - est_a - est_b
+            raw.at[idx, "phase_a_count"] = est_a
+            raw.at[idx, "phase_b_count"] = est_b
+            raw.at[idx, "phase_c_count"] = est_c
+
     # 値レンジの警告（エラーではなく警告）
     warnings = []
     out_of_range = raw[(raw["total_patients"] < 0) | (raw["total_patients"] > 94)]
