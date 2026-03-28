@@ -1356,9 +1356,13 @@ if _DATA_MANAGER_AVAILABLE:
         else:
             _active_data = st.session_state.daily_data
 
-        # Ward selector filtering
-        if not _is_analysis_demo and _selected_ward_key in ("5F", "6F") and "ward" in _active_data.columns:
-            _active_data = _active_data[_active_data["ward"] == _selected_ward_key].copy()
+        # Ward selector filtering / aggregation
+        if not _is_analysis_demo and isinstance(_active_data, pd.DataFrame) and "ward" in _active_data.columns:
+            if _selected_ward_key in ("5F", "6F"):
+                _active_data = _active_data[_active_data["ward"] == _selected_ward_key].copy()
+            else:
+                # 全体モード: 病棟データを日付ごとに合算
+                _active_data = aggregate_wards(_active_data)
 
         if _selected_ward_key != "全体":
             st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
