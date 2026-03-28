@@ -587,21 +587,9 @@ if run_button:
             strategy_en = STRATEGY_MAP[strategy]
             params = _build_cli_params(params_dict)
 
-            # 全体シミュレーション（94床）
-            df = simulate_bed_control(params, strategy_en)
-            cli_summary = summarize_results(df)
-            df_ja = _rename_df(df)
-            summary_ja = _convert_summary(cli_summary, params)
-            summary_ja = _enrich_summary(summary_ja, df_ja)
-
-            st.session_state.sim_df = df_ja
-            st.session_state.sim_summary = summary_ja
-            st.session_state.sim_df_raw = df
-            st.session_state.sim_params = params
-
-            # 病棟別シミュレーション（各47床、デモ用シナリオ）
-            # 5F: 稼働率低下傾向（入院不足）→ アラートが出る状態
-            # 6F: 順調な稼働率（90-95%レンジ安定）
+            # --- 病棟別シミュレーション（各47床）---
+            # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
+            # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
             _ward_param_adj = {
                 "5F": {"avg_los": max(10, params.get("avg_los", 18) - 4),
                        "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.35),
@@ -629,6 +617,50 @@ if run_button:
             st.session_state.sim_ward_dfs = _sim_ward_dfs
             st.session_state.sim_ward_raw_dfs = _sim_ward_raw_dfs
             st.session_state.sim_ward_summaries = _sim_ward_summaries
+
+            # --- 全体 = 5F + 6F を日次で合算 ---
+            _raw_5f = _sim_ward_raw_dfs["5F"].copy()
+            _raw_6f = _sim_ward_raw_dfs["6F"].copy()
+            _total_beds = get_ward_beds("5F") + get_ward_beds("6F")
+
+            # 加算系カラム（日次で合計）
+            _sum_cols = ["total_patients", "new_admissions", "discharges",
+                         "phase_a_count", "phase_b_count", "phase_c_count",
+                         "daily_revenue", "daily_cost", "daily_profit",
+                         "empty_beds", "excess_demand", "opportunity_loss",
+                         "recommended_discharges", "allowable_holds"]
+
+            df = _raw_5f[["date", "day"]].copy()
+            for _col in _sum_cols:
+                if _col in _raw_5f.columns and _col in _raw_6f.columns:
+                    df[_col] = _raw_5f[_col].values + _raw_6f[_col].values
+
+            # 稼働率は再計算（合計患者数 / 合計病床数）
+            df["occupancy_rate"] = (df["total_patients"] / _total_beds).round(4)
+
+            # フェーズ比率は再計算
+            _total_phase = df["phase_a_count"] + df["phase_b_count"] + df["phase_c_count"]
+            _total_phase_safe = _total_phase.replace(0, 1)
+            df["phase_a_ratio"] = (df["phase_a_count"] / _total_phase_safe).round(4)
+            df["phase_b_ratio"] = (df["phase_b_count"] / _total_phase_safe).round(4)
+            df["phase_c_ratio"] = (df["phase_c_count"] / _total_phase_safe).round(4)
+
+            # フラグは合算後の値で再判定
+            df["flag_low_occupancy"] = df["occupancy_rate"] < params.get("target_occupancy_lower", 0.90)
+            df["flag_high_occupancy"] = df["occupancy_rate"] > params.get("target_occupancy_upper", 0.95)
+            df["flag_excess_a"] = df["phase_a_ratio"] > 0.25
+            df["flag_shortage_b"] = df["phase_b_ratio"] < 0.30
+            df["flag_stagnant_c"] = df["phase_c_ratio"] > 0.40
+
+            cli_summary = summarize_results(df)
+            df_ja = _rename_df(df)
+            summary_ja = _convert_summary(cli_summary, params)
+            summary_ja = _enrich_summary(summary_ja, df_ja)
+
+            st.session_state.sim_df = df_ja
+            st.session_state.sim_summary = summary_ja
+            st.session_state.sim_df_raw = df
+            st.session_state.sim_params = params
 
             if compare_all:
                 # hashable化してキャッシュ用
