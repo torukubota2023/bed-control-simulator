@@ -89,8 +89,9 @@ try:
         DAY_BUCKET_KEYS,
     )
     _DATA_MANAGER_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as _dm_err:
+    import traceback as _dm_tb
+    _DATA_MANAGER_ERROR = f"{_dm_err}\n{_dm_tb.format_exc()}"
 
 # ---------------------------------------------------------------------------
 # A/B/C群 自動計算ロジック（日齢バケットモデル）
@@ -210,6 +211,10 @@ if not _CORE_AVAILABLE:
     st.info("Python のバージョン: " + sys.version)
     st.info("sys.path: " + str(sys.path))
     st.stop()
+
+if not _DATA_MANAGER_AVAILABLE:
+    _dm_error_msg = _DATA_MANAGER_ERROR if "_DATA_MANAGER_ERROR" in dir() else "bed_data_manager モジュールが見つかりません"
+    st.sidebar.warning(f"⚠️ 日次データ管理モジュールのインポートに失敗しました\n\n{_dm_error_msg}")
 
 st.title("🏥 ベッドコントロールシミュレーター")
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
