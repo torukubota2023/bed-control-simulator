@@ -1812,6 +1812,31 @@ with tabs[_tab_idx["フェーズ構成"]]:
     else:
         st.error(f"B群（稼ぎ頭）は理想比率を **{_b_diff:.1f}%** 下回っています。退院・入院バランスの見直しが急務です。")
 
+    # --- 病棟別フェーズ構成 ---
+    if _is_actual_data_mode and _ward_data_available:
+        st.markdown("---")
+        st.markdown("#### 病棟別フェーズ構成")
+        _ph_col_5f, _ph_col_6f = st.columns(2)
+        for _ph_col, _w_name in [(_ph_col_5f, "5F"), (_ph_col_6f, "6F")]:
+            with _ph_col:
+                if _w_name in _ward_raw_dfs:
+                    _w_raw = _ward_raw_dfs[_w_name]
+                    _w_a = float(_w_raw["phase_a_count"].fillna(0).mean())
+                    _w_b = float(_w_raw["phase_b_count"].fillna(0).mean())
+                    _w_c = float(_w_raw["phase_c_count"].fillna(0).mean())
+                    _w_total_p = _w_a + _w_b + _w_c
+                    if _w_total_p > 0:
+                        fig_ph, ax_ph = plt.subplots(figsize=(4, 3))
+                        sizes = [_w_a, _w_b, _w_c]
+                        labels = [f"A群\n{_w_a:.0f}名", f"B群\n{_w_b:.0f}名", f"C群\n{_w_c:.0f}名"]
+                        colors = ["#E74C3C", "#F39C12", "#3498DB"]
+                        ax_ph.pie(sizes, labels=labels, colors=colors, startangle=90, textprops={"fontsize": 8})
+                        ax_ph.set_title(f"{_w_name} A/B/C群構成", fontsize=10)
+                        st.pyplot(fig_ph)
+                        plt.close(fig_ph)
+                    else:
+                        st.info(f"{_w_name}: A/B/C群データなし")
+
 
 # ===== タブ3: 収支分析 =====
 with tabs[_tab_idx["収支分析"]]:
@@ -1914,6 +1939,24 @@ with tabs[_tab_idx["収支分析"]]:
     _max_phase = max([("A群", _pct_a), ("B群", _pct_b), ("C群", _pct_c)], key=lambda x: x[1])
     _phase_desc = {"A群": "A群（急性期）", "B群": "B群（回復期）", "C群": "C群（退院準備期）"}
     st.info(f"💡 今月の粗利の **{_max_phase[1]:.0f}%** は **{_phase_desc[_max_phase[0]]}** が生み出しています。")
+
+    # --- 病棟別収支 ---
+    if _is_actual_data_mode and _ward_data_available:
+        st.markdown("---")
+        st.markdown("#### 病棟別収支サマリー")
+        _rv_col_5f, _rv_col_6f = st.columns(2)
+        for _rv_col, _w_name in [(_rv_col_5f, "5F"), (_rv_col_6f, "6F")]:
+            with _rv_col:
+                if _w_name in _ward_raw_dfs:
+                    _w_raw = _ward_raw_dfs[_w_name]
+                    _w_rev = int(_w_raw["daily_revenue"].fillna(0).sum())
+                    _w_cost = int(_w_raw["daily_cost"].fillna(0).sum())
+                    _w_profit = int(_w_raw["daily_profit"].fillna(0).sum())
+                    st.markdown(f"**{_w_name}**")
+                    _rv_m1, _rv_m2, _rv_m3 = st.columns(3)
+                    _rv_m1.metric("収益", fmt_yen(_w_rev))
+                    _rv_m2.metric("コスト", fmt_yen(_w_cost))
+                    _rv_m3.metric("粗利", fmt_yen(_w_profit))
 
 
 # ===== タブ4: 経営判断フラグ =====
@@ -2021,6 +2064,27 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             st.checkbox(_item, value=False, key=f"action_{hash(_item)}")
     else:
         st.success("特別なアクションは不要です。現行運用を維持してください。")
+
+    # --- 病棟別フラグ ---
+    if _is_actual_data_mode and _ward_data_available:
+        st.markdown("---")
+        st.markdown("#### 病棟別アラート")
+        _fl_col_5f, _fl_col_6f = st.columns(2)
+        for _fl_col, _w_name in [(_fl_col_5f, "5F"), (_fl_col_6f, "6F")]:
+            with _fl_col:
+                if _w_name in _ward_raw_dfs:
+                    _w_raw = _ward_raw_dfs[_w_name]
+                    _w_beds = get_ward_beds(_w_name)
+                    _w_last = _w_raw.iloc[-1] if len(_w_raw) > 0 else None
+                    if _w_last is not None:
+                        _w_occ = float(_w_last.get("occupancy_rate", 0)) * 100
+                        st.markdown(f"**{_w_name}** 直近稼働率: **{_w_occ:.1f}%**")
+                        if _w_occ > target_upper * 100:
+                            st.error(f"⚠️ 目標上限({target_upper*100:.0f}%)超過 → 退院調整検討")
+                        elif _w_occ < target_lower * 100:
+                            st.warning(f"⚠️ 目標下限({target_lower*100:.0f}%)未達 → 入院受入強化")
+                        else:
+                            st.success("✅ 目標レンジ内")
 
 
 # ===== タブ5-7: 意思決定支援タブ =====
