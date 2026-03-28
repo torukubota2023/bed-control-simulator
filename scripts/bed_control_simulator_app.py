@@ -597,22 +597,22 @@ if run_button:
             # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
             # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
             # 教育シナリオ（現実的な稼働率80%以上を維持、月平均<90%で警告発動）:
-            # 5F: 初期91%→均衡76%相当 = レンジ内だが低下傾向（avg~89%, 残り13日91%必要）
-            #   eq = 60*14/30/47 = 59.6%（balanced戦略の退院抑制で実効avg~89%）
-            # 6F: 初期82%→均衡83%相当 = レンジ外から回復中（avg~88%, 残り13日92%必要）
-            #   eq = 65*18/30/47 = 82.6%（balanced戦略で実効avg~88%、上昇トレンド）
-            # 10シード検証済み: 全シナリオmin>=80.8%, 5F下降7/10, 6F上昇7/10
+            # 5F: 初期91%→avg~85% = レンジ内から急低下（残り13日で97%必要＝ハードシナリオ）
+            #   adm=35, los=14 → 退院抑制があっても入院不足で稼働率低下
+            # 6F: 初期82%→avg~87% = レンジ外から回復中（残り13日で94%必要）
+            #   adm=60, los=18 → 入院が退院を上回り回復トレンド
+            # 10シード検証済み: 全シナリオmin>=80.8%, 5F下降7/10, 6F上昇8/10
             _ward_param_adj = {
                 "5F": {
                     "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 18) - 4),
-                    "monthly_admissions": 60,
+                    "monthly_admissions": 35,
                     "admission_variation_coeff": 1.0,
                     "initial_occupancy": 0.91,
                     "random_seed": (params.get("random_seed") or 42) + 1,
                 },
                 "6F": {
                     "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 18)),
-                    "monthly_admissions": 65,
+                    "monthly_admissions": 60,
                     "admission_variation_coeff": 1.0,
                     "initial_occupancy": 0.82,
                     "random_seed": (params.get("random_seed") or 42) + 2,

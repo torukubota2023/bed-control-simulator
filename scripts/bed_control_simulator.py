@@ -302,10 +302,19 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
                         prob *= 0.4
 
             elif strategy == "balanced":
-                # バランス：稼働率ゾーン別に動的制御
-                if occupancy_before < 0.90:
-                    # 稼働率90%未満: 退院を強く抑制
+                # バランス：稼働率ゾーン別に段階的制御
+                if occupancy_before < 0.82:
+                    # 稼働率82%未満: 退院をほぼ停止
+                    prob *= 0.15
+                elif occupancy_before < 0.85:
+                    # 稼働率82-85%: 退院を強く抑制
                     prob *= 0.3
+                elif occupancy_before < 0.88:
+                    # 稼働率85-88%: 退院を中程度に抑制
+                    prob *= 0.5
+                elif occupancy_before < 0.90:
+                    # 稼働率88-90%: 退院を軽く抑制
+                    prob *= 0.7
                 elif occupancy_before <= 0.95:
                     # 稼働率90-95%: 通常運用（微調整のみ）
                     if ratio_b_pre < 0.25 and phase == "B":
