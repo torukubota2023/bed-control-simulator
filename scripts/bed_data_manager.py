@@ -173,12 +173,17 @@ def validate_record(record: dict, existing_df: pd.DataFrame | None = None) -> tu
         if isinstance(dval, (int, np.integer)) and dval < 0:
             errors.append(f"{dlabel}は0以上で入力してください。")
 
-    # 重複日付チェック
+    # 重複チェック（日付+病棟の組み合わせ）
     if existing_df is not None and len(existing_df) > 0:
         try:
             check_date = pd.to_datetime(record["date"])
-            if check_date in existing_df["date"].values:
-                errors.append(f"日付 {check_date.strftime('%Y-%m-%d')} のデータは既に存在します。")
+            check_ward = record.get("ward", "all")
+            if "ward" in existing_df.columns:
+                existing_match = existing_df[(existing_df["date"] == check_date) & (existing_df["ward"] == check_ward)]
+            else:
+                existing_match = existing_df[existing_df["date"] == check_date]
+            if len(existing_match) > 0:
+                errors.append(f"日付 {check_date.strftime('%Y-%m-%d')} ({check_ward}) のデータは既に存在します。")
         except (ValueError, TypeError, KeyError):
             pass  # 日付エラーは上で既にキャッチ済み
 
@@ -631,13 +636,14 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
     # data_source カラムを追加（インポートデータ）
     raw["data_source"] = "imported"
 
-    # 重複日付チェック
-    dup = raw["date"].duplicated()
+    # 重複チェック（日付+病棟の組み合わせで判定）
+    _dup_cols = ["date", "ward"] if "ward" in raw.columns else ["date"]
+    dup = raw.duplicated(subset=_dup_cols)
     if dup.any():
         dup_dates = raw.loc[dup, "date"].dt.strftime("%Y-%m-%d").tolist()
-        return create_empty_dataframe(), f"重複日付があります: {', '.join(dup_dates)}"
+        return create_empty_dataframe(), f"重複があります: {', '.join(dup_dates)}"
 
-    raw = raw.sort_values("date").reset_index(drop=True)
+    raw = raw.sort_values(["date"] + (["ward"] if "ward" in raw.columns else [])).reset_index(drop=True)
 
     # phase_a/b/c_count が全てNAの場合、在院患者数と退院内訳から推定
     _phase_cols = ["phase_a_count", "phase_b_count", "phase_c_count"]
