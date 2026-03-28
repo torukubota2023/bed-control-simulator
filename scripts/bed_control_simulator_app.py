@@ -2158,6 +2158,46 @@ with tabs[_tab_idx["日次推移"]]:
     ax.legend(loc="lower right")
     ax.set_xlim(1, days_in_month)
     ax.grid(True, alpha=0.3)
+
+    # --- 月平均目標達成ライン（点線）---
+    _mt_chart = _calc_monthly_target(_active_raw_df, target_lower, days_in_month, _view_beds)
+    if _mt_chart and _mt_chart["days_remaining"] > 0 and _mt_chart["avg_so_far"] < _mt_chart["monthly_target_pct"]:
+        _chart_last_day = len(df["稼働率"])  # データの最終日番号
+        _chart_end_day = _mt_chart["total_days"]  # 月末日番号
+        _required_occ_pct = _mt_chart["required_occ"]
+        _occ_pct_values = (df["稼働率"] * 100).tolist()
+
+        # 最終日の実績値から必要稼働率への点線
+        _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+        _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
+
+        # 目標ラインの色を難易度で変更
+        _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
+
+        ax.plot(_target_x, _target_y,
+                linestyle="--", linewidth=2.5, color=_target_color,
+                marker="", zorder=5)
+
+        # 必要稼働率のラベル
+        ax.annotate(
+            f'目標達成に必要\n{_required_occ_pct:.1f}%',
+            xy=(_chart_end_day - 2, _required_occ_pct),
+            fontsize=10, fontweight="bold", color=_target_color,
+            ha="right", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
+        )
+
+        # X軸の範囲を月末まで拡張
+        ax.set_xlim(1, _chart_end_day + 0.5)
+
+        # 月平均の水平線（現在の平均）
+        ax.axhline(y=_mt_chart["avg_so_far"], color="gray", linestyle=":", linewidth=1, alpha=0.7)
+        ax.annotate(
+            f'月平均 {_mt_chart["avg_so_far"]:.1f}%',
+            xy=(2, _mt_chart["avg_so_far"]),
+            fontsize=9, color="gray", va="bottom",
+        )
+
     st.pyplot(fig)
     plt.close(fig)
 
