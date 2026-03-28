@@ -7,6 +7,7 @@ CLI版シミュレーターには依存しない。
 
 個人情報は一切含めない（集計値のみ）。
 """
+# 将来拡張: 日齢バケット（1日目〜15日以上）で管理する設計に拡張可能
 
 from __future__ import annotations
 
@@ -23,11 +24,22 @@ DAILY_RECORD_COLUMNS = [
     "total_patients",    # 在院患者数
     "new_admissions",    # 新規入院数
     "discharges",        # 退院数
-    "phase_a_count",     # A群患者数（1-5日目）
-    "phase_b_count",     # B群患者数（6-14日目）
-    "phase_c_count",     # C群患者数（15日目以降）
+    "discharge_a",       # A群相当退院数（1-5日目退院）
+    "discharge_b",       # B群相当退院数（6-14日目退院）
+    "discharge_c",       # C群相当退院数（15日目以降退院）
+    "phase_a_count",     # A群患者数（1-5日目）— 自動計算、手入力不要
+    "phase_b_count",     # B群患者数（6-14日目）— 自動計算、手入力不要
+    "phase_c_count",     # C群患者数（15日目以降）— 自動計算、手入力不要
     "avg_los",           # 平均在院日数（任意、空欄可）
     "notes",             # 備考（任意）
+]
+
+# 必須入力カラム（phase_a/b/c_countは自動計算のため必須ではない）
+REQUIRED_COLUMNS = [
+    "date",
+    "total_patients",
+    "new_admissions",
+    "discharges",
 ]
 
 # デフォルトの収益・コストパラメータ（CLI版と同一）
@@ -50,6 +62,7 @@ def create_empty_dataframe() -> pd.DataFrame:
     # 型を明示的に設定
     df["date"] = pd.to_datetime(df["date"])
     for col in ["total_patients", "new_admissions", "discharges",
+                 "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         df[col] = df[col].astype("Int64")  # nullable int
     df["avg_los"] = df["avg_los"].astype("Float64")  # nullable float
@@ -94,7 +107,24 @@ def validate_record(record: dict, existing_df: pd.DataFrame | None = None) -> tu
         elif val < 0:
             errors.append(f"{label}は0以上で入力してください。")
 
-    # フェーズ合計チェック
+    # 退院内訳チェック
+    da = record.get("discharge_a", 0) or 0
+    db = record.get("discharge_b", 0) or 0
+    dc = record.get("discharge_c", 0) or 0
+    for dval, dlabel in [(da, "discharge_a"), (db, "discharge_b"), (dc, "discharge_c")]:
+        if isinstance(dval, (int, np.integer)) and dval < 0:
+            errors.append(f"{dlabel}は0以上で入力してください。")
+
+    dis = record.get("discharges")
+    if (isinstance(dis, (int, np.integer))
+            and all(isinstance(v, (int, np.integer)) for v in [da, db, dc])):
+        discharge_sum = int(da) + int(db) + int(dc)
+        if discharge_sum > int(dis):
+            errors.append(
+                f"退院内訳の合計({discharge_sum})が退院数({dis})を超えています。"
+            )
+
+    # フェーズ合計チェック（phase_a/b/c_countが手入力された場合のみ）
     pa = record.get("phase_a_count")
     pb = record.get("phase_b_count")
     pc = record.get("phase_c_count")
@@ -130,9 +160,18 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
         record_copy["notes"] = ""
     if "data_source" not in record_copy:
         record_copy["data_source"] = "manual"
+    # 退院内訳のデフォルト値
+    for col in ["discharge_a", "discharge_b", "discharge_c"]:
+        if col not in record_copy or record_copy[col] is None:
+            record_copy[col] = 0
+    # phase_a/b/c_count はオプション（自動計算される場合がある）
+    for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:
+        if col not in record_copy:
+            record_copy[col] = pd.NA
     new_row = pd.DataFrame([record_copy])
     # カラム型を合わせる
     for col in ["total_patients", "new_admissions", "discharges",
+                 "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         if col in new_row.columns:
             new_row[col] = new_row[col].astype("Int64")
@@ -504,9 +543,8 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
     except Exception as e:
         return create_empty_dataframe(), f"CSVの読み込みに失敗しました: {e}"
 
-    # カラムチェック
-    required = ["date", "total_patients", "new_admissions", "discharges",
-                 "phase_a_count", "phase_b_count", "phase_c_count"]
+    # カラムチェック（必須は基本4列のみ、phase_a/b/c_countは自動計算可能）
+    required = REQUIRED_COLUMNS  # date, total_patients, new_admissions, discharges
     missing = [c for c in required if c not in raw.columns]
     if missing:
         return create_empty_dataframe(), f"必須カラムが不足しています: {', '.join(missing)}"
@@ -517,9 +555,21 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
     except Exception:
         return create_empty_dataframe(), "date列の日付変換に失敗しました。YYYY-MM-DD形式で記載してください。"
 
+    # 旧CSVに退院内訳カラムがない場合は0で埋める
+    for col in ["discharge_a", "discharge_b", "discharge_c"]:
+        if col not in raw.columns:
+            raw[col] = 0
+
+    # phase_a/b/c_count がない場合はNAで埋める（自動計算対応）
+    for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:
+        if col not in raw.columns:
+            raw[col] = pd.NA
+
     for col in ["total_patients", "new_admissions", "discharges",
+                 "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
-        raw[col] = pd.to_numeric(raw[col], errors="coerce").astype("Int64")
+        if col in raw.columns:
+            raw[col] = pd.to_numeric(raw[col], errors="coerce").astype("Int64")
 
     if "avg_los" in raw.columns:
         raw["avg_los"] = pd.to_numeric(raw["avg_los"], errors="coerce").astype("Float64")
@@ -582,6 +632,7 @@ def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataF
 
     # 数値型に変換（nullable Int64 を通常の float に）
     for col in ["total_patients", "new_admissions", "discharges",
+                "discharge_a", "discharge_b", "discharge_c",
                 "phase_a_count", "phase_b_count", "phase_c_count"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(float)
@@ -686,6 +737,23 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
         phase_b = int(round(current_patients * b_ratio))
         phase_c = current_patients - phase_a - phase_b  # 端数調整
 
+        # 退院内訳を生成（退院数をA/B/Cに分配）
+        if discharges > 0:
+            # A群退院（短期入院 1-5日目）: 10-20%
+            da_ratio = rng.uniform(0.10, 0.20)
+            # B群退院（中期入院 6-14日目）: 30-40%
+            db_ratio = rng.uniform(0.30, 0.40)
+            dc_ratio = 1.0 - da_ratio - db_ratio
+
+            discharge_a = int(round(discharges * da_ratio))
+            discharge_b = int(round(discharges * db_ratio))
+            discharge_c = discharges - discharge_a - discharge_b  # 端数調整
+            discharge_c = max(0, discharge_c)
+        else:
+            discharge_a = 0
+            discharge_b = 0
+            discharge_c = 0
+
         # 平均在院日数（やや変動）
         avg_los_val = round(rng.normal(17.5, 1.5), 1)
         avg_los_val = max(12.0, min(25.0, avg_los_val))
@@ -695,6 +763,9 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
             "total_patients": current_patients,
             "new_admissions": new_admissions,
             "discharges": discharges,
+            "discharge_a": discharge_a,
+            "discharge_b": discharge_b,
+            "discharge_c": discharge_c,
             "phase_a_count": phase_a,
             "phase_b_count": phase_b,
             "phase_c_count": phase_c,
@@ -704,6 +775,7 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
 
     df = pd.DataFrame(records)
     for col in ["total_patients", "new_admissions", "discharges",
+                 "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         df[col] = df[col].astype("Int64")
     df["avg_los"] = df["avg_los"].astype("Float64")
