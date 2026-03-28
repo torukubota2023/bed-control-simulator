@@ -398,9 +398,12 @@ def predict_monthly_kpi(
     actual_gross_profit = 0.0
     if len(month_data) > 0:
         for _, row in month_data.iterrows():
-            pa = int(row.get("phase_a_count", 0) or 0)
-            pb = int(row.get("phase_b_count", 0) or 0)
-            pc = int(row.get("phase_c_count", 0) or 0)
+            _pa_val = row.get("phase_a_count", 0)
+            pa = 0 if pd.isna(_pa_val) else int(_pa_val)
+            _pb_val = row.get("phase_b_count", 0)
+            pb = 0 if pd.isna(_pb_val) else int(_pb_val)
+            _pc_val = row.get("phase_c_count", 0)
+            pc = 0 if pd.isna(_pc_val) else int(_pc_val)
             actual_gross_profit += (
                 pa * (revenue_params["phase_a_revenue"] - revenue_params["phase_a_cost"])
                 + pb * (revenue_params["phase_b_revenue"] - revenue_params["phase_b_cost"])
@@ -410,14 +413,14 @@ def predict_monthly_kpi(
     # 残り日数分は直近のフェーズ構成比で推定
     if len(work) >= 3:
         recent = work.tail(min(7, len(work)))
-        avg_a = float(recent["phase_a_count"].mean())
-        avg_b = float(recent["phase_b_count"].mean())
-        avg_c = float(recent["phase_c_count"].mean())
+        avg_a = float(recent["phase_a_count"].fillna(0).mean())
+        avg_b = float(recent["phase_b_count"].fillna(0).mean())
+        avg_c = float(recent["phase_c_count"].fillna(0).mean())
     else:
         # フォールバック: 全体平均
-        avg_a = float(work["phase_a_count"].mean()) if len(work) > 0 else 0
-        avg_b = float(work["phase_b_count"].mean()) if len(work) > 0 else 0
-        avg_c = float(work["phase_c_count"].mean()) if len(work) > 0 else 0
+        avg_a = float(work["phase_a_count"].fillna(0).mean()) if len(work) > 0 else 0
+        avg_b = float(work["phase_b_count"].fillna(0).mean()) if len(work) > 0 else 0
+        avg_c = float(work["phase_c_count"].fillna(0).mean()) if len(work) > 0 else 0
 
     predicted_daily_profit = (
         avg_a * (revenue_params["phase_a_revenue"] - revenue_params["phase_a_cost"])
@@ -473,9 +476,9 @@ def generate_weekly_summary(df: pd.DataFrame, num_beds: int = 94) -> list[dict]:
         total_dis = int(group["discharges"].sum())
 
         tp = group["total_patients"].replace(0, np.nan)
-        avg_a = float((group["phase_a_count"] / tp).mean()) if tp.notna().any() else 0
-        avg_b = float((group["phase_b_count"] / tp).mean()) if tp.notna().any() else 0
-        avg_c = float((group["phase_c_count"] / tp).mean()) if tp.notna().any() else 0
+        avg_a = float((group["phase_a_count"].fillna(0) / tp).mean()) if tp.notna().any() else 0
+        avg_b = float((group["phase_b_count"].fillna(0) / tp).mean()) if tp.notna().any() else 0
+        avg_c = float((group["phase_c_count"].fillna(0) / tp).mean()) if tp.notna().any() else 0
 
         occ_change = None
         if prev_occupancy is not None:
@@ -621,20 +624,20 @@ def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataF
 
     df["occupancy_rate"] = df["total_patients"] / num_beds
     tp_safe = df["total_patients"].clip(lower=1)
-    df["phase_a_ratio"] = df["phase_a_count"] / tp_safe
-    df["phase_b_ratio"] = df["phase_b_count"] / tp_safe
-    df["phase_c_ratio"] = df["phase_c_count"] / tp_safe
+    df["phase_a_ratio"] = df["phase_a_count"].fillna(0) / tp_safe
+    df["phase_b_ratio"] = df["phase_b_count"].fillna(0) / tp_safe
+    df["phase_c_ratio"] = df["phase_c_count"].fillna(0) / tp_safe
 
     # 収益・コスト計算
     df["daily_revenue"] = (
-        df["phase_a_count"] * params.get("phase_a_revenue", 30000)
-        + df["phase_b_count"] * params.get("phase_b_revenue", 30000)
-        + df["phase_c_count"] * params.get("phase_c_revenue", 30000)
+        df["phase_a_count"].fillna(0) * params.get("phase_a_revenue", 30000)
+        + df["phase_b_count"].fillna(0) * params.get("phase_b_revenue", 30000)
+        + df["phase_c_count"].fillna(0) * params.get("phase_c_revenue", 30000)
     )
     df["daily_cost"] = (
-        df["phase_a_count"] * params.get("phase_a_cost", 28000)
-        + df["phase_b_count"] * params.get("phase_b_cost", 13000)
-        + df["phase_c_count"] * params.get("phase_c_cost", 11000)
+        df["phase_a_count"].fillna(0) * params.get("phase_a_cost", 28000)
+        + df["phase_b_count"].fillna(0) * params.get("phase_b_cost", 13000)
+        + df["phase_c_count"].fillna(0) * params.get("phase_c_cost", 11000)
     )
     df["daily_profit"] = df["daily_revenue"] - df["daily_cost"]
 
