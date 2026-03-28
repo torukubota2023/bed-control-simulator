@@ -649,6 +649,22 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
         st.session_state.actual_params = _actual_params
         _actual_data_available = True
 
+        # 病棟別データの準備（3列表示用）
+        _ward_data_available = ("ward" in _source_data.columns
+                                and _source_data["ward"].isin(["5F", "6F"]).any())
+        if _ward_data_available:
+            _ward_raw_dfs = {}
+            _ward_display_dfs = {}
+            for _w in ["5F", "6F"]:
+                _w_data = _source_data[_source_data["ward"] == _w].copy()
+                if len(_w_data) > 0:
+                    _w_params = _actual_params.copy()
+                    _w_params["num_beds"] = get_ward_beds(_w)
+                    _ward_raw_dfs[_w] = convert_actual_to_display(_w_data, _w_params)
+                    _ward_display_dfs[_w] = _rename_df(_ward_raw_dfs[_w])
+        else:
+            _ward_data_available = False
+
 # ---------------------------------------------------------------------------
 # 結果未実行の場合の案内
 # ---------------------------------------------------------------------------
@@ -1517,6 +1533,29 @@ with tabs[_tab_idx["日次推移"]]:
     st.pyplot(fig)
     plt.close(fig)
 
+    # --- 病棟別稼働率（2列表示） ---
+    if _is_actual_data_mode and _ward_data_available:
+        st.markdown("#### 病棟別稼働率")
+        _w_col_5f, _w_col_6f = st.columns(2)
+        for _w_col, _w_name in [(_w_col_5f, "5F"), (_w_col_6f, "6F")]:
+            with _w_col:
+                if _w_name in _ward_display_dfs:
+                    _w_df = _ward_display_dfs[_w_name]
+                    _w_beds = get_ward_beds(_w_name)
+                    fig_w, ax_w = plt.subplots(figsize=(5, 2.5))
+                    ax_w.plot(_w_df["日"], _w_df["稼働率"] * 100, color="#2C3E50", linewidth=1.5)
+                    ax_w.axhspan(target_lower * 100, target_upper * 100, alpha=0.15, color="#F39C12")
+                    ax_w.set_title(f"{_w_name}（{_w_beds}床）", fontsize=10)
+                    ax_w.set_ylabel("%", fontsize=8)
+                    ax_w.tick_params(labelsize=7)
+                    ax_w.grid(True, alpha=0.3)
+                    st.pyplot(fig_w)
+                    plt.close(fig_w)
+                    # Key metrics
+                    _w_occ = float(_w_df["稼働率"].mean()) * 100
+                    _w_patients = int(_w_df["在院患者数"].mean()) if "在院患者数" in _w_df.columns else 0
+                    st.markdown(f"平均稼働率 **{_w_occ:.1f}%** / 平均在院 **{_w_patients}名**")
+
     # --- 在院患者数推移 ---
     col1, col2 = st.columns(2)
     with col1:
@@ -1549,6 +1588,26 @@ with tabs[_tab_idx["日次推移"]]:
         ax.grid(True, alpha=0.3, axis="y")
         st.pyplot(fig)
         plt.close(fig)
+
+    # --- 病棟別在院患者数 ---
+    if _is_actual_data_mode and _ward_data_available:
+        st.markdown("#### 病棟別在院患者数")
+        _wp_col_5f, _wp_col_6f = st.columns(2)
+        for _wp_col, _w_name in [(_wp_col_5f, "5F"), (_wp_col_6f, "6F")]:
+            with _wp_col:
+                if _w_name in _ward_display_dfs:
+                    _w_df = _ward_display_dfs[_w_name]
+                    _w_beds = get_ward_beds(_w_name)
+                    fig_wp, ax_wp = plt.subplots(figsize=(5, 2.5))
+                    ax_wp.bar(_w_df["日"], _w_df["在院患者数"], color="#3498DB", alpha=0.7)
+                    ax_wp.axhline(y=_w_beds, color="red", linestyle="--", alpha=0.5, label=f"満床({_w_beds})")
+                    ax_wp.set_title(f"{_w_name} 在院患者数", fontsize=10)
+                    ax_wp.set_ylabel("名", fontsize=8)
+                    ax_wp.tick_params(labelsize=7)
+                    ax_wp.legend(fontsize=7)
+                    ax_wp.grid(True, alpha=0.3)
+                    st.pyplot(fig_wp)
+                    plt.close(fig_wp)
 
     # --- 日次粗利推移 ---
     fig, ax = plt.subplots(figsize=(12, 4))
