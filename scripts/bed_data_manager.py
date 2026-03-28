@@ -24,6 +24,7 @@ DAY_BUCKET_KEYS = [f"day_{i}" for i in range(1, 15)] + ["day_15plus"]
 # DAY_BUCKET_KEYS = ["day_1", "day_2", ..., "day_14", "day_15plus"]
 DAILY_RECORD_COLUMNS = [
     "date",              # 日付 (YYYY-MM-DD)
+    "ward",              # 病棟 ("5F", "6F", "all")
     "total_patients",    # 在院患者数
     "new_admissions",    # 新規入院数
     "discharges",        # 退院数
@@ -55,6 +56,57 @@ DEFAULT_REVENUE_PARAMS = {
     "phase_c_cost": 11000,
 }
 
+# ---------------------------------------------------------------------------
+# 病棟・部屋レイアウト定義
+# ---------------------------------------------------------------------------
+
+# 6F 部屋レイアウト（部屋番号: ベッド数）
+ROOM_LAYOUT_6F = {
+    "601": 4, "602": 1, "603": 1,
+    "605": 1, "606": 1, "607": 1, "608": 1,
+    "610": 1,
+    "611": 0,  # 倉庫（使用不可）
+    "612": 1, "613": 1,  # 特室
+    "615": 1, "616": 1, "617": 1,
+    "618": 4,
+    "620": 4, "621": 4, "622": 4, "623": 4,
+    "625": 4, "626": 4, "627": 4,
+    "628": 1, "630": 1, "631": 2,
+}
+
+# 5F 部屋レイアウト（511が個室、他は6Fと同じ構成）
+ROOM_LAYOUT_5F = {f"5{k[1:]}": v for k, v in ROOM_LAYOUT_6F.items()}
+ROOM_LAYOUT_5F["511"] = 1  # 6Fの611は倉庫だが、5Fの511は個室
+
+# 部屋の種別
+ROOM_TYPES_6F = {
+    "612": "特室", "613": "特室",
+    "610": "個室",
+    "611": "倉庫",
+    "602": "個室", "603": "個室", "605": "個室", "606": "個室",
+    "607": "個室", "608": "個室", "615": "個室", "616": "個室",
+    "617": "個室", "628": "個室", "630": "個室",
+    "601": "4人部屋", "618": "4人部屋",
+    "620": "4人部屋", "621": "4人部屋", "622": "4人部屋", "623": "4人部屋",
+    "625": "4人部屋", "626": "4人部屋", "627": "4人部屋",
+    "631": "2人部屋",
+}
+ROOM_TYPES_5F = {f"5{k[1:]}": v for k, v in ROOM_TYPES_6F.items()}
+# 5Fの511は個室（6Fの611=倉庫からコピーされた"倉庫"を上書き）
+ROOM_TYPES_5F["511"] = "個室"
+
+WARD_CONFIG = {
+    "5F": {"beds": 47, "rooms": ROOM_LAYOUT_5F, "room_types": ROOM_TYPES_5F},
+    "6F": {"beds": 47, "rooms": ROOM_LAYOUT_6F, "room_types": ROOM_TYPES_6F},
+}
+TOTAL_BEDS = 94
+
+def get_ward_beds(ward: str) -> int:
+    """病棟のベッド数を返す"""
+    if ward in WARD_CONFIG:
+        return WARD_CONFIG[ward]["beds"]
+    return TOTAL_BEDS
+
 
 # ---------------------------------------------------------------------------
 # DataFrame作成・操作
@@ -64,6 +116,7 @@ def create_empty_dataframe() -> pd.DataFrame:
     df = pd.DataFrame(columns=DAILY_RECORD_COLUMNS)
     # 型を明示的に設定
     df["date"] = pd.to_datetime(df["date"])
+    df["ward"] = df["ward"].astype("string")
     for col in ["total_patients", "new_admissions", "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
@@ -96,11 +149,13 @@ def validate_record(record: dict, existing_df: pd.DataFrame | None = None) -> tu
         errors.append("日付の形式が無効です（YYYY-MM-DD）。")
 
     # 在院患者数チェック
+    ward = record.get("ward", "all")
+    max_beds = get_ward_beds(ward)
     tp = record.get("total_patients")
     if tp is None or not isinstance(tp, (int, np.integer)):
         errors.append("在院患者数は整数で入力してください。")
-    elif not (0 <= tp <= 94):
-        errors.append(f"在院患者数は0〜94の範囲で入力してください（入力値: {tp}）。")
+    elif not (0 <= tp <= max_beds):
+        errors.append(f"total_patients は 0〜{max_beds} の範囲で入力してください。")
 
     # 入退院数チェック
     for key, label in [("new_admissions", "新規入院数"), ("discharges", "退院数")]:
@@ -540,6 +595,11 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
     except Exception:
         return create_empty_dataframe(), "date列の日付変換に失敗しました。YYYY-MM-DD形式で記載してください。"
 
+    # ward カラムがない場合は "all" で埋める（後方互換性）
+    if "ward" not in raw.columns:
+        raw["ward"] = "all"
+    raw["ward"] = raw["ward"].fillna("all").astype("string")
+
     # 旧CSVに退院内訳カラムがない場合は0で埋める
     for col in ["discharge_a", "discharge_b", "discharge_c"]:
         if col not in raw.columns:
@@ -621,13 +681,54 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
             raw.at[idx, "phase_b_count"] = est_b
             raw.at[idx, "phase_c_count"] = est_c
 
-    # 値レンジの警告（エラーではなく警告）
+    # 値レンジの警告（エラーではなく警告、病棟別にベッド数を判定）
     warnings = []
-    out_of_range = raw[(raw["total_patients"] < 0) | (raw["total_patients"] > 94)]
+    def _check_range(row):
+        w = row.get("ward", "all") if "ward" in raw.columns else "all"
+        mb = get_ward_beds(w)
+        tp_val = row.get("total_patients", 0)
+        return pd.isna(tp_val) or tp_val < 0 or tp_val > mb
+    out_of_range = raw[raw.apply(_check_range, axis=1)]
     if len(out_of_range) > 0:
-        warnings.append(f"在院患者数が0-94の範囲外のレコードが{len(out_of_range)}件あります。")
+        warnings.append(f"在院患者数がベッド数の範囲外のレコードが{len(out_of_range)}件あります。")
 
     return raw, "\n".join(warnings) if warnings else ""
+
+
+# ---------------------------------------------------------------------------
+# 病棟データ集約
+# ---------------------------------------------------------------------------
+def aggregate_wards(df: pd.DataFrame) -> pd.DataFrame:
+    """5F+6Fのデータを日付ごとに合算して'all'レコードを生成"""
+    if "ward" not in df.columns:
+        return df
+    ward_data = df[df["ward"].isin(["5F", "6F"])]
+    if len(ward_data) == 0:
+        return df
+
+    numeric_cols = ["total_patients", "new_admissions", "discharges",
+                    "discharge_a", "discharge_b", "discharge_c",
+                    "phase_a_count", "phase_b_count", "phase_c_count"]
+
+    grouped = ward_data.groupby("date")[numeric_cols].sum(min_count=1).reset_index()
+    grouped["ward"] = "all"
+
+    # avg_los は加重平均
+    if "avg_los" in ward_data.columns:
+        los_data = ward_data.dropna(subset=["avg_los", "total_patients"])
+        if len(los_data) > 0:
+            avg_los_by_date = los_data.groupby("date").apply(
+                lambda g: (g["avg_los"] * g["total_patients"]).sum() / g["total_patients"].sum()
+                if g["total_patients"].sum() > 0 else pd.NA
+            ).reset_index(name="avg_los")
+            grouped = grouped.merge(avg_los_by_date, on="date", how="left")
+        else:
+            grouped["avg_los"] = pd.NA
+
+    if "notes" in ward_data.columns:
+        grouped["notes"] = ""
+
+    return grouped
 
 
 # ---------------------------------------------------------------------------
@@ -856,7 +957,7 @@ def _generate_los_distribution(max_days: int, rng) -> list:
     return [w / total for w in weights]
 
 
-def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42) -> pd.DataFrame:
+def generate_sample_data(num_days: int = 30, num_beds: int | None = None, seed: int = 42, ward: str = "all") -> pd.DataFrame:
     """
     デモ用サンプルデータを生成（個人情報なし、集計値のみ）。
 
@@ -869,6 +970,8 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
         日齢バケット履歴は df.attrs["bucket_history"] に格納される。
         アプリ側では session_state で管理することを推奨。
     """
+    if num_beds is None:
+        num_beds = get_ward_beds(ward)
     rng = np.random.default_rng(seed)
     today = pd.Timestamp.now().normalize()
     start_date = today - timedelta(days=num_days - 1)
@@ -973,6 +1076,7 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
 
         records.append({
             "date": d,
+            "ward": ward,
             "total_patients": current_patients,
             "new_admissions": new_admissions,
             "discharges": discharges,
@@ -987,6 +1091,7 @@ def generate_sample_data(num_days: int = 30, num_beds: int = 94, seed: int = 42)
         })
 
     df = pd.DataFrame(records)
+    df["ward"] = df["ward"].astype("string")
     # バケット履歴をDataFrameの属性として保持（session_state管理用）
     df.attrs["bucket_history"] = bucket_history
     for col in ["total_patients", "new_admissions", "discharges",
