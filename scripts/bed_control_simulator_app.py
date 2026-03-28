@@ -596,18 +596,22 @@ if run_button:
             # --- 病棟別シミュレーション（各47床）---
             # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
             # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
+            # 教育シナリオ:
+            # 5F: 初期93%→均衡83% = 明確な下降トレンド（17日平均~87%→残り14日で95%必要=hard）
+            # 6F: 初期78%→均衡87% = 緩やかな回復（17日平均~83%→残り14日で100%近く必要=impossible/hard）
             _ward_param_adj = {
                 "5F": {
                     "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 18) - 4),
-                    "monthly_admissions": 89,
-                    "admission_variation_coeff": 0.4,
+                    "monthly_admissions": 83,
+                    "admission_variation_coeff": 0.35,
                     "initial_occupancy": 0.93,
                     "random_seed": (params.get("random_seed") or 42) + 1,
                 },
                 "6F": {
                     "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 18)),
-                    "monthly_admissions": 73,
-                    "initial_occupancy": 0.83,
+                    "monthly_admissions": 68,
+                    "admission_variation_coeff": 0.3,
+                    "initial_occupancy": 0.78,
                     "random_seed": (params.get("random_seed") or 42) + 2,
                 },
             }
