@@ -778,6 +778,59 @@ def _render_comparison_strip(ward_key, ward_raw_dfs, ward_display_dfs, view_beds
 
 
 # ---------------------------------------------------------------------------
+# 稼働率アラート付きKPI表示ヘルパー
+# ---------------------------------------------------------------------------
+def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
+    """病棟KPIを表示し、稼働率低下時はアラートを表示する"""
+    _sel_occ = float(raw_df["occupancy_rate"].mean()) * 100
+    _sel_patients = int(raw_df["total_patients"].mean())
+    _sel_last_occ = float(raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+    _sel_empty = view_beds - int(raw_df.iloc[-1].get("total_patients", 0))
+
+    _kpi1, _kpi2, _kpi3 = st.columns(3)
+
+    # 直近稼働率の色分け
+    if _sel_last_occ < target_lower * 100:
+        _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%", delta=f"⚠️ 目標下限{target_lower*100:.0f}%未満", delta_color="inverse")
+    elif _sel_last_occ > target_upper * 100:
+        _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%", delta=f"目標上限{target_upper*100:.0f}%超過", delta_color="inverse")
+    else:
+        _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%", delta="目標レンジ内", delta_color="normal")
+
+    _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
+    _kpi3.metric("平均在院数", f"{_sel_patients}名")
+
+    # 稼働率低下アラート（赤字）
+    if _sel_last_occ < target_lower * 100:
+        st.error(
+            f"🔴 **稼働率低下アラート**: 直近稼働率 {_sel_last_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています "
+            f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日）\n\n"
+            "**対策:**\n"
+            "- 🏥 新規入院の受入促進（紹介元への連絡、救急受入強化）\n"
+            "- 🔄 C群患者の退院延長（平均在院日数21日以内で調整可、粗利21,800円/日を維持）\n"
+            "- 📋 B群患者も退院を急がない（リハ加算1: 110点算定中）"
+        )
+        return  # トレンドチェック不要
+
+    # トレンド予測（稼働率が低下傾向か？）
+    if len(raw_df) >= 3:
+        _recent_3 = raw_df["occupancy_rate"].tail(3).values * 100
+        _trend_slope = _recent_3[-1] - _recent_3[0]  # 3日間の変化量
+        _projected = _sel_last_occ + _trend_slope  # 同じペースで続いた場合の予測
+
+        if _trend_slope < -2 and _projected < target_lower * 100:
+            _days_to_breach = max(1, int((_sel_last_occ - target_lower * 100) / abs(_trend_slope / 2)))
+            st.warning(
+                f"⚠️ **稼働率低下傾向**: 直近3日で {_trend_slope:+.1f}% の低下傾向。"
+                f"このペースが続くと約{_days_to_breach}日後に目標下限を下回る可能性\n\n"
+                "**予防策:**\n"
+                "- 🏥 新規入院の受入準備を前倒しで進める\n"
+                "- 🔄 今週退院予定のC群患者の退院日を再検討（延長余地があれば活用）\n"
+                "- 📋 退院集中日の分散を検討"
+            )
+
+
+# ---------------------------------------------------------------------------
 # タブ構成
 # ---------------------------------------------------------------------------
 if _is_actual_data_mode:
@@ -1582,14 +1635,16 @@ with tabs[_tab_idx["日次推移"]]:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
-            # 選択中の病棟の主要KPI
-            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
-            _sel_patients = int(_active_raw_df["total_patients"].mean())
-            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
-            _kpi1, _kpi2, _kpi3 = st.columns(3)
-            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
-            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
-            _kpi3.metric("平均在院数", f"{_sel_patients}名")
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+        if _selected_ward_key == "全体" and len(_active_raw_df) > 0:
+            _total_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+            if _total_last_occ < target_lower * 100:
+                _total_empty = _view_beds - int(_active_raw_df.iloc[-1].get("total_patients", 0))
+                st.error(
+                    f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
+                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日）\n\n"
+                    "**対策:** 新規入院促進 + C群退院延長で稼働率維持"
+                )
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
@@ -1734,14 +1789,7 @@ with tabs[_tab_idx["フェーズ構成"]]:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
-            # 選択中の病棟の主要KPI
-            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
-            _sel_patients = int(_active_raw_df["total_patients"].mean())
-            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
-            _kpi1, _kpi2, _kpi3 = st.columns(3)
-            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
-            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
-            _kpi3.metric("平均在院数", f"{_sel_patients}名")
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
 
@@ -1913,14 +1961,7 @@ with tabs[_tab_idx["収支分析"]]:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
-            # 選択中の病棟の主要KPI
-            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
-            _sel_patients = int(_active_raw_df["total_patients"].mean())
-            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
-            _kpi1, _kpi2, _kpi3 = st.columns(3)
-            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
-            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
-            _kpi3.metric("平均在院数", f"{_sel_patients}名")
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
@@ -2032,14 +2073,16 @@ with tabs[_tab_idx["経営判断フラグ"]]:
         if _selected_ward_key != "全体":
             st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
-            # 選択中の病棟の主要KPI
-            _sel_occ = float(_active_raw_df["occupancy_rate"].mean()) * 100
-            _sel_patients = int(_active_raw_df["total_patients"].mean())
-            _sel_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
-            _kpi1, _kpi2, _kpi3 = st.columns(3)
-            _kpi1.metric("直近稼働率", f"{_sel_last_occ:.1f}%")
-            _kpi2.metric("平均稼働率", f"{_sel_occ:.1f}%")
-            _kpi3.metric("平均在院数", f"{_sel_patients}名")
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+        if _selected_ward_key == "全体" and len(_active_raw_df) > 0:
+            _total_last_occ = float(_active_raw_df.iloc[-1].get("occupancy_rate", 0)) * 100
+            if _total_last_occ < target_lower * 100:
+                _total_empty = _view_beds - int(_active_raw_df.iloc[-1].get("total_patients", 0))
+                st.error(
+                    f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
+                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日）\n\n"
+                    "**対策:** 新規入院促進 + C群退院延長で稼働率維持"
+                )
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
