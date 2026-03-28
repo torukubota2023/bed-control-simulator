@@ -2085,14 +2085,27 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             else:
                 st.info(f"{flag}: {count}日")
 
+    # --- ベッドコントロール優先原則 ---
+    st.markdown("---")
+    st.subheader("ベッドコントロール優先原則")
+    st.info(
+        "**📌 判断の優先順位（看護必要度基準を満たす前提で）**\n\n"
+        "1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床は収益ゼロ、1床/日≈3.4万円の機会損失\n\n"
+        "2️⃣ **平均在院日数21日以内で在院延長を活用** — C群でも粗利21,800円/日を生む\n\n"
+        "3️⃣ **収益を減らさない** — 退院させて空床を出すより、在院延長で稼働率を維持\n\n"
+        "⚠️ 退院を急ぐべきは「満床で新規入院を断らざるを得ない場合」のみ"
+    )
+
     # --- 推奨アクション ---
     st.markdown("---")
     st.subheader("推奨アクション")
     avg_occ = summary["平均稼働率"]
     if avg_occ < target_lower * 100:
-        st.warning(
-            f"平均稼働率 {avg_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています。\n\n"
-            "**推奨:** 入院促進策の強化（紹介元への営業、救急受入体制の強化）"
+        st.error(
+            f"⚠️ 平均稼働率 {avg_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています。\n\n"
+            "**最優先:** 入院促進策の強化（紹介元への営業、救急受入体制の強化）\n\n"
+            "**注意:** C群患者の退院を急がないこと。空床1床/日 ≈ 3.4万円の機会損失。"
+            "平均在院日数21日以内であれば在院延長で稼働率を維持する。"
         )
     elif avg_occ > target_upper * 100:
         st.warning(
@@ -2105,10 +2118,17 @@ with tabs[_tab_idx["経営判断フラグ"]]:
         )
 
     if summary["C群平均構成比"] > 40:
-        st.warning(
-            f"C群（退院準備期）の平均構成比が {summary['C群平均構成比']:.1f}% と高めです。\n\n"
-            "**推奨:** 退院支援の早期介入、転院調整の効率化"
-        )
+        if avg_occ >= target_upper * 100:
+            st.warning(
+                f"C群構成比 {summary['C群平均構成比']:.1f}% が高く、稼働率も{avg_occ:.1f}%で高稼働。\n\n"
+                "**推奨:** 退院可能なC群から優先的に退院調整し、新規入院の受入枠を確保"
+            )
+        else:
+            st.info(
+                f"C群構成比 {summary['C群平均構成比']:.1f}% は高めですが、稼働率{avg_occ:.1f}%で余裕あり。\n\n"
+                "**判断:** 平均在院日数21日以内ならC群延長で稼働率維持を優先。"
+                "退院を急がず、粗利21,800円/日を確保。"
+            )
 
     # --- 今日のアクションリスト ---
     st.markdown("---")
@@ -2124,10 +2144,16 @@ with tabs[_tab_idx["経営判断フラグ"]]:
 
     _action_items = []
     if "C群滞留" in _last_flags or _last_c > _last_patients * 0.4:
-        _discharge_target = max(1, int(_last_c * 0.1))
-        _action_items.append(f"C群から{_discharge_target}名の退院調整を進める")
+        if _last_occ >= target_upper * 100:
+            # 満床に近い場合のみ退院調整を推奨
+            _discharge_target = max(1, int(_last_c * 0.1))
+            _action_items.append(f"⚠️ 高稼働のためC群から{_discharge_target}名の退院調整を検討（稼働率{_last_occ:.1f}%）")
+        else:
+            # 稼働率に余裕がある場合はC群延長を推奨
+            _action_items.append(f"C群{_last_c}名は在院延長で稼働率維持（粗利21,800円/日/名 × 空床よりプラス）")
     if "稼働率低下" in _last_flags:
-        _action_items.append(f"新規入院の受入準備を強化（空床{_last_empty}床）")
+        _action_items.append(f"🔴 新規入院の受入準備を強化（空床{_last_empty}床 = 機会損失{_last_empty}×約3.4万円/日）")
+        _action_items.append("🔴 C群患者の退院を急がない — 在院延長で稼働率維持を優先")
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
     if "A群過多" in _last_flags:
