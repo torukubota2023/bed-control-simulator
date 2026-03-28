@@ -168,6 +168,8 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
     for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:
         if col not in record_copy:
             record_copy[col] = pd.NA
+    if "avg_los" not in record_copy:
+        record_copy["avg_los"] = pd.NA
     new_row = pd.DataFrame([record_copy])
     # カラム型を合わせる
     for col in ["total_patients", "new_admissions", "discharges",
