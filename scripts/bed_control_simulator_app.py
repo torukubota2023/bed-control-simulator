@@ -871,6 +871,20 @@ def _render_comparison_strip(ward_key, ward_raw_dfs, ward_display_dfs, view_beds
 
 
 # ---------------------------------------------------------------------------
+# データ基準の残日数計算ヘルパー
+# ---------------------------------------------------------------------------
+def _calc_remaining_days(raw_df):
+    """データの最終日から月末までの残日数を計算"""
+    try:
+        _date_col = "date" if "date" in raw_df.columns else "日付"
+        _last_date = pd.to_datetime(raw_df[_date_col].iloc[-1])
+        _days_in_month = calendar.monthrange(_last_date.year, _last_date.month)[1]
+        return max(0, _days_in_month - _last_date.day)
+    except Exception:
+        return calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day
+
+
+# ---------------------------------------------------------------------------
 # 稼働率アラート付きKPI表示ヘルパー
 # ---------------------------------------------------------------------------
 def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
@@ -918,9 +932,10 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 
     # 稼働率低下アラート（赤字）
     if _sel_last_occ < target_lower * 100:
+        _remaining_days = _calc_remaining_days(raw_df)
         st.error(
             f"🔴 **稼働率低下アラート**: 直近稼働率 {_sel_last_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています "
-            f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日・**今月残り{calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day}日で約{_sel_empty * 34000 * (calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day) // 10000:.0f}万円**）\n\n"
+            f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_sel_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
             "**対策:**\n"
             "- 🏥 新規入院の受入促進（紹介元への連絡、救急受入強化）\n"
             "- 🔄 C群患者の戦略的在院調整（平均在院日数21日以内で調整可、粗利21,800円/日を維持）\n"
@@ -1007,7 +1022,8 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
             _brief_empty = _view_beds - _brief_patients
             st.metric("在院患者数", f"{_brief_patients}名", delta=f"空床 {_brief_empty}床")
             if _brief_empty > (_view_beds * 0.10):
-                st.caption(f"⚠️ 空床{_brief_empty}床 = 機会損失 約{_brief_empty * 34000 // 10000:.0f}万円/日")
+                _remaining_days = _calc_remaining_days(_active_raw_df)
+                st.caption(f"⚠️ 空床{_brief_empty}床 = 機会損失 約{_brief_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * 34000 * _remaining_days // 10000:.0f}万円")
 
         # 病棟比較ミニバッジ
         with _brief_cols[2]:
@@ -1928,9 +1944,10 @@ with tabs[_tab_idx["日次推移"]]:
             if _total_last_occ < target_lower * 100:
                 _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
                 _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
+                _remaining_days = _calc_remaining_days(_active_raw_df)
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day}日で約{_total_empty * 34000 * (calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day) // 10000:.0f}万円**）\n\n"
+                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
                     "**対策:** 新規入院促進 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
@@ -2380,9 +2397,10 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             if _total_last_occ < target_lower * 100:
                 _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
                 _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
+                _remaining_days = _calc_remaining_days(_active_raw_df)
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day}日で約{_total_empty * 34000 * (calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day) // 10000:.0f}万円**）\n\n"
+                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
                     "**対策:** 新規入院促進 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
@@ -2497,7 +2515,8 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             # 稼働率に余裕がある場合はC群の戦略的在院調整を推奨
             _action_items.append(f"C群{_last_c}名は戦略的在院調整で稼働率維持（粗利21,800円/日/名 × 空床よりプラス）")
     if "稼働率低下" in _last_flags:
-        _action_items.append(f"🔴 新規入院の受入準備を強化（空床{_last_empty}床 = 機会損失 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day}日で約{_last_empty * 34000 * (calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day) // 10000:.0f}万円）")
+        _remaining_days = _calc_remaining_days(_active_raw_df)
+        _action_items.append(f"🔴 新規入院の受入準備を強化（空床{_last_empty}床 = 機会損失 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * 34000 * _remaining_days // 10000:.0f}万円）")
         _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で粗利確保し稼働率維持を優先")
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
