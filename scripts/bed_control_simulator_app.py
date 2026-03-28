@@ -414,6 +414,15 @@ st.sidebar.subheader("病棟基本条件")
 st.sidebar.markdown("**病棟構成**")
 st.sidebar.markdown("5F: 47床 / 6F: 47床 / 合計: 94床")
 total_beds = TOTAL_BEDS if _DATA_MANAGER_AVAILABLE else 94
+
+# 病棟セレクター（実績データモードで病棟別データがある場合に有効）
+_ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
+_selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
+_selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
+
+# _view_beds のデフォルト値（後で病棟選択に応じて上書きされる）
+_view_beds = total_beds
+
 target_lower = st.sidebar.slider("目標稼働率下限", 0.80, 1.00, 0.90, step=0.01, format="%.2f")
 target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
 
@@ -664,6 +673,26 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
                     _ward_display_dfs[_w] = _rename_df(_ward_raw_dfs[_w])
         else:
             _ward_data_available = False
+            _ward_raw_dfs = {}
+            _ward_display_dfs = {}
+
+        # --- Ward selector データバインディング ---
+        if _selected_ward_key in ("5F", "6F") and _ward_data_available and _selected_ward_key in _ward_raw_dfs:
+            _view_beds = get_ward_beds(_selected_ward_key)
+            _active_raw_df = _ward_raw_dfs[_selected_ward_key]
+            _active_display_df = _ward_display_dfs[_selected_ward_key]
+            # Override the main df and raw_df used by all tabs
+            st.session_state.actual_df = _active_display_df
+            st.session_state.actual_raw_df = _active_raw_df
+            # Also override _actual_raw_df and _actual_display_df
+            _actual_raw_df = _active_raw_df
+            _actual_display_df = _active_display_df
+            # Update analysis params
+            _actual_params = _build_cli_params(params_dict)
+            _actual_params["num_beds"] = _view_beds
+            st.session_state.actual_params = _actual_params
+        else:
+            _view_beds = total_beds  # 94
 
 # ---------------------------------------------------------------------------
 # 結果未実行の場合の案内
@@ -683,6 +712,31 @@ def fmt_yen(val: int) -> str:
 def fmt_yen_full(val: int) -> str:
     """円表示フォーマット（全額）"""
     return f"¥{val:,}"
+
+
+def _render_comparison_strip(ward_key, ward_raw_dfs, ward_display_dfs, view_beds_fn):
+    """選択中の病棟以外のKPIを小さく表示する比較ストリップ"""
+    if not ward_raw_dfs:
+        return
+    other_wards = [w for w in ["5F", "6F"] if w != ward_key]
+    if ward_key == "全体":
+        # 全体表示時は5F, 6Fの比較を表示
+        other_wards = ["5F", "6F"]
+
+    if not other_wards:
+        return
+
+    cols = st.columns(len(other_wards))
+    for i, w in enumerate(other_wards):
+        if w in ward_raw_dfs and len(ward_raw_dfs[w]) > 0:
+            w_df = ward_raw_dfs[w]
+            w_beds = view_beds_fn(w)
+            last_row = w_df.iloc[-1]
+            occ = last_row.get("occupancy_rate", 0)
+            patients = last_row.get("total_patients", 0)
+            with cols[i]:
+                st.caption(f"{w} ({w_beds}床)")
+                st.metric(f"稼働率", f"{occ * 100:.1f}%")
 
 
 # ---------------------------------------------------------------------------
@@ -1221,7 +1275,7 @@ if _DATA_MANAGER_AVAILABLE:
                 st.warning("分析には最低3日分のデータが必要です。「📋 日次データ入力」タブでデータを追加してください。")
         else:
             _analysis_df = _active_data.copy()
-            _metrics_df = calculate_daily_metrics(_analysis_df, num_beds=total_beds)
+            _metrics_df = calculate_daily_metrics(_analysis_df, num_beds=_view_beds)
 
             # --- 上部: 実績サマリー ---
             st.markdown("#### 直近7日間のサマリー")
@@ -1324,7 +1378,7 @@ if _DATA_MANAGER_AVAILABLE:
             # --- 中下部: 稼働率予測 ---
             st.markdown("#### 向こう7日間の稼働率予測")
             _pred_df = predict_occupancy_from_history(
-                _analysis_df, num_beds=total_beds, horizon=7
+                _analysis_df, num_beds=_view_beds, horizon=7
             )
 
             if len(_pred_df) > 0:
@@ -1389,7 +1443,7 @@ if _DATA_MANAGER_AVAILABLE:
             # --- 下部: 月次着地予想 ---
             st.markdown("#### 今月の着地予想")
             _monthly_kpi = predict_monthly_kpi(
-                _analysis_df, num_beds=total_beds,
+                _analysis_df, num_beds=_view_beds,
                 revenue_params=DEFAULT_REVENUE_PARAMS,
             )
 
@@ -1417,7 +1471,7 @@ if _DATA_MANAGER_AVAILABLE:
 
             # --- 最下部: 週次トレンド ---
             st.markdown("#### 週次トレンド")
-            _weekly = generate_weekly_summary(_analysis_df, num_beds=total_beds)
+            _weekly = generate_weekly_summary(_analysis_df, num_beds=_view_beds)
 
             if _weekly:
                 weekly_display = []
@@ -1480,6 +1534,10 @@ with tabs[_tab_idx["日次推移"]]:
     st.subheader("日次推移")
     if _is_actual_data_mode:
         st.info(f"📋 実績データモード（{len(df)}日分のデータを表示中）")
+        if _selected_ward_key != "全体":
+            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _ward_data_available:
+            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_daily"])
@@ -1533,28 +1591,7 @@ with tabs[_tab_idx["日次推移"]]:
     st.pyplot(fig)
     plt.close(fig)
 
-    # --- 病棟別稼働率（2列表示） ---
-    if _is_actual_data_mode and _ward_data_available:
-        st.markdown("#### 病棟別稼働率")
-        _w_col_5f, _w_col_6f = st.columns(2)
-        for _w_col, _w_name in [(_w_col_5f, "5F"), (_w_col_6f, "6F")]:
-            with _w_col:
-                if _w_name in _ward_display_dfs:
-                    _w_df = _ward_display_dfs[_w_name]
-                    _w_beds = get_ward_beds(_w_name)
-                    fig_w, ax_w = plt.subplots(figsize=(5, 2.5))
-                    ax_w.plot(_w_df["日"], _w_df["稼働率"] * 100, color="#2C3E50", linewidth=1.5)
-                    ax_w.axhspan(target_lower * 100, target_upper * 100, alpha=0.15, color="#F39C12")
-                    ax_w.set_title(f"{_w_name}（{_w_beds}床）", fontsize=10)
-                    ax_w.set_ylabel("%", fontsize=8)
-                    ax_w.tick_params(labelsize=7)
-                    ax_w.grid(True, alpha=0.3)
-                    st.pyplot(fig_w)
-                    plt.close(fig_w)
-                    # Key metrics
-                    _w_occ = float(_w_df["稼働率"].mean()) * 100
-                    _w_patients = int(_w_df["在院患者数"].mean()) if "在院患者数" in _w_df.columns else 0
-                    st.markdown(f"平均稼働率 **{_w_occ:.1f}%** / 平均在院 **{_w_patients}名**")
+    # 病棟別稼働率は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
     # --- 在院患者数推移 ---
     col1, col2 = st.columns(2)
@@ -1562,7 +1599,7 @@ with tabs[_tab_idx["日次推移"]]:
         fig, ax = plt.subplots(figsize=(6, 3.5))
         _add_weekend_bg(ax, _weekend_days)
         ax.plot(df["日"], df["在院患者数"], color="#8E44AD", linewidth=2)
-        ax.axhline(y=total_beds, color="#E74C3C", linestyle="--", alpha=0.5, label=f"病床数({total_beds})")
+        ax.axhline(y=_view_beds, color="#E74C3C", linestyle="--", alpha=0.5, label=f"病床数({_view_beds})")
         ax.set_xlabel("日")
         ax.set_ylabel("患者数")
         ax.set_title("在院患者数推移")
@@ -1589,25 +1626,7 @@ with tabs[_tab_idx["日次推移"]]:
         st.pyplot(fig)
         plt.close(fig)
 
-    # --- 病棟別在院患者数 ---
-    if _is_actual_data_mode and _ward_data_available:
-        st.markdown("#### 病棟別在院患者数")
-        _wp_col_5f, _wp_col_6f = st.columns(2)
-        for _wp_col, _w_name in [(_wp_col_5f, "5F"), (_wp_col_6f, "6F")]:
-            with _wp_col:
-                if _w_name in _ward_display_dfs:
-                    _w_df = _ward_display_dfs[_w_name]
-                    _w_beds = get_ward_beds(_w_name)
-                    fig_wp, ax_wp = plt.subplots(figsize=(5, 2.5))
-                    ax_wp.bar(_w_df["日"], _w_df["在院患者数"], color="#3498DB", alpha=0.7)
-                    ax_wp.axhline(y=_w_beds, color="red", linestyle="--", alpha=0.5, label=f"満床({_w_beds})")
-                    ax_wp.set_title(f"{_w_name} 在院患者数", fontsize=10)
-                    ax_wp.set_ylabel("名", fontsize=8)
-                    ax_wp.tick_params(labelsize=7)
-                    ax_wp.legend(fontsize=7)
-                    ax_wp.grid(True, alpha=0.3)
-                    st.pyplot(fig_wp)
-                    plt.close(fig_wp)
+    # 病棟別在院患者数は病棟セレクターで切り替え
 
     # --- 日次粗利推移 ---
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -1657,6 +1676,11 @@ with tabs[_tab_idx["日次推移"]]:
 # ===== タブ2: フェーズ構成 =====
 with tabs[_tab_idx["フェーズ構成"]]:
     st.subheader("フェーズ構成")
+    if _is_actual_data_mode:
+        if _selected_ward_key != "全体":
+            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _ward_data_available:
+            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
 
     # --- A/B/C群の定義パネル（常時表示、折りたたみではない） ---
     st.markdown("---")
@@ -1812,35 +1836,17 @@ with tabs[_tab_idx["フェーズ構成"]]:
     else:
         st.error(f"B群（稼ぎ頭）は理想比率を **{_b_diff:.1f}%** 下回っています。退院・入院バランスの見直しが急務です。")
 
-    # --- 病棟別フェーズ構成 ---
-    if _is_actual_data_mode and _ward_data_available:
-        st.markdown("---")
-        st.markdown("#### 病棟別フェーズ構成")
-        _ph_col_5f, _ph_col_6f = st.columns(2)
-        for _ph_col, _w_name in [(_ph_col_5f, "5F"), (_ph_col_6f, "6F")]:
-            with _ph_col:
-                if _w_name in _ward_raw_dfs:
-                    _w_raw = _ward_raw_dfs[_w_name]
-                    _w_a = float(_w_raw["phase_a_count"].fillna(0).mean())
-                    _w_b = float(_w_raw["phase_b_count"].fillna(0).mean())
-                    _w_c = float(_w_raw["phase_c_count"].fillna(0).mean())
-                    _w_total_p = _w_a + _w_b + _w_c
-                    if _w_total_p > 0:
-                        fig_ph, ax_ph = plt.subplots(figsize=(4, 3))
-                        sizes = [_w_a, _w_b, _w_c]
-                        labels = [f"A群\n{_w_a:.0f}名", f"B群\n{_w_b:.0f}名", f"C群\n{_w_c:.0f}名"]
-                        colors = ["#E74C3C", "#F39C12", "#3498DB"]
-                        ax_ph.pie(sizes, labels=labels, colors=colors, startangle=90, textprops={"fontsize": 8})
-                        ax_ph.set_title(f"{_w_name} A/B/C群構成", fontsize=10)
-                        st.pyplot(fig_ph)
-                        plt.close(fig_ph)
-                    else:
-                        st.info(f"{_w_name}: A/B/C群データなし")
+    # 病棟別フェーズ構成は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
 # ===== タブ3: 収支分析 =====
 with tabs[_tab_idx["収支分析"]]:
     st.subheader("収支分析")
+    if _is_actual_data_mode:
+        if _selected_ward_key != "全体":
+            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _ward_data_available:
+            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_finance"])
@@ -1940,28 +1946,17 @@ with tabs[_tab_idx["収支分析"]]:
     _phase_desc = {"A群": "A群（急性期）", "B群": "B群（回復期）", "C群": "C群（退院準備期）"}
     st.info(f"💡 今月の粗利の **{_max_phase[1]:.0f}%** は **{_phase_desc[_max_phase[0]]}** が生み出しています。")
 
-    # --- 病棟別収支 ---
-    if _is_actual_data_mode and _ward_data_available:
-        st.markdown("---")
-        st.markdown("#### 病棟別収支サマリー")
-        _rv_col_5f, _rv_col_6f = st.columns(2)
-        for _rv_col, _w_name in [(_rv_col_5f, "5F"), (_rv_col_6f, "6F")]:
-            with _rv_col:
-                if _w_name in _ward_raw_dfs:
-                    _w_raw = _ward_raw_dfs[_w_name]
-                    _w_rev = int(_w_raw["daily_revenue"].fillna(0).sum())
-                    _w_cost = int(_w_raw["daily_cost"].fillna(0).sum())
-                    _w_profit = int(_w_raw["daily_profit"].fillna(0).sum())
-                    st.markdown(f"**{_w_name}**")
-                    _rv_m1, _rv_m2, _rv_m3 = st.columns(3)
-                    _rv_m1.metric("収益", fmt_yen(_w_rev))
-                    _rv_m2.metric("コスト", fmt_yen(_w_cost))
-                    _rv_m3.metric("粗利", fmt_yen(_w_profit))
+    # 病棟別収支は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
 # ===== タブ4: 経営判断フラグ =====
 with tabs[_tab_idx["経営判断フラグ"]]:
     st.subheader("経営判断フラグ")
+    if _is_actual_data_mode:
+        if _selected_ward_key != "全体":
+            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+        if _ward_data_available:
+            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_flags"])
@@ -2037,7 +2032,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     _last_flags = _last_row.get("経営判断フラグ", "正常運用")
     _last_occ = _last_row["稼働率"] * 100
     _last_patients = int(_last_row["在院患者数"])
-    _last_empty = total_beds - _last_patients
+    _last_empty = _view_beds - _last_patients
     _last_c = int(_last_row["C群_患者数"]) if "C群_患者数" in df.columns else 0
     _last_a = int(_last_row["A群_患者数"]) if "A群_患者数" in df.columns else 0
     _last_b = int(_last_row["B群_患者数"]) if "B群_患者数" in df.columns else 0
@@ -2065,26 +2060,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     else:
         st.success("特別なアクションは不要です。現行運用を維持してください。")
 
-    # --- 病棟別フラグ ---
-    if _is_actual_data_mode and _ward_data_available:
-        st.markdown("---")
-        st.markdown("#### 病棟別アラート")
-        _fl_col_5f, _fl_col_6f = st.columns(2)
-        for _fl_col, _w_name in [(_fl_col_5f, "5F"), (_fl_col_6f, "6F")]:
-            with _fl_col:
-                if _w_name in _ward_raw_dfs:
-                    _w_raw = _ward_raw_dfs[_w_name]
-                    _w_beds = get_ward_beds(_w_name)
-                    _w_last = _w_raw.iloc[-1] if len(_w_raw) > 0 else None
-                    if _w_last is not None:
-                        _w_occ = float(_w_last.get("occupancy_rate", 0)) * 100
-                        st.markdown(f"**{_w_name}** 直近稼働率: **{_w_occ:.1f}%**")
-                        if _w_occ > target_upper * 100:
-                            st.error(f"⚠️ 目標上限({target_upper*100:.0f}%)超過 → 退院調整検討")
-                        elif _w_occ < target_lower * 100:
-                            st.warning(f"⚠️ 目標下限({target_lower*100:.0f}%)未達 → 入院受入強化")
-                        else:
-                            st.success("✅ 目標レンジ内")
+    # 病棟別フラグは病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
 # ===== タブ5-7: 意思決定支援タブ =====
@@ -2116,8 +2092,8 @@ with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
         _br_score_ja = {"healthy": "健全", "caution": "注意", "warning": "警告", "critical": "危機"}.get(_br_score_label, _br_score_label)
         _br_occ = _ward_status.get("occupancy_rate", 0) * 100
         _br_last_row = _raw_df.iloc[_day_idx]
-        _br_patients = int(_br_last_row.get("total_patients", round(_br_occ / 100 * total_beds)))
-        _br_empty = total_beds - _br_patients
+        _br_patients = int(_br_last_row.get("total_patients", round(_br_occ / 100 * _view_beds)))
+        _br_empty = _view_beds - _br_patients
         _br_pct_a = _ward_status.get("phase_a_ratio", 0) * 100
         _br_pct_b = _ward_status.get("phase_b_ratio", 0) * 100
         _br_pct_c = _ward_status.get("phase_c_ratio", 0) * 100
@@ -3029,15 +3005,16 @@ with tabs[_tab_idx["データ"]]:
 # ---------------------------------------------------------------------------
 st.markdown("---")
 if _is_actual_data_mode:
+    _footer_ward = f" ({_selected_ward_key})" if _selected_ward_key != "全体" else ""
     st.caption(
-        f"データソース: **実績データ** | "
-        f"病床数: {total_beds} | "
+        f"データソース: **実績データ{_footer_ward}** | "
+        f"病床数: {_view_beds} | "
         f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}%"
     )
 else:
     st.caption(
         f"戦略: **{strategy}** | "
-        f"病床数: {total_beds} | "
+        f"病床数: {_view_beds} | "
         f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}% | "
         f"月間入院: {monthly_admissions}件 | "
         f"平均在院日数: {avg_los}日"
