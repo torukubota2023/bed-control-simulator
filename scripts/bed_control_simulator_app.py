@@ -415,13 +415,10 @@ st.sidebar.markdown("**病棟構成**")
 st.sidebar.markdown("5F: 47床 / 6F: 47床 / 合計: 94床")
 total_beds = TOTAL_BEDS if _DATA_MANAGER_AVAILABLE else 94
 
-# 病棟セレクター（実績データモードで病棟別データがある場合に有効）
-if _is_actual_data_mode:
-    _ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
-    _selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
-    _selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
-else:
-    _selected_ward_key = "全体"
+# 病棟セレクター（両モードで有効）
+_ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
+_selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
+_selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
 
 # _view_beds のデフォルト値（後で病棟選択に応じて上書きされる）
 _view_beds = total_beds
@@ -524,6 +521,12 @@ params_dict = {
 # ---------------------------------------------------------------------------
 if "sim_df" not in st.session_state:
     st.session_state.sim_df = None
+if "sim_ward_dfs" not in st.session_state:
+    st.session_state.sim_ward_dfs = {}
+if "sim_ward_raw_dfs" not in st.session_state:
+    st.session_state.sim_ward_raw_dfs = {}
+if "sim_ward_summaries" not in st.session_state:
+    st.session_state.sim_ward_summaries = {}
     st.session_state.sim_summary = None
     st.session_state.comparison = None
     st.session_state.sim_df_raw = None
@@ -568,18 +571,37 @@ if run_button:
         try:
             strategy_en = STRATEGY_MAP[strategy]
             params = _build_cli_params(params_dict)
+
+            # 全体シミュレーション（94床）
             df = simulate_bed_control(params, strategy_en)
             cli_summary = summarize_results(df)
-
-            # CLI結果を日本語に変換
             df_ja = _rename_df(df)
             summary_ja = _convert_summary(cli_summary, params)
             summary_ja = _enrich_summary(summary_ja, df_ja)
 
             st.session_state.sim_df = df_ja
             st.session_state.sim_summary = summary_ja
-            st.session_state.sim_df_raw = df          # 意思決定支援タブ用（CLI版DataFrame）
-            st.session_state.sim_params = params       # 意思決定支援タブ用（CLI版パラメータ）
+            st.session_state.sim_df_raw = df
+            st.session_state.sim_params = params
+
+            # 病棟別シミュレーション（各47床）
+            _sim_ward_dfs = {}
+            _sim_ward_raw_dfs = {}
+            _sim_ward_summaries = {}
+            for _sw in ["5F", "6F"]:
+                _sw_params = params.copy()
+                _sw_params["num_beds"] = get_ward_beds(_sw)
+                _sw_df = simulate_bed_control(_sw_params, strategy_en)
+                _sw_summary = summarize_results(_sw_df)
+                _sw_df_ja = _rename_df(_sw_df)
+                _sw_summary_ja = _convert_summary(_sw_summary, _sw_params)
+                _sw_summary_ja = _enrich_summary(_sw_summary_ja, _sw_df_ja)
+                _sim_ward_dfs[_sw] = _sw_df_ja
+                _sim_ward_raw_dfs[_sw] = _sw_df
+                _sim_ward_summaries[_sw] = _sw_summary_ja
+            st.session_state.sim_ward_dfs = _sim_ward_dfs
+            st.session_state.sim_ward_raw_dfs = _sim_ward_raw_dfs
+            st.session_state.sim_ward_summaries = _sim_ward_summaries
 
             if compare_all:
                 # hashable化してキャッシュ用
@@ -892,7 +914,12 @@ if _DATA_MANAGER_AVAILABLE:
             with dm_demo_col1:
                 if st.button("サンプルデータ生成（30日分）", key="dm_gen_sample",
                              help="デモ用に過去30日分のダミーデータを生成します"):
-                    st.session_state.demo_data = generate_sample_data(num_days=30, num_beds=total_beds)
+                    # 病棟別デモデータ生成
+                    _demo_5f = generate_sample_data(num_days=30, num_beds=get_ward_beds("5F"))
+                    _demo_5f["ward"] = "5F"
+                    _demo_6f = generate_sample_data(num_days=30, num_beds=get_ward_beds("6F"))
+                    _demo_6f["ward"] = "6F"
+                    st.session_state.demo_data = pd.concat([_demo_5f, _demo_6f], ignore_index=True).sort_values(["date", "ward"]).reset_index(drop=True)
                     st.success("サンプルデータ（30日分）を生成しました。")
                     st.rerun()
 
@@ -1626,18 +1653,30 @@ else:
         with tabs[0]:
             st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
         st.stop()
-    df = st.session_state.sim_df
-    summary = st.session_state.sim_summary
-    _active_raw_df = st.session_state.sim_df_raw
-    _active_cli_params = st.session_state.sim_params
+    # シミュレーションモードの病棟セレクター対応
+    if _selected_ward_key in ("5F", "6F") and st.session_state.sim_ward_dfs.get(_selected_ward_key) is not None:
+        df = st.session_state.sim_ward_dfs[_selected_ward_key]
+        summary = st.session_state.sim_ward_summaries[_selected_ward_key]
+        _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
+        _active_cli_params = st.session_state.sim_params.copy()
+        _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
+        _view_beds = get_ward_beds(_selected_ward_key)
+    else:
+        df = st.session_state.sim_df
+        summary = st.session_state.sim_summary
+        _active_raw_df = st.session_state.sim_df_raw
+        _active_cli_params = st.session_state.sim_params
 
 # ===== タブ1: 日次推移 =====
 with tabs[_tab_idx["日次推移"]]:
     st.subheader("日次推移")
     if _is_actual_data_mode:
         st.info(f"📋 実績データモード（{len(df)}日分のデータを表示中）")
-        if _selected_ward_key != "全体":
-            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    if _selected_ward_key != "全体":
+        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    if not _is_actual_data_mode and _selected_ward_key != "全体":
+        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+    if _is_actual_data_mode:
         if _selected_ward_key != "全体":
             _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _selected_ward_key == "全体" and len(_active_raw_df) > 0:
@@ -1789,9 +1828,11 @@ with tabs[_tab_idx["日次推移"]]:
 # ===== タブ2: フェーズ構成 =====
 with tabs[_tab_idx["フェーズ構成"]]:
     st.subheader("フェーズ構成")
+    if _selected_ward_key != "全体":
+        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    if not _is_actual_data_mode and _selected_ward_key != "全体":
+        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
-        if _selected_ward_key != "全体":
-            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
             _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _ward_data_available:
@@ -1961,9 +2002,11 @@ with tabs[_tab_idx["フェーズ構成"]]:
 # ===== タブ3: 収支分析 =====
 with tabs[_tab_idx["収支分析"]]:
     st.subheader("収支分析")
+    if _selected_ward_key != "全体":
+        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    if not _is_actual_data_mode and _selected_ward_key != "全体":
+        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
-        if _selected_ward_key != "全体":
-            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
             _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _ward_data_available:
@@ -2073,9 +2116,11 @@ with tabs[_tab_idx["収支分析"]]:
 # ===== タブ4: 経営判断フラグ =====
 with tabs[_tab_idx["経営判断フラグ"]]:
     st.subheader("経営判断フラグ")
+    if _selected_ward_key != "全体":
+        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    if not _is_actual_data_mode and _selected_ward_key != "全体":
+        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
-        if _selected_ward_key != "全体":
-            st.caption(f"{_selected_ward_key} ({_view_beds}床) のデータを表示中")
         if _selected_ward_key != "全体":
             _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _selected_ward_key == "全体" and len(_active_raw_df) > 0:
