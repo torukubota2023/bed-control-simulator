@@ -916,12 +916,15 @@ def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
         _days_elapsed = len(_occ_values)
 
         # 月の総日数を決定（データの日付から、またはパラメータから）
-        _date_col = "date" if "date" in raw_df.columns else "日付"
-        try:
-            _last_date = pd.to_datetime(raw_df[_date_col].iloc[-1])
-            _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
-        except Exception:
-            _D = total_days_in_month
+        _D = total_days_in_month
+        for _dc in ["date", "日付"]:
+            if _dc in raw_df.columns:
+                try:
+                    _last_date = pd.to_datetime(raw_df[_dc].iloc[-1])
+                    _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
+                    break
+                except Exception:
+                    pass
 
         _days_remaining = max(0, _D - _days_elapsed)
         _target_pct = target_lower * 100  # 例: 90.0
@@ -2160,7 +2163,11 @@ with tabs[_tab_idx["日次推移"]]:
     ax.grid(True, alpha=0.3)
 
     # --- 月平均目標達成ライン（点線）---
-    _mt_chart = _calc_monthly_target(_active_raw_df, target_lower, days_in_month, _view_beds)
+    # _active_raw_df と df の両方で試行（カラム名の違いに対応）
+    _mt_chart = None
+    for _mt_src_df in [_active_raw_df, df]:
+        if _mt_chart is None and isinstance(_mt_src_df, pd.DataFrame) and len(_mt_src_df) > 0:
+            _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, 31, _view_beds)
     if _mt_chart and _mt_chart["days_remaining"] > 0 and _mt_chart["avg_so_far"] < _mt_chart["monthly_target_pct"]:
         _chart_last_day = len(df["稼働率"])  # データの最終日番号
         _chart_end_day = _mt_chart["total_days"]  # 月末日番号
