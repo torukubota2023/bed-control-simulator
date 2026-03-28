@@ -198,7 +198,7 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
     }
 
     # --- 初期状態：稼働率約90%でフェーズバランスよく配置 ---
-    # A群15%, B群45%, C群40% の比率で配置（退院ラッシュ防止のためC群は15-18日中心）
+    # A群15%, B群45%, C群40% の比率で配置（退院集中防止のためC群は10-18日に分散）
     initial_occupancy = params.get("initial_occupancy", 0.90)
     initial_patients_count = int(num_beds * initial_occupancy)
     n_a = int(initial_patients_count * 0.15)
@@ -207,7 +207,8 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
     patients_init: list[int] = []
     patients_init.extend(list(rng.integers(1, 6, size=n_a)))     # A群: 1-5日
     patients_init.extend(list(rng.integers(6, 15, size=n_b)))    # B群: 6-14日
-    patients_init.extend(list(rng.integers(15, 19, size=n_c)))   # C群: 15-18日（退院ピーク前）
+    # C群: 退院集中を防ぐため、10-18日に分散配置（初期退院ラッシュを抑制）
+    patients_init.extend(list(rng.integers(10, 19, size=n_c)))   # C群: 10-18日（幅広く分散）
     patients: list[int] = patients_init
 
     records: list[dict[str, Any]] = []
@@ -261,6 +262,13 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
 
             phase = _get_phase(los)
             prob = base_prob
+
+            # --- 稼働率フロア保護（全戦略共通、80%以下への低下を防止）---
+            # 現実の病院運営では稼働率80%未満は経営的に許容されず退院抑制が働く
+            if occupancy_before < 0.82:
+                prob *= 0.05  # 稼働率82%未満: ほぼ退院停止
+            elif occupancy_before < 0.85:
+                prob *= 0.15  # 稼働率82-85%: 退院大幅抑制
 
             # --- 戦略別の退院確率調整 ---
             if strategy == "rotation":
@@ -320,6 +328,15 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
 
             if rng.random() < prob:
                 discharged_indices.append(i)
+
+        # --- 稼働率80%ハードフロア: 退院数を制限 ---
+        # 現実の病院では稼働率80%未満に下がることは稀（退院調整・入院促進が働く）
+        min_patients = math.ceil(num_beds * 0.80)
+        max_allowed_discharges = max(0, total_before - min_patients)
+        if len(discharged_indices) > max_allowed_discharges:
+            # 在院日数が長い患者（C群後期）から優先的に退院させ、残りは抑制
+            discharged_indices.sort(key=lambda idx: patients[idx], reverse=True)
+            discharged_indices = discharged_indices[:max_allowed_discharges]
 
         # 退院処理（逆順で除去して index ずれを防止）
         for i in sorted(discharged_indices, reverse=True):
