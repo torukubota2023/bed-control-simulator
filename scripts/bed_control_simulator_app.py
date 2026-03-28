@@ -597,13 +597,19 @@ if run_button:
             # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
             # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
             _ward_param_adj = {
-                "5F": {"avg_length_of_stay": max(10, params.get("avg_length_of_stay", 18) - 4),
-                       "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.42),
-                       "admission_variation_coeff": 0.4,
-                       "random_seed": (params.get("random_seed") or 42) + 1},
-                "6F": {"avg_length_of_stay": min(21, params.get("avg_length_of_stay", 18)),
-                       "monthly_admissions": int(params.get("monthly_admissions", 150) * 0.58),
-                       "random_seed": (params.get("random_seed") or 42) + 2},
+                "5F": {
+                    "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 18) - 4),
+                    "monthly_admissions": 89,
+                    "admission_variation_coeff": 0.4,
+                    "initial_occupancy": 0.93,
+                    "random_seed": (params.get("random_seed") or 42) + 1,
+                },
+                "6F": {
+                    "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 18)),
+                    "monthly_admissions": 73,
+                    "initial_occupancy": 0.83,
+                    "random_seed": (params.get("random_seed") or 42) + 2,
+                },
             }
             _sim_ward_dfs = {}
             _sim_ward_raw_dfs = {}
@@ -920,6 +926,23 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             "- 🔄 C群患者の戦略的在院調整（平均在院日数21日以内で調整可、粗利21,800円/日を維持）\n"
             "- 📋 B群患者も在院継続で粗利確保（リハ加算1: 110点算定中）"
         )
+        # 回復トレンドチェック
+        if len(raw_df) >= 3:
+            _trend_occ_col_r = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
+            _recent_3_r = raw_df[_trend_occ_col_r].tail(3).values
+            if _recent_3_r[0] < 1.5:
+                _recent_3_r = _recent_3_r * 100
+            _trend_slope_r = _recent_3_r[-1] - _recent_3_r[0]
+            if _trend_slope_r > 1:
+                _projected_r = _sel_last_occ + _trend_slope_r * 2
+                _recovery_msg = "このペースが続けば目標レンジへの復帰が見込めます。" if _projected_r >= target_lower * 100 else ""
+                st.info(
+                    f"📈 **回復トレンド検出**: 直近3日で {_trend_slope_r:+.1f}% の上昇傾向。{_recovery_msg}\n\n"
+                    "**継続すべき対策:**\n"
+                    "- 🏥 新規入院の受入継続（効果が出ています）\n"
+                    "- 🔄 C群患者の戦略的在院調整を維持（粗利21,800円/日を確保中）\n"
+                    "- ✅ 現在の方針は正しい方向 — 焦らず継続"
+                )
         return  # トレンドチェック不要
 
     # トレンド予測（稼働率が低下傾向か？）
@@ -1017,10 +1040,25 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
                 _last_occ_brief *= 100
 
             if _last_occ_brief < target_lower * 100:
-                st.markdown("🔴 **稼働率低下中 — 即対応**")
-                st.markdown("- 紹介元への入院受入連絡")
-                st.markdown("- C群の戦略的在院調整を検討")
-                st.markdown("- B群は在院継続で粗利確保（粗利21,900円/日）")
+                # 回復トレンドチェック
+                _is_recovering = False
+                if len(_active_raw_df) >= 3:
+                    _rec_check = _active_raw_df[_occ_col_brief].tail(3).values
+                    if _rec_check[0] < 1.5:
+                        _rec_check = _rec_check * 100
+                    if _rec_check[-1] - _rec_check[0] > 1:
+                        _is_recovering = True
+
+                if _is_recovering:
+                    st.markdown("📈 **稼働率回復中 — 対策継続**")
+                    st.markdown("- ✅ 入院受入が効果を発揮中")
+                    st.markdown("- 🔄 戦略的在院調整を維持")
+                    st.markdown("- 📊 回復ペースを注視（焦らず継続）")
+                else:
+                    st.markdown("🔴 **稼働率低下中 — 即対応**")
+                    st.markdown("- 紹介元への入院受入連絡")
+                    st.markdown("- C群の戦略的在院調整を検討")
+                    st.markdown("- B群は在院継続で粗利確保（粗利21,900円/日）")
             elif _last_occ_brief > target_upper * 100:
                 st.markdown("🟡 **高稼働 — 退院調整検討**")
                 st.markdown("- A群→B群への移行準備確認")
@@ -1038,6 +1076,8 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
                 _slope_brief = _recent_brief[-1] - _recent_brief[0]
                 if _slope_brief < -2 and _last_occ_brief < (target_lower * 100 + 3):
                     st.warning(f"📉 低下トレンド検出（3日間で{_slope_brief:.1f}%）")
+                elif _slope_brief > 1 and _last_occ_brief < target_lower * 100:
+                    st.info(f"📈 回復トレンド（3日間で+{_slope_brief:.1f}%） — 対策継続を推奨")
 
         st.markdown("---")
 

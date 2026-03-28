@@ -120,6 +120,7 @@ def create_default_params() -> dict[str, Any]:
         "avg_length_of_stay": 18,                 # 平均在院日数
         "discharge_adjustment_days": 2,           # 退院調整に要するラグ日数
         "admission_variation_coeff": 1.0,         # 入院数の変動係数
+        "initial_occupancy": 0.90,               # 初期稼働率
 
         # --- 収益・コスト（1日1患者あたり、円） ---
         "phase_a_revenue": 30000,                 # A群 収益
@@ -198,7 +199,8 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
 
     # --- 初期状態：稼働率約90%でフェーズバランスよく配置 ---
     # A群15%, B群45%, C群40% の比率で配置（退院ラッシュ防止のためC群は15-18日中心）
-    initial_patients_count = int(num_beds * 0.90)
+    initial_occupancy = params.get("initial_occupancy", 0.90)
+    initial_patients_count = int(num_beds * initial_occupancy)
     n_a = int(initial_patients_count * 0.15)
     n_b = int(initial_patients_count * 0.45)
     n_c = initial_patients_count - n_a - n_b
