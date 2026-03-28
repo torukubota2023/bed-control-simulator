@@ -884,6 +884,100 @@ def _calc_remaining_days(raw_df):
         return calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day
 
 
+def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
+    """
+    月平均稼働率の目標達成に必要な残日数の稼働率を計算する。
+
+    Returns:
+        dict: {
+            "avg_so_far": これまでの平均稼働率(%),
+            "days_elapsed": 経過日数,
+            "days_remaining": 残日数,
+            "total_days": 月の総日数,
+            "required_occ": 残日数で必要な平均稼働率(%),
+            "projected_monthly_avg": 現在のペースでの月末予測稼働率(%),
+            "monthly_target_pct": 月平均目標(%),
+            "gap_patients": 目標達成に必要な追加患者数/日,
+            "achievable": 達成可能かどうか (True/False),
+            "difficulty": "easy" / "moderate" / "hard" / "impossible"
+        }
+    """
+    try:
+        _occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
+        _occ_values = raw_df[_occ_col].dropna().values.copy()
+        if len(_occ_values) == 0:
+            return None
+
+        # スケール統一（0-1 → 0-100）
+        if _occ_values.mean() < 1.5:
+            _occ_values = _occ_values * 100
+
+        _avg_so_far = float(_occ_values.mean())
+        _days_elapsed = len(_occ_values)
+
+        # 月の総日数を決定（データの日付から、またはパラメータから）
+        _date_col = "date" if "date" in raw_df.columns else "日付"
+        try:
+            _last_date = pd.to_datetime(raw_df[_date_col].iloc[-1])
+            _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
+        except Exception:
+            _D = total_days_in_month
+
+        _days_remaining = max(0, _D - _days_elapsed)
+        _target_pct = target_lower * 100  # 例: 90.0
+
+        if _days_remaining == 0:
+            # 月末 — 実績確定
+            return {
+                "avg_so_far": _avg_so_far,
+                "days_elapsed": _days_elapsed,
+                "days_remaining": 0,
+                "total_days": _D,
+                "required_occ": 0,
+                "projected_monthly_avg": _avg_so_far,
+                "monthly_target_pct": _target_pct,
+                "gap_patients": 0,
+                "achievable": _avg_so_far >= _target_pct,
+                "difficulty": "done",
+            }
+
+        # 必要稼働率 R = (target × D - avg × d) / remaining
+        _required_occ = (_target_pct * _D - _avg_so_far * _days_elapsed) / _days_remaining
+
+        # 現在のペースでの月末予測
+        _projected_monthly_avg = _avg_so_far  # 現在の平均が続く想定
+
+        # 目標達成に必要な追加患者数/日
+        _current_avg_patients = _avg_so_far / 100 * view_beds
+        _required_avg_patients = _required_occ / 100 * view_beds
+        _gap_patients = max(0, _required_avg_patients - _current_avg_patients)
+
+        # 難易度判定
+        if _required_occ > 100:
+            _difficulty = "impossible"
+        elif _required_occ > 95:
+            _difficulty = "hard"
+        elif _required_occ > 90:
+            _difficulty = "moderate"
+        else:
+            _difficulty = "easy"
+
+        return {
+            "avg_so_far": round(_avg_so_far, 1),
+            "days_elapsed": _days_elapsed,
+            "days_remaining": _days_remaining,
+            "total_days": _D,
+            "required_occ": round(_required_occ, 1),
+            "projected_monthly_avg": round(_projected_monthly_avg, 1),
+            "monthly_target_pct": _target_pct,
+            "gap_patients": round(_gap_patients, 1),
+            "achievable": _required_occ <= 100,
+            "difficulty": _difficulty,
+        }
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # 稼働率アラート付きKPI表示ヘルパー
 # ---------------------------------------------------------------------------
@@ -958,6 +1052,29 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     "- 🔄 C群患者の戦略的在院調整を維持（粗利21,800円/日を確保中）\n"
                     "- ✅ 現在の方針は正しい方向 — 焦らず継続"
                 )
+        # 月平均目標トラッカー
+        _mt = _calc_monthly_target(raw_df, target_lower, 31, view_beds)
+        if _mt:
+            if _mt["difficulty"] == "impossible":
+                st.error(
+                    f"⛔ **月平均{_mt['monthly_target_pct']:.0f}%達成は困難**: "
+                    f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
+                    f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** が必要（100%超のため達成困難）\n\n"
+                    f"**月間機会損失見込み**: 約{int(_mt['gap_patients'] * 18000 * _mt['days_remaining'] // 10000)}万円"
+                )
+            elif _mt["difficulty"] == "hard":
+                st.warning(
+                    f"🟠 **月平均{_mt['monthly_target_pct']:.0f}%達成には高稼働が必要**: "
+                    f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
+                    f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** が必要\n\n"
+                    f"目標達成には1日あたり **+{_mt['gap_patients']:.0f}名** の在院患者増が必要"
+                )
+            elif _mt["difficulty"] == "moderate":
+                st.info(
+                    f"📊 **月平均{_mt['monthly_target_pct']:.0f}%達成への道筋**: "
+                    f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
+                    f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成"
+                )
         return  # トレンドチェック不要
 
     # トレンド予測（稼働率が低下傾向か？）
@@ -977,6 +1094,35 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 "- 🔄 今週退院予定のC群患者の退院日を再検討（在院日数の最適化余地があれば活用）\n"
                 "- 📋 退院集中日の分散を検討"
             )
+
+    # 月平均目標トラッカー（レンジ内でも平均が低い場合に表示）
+    _mt = _calc_monthly_target(raw_df, target_lower, 31, view_beds)
+    if _mt and _mt["avg_so_far"] < _mt["monthly_target_pct"]:
+        if _mt["difficulty"] == "impossible":
+            st.error(
+                f"⛔ **月平均{_mt['monthly_target_pct']:.0f}%達成は困難**: "
+                f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
+                f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** が必要（100%超のため達成困難）"
+            )
+        elif _mt["difficulty"] == "hard":
+            st.warning(
+                f"🟠 **現在はレンジ内ですが月平均{_mt['monthly_target_pct']:.0f}%未達のリスク**: "
+                f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
+                f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** が必要\n\n"
+                f"**稼働率を高めに維持してください** — 目標達成には1日あたり **+{_mt['gap_patients']:.0f}名** の在院増が必要"
+            )
+        elif _mt["difficulty"] == "moderate":
+            st.info(
+                f"📊 **月平均{_mt['monthly_target_pct']:.0f}%達成には高めの稼働率が必要**: "
+                f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
+                f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成可能"
+            )
+    elif _mt and _mt["avg_so_far"] >= _mt["monthly_target_pct"]:
+        st.success(
+            f"✅ **月平均{_mt['monthly_target_pct']:.0f}%達成ペース**: "
+            f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
+            f"残り{_mt['days_remaining']}日も **{_mt['required_occ']:.1f}%以上** を維持すれば目標達成"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1094,6 +1240,16 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
                     st.warning(f"📉 低下トレンド検出（3日間で{_slope_brief:.1f}%）")
                 elif _slope_brief > 1 and _last_occ_brief < target_lower * 100:
                     st.info(f"📈 回復トレンド（3日間で+{_slope_brief:.1f}%） — 対策継続を推奨")
+
+            # 月平均達成見通し
+            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, 31, _view_beds)
+            if _mt_brief:
+                if _mt_brief["avg_so_far"] >= _mt_brief["monthly_target_pct"]:
+                    st.caption(f"✅ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成ペース")
+                elif _mt_brief["difficulty"] in ("easy", "moderate"):
+                    st.caption(f"📊 月平均 {_mt_brief['avg_so_far']:.1f}% — 残り{_mt_brief['days_remaining']}日で{_mt_brief['required_occ']:.0f}%必要")
+                else:
+                    st.caption(f"⚠️ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成に{_mt_brief['required_occ']:.0f}%必要（厳しい）")
 
         st.markdown("---")
 
