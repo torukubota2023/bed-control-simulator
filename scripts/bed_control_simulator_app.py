@@ -89,6 +89,46 @@ except ImportError:
     pass
 
 # ---------------------------------------------------------------------------
+# A/B/C群 自動計算ロジック
+# 将来拡張: 日齢バケット（1日目〜15日以上）で管理する設計に拡張可能
+# ---------------------------------------------------------------------------
+def calculate_abc_groups(prev_a: int, prev_b: int, prev_c: int,
+                         new_admissions: int,
+                         discharge_a: int, discharge_b: int, discharge_c: int) -> tuple[int, int, int]:
+    """前日のA/B/C群から日次更新処理を行い、新しいA/B/C群を返す。
+
+    計算順序（厳守）:
+    1. 日齢進行による遷移（概算）
+       - A → B 移動数 = A_count / 5
+       - B → C 移動数 = B_count / 9
+    2. 新規入院をA群へ追加
+    3. 退院処理
+    4. 負の値防止
+    """
+    # 1. 日齢進行による遷移
+    a_to_b = int(round(prev_a / 5))
+    b_to_c = int(round(prev_b / 9))
+
+    a_count = prev_a - a_to_b
+    b_count = prev_b + a_to_b - b_to_c
+    c_count = prev_c + b_to_c
+
+    # 2. 新規入院をA群へ追加
+    a_count += new_admissions
+
+    # 3. 退院処理
+    a_count -= discharge_a
+    b_count -= discharge_b
+    c_count -= discharge_c
+
+    # 4. 負の値防止
+    a_count = max(0, a_count)
+    b_count = max(0, b_count)
+    c_count = max(0, c_count)
+
+    return a_count, b_count, c_count
+
+# ---------------------------------------------------------------------------
 # 戦略名マッピング（日本語 → CLI英語名）
 # ---------------------------------------------------------------------------
 STRATEGY_MAP = {
@@ -458,6 +498,20 @@ if "daily_data" not in st.session_state:
     else:
         st.session_state.daily_data = pd.DataFrame()
 
+# A/B/C群 自動計算用の状態
+if "abc_state" not in st.session_state:
+    st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
+
+# 既存データからABC状態を復元
+if "abc_state_initialized" not in st.session_state:
+    if _DATA_MANAGER_AVAILABLE and isinstance(st.session_state.daily_data, pd.DataFrame) and len(st.session_state.daily_data) > 0:
+        _last_record = st.session_state.daily_data.sort_values("date").iloc[-1]
+        _restore_a = int(_last_record.get("phase_a_count", 0) or 0)
+        _restore_b = int(_last_record.get("phase_b_count", 0) or 0)
+        _restore_c = int(_last_record.get("phase_c_count", 0) or 0)
+        st.session_state.abc_state = {"A": _restore_a, "B": _restore_b, "C": _restore_c}
+    st.session_state.abc_state_initialized = True
+
 if "demo_data" not in st.session_state:
     st.session_state.demo_data = pd.DataFrame()
 
@@ -670,8 +724,9 @@ if _DATA_MANAGER_AVAILABLE:
                 _demo_display["date_str"] = _demo_display["date"].dt.strftime("%Y-%m-%d")
 
                 _demo_cols_to_show = ["date_str", "total_patients", "new_admissions", "discharges",
+                                      "discharge_a", "discharge_b", "discharge_c",
                                       "phase_a_count", "phase_b_count", "phase_c_count",
-                                      "avg_los", "notes"]
+                                      "notes"]
                 _demo_cols_available = [c for c in _demo_cols_to_show if c in _demo_display.columns]
                 st.dataframe(
                     _demo_display[_demo_cols_available].rename(columns={
@@ -679,10 +734,12 @@ if _DATA_MANAGER_AVAILABLE:
                         "total_patients": "在院患者数",
                         "new_admissions": "新規入院",
                         "discharges": "退院",
-                        "phase_a_count": "A群",
-                        "phase_b_count": "B群",
-                        "phase_c_count": "C群",
-                        "avg_los": "平均在院日数",
+                        "discharge_a": "A群退院",
+                        "discharge_b": "B群退院",
+                        "discharge_c": "C群退院",
+                        "phase_a_count": "A群（自動）",
+                        "phase_b_count": "B群（自動）",
+                        "phase_c_count": "C群（自動）",
                         "notes": "備考",
                     }),
                     width="stretch",
@@ -736,61 +793,90 @@ if _DATA_MANAGER_AVAILABLE:
 
             # --- データ入力フォーム ---
             st.markdown("#### 新しいデータを追加")
+
+            # 現在のA/B/C群状態を表示
+            abc_col1, abc_col2, abc_col3, abc_col4 = st.columns(4)
+            with abc_col1:
+                st.metric("A群（自動計算）", st.session_state.abc_state["A"])
+            with abc_col2:
+                st.metric("B群（自動計算）", st.session_state.abc_state["B"])
+            with abc_col3:
+                st.metric("C群（自動計算）", st.session_state.abc_state["C"])
+            with abc_col4:
+                abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
+                st.metric("合計", abc_total)
+
             with st.form("dm_add_record_form", clear_on_submit=True):
                 form_col1, form_col2 = st.columns(2)
                 with form_col1:
                     input_date = st.date_input("日付", value=pd.Timestamp.now().normalize())
                 with form_col2:
-                    input_total = st.number_input("在院患者数", min_value=0, max_value=94, value=85, step=1)
+                    input_total = st.number_input("在院患者総数", min_value=0, max_value=94, value=85, step=1)
 
                 form_col3, form_col4 = st.columns(2)
                 with form_col3:
                     input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
                 with form_col4:
-                    input_discharges = st.number_input("退院数", min_value=0, max_value=30, value=5, step=1)
+                    input_discharges = st.number_input("新規退院数", min_value=0, max_value=30, value=5, step=1)
 
+                st.markdown("**退院内訳**")
                 form_col5, form_col6, form_col7 = st.columns(3)
                 with form_col5:
-                    input_phase_a = st.number_input("A群（1-5日目）", min_value=0, max_value=94, value=13, step=1)
+                    input_discharge_a = st.number_input("A群相当退院（1-5日目）", min_value=0, max_value=30, value=0, step=1)
                 with form_col6:
-                    input_phase_b = st.number_input("B群（6-14日目）", min_value=0, max_value=94, value=38, step=1)
+                    input_discharge_b = st.number_input("B群相当退院（6-14日目）", min_value=0, max_value=30, value=0, step=1)
                 with form_col7:
-                    input_phase_c = st.number_input("C群（15日目〜）", min_value=0, max_value=94, value=34, step=1)
+                    input_discharge_c = st.number_input("C群相当退院（15日目〜）", min_value=0, max_value=30, value=0, step=1)
 
-                form_col8, form_col9 = st.columns(2)
-                with form_col8:
-                    input_avg_los = st.number_input("平均在院日数（任意）", min_value=0.0, max_value=60.0,
-                                                     value=0.0, step=0.1,
-                                                     help="0の場合は空欄として扱います")
-                with form_col9:
-                    input_notes = st.text_input("備考（任意）", value="")
+                input_notes = st.text_input("備考（任意）", value="")
 
                 submitted = st.form_submit_button("追加", type="primary", width="stretch")
 
                 if submitted:
-                    new_record = {
-                        "date": pd.Timestamp(input_date),
-                        "total_patients": int(input_total),
-                        "new_admissions": int(input_admissions),
-                        "discharges": int(input_discharges),
-                        "phase_a_count": int(input_phase_a),
-                        "phase_b_count": int(input_phase_b),
-                        "phase_c_count": int(input_phase_c),
-                        "avg_los": float(input_avg_los) if input_avg_los > 0 else pd.NA,
-                        "notes": input_notes,
-                        "data_source": "manual",
-                    }
-                    is_valid, error_msg = validate_record(
-                        new_record, existing_df=st.session_state.daily_data
-                    )
-                    if is_valid:
-                        st.session_state.daily_data = add_record(
-                            st.session_state.daily_data, new_record
-                        )
-                        st.success(f"{input_date} のデータを追加しました。")
-                        st.rerun()
+                    # 退院内訳の合計チェック
+                    discharge_sum = input_discharge_a + input_discharge_b + input_discharge_c
+                    if discharge_sum > input_discharges:
+                        st.error(f"退院内訳の合計（{discharge_sum}）が退院数（{input_discharges}）を超えています。")
                     else:
-                        st.error(f"入力エラー:\n{error_msg}")
+                        # A/B/C群を自動計算
+                        prev_a = st.session_state.abc_state["A"]
+                        prev_b = st.session_state.abc_state["B"]
+                        prev_c = st.session_state.abc_state["C"]
+
+                        new_a, new_b, new_c = calculate_abc_groups(
+                            prev_a, prev_b, prev_c,
+                            input_admissions,
+                            input_discharge_a, input_discharge_b, input_discharge_c
+                        )
+
+                        new_record = {
+                            "date": pd.Timestamp(input_date),
+                            "total_patients": int(input_total),
+                            "new_admissions": int(input_admissions),
+                            "discharges": int(input_discharges),
+                            "discharge_a": int(input_discharge_a),
+                            "discharge_b": int(input_discharge_b),
+                            "discharge_c": int(input_discharge_c),
+                            "phase_a_count": new_a,
+                            "phase_b_count": new_b,
+                            "phase_c_count": new_c,
+                            "avg_los": pd.NA,
+                            "notes": input_notes,
+                            "data_source": "manual",
+                        }
+                        is_valid, error_msg = validate_record(
+                            new_record, existing_df=st.session_state.daily_data
+                        )
+                        if is_valid:
+                            st.session_state.daily_data = add_record(
+                                st.session_state.daily_data, new_record
+                            )
+                            # ABC状態を更新
+                            st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
+                            st.success(f"{input_date} のデータを追加しました。（A群:{new_a} B群:{new_b} C群:{new_c}）")
+                            st.rerun()
+                        else:
+                            st.error(f"入力エラー:\n{error_msg}")
 
             st.markdown("---")
 
@@ -806,8 +892,9 @@ if _DATA_MANAGER_AVAILABLE:
 
                 # st.data_editor で編集可能テーブル（data_sourceカラムは非表示）
                 _display_cols = ["date_str", "total_patients", "new_admissions", "discharges",
+                                  "discharge_a", "discharge_b", "discharge_c",
                                   "phase_a_count", "phase_b_count", "phase_c_count",
-                                  "avg_los", "notes"]
+                                  "notes"]
                 _display_cols_available = [c for c in _display_cols if c in display_data.columns]
                 edited_df = st.data_editor(
                     display_data[_display_cols_available].rename(columns={
@@ -815,10 +902,12 @@ if _DATA_MANAGER_AVAILABLE:
                         "total_patients": "在院患者数",
                         "new_admissions": "新規入院",
                         "discharges": "退院",
-                        "phase_a_count": "A群",
-                        "phase_b_count": "B群",
-                        "phase_c_count": "C群",
-                        "avg_los": "平均在院日数",
+                        "discharge_a": "A群退院",
+                        "discharge_b": "B群退院",
+                        "discharge_c": "C群退院",
+                        "phase_a_count": "A群（自動）",
+                        "phase_b_count": "B群（自動）",
+                        "phase_c_count": "C群（自動）",
                         "notes": "備考",
                     }),
                     width="stretch",
@@ -838,10 +927,9 @@ if _DATA_MANAGER_AVAILABLE:
                                 "在院患者数": "total_patients",
                                 "新規入院": "new_admissions",
                                 "退院": "discharges",
-                                "A群": "phase_a_count",
-                                "B群": "phase_b_count",
-                                "C群": "phase_c_count",
-                                "平均在院日数": "avg_los",
+                                "A群退院": "discharge_a",
+                                "B群退院": "discharge_b",
+                                "C群退院": "discharge_c",
                                 "備考": "notes",
                             }
                             for ja_col, en_col in col_map_rev.items():
