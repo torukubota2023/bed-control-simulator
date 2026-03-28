@@ -451,14 +451,14 @@ else:
 # --- 患者フェーズ別パラメータ ---
 with st.sidebar.expander("患者フェーズ別パラメータ"):
     st.markdown("**A群（急性期: 〜5日目）**")
-    phase_a_rev = st.number_input("A群 日次収益（円）", value=30000, step=1000, key="a_rev")
-    phase_a_cost = st.number_input("A群 日次コスト（円）", value=28000, step=1000, key="a_cost")
+    phase_a_rev = st.number_input("A群 日次収益（円）", value=33800, step=1000, key="a_rev")
+    phase_a_cost = st.number_input("A群 日次コスト（円）", value=29000, step=1000, key="a_cost")
     st.markdown("**B群（回復期: 6〜14日目）**")
-    phase_b_rev = st.number_input("B群 日次収益（円）", value=30000, step=1000, key="b_rev")
-    phase_b_cost = st.number_input("B群 日次コスト（円）", value=13000, step=1000, key="b_cost")
+    phase_b_rev = st.number_input("B群 日次収益（円）", value=34400, step=1000, key="b_rev")
+    phase_b_cost = st.number_input("B群 日次コスト（円）", value=14000, step=1000, key="b_cost")
     st.markdown("**C群（退院準備期: 15日目〜）**")
-    phase_c_rev = st.number_input("C群 日次収益（円）", value=30000, step=1000, key="c_rev")
-    phase_c_cost = st.number_input("C群 日次コスト（円）", value=11000, step=1000, key="c_cost")
+    phase_c_rev = st.number_input("C群 日次収益（円）", value=33800, step=1000, key="c_rev")
+    phase_c_cost = st.number_input("C群 日次コスト（円）", value=12000, step=1000, key="c_cost")
 
 # --- 追加パラメータ ---
 with st.sidebar.expander("追加パラメータ"):
@@ -1756,8 +1756,9 @@ with tabs[_tab_idx["フェーズ構成"]]:
         <p style="margin:4px 0; font-size:0.9em;">
         検査・処置・初期治療が集中<br>
         看護必要度が最も高い<br>
-        <b>収益 3.0万/日 − コスト 2.8万/日</b><br>
-        <span style="color:#E74C3C;"><b>粗利 0.2万/日（最小）</b></span>
+        リハ加算2（50点）算定<br>
+        <b>収益 3.4万/日 − コスト 2.9万/日</b><br>
+        <span style="color:#E74C3C;"><b>粗利 0.5万/日（最小）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
         💡 多すぎると初期コストで粗利圧迫<br>
@@ -1773,8 +1774,9 @@ with tabs[_tab_idx["フェーズ構成"]]:
         <p style="margin:4px 0; font-size:0.9em;">
         リハビリ・回復・退院準備<br>
         コストが下がり始める<br>
-        <b>収益 3.0万/日 − コスト 1.3万/日</b><br>
-        <span style="color:#27AE60;"><b>粗利 1.7万/日（★稼ぎ頭）</b></span>
+        リハ加算1（110点）算定<br>
+        <b>収益 3.4万/日 − コスト 1.4万/日</b><br>
+        <span style="color:#27AE60;"><b>粗利 2.0万/日（★稼ぎ頭）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
         💡 この層を厚くすることが経営の鍵<br>
@@ -1790,8 +1792,9 @@ with tabs[_tab_idx["フェーズ構成"]]:
         <p style="margin:4px 0; font-size:0.9em;">
         退院調整・転院待ち・在宅準備<br>
         コスト最小だが長期滞留リスク<br>
-        <b>収益 3.0万/日 − コスト 1.1万/日</b><br>
-        <span style="color:#2980B9;"><b>粗利 1.9万/日（良好だが要調整）</b></span>
+        リハ加算2（50点）算定<br>
+        <b>収益 3.4万/日 − コスト 1.2万/日</b><br>
+        <span style="color:#2980B9;"><b>粗利 2.2万/日（良好だが要調整）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
         💡 需給調整弁。稼働率維持に活用<br>
