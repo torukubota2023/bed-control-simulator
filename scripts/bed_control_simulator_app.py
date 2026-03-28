@@ -416,9 +416,12 @@ st.sidebar.markdown("5F: 47床 / 6F: 47床 / 合計: 94床")
 total_beds = TOTAL_BEDS if _DATA_MANAGER_AVAILABLE else 94
 
 # 病棟セレクター（実績データモードで病棟別データがある場合に有効）
-_ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
-_selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
-_selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
+if _is_actual_data_mode:
+    _ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
+    _selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
+    _selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
+else:
+    _selected_ward_key = "全体"
 
 # _view_beds のデフォルト値（後で病棟選択に応じて上書きされる）
 _view_beds = total_beds
@@ -683,7 +686,7 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             _active_display_df = _ward_display_dfs[_selected_ward_key]
             # Override the main df and raw_df used by all tabs
             st.session_state.actual_df = _active_display_df
-            st.session_state.actual_raw_df = _active_raw_df
+            st.session_state.actual_df_raw = _active_raw_df
             # Also override _actual_raw_df and _actual_display_df
             _actual_raw_df = _active_raw_df
             _actual_display_df = _active_display_df
@@ -691,6 +694,39 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             _actual_params = _build_cli_params(params_dict)
             _actual_params["num_beds"] = _view_beds
             st.session_state.actual_params = _actual_params
+            # Recalculate summary for selected ward
+            _actual_summary = {
+                "月次収益": int(_actual_raw_df["daily_revenue"].sum()),
+                "月次コスト": int(_actual_raw_df["daily_cost"].sum()),
+                "月次粗利": int(_actual_raw_df["daily_profit"].sum()),
+                "平均稼働率": round(float(_actual_raw_df["occupancy_rate"].mean()) * 100, 1),
+                "月間入院数": int(_actual_raw_df["new_admissions"].sum()),
+                "月間退院数": int(_actual_raw_df["discharges"].sum()),
+                "目標レンジ内日数": int(
+                    ((_actual_raw_df["occupancy_rate"] >= target_lower)
+                     & (_actual_raw_df["occupancy_rate"] <= target_upper)).sum()
+                ),
+                "目標レンジ内率": round(
+                    float(
+                        ((_actual_raw_df["occupancy_rate"] >= target_lower)
+                         & (_actual_raw_df["occupancy_rate"] <= target_upper)).mean()
+                    ) * 100, 1
+                ) if len(_actual_raw_df) > 0 else 0.0,
+                "A群平均構成比": round(float(_actual_raw_df["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_actual_raw_df["phase_a_ratio"].mean()) else 0.0,
+                "B群平均構成比": round(float(_actual_raw_df["phase_b_ratio"].mean()) * 100, 1) if pd.notna(_actual_raw_df["phase_b_ratio"].mean()) else 0.0,
+                "C群平均構成比": round(float(_actual_raw_df["phase_c_ratio"].mean()) * 100, 1) if pd.notna(_actual_raw_df["phase_c_ratio"].mean()) else 0.0,
+                "平均在院日数": 0,
+                "フラグ集計": {},
+            }
+            # Calculate avg LOS for ward
+            _w_total_patient_days = float(_actual_raw_df["total_patients"].sum())
+            _w_total_new_admissions = float(_actual_raw_df["new_admissions"].sum())
+            _w_total_discharges = float(_actual_raw_df["discharges"].sum())
+            _w_los_denominator = (_w_total_new_admissions + _w_total_discharges) / 2
+            if _w_los_denominator > 0 and _w_total_patient_days > 0:
+                _actual_summary["平均在院日数"] = round(_w_total_patient_days / _w_los_denominator, 1)
+            _actual_summary = _enrich_summary(_actual_summary, _actual_display_df)
+            st.session_state.actual_summary = _actual_summary
         else:
             _view_beds = total_beds  # 94
 
