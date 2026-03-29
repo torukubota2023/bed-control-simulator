@@ -3234,10 +3234,12 @@ if "\U0001f52e What-if分析" in _tab_idx:
                             f"{_sc['c']}名",
                             delta=f"{_sc['c'] - _bl['c']:+d}名",
                         )
+                        _profit_delta_val = _df_diff["daily_profit"]
+                        _profit_delta_str = f"+{fmt_yen(int(_profit_delta_val))}" if _profit_delta_val >= 0 else f"-{fmt_yen(abs(int(_profit_delta_val)))}"
                         st.metric(
                             "日次粗利",
                             fmt_yen(_sc["daily_profit"]),
-                            delta=fmt_yen(_df_diff["daily_profit"]),
+                            delta=_profit_delta_str,
                         )
 
                     # フェーズ構成比 Before/After 棒グラフ
@@ -3464,10 +3466,11 @@ if "\U0001f52e What-if分析" in _tab_idx:
                             f"{_surge_result['scenario_occupancy']*100:.1f}%",
                             delta=f"{_s_occ_delta:+.1f}%",
                         )
+                        _s_profit_delta_str = f"+{fmt_yen(abs(int(_s_profit_delta)))}" if _s_profit_delta >= 0 else f"-{fmt_yen(abs(int(_s_profit_delta)))}"
                         st.metric(
                             "月次粗利",
                             fmt_yen(int(_surge_result["scenario_profit"])),
-                            delta=fmt_yen(int(_s_profit_delta)),
+                            delta=_s_profit_delta_str,
                         )
 
                     _s_rec = _surge_result.get("recommendation", "")
