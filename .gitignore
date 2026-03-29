@@ -15,7 +15,7 @@ output/*.png
 .idea/
 
 # Claude Code
-.claude/
+.claude/settings.local.json
 .mcp.json
 
 # Node

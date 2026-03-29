@@ -32,6 +32,10 @@
 ```
 /
 ├── CLAUDE.md          ← このファイル（プロジェクトメモリ）
+├── .claude/           ← Claude Code設定
+│   ├── commands/      ← カスタムコマンド
+│   ├── rules/         ← ルール集（臨床安全性・出力形式・オーケストレーター）
+│   └── settings.json  ← Hooks・共有設定
 ├── docs/              ← 教育資料・マニュアル・ガイド
 │   ├── respiratory/   ← 呼吸器フィジカル関連
 │   ├── education/     ← レジデント教育資料
@@ -40,14 +44,11 @@
 ├── data/              ← KPI・入院統計・分析用データ
 ├── templates/         ← 診療情報提供書・退院サマリーのテンプレート
 └── scripts/           ← 自動化スクリプト
+    └── hooks/         ← セキュリティHooksスクリプト
 ```
 
 ## ルール
-- あなたはマネージャーでagentオーケストレーターです
-あなたは絶対に実装せず、全てsubagentやtask agent
-に委託すること
-タスクは超細分化し、PDCAサイクルを構築すること。
-- 臨床情報を扱う際は患者個人情報を絶対に含めない
-- 文献引用は必ず出典（PMID, DOI）を明記する
-- 日本語で作成。英語文献の要約も日本語で記載する
-- 教育資料はエビデンスレベルと尤度比を可能な限り併記する
+詳細は `.claude/rules/` を参照：
+- [clinical-safety.md](.claude/rules/clinical-safety.md): 患者情報保護・文献引用ルール
+- [output-format.md](.claude/rules/output-format.md): 日本語出力・エビデンス併記ルール
+- [orchestrator.md](.claude/rules/orchestrator.md): subagent委託・PDCA構築ルール
