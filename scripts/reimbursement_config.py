@@ -408,27 +408,27 @@ DEPARTMENT_DEFAULTS: dict[Department, dict] = {
 # コスト関連定数（ベッドコントロールシミュレーターとの連携用）
 # ===========================================================================
 
-# フェーズ別コスト（当院診療科加重平均、包括範囲内の病院持ち出し分）
+# フェーズ別コスト（限界利益ベース: 変動費のみ。固定費は空床でも発生するため除外）
 PHASE_COSTS = {
     "A": {  # 入院1-5日目
         "revenue_per_day": 36000,   # 全加算込み（初期加算+リハ栄養口腔+物価対応）
-        "cost_per_day": 26000,      # 検査・薬剤・画像集中
-        "profit_per_day": 10000,
+        "cost_per_day": 12000,      # 変動費（検査・薬剤・画像集中）
+        "profit_per_day": 24000,
     },
     "B": {  # 入院6-14日目
         "revenue_per_day": 36000,   # A群と同じ加算構造
-        "cost_per_day": 14500,      # 急性期処置終了、コスト急減
-        "profit_per_day": 21500,    # ★最大利益フェーズ
+        "cost_per_day": 6000,       # 変動費（急性期処置終了、残存薬剤・検査のみ）
+        "profit_per_day": 30000,    # ★最大限界利益フェーズ
     },
     "C": {  # 入院15日目以降
         "revenue_per_day": 33400,   # 初期加算+リハ加算消失で-2,600円
-        "cost_per_day": 13000,      # 変動費最小
-        "profit_per_day": 20400,
+        "cost_per_day": 4500,       # 変動費（薬剤・給食等の最低限変動費のみ）
+        "profit_per_day": 28900,
     },
 }
 
-# 空床1日あたり機会損失
-OPPORTUNITY_COST_PER_EMPTY_BED: int = 18000  # 円/日
+# 空床1日あたり機会損失（限界利益ベース）
+OPPORTUNITY_COST_PER_EMPTY_BED: int = 25000  # 円/日
 
 # 1点あたり単価
 YEN_PER_POINT: int = 10

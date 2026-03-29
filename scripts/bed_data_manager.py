@@ -51,12 +51,12 @@ REQUIRED_COLUMNS = [
 # A群・B群: +初期加算(150点, 14日以内) +リハ加算 +物価対応料(49点)
 # C群: 初期加算なし(15日超) +リハ加算2 +物価対応料(49点)
 DEFAULT_REVENUE_PARAMS = {
-    "phase_a_revenue": 35300,  # A群(急性期1-5日) 3,280+初期加算150+リハ加算2(50)+物価対応(49)=3,529点
-    "phase_a_cost": 29000,     # 検査・処置・初期治療・看護集中
-    "phase_b_revenue": 35900,  # B群(回復期6-14日) 3,280+初期加算150+リハ加算1(110)+物価対応(49)=3,589点
-    "phase_b_cost": 14000,     # リハビリ主体・急性期コスト減
-    "phase_c_revenue": 33800,  # C群(退院準備15日-) 3,280+リハ加算2(50)+物価対応(49)=3,379点 ※初期加算なし
-    "phase_c_cost": 12000,     # 退院調整・リハ継続・コスト最小
+    "phase_a_revenue": 36000,  # A群(急性期1-5日) 全加算込み（初期加算+リハ栄養口腔+物価対応）
+    "phase_a_cost": 12000,     # 変動費（検査・薬剤・画像集中）
+    "phase_b_revenue": 36000,  # B群(回復期6-14日) A群と同じ加算構造
+    "phase_b_cost": 6000,      # 変動費（急性期処置終了、残存薬剤・検査のみ）
+    "phase_c_revenue": 33400,  # C群(退院準備15日-) 初期加算+リハ加算消失で-2,600円
+    "phase_c_cost": 4500,      # 変動費（薬剤・給食等の最低限変動費のみ）
 }
 
 # ---------------------------------------------------------------------------
@@ -400,7 +400,7 @@ def predict_monthly_kpi(
 
     Returns:
         dict: 月末予想稼働率, 月末予想在院患者数, 今月の入院数合計,
-              推定平均在院日数, 推定月次粗利
+              推定平均在院日数, 推定月次限界利益
     """
     if len(df) == 0:
         return {}
@@ -456,8 +456,8 @@ def predict_monthly_kpi(
     los_denominator = (total_new_admissions + total_discharges_month) / 2
     estimated_avg_los = total_patient_days / max(los_denominator, 1) if total_patient_days > 0 else 18.0
 
-    # 推定月次粗利
-    # 今月実績分の粗利
+    # 推定月次限界利益
+    # 今月実績分の限界利益
     actual_gross_profit = 0.0
     if len(month_data) > 0:
         for _, row in month_data.iterrows():
@@ -499,7 +499,7 @@ def predict_monthly_kpi(
         "今月入院数_予測": predicted_remaining_admissions,
         "今月入院数_合計": total_admissions,
         "推定平均在院日数": round(estimated_avg_los, 1),
-        "推定月次粗利": int(round(predicted_gross_profit)),
+        "推定月次限界利益": int(round(predicted_gross_profit)),
         "残り日数": remaining_days,
     }
 
