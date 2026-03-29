@@ -1032,7 +1032,7 @@ def suggest_actions(
         actions.append({
             "priority": 1,
             "category": "admission",
-            "action": f"新規入院{capacity}名受入余力あり。紹介元への積極連絡推奨",
+            "action": f"空床{capacity}床の受入余力あり → ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値引き下げを相談",
             "expected_impact": f"稼働率 {occ*100:.1f}% → {params['target_occupancy_lower']*100:.0f}% へ",
         })
 
@@ -1041,7 +1041,7 @@ def suggest_actions(
         actions.append({
             "priority": 2,
             "category": "admission",
-            "action": f"新規入院{capacity}名受入余力あり",
+            "action": f"空床{capacity}床の受入余力あり → 外来・連携室へ空床状況を共有し入院受入を促進",
             "expected_impact": f"稼働率 {params['target_occupancy_lower']*100:.0f}% への引き上げ",
         })
 
@@ -1460,7 +1460,7 @@ def whatif_admission_surge(
     if scenario_summary["avg_occupancy"] > 0.97:
         recommendation = f"入院{abs(surge_pct)*100:.0f}%{direction}時、過密リスクあり。退院促進体制の強化を推奨"
     elif scenario_summary["avg_occupancy"] < 0.85:
-        recommendation = f"入院{abs(surge_pct)*100:.0f}%{direction}時、低稼働リスクあり。紹介元への積極連絡を推奨"
+        recommendation = f"入院{abs(surge_pct)*100:.0f}%{direction}時、低稼働リスクあり → 連携室へ紹介元への空床発信を依頼 / 外来へ予定入院の前倒しを依頼"
     else:
         recommendation = f"入院{abs(surge_pct)*100:.0f}%{direction}時、稼働率は許容範囲内"
 
@@ -1814,11 +1814,11 @@ def optimize_discharge_plan(
     reasoning: list[str] = []
 
     if current_occupancy < target_lower:
-        # 稼働率が低い → 退院させない、入院を増やす
+        # 稼働率が低い → 退院させない、入院促進施策を展開
         reasoning.append(
             f"稼働率{current_occupancy*100:.1f}%は目標下限{target_lower*100:.0f}%未満"
         )
-        reasoning.append("→ 退院は最小限にし、新規入院を積極受入")
+        reasoning.append("→ 退院は最小限にし、外来へ予定入院前倒し依頼・連携室へ紹介元への空床発信依頼・外来担当医へ入院閾値引き下げ相談")
         optimal_c_discharge = 0
         recommended_admissions = min(expected_daily_demand, empty_beds)
 

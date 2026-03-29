@@ -1041,7 +1041,9 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             f"🔴 **稼働率低下アラート**: 直近稼働率 {_sel_last_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています "
             f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_sel_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
             "**対策:**\n"
-            "- 🏥 新規入院の受入促進（紹介元への連絡、救急受入強化）\n"
+            "- 🏥 予定入院の前倒しを外来担当医へ依頼\n"
+            "- 📞 連携室へ依頼：紹介元クリニック・病院へ空床受入れ可能を発信\n"
+            "- 💬 外来担当医に入院推奨閾値の引き下げを相談（通院患者の入院検討）\n"
             "- 🔄 C群患者の戦略的在院調整（平均在院日数21日以内で調整可、粗利21,800円/日を維持）\n"
             "- 📋 B群患者も在院継続で粗利確保（リハ加算1: 110点算定中）"
         )
@@ -1100,7 +1102,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 f"⚠️ **稼働率低下傾向**: 直近3日で {_trend_slope:+.1f}% の低下傾向。"
                 f"このペースが続くと約{_days_to_breach}日後に目標下限を下回る可能性\n\n"
                 "**予防策:**\n"
-                "- 🏥 新規入院の受入準備を前倒しで進める\n"
+                "- 🏥 外来へ予定入院の前倒しを依頼 / 連携室へ空床状況の発信を依頼\n"
                 "- 🔄 今週退院予定のC群患者の退院日を再検討（在院日数の最適化余地があれば活用）\n"
                 "- 📋 退院集中日の分散を検討"
             )
@@ -1223,12 +1225,13 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
 
                 if _is_recovering:
                     st.markdown("📈 **稼働率回復中 — 対策継続**")
-                    st.markdown("- ✅ 入院受入が効果を発揮中")
+                    st.markdown("- ✅ 入院受入施策が効果を発揮中（外来・連携室への依頼継続）")
                     st.markdown("- 🔄 戦略的在院調整を維持")
                     st.markdown("- 📊 回復ペースを注視（焦らず継続）")
                 else:
                     st.markdown("🔴 **稼働率低下中 — 即対応**")
-                    st.markdown("- 紹介元への入院受入連絡")
+                    st.markdown("- 連携室へ依頼：紹介元へ空床受入れ可能を発信")
+                    st.markdown("- 外来へ予定入院の前倒しを依頼")
                     st.markdown("- C群の戦略的在院調整を検討")
                     st.markdown("- B群は在院継続で粗利確保（粗利21,900円/日）")
             elif _last_occ_brief > target_upper * 100:
@@ -2114,7 +2117,7 @@ with tabs[_tab_idx["日次推移"]]:
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
                     f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
-                    "**対策:** 新規入院促進 + C群の戦略的在院調整で稼働率維持"
+                    "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
@@ -2611,7 +2614,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
                     f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
-                    "**対策:** 新規入院促進 + C群の戦略的在院調整で稼働率維持"
+                    "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
@@ -2676,7 +2679,10 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     if avg_occ < target_lower * 100:
         st.error(
             f"⚠️ 平均稼働率 {avg_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています。\n\n"
-            "**最優先:** 入院促進策の強化（紹介元への営業、救急受入体制の強化）\n\n"
+            "**最優先:** 入院促進策の強化\n"
+            "- ① 予定入院の前倒しを外来担当医へ依頼\n"
+            "- ② 連携室へ依頼：紹介元クリニック・病院へ空床受入れ可能を発信\n"
+            "- ③ 外来担当医に入院推奨閾値の引き下げを相談\n\n"
             "**注意:** C群患者は在院継続で粗利確保。空床1床/日 ≈ 3.4万円の機会損失。"
             "平均在院日数21日以内であれば戦略的在院調整で稼働率を維持する。"
         )
@@ -2694,7 +2700,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
         if avg_occ >= target_upper * 100:
             st.warning(
                 f"C群構成比 {summary['C群平均構成比']:.1f}% が高く、稼働率も{avg_occ:.1f}%で高稼働。\n\n"
-                "**推奨:** 退院可能なC群から優先的に退院調整し、新規入院の受入枠を確保"
+                "**推奨:** 退院可能なC群から優先的に退院調整し、受入枠を確保。外来・連携室へ空床状況を共有"
             )
         else:
             st.info(
@@ -2726,7 +2732,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             _action_items.append(f"C群{_last_c}名は戦略的在院調整で稼働率維持（粗利21,800円/日/名 × 空床よりプラス）")
     if "稼働率低下" in _last_flags:
         _remaining_days = _calc_remaining_days(_active_raw_df)
-        _action_items.append(f"🔴 新規入院の受入準備を強化（空床{_last_empty}床 = 機会損失 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * 34000 * _remaining_days // 10000:.0f}万円）")
+        _action_items.append(f"🔴 空床{_last_empty}床（機会損失 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * 34000 * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
         _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で粗利確保し稼働率維持を優先")
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
@@ -2735,7 +2741,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     if "B群不足" in _last_flags:
         _action_items.append("B群患者のリハビリ進捗を確認、在院継続で粗利確保")
     if _last_empty > 0 and "正常運用" in _last_flags:
-        _action_items.append(f"新規入院{min(5, _last_empty)}名の受入余力あり（空床{_last_empty}床）")
+        _action_items.append(f"空床{_last_empty}床（受入余力{min(5, _last_empty)}名）→ 外来・連携室へ空床状況を共有し入院受入を促進")
     if _last_b > 0:
         _action_items.append(f"B群{_last_b}名のリハビリ進捗・退院準備状況を確認")
 
@@ -2809,7 +2815,7 @@ with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
 
         _br_forecast_comment = ""
         if _fc_values and min(_fc_values) < target_lower * 100:
-            _br_forecast_comment = f"→ 入院受入を強化しないと{target_lower*100:.0f}%を割る見込み"
+            _br_forecast_comment = f"→ 入院受入施策（外来への前倒し依頼・連携室経由の紹介促進）を強化しないと{target_lower*100:.0f}%を割る見込み"
         elif _fc_values and max(_fc_values) > target_upper * 100:
             _br_forecast_comment = f"→ 退院調整を進めないと{target_upper*100:.0f}%を超える見込み"
         else:
