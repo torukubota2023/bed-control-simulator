@@ -634,6 +634,134 @@ if "data_mode" not in st.session_state:
     st.session_state.data_mode = "📊 実データ入力モード"
 
 # ---------------------------------------------------------------------------
+# シミュレーションモードのプリロード: 教育用実データを初期表示
+# ---------------------------------------------------------------------------
+if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
+    _preload_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202603.csv")
+    if os.path.exists(_preload_csv):
+        try:
+            _pre_df = pd.read_csv(_preload_csv)
+            _pre_df["date"] = pd.to_datetime(_pre_df["date"])
+
+            # 実データから全体データの作成（実データモードと同じロジック）
+            if "ward" in _pre_df.columns and _pre_df["ward"].isin(["5F", "6F"]).any():
+                _pre_data_all = aggregate_wards(_pre_df)
+            else:
+                _pre_data_all = _pre_df
+
+            # デフォルトパラメータで変換用パラメータ辞書を構築
+            _pre_params_dict = {
+                "target_occupancy_lower": 0.90,
+                "target_occupancy_upper": 0.95,
+                "days_in_month": 17,
+                "monthly_admissions": 150,
+                "avg_length_of_stay": 18,
+                "admission_variation_coeff": 1.0,
+                "occupancy_variation_coeff": 0.1,
+                "initial_occupancy": 0.85,
+                "strategy_params": "balanced",
+                "random_seed": 42,
+            }
+            _pre_params = _build_cli_params(_pre_params_dict)
+
+            # 全体データの変換
+            _pre_raw_df = convert_actual_to_display(_pre_data_all, _pre_params)
+            _pre_display_df = _rename_df(_pre_raw_df)
+
+            # 全体サマリーの生成（実データモードと同じロジック）
+            _pre_summary = {
+                "月次収益": int(_pre_raw_df["daily_revenue"].sum()),
+                "月次コスト": int(_pre_raw_df["daily_cost"].sum()),
+                "月次限界利益": int(_pre_raw_df["daily_profit"].sum()),
+                "平均稼働率": round(float(_pre_raw_df["occupancy_rate"].mean()) * 100, 1),
+                "月間入院数": int(_pre_raw_df["new_admissions"].sum()),
+                "月間退院数": int(_pre_raw_df["discharges"].sum()),
+                "目標レンジ内日数": int(
+                    ((_pre_raw_df["occupancy_rate"] >= 0.90)
+                     & (_pre_raw_df["occupancy_rate"] <= 0.95)).sum()
+                ),
+                "目標レンジ内率": round(
+                    float(
+                        ((_pre_raw_df["occupancy_rate"] >= 0.90)
+                         & (_pre_raw_df["occupancy_rate"] <= 0.95)).mean()
+                    ) * 100, 1
+                ),
+                "A群平均構成比": round(float(_pre_raw_df["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_pre_raw_df["phase_a_ratio"].mean()) else 0.0,
+                "B群平均構成比": round(float(_pre_raw_df["phase_b_ratio"].mean()) * 100, 1) if pd.notna(_pre_raw_df["phase_b_ratio"].mean()) else 0.0,
+                "C群平均構成比": round(float(_pre_raw_df["phase_c_ratio"].mean()) * 100, 1) if pd.notna(_pre_raw_df["phase_c_ratio"].mean()) else 0.0,
+                "平均在院日数": 0,
+                "フラグ集計": {},
+            }
+            # 平均在院日数計算
+            _total_patient_days = float(_pre_raw_df["total_patients"].sum())
+            _total_new_admissions = float(_pre_raw_df["new_admissions"].sum())
+            _total_discharges = float(_pre_raw_df["discharges"].sum())
+            _los_denominator = (_total_new_admissions + _total_discharges) / 2
+            if _los_denominator > 0 and _total_patient_days > 0:
+                _pre_summary["平均在院日数"] = round(_total_patient_days / _los_denominator, 1)
+            _pre_summary = _enrich_summary(_pre_summary, _pre_display_df)
+
+            # 病棟別データの変換
+            _pre_ward_dfs = {}
+            _pre_ward_raw_dfs = {}
+            _pre_ward_summaries = {}
+
+            for _w in ["5F", "6F"]:
+                _w_data = _pre_df[_pre_df["ward"] == _w].copy()
+                if len(_w_data) > 0:
+                    _w_params = _pre_params.copy()
+                    _w_params["num_beds"] = get_ward_beds(_w)
+                    _w_raw = convert_actual_to_display(_w_data, _w_params)
+                    _w_disp = _rename_df(_w_raw)
+                    _w_summary = {
+                        "月次収益": int(_w_raw["daily_revenue"].sum()),
+                        "月次コスト": int(_w_raw["daily_cost"].sum()),
+                        "月次限界利益": int(_w_raw["daily_profit"].sum()),
+                        "平均稼働率": round(float(_w_raw["occupancy_rate"].mean()) * 100, 1),
+                        "月間入院数": int(_w_raw["new_admissions"].sum()),
+                        "月間退院数": int(_w_raw["discharges"].sum()),
+                        "目標レンジ内日数": int(
+                            ((_w_raw["occupancy_rate"] >= 0.90)
+                             & (_w_raw["occupancy_rate"] <= 0.95)).sum()
+                        ),
+                        "目標レンジ内率": round(
+                            float(
+                                ((_w_raw["occupancy_rate"] >= 0.90)
+                                 & (_w_raw["occupancy_rate"] <= 0.95)).mean()
+                            ) * 100, 1
+                        ),
+                        "A群平均構成比": round(float(_w_raw["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_w_raw["phase_a_ratio"].mean()) else 0.0,
+                        "B群平均構成比": round(float(_w_raw["phase_b_ratio"].mean()) * 100, 1) if pd.notna(_w_raw["phase_b_ratio"].mean()) else 0.0,
+                        "C群平均構成比": round(float(_w_raw["phase_c_ratio"].mean()) * 100, 1) if pd.notna(_w_raw["phase_c_ratio"].mean()) else 0.0,
+                        "平均在院日数": 0,
+                        "フラグ集計": {},
+                    }
+                    # 病棟別平均在院日数計算
+                    _w_total_patient_days = float(_w_raw["total_patients"].sum())
+                    _w_total_new_admissions = float(_w_raw["new_admissions"].sum())
+                    _w_total_discharges = float(_w_raw["discharges"].sum())
+                    _w_los_denominator = (_w_total_new_admissions + _w_total_discharges) / 2
+                    if _w_los_denominator > 0 and _w_total_patient_days > 0:
+                        _w_summary["平均在院日数"] = round(_w_total_patient_days / _w_los_denominator, 1)
+                    _w_summary = _enrich_summary(_w_summary, _w_disp)
+
+                    _pre_ward_dfs[_w] = _w_disp
+                    _pre_ward_raw_dfs[_w] = _w_raw
+                    _pre_ward_summaries[_w] = _w_summary
+
+            # session_stateに格納
+            st.session_state.sim_ward_dfs = _pre_ward_dfs
+            st.session_state.sim_ward_raw_dfs = _pre_ward_raw_dfs
+            st.session_state.sim_ward_summaries = _pre_ward_summaries
+            st.session_state.sim_df = _pre_display_df
+            st.session_state.sim_df_raw = _pre_raw_df
+            st.session_state.sim_summary = _pre_summary
+            st.session_state.sim_params = _pre_params
+            st.session_state.sim_preloaded = True
+        except Exception:
+            pass
+
+# ---------------------------------------------------------------------------
 # シミュレーション実行
 # ---------------------------------------------------------------------------
 if run_button:
@@ -886,6 +1014,14 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
 # 結果未実行の場合の案内
 # ---------------------------------------------------------------------------
 _simulation_available = st.session_state.sim_df is not None
+
+# シミュレーションモード時のブリーフィング用 _active_raw_df 事前設定
+if _simulation_available and not _actual_data_available:
+    if _selected_ward_key in ("5F", "6F") and st.session_state.get("sim_ward_raw_dfs", {}).get(_selected_ward_key) is not None:
+        _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
+        _view_beds = get_ward_beds(_selected_ward_key) if _DATA_MANAGER_AVAILABLE else 47
+    elif st.session_state.sim_df_raw is not None:
+        _active_raw_df = st.session_state.sim_df_raw
 
 # ---------------------------------------------------------------------------
 # ヘルパー: 金額フォーマット
@@ -1193,7 +1329,8 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 # 朝のブリーフィング（常時表示・タブ外最上部）
 # ---------------------------------------------------------------------------
 _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
-if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo_data"), pd.DataFrame) and len(st.session_state.get("demo_data", pd.DataFrame())) > 0):
+_sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
+if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.session_state.get("demo_data"), pd.DataFrame) and len(st.session_state.get("demo_data", pd.DataFrame())) > 0):
     with st.container():
         st.markdown("### ☀️ 今日のブリーフィング")
         _brief_cols = st.columns([1, 1, 1, 2])
