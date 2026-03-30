@@ -878,6 +878,9 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             st.session_state.actual_summary = _actual_summary
         else:
             _view_beds = total_beds  # 94
+            # 「全体」選択時: 全体の_actual_raw_dfを_active_raw_dfとして設定
+            _active_raw_df = _actual_raw_df
+            _active_display_df = _actual_display_df
 
 # ---------------------------------------------------------------------------
 # 結果未実行の場合の案内
@@ -1229,7 +1232,7 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
             _brief_empty = _view_beds - _brief_patients
             st.metric("在院患者数", f"{_brief_patients}名", delta=f"空床 {_brief_empty}床")
             if _brief_empty > (_view_beds * 0.10):
-                _remaining_days = _calc_remaining_days(_active_raw_df)
+                _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0 if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.caption(f"⚠️ 空床{_brief_empty}床 = 機会損失 約{_brief_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * 34000 * _remaining_days // 10000:.0f}万円")
 
         # 病棟比較ミニバッジ
@@ -1304,7 +1307,7 @@ if _actual_data_available or (_is_demo and isinstance(st.session_state.get("demo
                     st.info(f"📈 回復トレンド（3日間で+{_slope_brief:.1f}%） — 対策継続を推奨")
 
             # 月平均達成見通し
-            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, 31, _view_beds)
+            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, 31, _view_beds) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
             if _mt_brief:
                 if _mt_brief["avg_so_far"] >= _mt_brief["monthly_target_pct"]:
                     st.caption(f"✅ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成ペース")
@@ -2150,6 +2153,17 @@ else:
         if _selected_ward_key in ("5F", "6F"):
             _view_beds = get_ward_beds(_selected_ward_key)
 
+# ---------------------------------------------------------------------------
+# _active_raw_df と _active_display_df のフォールバック設定
+# ---------------------------------------------------------------------------
+# 実績データもシミュレーションデータも利用できない場合のフォールバック
+if '_active_raw_df' not in locals():
+    _active_raw_df = pd.DataFrame()  # 空のDataFrame
+if '_active_display_df' not in locals():
+    _active_display_df = pd.DataFrame()  # 空のDataFrame
+if '_active_cli_params' not in locals():
+    _active_cli_params = {}  # 空の辞書
+
 # ===== タブ1: 日次推移 =====
 with tabs[_tab_idx["日次推移"]]:
     st.subheader("日次推移")
@@ -2158,10 +2172,12 @@ with tabs[_tab_idx["日次推移"]]:
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
     if not _is_actual_data_mode and _selected_ward_key != "全体":
-        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
-            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
             _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
             _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
@@ -2170,7 +2186,7 @@ with tabs[_tab_idx["日次推移"]]:
             if _total_last_occ < target_lower * 100:
                 _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
                 _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
-                _remaining_days = _calc_remaining_days(_active_raw_df)
+                _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
                     f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
@@ -2363,10 +2379,12 @@ with tabs[_tab_idx["フェーズ構成"]]:
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
     if not _is_actual_data_mode and _selected_ward_key != "全体":
-        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
-            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
 
@@ -2537,10 +2555,12 @@ with tabs[_tab_idx["収支分析"]]:
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
     if not _is_actual_data_mode and _selected_ward_key != "全体":
-        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
-            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
     if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
@@ -2655,10 +2675,12 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
     if not _is_actual_data_mode and _selected_ward_key != "全体":
-        _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
     if _is_actual_data_mode:
         if _selected_ward_key != "全体":
-            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
         if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
             _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
             _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
@@ -2667,7 +2689,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             if _total_last_occ < target_lower * 100:
                 _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
                 _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
-                _remaining_days = _calc_remaining_days(_active_raw_df)
+                _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
                     f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
@@ -2823,12 +2845,17 @@ with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
         if _HELP_AVAILABLE and "tab_decision" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_decision"])
-        _raw_df = _active_raw_df
-        _cli_params = _active_cli_params
 
-        # --- 病棟状態カード ---
-        _day_idx = len(_raw_df) - 1  # 最終日を評価対象
-        _ward_status = assess_ward_status(_raw_df, _day_idx, _cli_params)
+        # 安全チェック: _active_raw_dfが有効でない場合は処理をスキップ
+        if not isinstance(_active_raw_df, pd.DataFrame) or len(_active_raw_df) == 0:
+            st.error("意思決定分析に必要なデータがありません。実績データを入力するかシミュレーションを実行してください。")
+        else:
+            _raw_df = _active_raw_df
+            _cli_params = _active_cli_params
+
+            # --- 病棟状態カード ---
+            _day_idx = len(_raw_df) - 1  # 最終日を評価対象
+            _ward_status = assess_ward_status(_raw_df, _day_idx, _cli_params)
 
         # --- 稼働率予測（ブリーフィングでも使うので先に計算） ---
         _forecast = predict_occupancy(_raw_df, _day_idx, _cli_params, horizon=5)
@@ -3157,8 +3184,13 @@ if "\U0001f52e What-if分析" in _tab_idx:
             if _HELP_AVAILABLE and "tab_whatif" in HELP_TEXTS:
                 with st.expander("📖 このタブの見方と活用法"):
                     st.markdown(HELP_TEXTS["tab_whatif"])
-            _raw_df = _active_raw_df
-            _cli_params = _active_cli_params
+
+            # 安全チェック: _active_raw_dfが有効でない場合は処理をスキップ
+            if not isinstance(_active_raw_df, pd.DataFrame) or len(_active_raw_df) == 0:
+                st.error("What-if分析に必要なデータがありません。実績データを入力するかシミュレーションを実行してください。")
+            else:
+                _raw_df = _active_raw_df
+                _cli_params = _active_cli_params
 
             _scenario_type = st.radio(
                 "シナリオ選択",
@@ -3555,8 +3587,13 @@ with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
         if _HELP_AVAILABLE and "tab_trends" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_trends"])
-        _raw_df = _active_raw_df
-        _cli_params = _active_cli_params
+
+        # 安全チェック: _active_raw_dfが有効でない場合は処理をスキップ
+        if not isinstance(_active_raw_df, pd.DataFrame) or len(_active_raw_df) == 0:
+            st.error("トレンド分析に必要なデータがありません。実績データを入力するかシミュレーションを実行してください。")
+        else:
+            _raw_df = _active_raw_df
+            _cli_params = _active_cli_params
 
         _trend_window = st.slider("移動平均ウィンドウ（日）", 3, 14, value=7, key="trend_window")
         _trends = calculate_trends(_raw_df, _cli_params, window=_trend_window)
