@@ -99,6 +99,22 @@ except Exception as _dm_err:
     import traceback as _dm_tb
     _DATA_MANAGER_ERROR = f"{_dm_err}\n{_dm_tb.format_exc()}"
 
+# SQLite永続化モジュール
+_DB_AVAILABLE = False
+try:
+    from db_manager import (
+        save_daily_records,
+        load_daily_records,
+        save_abc_state,
+        load_abc_state,
+        save_day_buckets,
+        load_day_buckets,
+        clear_all_data as db_clear_all,
+    )
+    _DB_AVAILABLE = True
+except Exception as _db_err:
+    pass
+
 # ベッドマップUI（初期セットアップ用）
 _BED_MAP_AVAILABLE = False
 try:
@@ -538,20 +554,39 @@ if "sim_df_raw" not in st.session_state:
 if "sim_params" not in st.session_state:
     st.session_state.sim_params = None
 
-# 日次データ管理用セッション状態
+# 日次データ管理用セッション状態（SQLiteから自動復元）
 if "daily_data" not in st.session_state:
-    if _DATA_MANAGER_AVAILABLE:
-        st.session_state.daily_data = dm_create_empty_dataframe()
-    else:
-        st.session_state.daily_data = pd.DataFrame()
+    _loaded_from_db = False
+    if _DB_AVAILABLE:
+        _db_df = load_daily_records()
+        if _db_df is not None and len(_db_df) > 0:
+            st.session_state.daily_data = _db_df
+            _loaded_from_db = True
+    if not _loaded_from_db:
+        if _DATA_MANAGER_AVAILABLE:
+            st.session_state.daily_data = dm_create_empty_dataframe()
+        else:
+            st.session_state.daily_data = pd.DataFrame()
 
-# A/B/C群 自動計算用の状態
+# A/B/C群 自動計算用の状態（SQLiteから自動復元）
 if "abc_state" not in st.session_state:
-    st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
+    _db_abc = None
+    if _DB_AVAILABLE:
+        _db_abc = load_abc_state()
+    if _db_abc is not None:
+        st.session_state.abc_state = _db_abc
+    else:
+        st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
 
-# 日齢バケット（日齢バケットモデル用）
+# 日齢バケット（SQLiteから自動復元）
 if "day_buckets" not in st.session_state:
-    st.session_state.day_buckets = None
+    _db_buckets = None
+    if _DB_AVAILABLE:
+        _db_buckets = load_day_buckets()
+    if _db_buckets is not None:
+        st.session_state.day_buckets = _db_buckets
+    else:
+        st.session_state.day_buckets = None
 
 # 既存データからABC状態を復元
 if "abc_state_initialized" not in st.session_state:
@@ -562,6 +597,20 @@ if "abc_state_initialized" not in st.session_state:
         _restore_c = int(_last_record.get("phase_c_count", 0) or 0)
         st.session_state.abc_state = {"A": _restore_a, "B": _restore_b, "C": _restore_c}
     st.session_state.abc_state_initialized = True
+
+def _auto_save_to_db():
+    """現在のセッション状態をSQLiteに自動保存"""
+    if not _DB_AVAILABLE:
+        return
+    try:
+        if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.session_state.daily_data) > 0:
+            save_daily_records(st.session_state.daily_data)
+        if st.session_state.get("abc_state"):
+            save_abc_state(st.session_state.abc_state)
+        if st.session_state.get("day_buckets"):
+            save_day_buckets(st.session_state.day_buckets)
+    except Exception as e:
+        pass  # 保存失敗してもアプリは継続
 
 if "demo_data" not in st.session_state:
     # 教育用デモCSVを自動ロード
@@ -1344,6 +1393,7 @@ if _DATA_MANAGER_AVAILABLE:
                     _demo_6f["ward"] = "6F"
                     st.session_state.demo_data = pd.concat([_demo_5f, _demo_6f], ignore_index=True).sort_values(["date", "ward"]).reset_index(drop=True)
                     st.success("ランダムサンプルデータ（30日分）を生成しました。")
+                    _auto_save_to_db()
                     st.rerun()
 
             with dm_demo_col3:
@@ -1419,6 +1469,7 @@ if _DATA_MANAGER_AVAILABLE:
                     if len(imported_df) > 0:
                         st.session_state.daily_data = imported_df
                         st.success(f"{len(imported_df)}件のデータをインポートしました。")
+                        _auto_save_to_db()
                     elif not import_error:
                         st.info("CSVにデータがありません。")
 
@@ -1452,6 +1503,8 @@ if _DATA_MANAGER_AVAILABLE:
                             del st.session_state.ward_abc_state
                         if "ward_day_buckets" in st.session_state:
                             del st.session_state.ward_day_buckets
+                        if _DB_AVAILABLE:
+                            db_clear_all()
                         st.success("全データを消去しました。")
                         st.rerun()
 
@@ -1516,6 +1569,7 @@ if _DATA_MANAGER_AVAILABLE:
                         st.session_state.init_total_patients = sum(1 for v in bed_data_5f.values() if v > 0) + sum(1 for v in bed_data_6f.values() if v > 0)
 
                         st.success(f"✅ 初期値を設定しました！ 5F: A{a_5f}/B{b_5f}/C{c_5f} | 6F: A{a_6f}/B{b_6f}/C{c_6f} | 合計: {total_a + total_b + total_c}名")
+                        _auto_save_to_db()
                         st.rerun()
                     elif confirmed_5f or confirmed_6f:
                         st.warning("両方の病棟を確定してください。")
@@ -1622,6 +1676,7 @@ if _DATA_MANAGER_AVAILABLE:
                         if new_buckets is not None:
                             st.session_state.day_buckets = new_buckets
                         st.success(f"{input_date} のデータを追加しました。（A群:{new_a} B群:{new_b} C群:{new_c} / 退院計:{auto_discharges}名）")
+                        _auto_save_to_db()
                         st.rerun()
                     else:
                         st.error(f"入力エラー:\n{error_msg}")
@@ -1772,6 +1827,7 @@ if _DATA_MANAGER_AVAILABLE:
 
                             st.session_state.daily_data = updated
                             st.success("変更を保存しました。A/B/C群と退院数を再計算しました。")
+                            _auto_save_to_db()
                             st.rerun()
                         except Exception as e:
                             st.error(f"保存エラー: {e}")
@@ -1786,6 +1842,7 @@ if _DATA_MANAGER_AVAILABLE:
                                 st.session_state.daily_data, del_date
                             )
                             st.success(f"{del_date} のデータを削除しました。")
+                            _auto_save_to_db()
                             st.rerun()
 
                 st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
