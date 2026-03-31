@@ -1049,20 +1049,33 @@ def _render_comparison_strip(ward_key, ward_raw_dfs, ward_display_dfs, view_beds
     if not other_wards:
         return
 
-    # Use an expander so it's not intrusive
-    with st.expander("📊 他病棟の参考値", expanded=False):
-        cols = st.columns(len(other_wards))
-        for i, w in enumerate(other_wards):
-            if w in ward_raw_dfs and len(ward_raw_dfs[w]) > 0:
-                w_df = ward_raw_dfs[w]
-                w_beds = view_beds_fn(w)
-                last_row = w_df.iloc[-1]
-                occ = last_row.get("occupancy_rate", 0) * 100
-                patients = int(last_row.get("total_patients", 0))
-                avg_occ = float(w_df["occupancy_rate"].mean()) * 100
-                with cols[i]:
-                    st.markdown(f"**{w}** ({w_beds}床)")
-                    st.markdown(f"直近稼働率: **{occ:.1f}%** ｜ 平均: **{avg_occ:.1f}%** ｜ 在院: **{patients}名**")
+    # 他病棟の参考値を常に展開表示（色分け付き）
+    st.markdown("#### 📊 他病棟の参考値")
+    cols = st.columns(len(other_wards))
+    for i, w in enumerate(other_wards):
+        if w in ward_raw_dfs and len(ward_raw_dfs[w]) > 0:
+            w_df = ward_raw_dfs[w]
+            w_beds = view_beds_fn(w)
+            last_row = w_df.iloc[-1]
+            occ = last_row.get("occupancy_rate", 0) * 100
+            patients = int(last_row.get("total_patients", 0))
+            avg_occ = float(w_df["occupancy_rate"].mean()) * 100
+            empty_beds = w_beds - patients
+            # 稼働率による色分け
+            if occ < 90:
+                _bg = "#FDEDEC"; _border = "#E74C3C"; _icon = "🔴"
+            elif occ <= 95:
+                _bg = "#EAFAF1"; _border = "#27AE60"; _icon = "🟢"
+            else:
+                _bg = "#FEF9E7"; _border = "#F39C12"; _icon = "🟡"
+            with cols[i]:
+                st.markdown(f"""
+<div style="background:{_bg}; padding:12px; border-radius:8px; border-left:4px solid {_border}; margin-bottom:8px;">
+<h4 style="margin:0 0 4px 0;">{_icon} {w}（{w_beds}床）</h4>
+<p style="margin:2px 0; font-size:1.1em;"><b>直近稼働率: {occ:.1f}%</b></p>
+<p style="margin:2px 0;">月平均: {avg_occ:.1f}% ｜ 在院: {patients}名 ｜ 空床: {empty_beds}床</p>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1461,7 +1474,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
 if _is_actual_data_mode:
     # 実績データモード: 戦略比較は非表示
     tab_names = [
-        "日次推移", "フェーズ構成", "運営分析", "運営改善アラート",
+        "📊 日次推移", "🔄 フェーズ構成", "💰 運営分析", "🚨 運営改善アラート",
         "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
     ]
     tab_names.append("データ")
@@ -1471,7 +1484,7 @@ if _is_actual_data_mode:
 else:
     # シミュレーションモード（従来通り）
     tab_names = [
-        "日次推移", "フェーズ構成", "運営分析", "運営改善アラート",
+        "📊 日次推移", "🔄 フェーズ構成", "💰 運営分析", "🚨 運営改善アラート",
         "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
     ]
     if st.session_state.comparison is not None:
@@ -2302,7 +2315,7 @@ if '_active_cli_params' not in locals():
     _active_cli_params = {}  # 空の辞書
 
 # ===== タブ1: 日次推移 =====
-with tabs[_tab_idx["日次推移"]]:
+with tabs[_tab_idx["📊 日次推移"]]:
     st.subheader("日次推移")
     if _is_actual_data_mode:
         st.info(f"📋 実績データモード（{len(df)}日分のデータを表示中）")
@@ -2511,7 +2524,7 @@ with tabs[_tab_idx["日次推移"]]:
 
 
 # ===== タブ2: フェーズ構成 =====
-with tabs[_tab_idx["フェーズ構成"]]:
+with tabs[_tab_idx["🔄 フェーズ構成"]]:
     st.subheader("フェーズ構成")
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
@@ -2687,7 +2700,7 @@ with tabs[_tab_idx["フェーズ構成"]]:
 
 
 # ===== タブ3: 運営分析 =====
-with tabs[_tab_idx["運営分析"]]:
+with tabs[_tab_idx["💰 運営分析"]]:
     st.subheader("運営分析")
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
@@ -2703,6 +2716,50 @@ with tabs[_tab_idx["運営分析"]]:
     if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_finance"])
+
+    # --- 月次目標達成率パネル（稼働率90%ラインベース） ---
+    _target_occ_line = target_lower  # 0.90
+    # 稼働率90%時の月次診療報酬目標 = 病床数 × 90% × 日数 × 加重平均日次報酬（約28,000円）
+    _weighted_daily_rev = 28000  # A/B/C群の加重平均運営貢献額
+    _target_monthly_rev = _view_beds * _target_occ_line * days_in_month * _weighted_daily_rev
+    _actual_monthly_rev = summary["月次運営貢献額"]
+    _achievement_rate = (_actual_monthly_rev / _target_monthly_rev * 100) if _target_monthly_rev > 0 else 0
+    _actual_avg_occ = summary["平均稼働率"]
+
+    # 色分け
+    if _achievement_rate >= 100:
+        _ach_bg = "#EAFAF1"; _ach_border = "#27AE60"; _ach_icon = "✅"; _ach_msg = "目標達成"
+    elif _achievement_rate >= 80:
+        _ach_bg = "#FEF9E7"; _ach_border = "#F39C12"; _ach_icon = "⚠️"; _ach_msg = "あと少し"
+    else:
+        _ach_bg = "#FDEDEC"; _ach_border = "#E74C3C"; _ach_icon = "🔴"; _ach_msg = "要改善"
+
+    # 稼働率の色分け
+    if _actual_avg_occ < _target_occ_line * 100:
+        _occ_color = "#E74C3C"
+    elif _actual_avg_occ <= target_upper * 100:
+        _occ_color = "#27AE60"
+    else:
+        _occ_color = "#F39C12"
+
+    st.markdown(f"""
+<div style="background:{_ach_bg}; padding:16px 20px; border-radius:10px; border-left:5px solid {_ach_border}; margin-bottom:16px;">
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+<div>
+<h3 style="margin:0; color:{_ach_border};">{_ach_icon} 月次目標達成率: {_achievement_rate:.1f}%　<span style="font-size:0.7em; color:#666;">（{_ach_msg}）</span></h3>
+<p style="margin:4px 0 0 0; font-size:0.9em; color:#555;">
+稼働率最低ライン（{_target_occ_line*100:.0f}%）ベースの月次運営貢献額目標: <b>{_target_monthly_rev/10000:,.0f}万円</b>
+｜ 実績: <b>{_actual_monthly_rev/10000:,.0f}万円</b>
+</p>
+</div>
+<div style="text-align:center; padding:4px 16px;">
+<p style="margin:0; font-size:0.8em; color:#888;">平均稼働率</p>
+<p style="margin:0; font-size:1.6em; font-weight:bold; color:{_occ_color};">{_actual_avg_occ:.1f}%</p>
+<p style="margin:0; font-size:0.75em; color:#888;">目標: {_target_occ_line*100:.0f}〜{target_upper*100:.0f}%</p>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
 
     # --- メトリクスカード ---
     c1, c2, c3, c4 = st.columns(4)
@@ -2807,7 +2864,7 @@ with tabs[_tab_idx["運営分析"]]:
 
 
 # ===== タブ4: 運営改善アラート =====
-with tabs[_tab_idx["運営改善アラート"]]:
+with tabs[_tab_idx["🚨 運営改善アラート"]]:
     st.subheader("運営改善アラート")
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
