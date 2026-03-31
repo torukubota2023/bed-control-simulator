@@ -4,7 +4,7 @@
 
 おもろまちメディカルセンター（94床）向け
 CLI版(bed_control_simulator.py)をインポートし、インタラクティブなUI上で
-稼働率・在院日数・収益構造をシミュレートする。
+稼働率・在院日数・診療報酬構造をシミュレートする。
 """
 
 import sys
@@ -297,12 +297,12 @@ _COL_RENAME = {
     "phase_a_ratio": "A群_構成比",
     "phase_b_ratio": "B群_構成比",
     "phase_c_ratio": "C群_構成比",
-    "daily_revenue": "日次収益",
+    "daily_revenue": "日次診療報酬",
     "daily_cost": "日次コスト",
-    "daily_profit": "日次限界利益",
+    "daily_profit": "日次運営貢献額",
     "empty_beds": "空床数",
     "excess_demand": "超過需要",
-    "opportunity_loss": "機会損失",
+    "opportunity_loss": "未活用病床コスト",
     "flag_low_occupancy": "flag_low_occ",
     "flag_high_occupancy": "flag_high_occ",
     "flag_excess_a": "flag_excess_a",
@@ -316,10 +316,10 @@ _COL_RENAME = {
 def _rename_df(df: pd.DataFrame) -> pd.DataFrame:
     """CLI版DataFrameのカラム名を日本語に変換し、追加列を生成する。"""
     df = df.rename(columns=_COL_RENAME)
-    # 累積限界利益を追加
-    if "日次限界利益" in df.columns:
-        df["累積限界利益"] = df["日次限界利益"].cumsum()
-    # 経営判断フラグ列を生成
+    # 累積運営貢献額を追加
+    if "日次運営貢献額" in df.columns:
+        df["累積運営貢献額"] = df["日次運営貢献額"].cumsum()
+    # 運営改善アラート列を生成
     flags = []
     for _, row in df.iterrows():
         day_flags = []
@@ -333,12 +333,12 @@ def _rename_df(df: pd.DataFrame) -> pd.DataFrame:
             day_flags.append("B群不足")
         if row.get("flag_stagnant_c", False):
             day_flags.append("C群滞留")
-        if "日次限界利益" in df.columns and row["日次限界利益"] < 0:
+        if "日次運営貢献額" in df.columns and row["日次運営貢献額"] < 0:
             day_flags.append("日次赤字")
         if not day_flags:
             day_flags.append("正常運用")
         flags.append(", ".join(day_flags))
-    df["経営判断フラグ"] = flags
+    df["運営改善アラート"] = flags
     return df
 
 
@@ -350,9 +350,9 @@ def _convert_summary(cli_summary: dict, params: dict) -> dict:
     days_in_month = params["days_in_month"]
     days_in_range = cli_summary["days_in_target_range"]
     return {
-        "月次収益": cli_summary["total_revenue"],
+        "月次診療報酬": cli_summary["total_revenue"],
         "月次コスト": cli_summary["total_cost"],
-        "月次限界利益": cli_summary["total_profit"],
+        "月次運営貢献額": cli_summary["total_profit"],
         "平均稼働率": round(cli_summary["avg_occupancy"] * 100, 1),
         "月間入院数": 0,  # 後で計算
         "月間退院数": 0,  # 後で計算
@@ -372,7 +372,7 @@ def _enrich_summary(summary: dict, df_ja: pd.DataFrame) -> dict:
     summary["月間退院数"] = int(df_ja["退院"].sum())
     # フラグ集計
     flag_counts: dict[str, int] = {}
-    for flags_str in df_ja["経営判断フラグ"]:
+    for flags_str in df_ja["運営改善アラート"]:
         for f in flags_str.split(", "):
             flag_counts[f] = flag_counts.get(f, 0) + 1
     summary["フラグ集計"] = flag_counts
@@ -463,16 +463,16 @@ else:
     discharge_adj = 2
     admission_var = 1.0
 
-# --- 患者フェーズ別パラメータ（限界利益ベース：変動費のみ計上） ---
+# --- 患者フェーズ別パラメータ（運営貢献額ベース：変動費のみ計上） ---
 with st.sidebar.expander("患者フェーズ別パラメータ"):
     st.markdown("**A群（急性期: 〜5日目）**")
-    phase_a_rev = st.number_input("A群 日次収益（円）", value=36000, step=1000, key="a_rev")
+    phase_a_rev = st.number_input("A群 日次診療報酬（円）", value=36000, step=1000, key="a_rev")
     phase_a_cost = st.number_input("A群 日次変動費（円）", value=12000, step=1000, key="a_cost")
     st.markdown("**B群（回復期: 6〜14日目）**")
-    phase_b_rev = st.number_input("B群 日次収益（円）", value=36000, step=1000, key="b_rev")
+    phase_b_rev = st.number_input("B群 日次診療報酬（円）", value=36000, step=1000, key="b_rev")
     phase_b_cost = st.number_input("B群 日次変動費（円）", value=6000, step=1000, key="b_cost")
     st.markdown("**C群（退院準備期: 15日目〜）**")
-    phase_c_rev = st.number_input("C群 日次収益（円）", value=33400, step=1000, key="c_rev")
+    phase_c_rev = st.number_input("C群 日次診療報酬（円）", value=33400, step=1000, key="c_rev")
     phase_c_cost = st.number_input("C群 日次変動費（円）", value=4500, step=1000, key="c_cost")
 
 # --- 追加パラメータ ---
@@ -480,7 +480,7 @@ with st.sidebar.expander("追加パラメータ"):
     day1_bonus = st.number_input("初日加算（円）", value=0, step=1000)
     within_14_bonus = st.number_input("14日以内加算（円/日）", value=0, step=500)
     rehab_fee = st.number_input("リハビリ出来高（円/日）", value=0, step=500)
-    opportunity_cost = st.number_input("機会損失コスト（円/空床/日）", value=25000, step=1000)
+    opportunity_cost = st.number_input("未活用病床コスト（円/空床/日）", value=25000, step=1000)
     discharge_threshold = st.slider("退院促進閾値", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
     suppression_threshold = st.slider("新規入院抑制閾値", 0.80, 1.00, 0.97, step=0.01, format="%.2f")
     random_seed = st.number_input("乱数シード", value=42, step=1)
@@ -670,9 +670,9 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
 
             # 全体サマリーの生成（実データモードと同じロジック）
             _pre_summary = {
-                "月次収益": int(_pre_raw_df["daily_revenue"].sum()),
+                "月次診療報酬": int(_pre_raw_df["daily_revenue"].sum()),
                 "月次コスト": int(_pre_raw_df["daily_cost"].sum()),
-                "月次限界利益": int(_pre_raw_df["daily_profit"].sum()),
+                "月次運営貢献額": int(_pre_raw_df["daily_profit"].sum()),
                 "平均稼働率": round(float(_pre_raw_df["occupancy_rate"].mean()) * 100, 1),
                 "月間入院数": int(_pre_raw_df["new_admissions"].sum()),
                 "月間退院数": int(_pre_raw_df["discharges"].sum()),
@@ -714,9 +714,9 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
                     _w_raw = convert_actual_to_display(_w_data, _w_params)
                     _w_disp = _rename_df(_w_raw)
                     _w_summary = {
-                        "月次収益": int(_w_raw["daily_revenue"].sum()),
+                        "月次診療報酬": int(_w_raw["daily_revenue"].sum()),
                         "月次コスト": int(_w_raw["daily_cost"].sum()),
-                        "月次限界利益": int(_w_raw["daily_profit"].sum()),
+                        "月次運営貢献額": int(_w_raw["daily_profit"].sum()),
                         "平均稼働率": round(float(_w_raw["occupancy_rate"].mean()) * 100, 1),
                         "月間入院数": int(_w_raw["new_admissions"].sum()),
                         "月間退院数": int(_w_raw["discharges"].sum()),
@@ -897,9 +897,9 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
 
         # サマリー生成（実データ用）
         _actual_summary = {
-            "月次収益": int(_actual_raw_df["daily_revenue"].sum()),
+            "月次診療報酬": int(_actual_raw_df["daily_revenue"].sum()),
             "月次コスト": int(_actual_raw_df["daily_cost"].sum()),
-            "月次限界利益": int(_actual_raw_df["daily_profit"].sum()),
+            "月次運営貢献額": int(_actual_raw_df["daily_profit"].sum()),
             "平均稼働率": round(float(_actual_raw_df["occupancy_rate"].mean()) * 100, 1),
             "月間入院数": int(_actual_raw_df["new_admissions"].sum()),
             "月間退院数": int(_actual_raw_df["discharges"].sum()),
@@ -973,9 +973,9 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             st.session_state.actual_params = _actual_params
             # Recalculate summary for selected ward
             _actual_summary = {
-                "月次収益": int(_actual_raw_df["daily_revenue"].sum()),
+                "月次診療報酬": int(_actual_raw_df["daily_revenue"].sum()),
                 "月次コスト": int(_actual_raw_df["daily_cost"].sum()),
-                "月次限界利益": int(_actual_raw_df["daily_profit"].sum()),
+                "月次運営貢献額": int(_actual_raw_df["daily_profit"].sum()),
                 "平均稼働率": round(float(_actual_raw_df["occupancy_rate"].mean()) * 100, 1),
                 "月間入院数": int(_actual_raw_df["new_admissions"].sum()),
                 "月間退院数": int(_actual_raw_df["discharges"].sum()),
@@ -1227,13 +1227,13 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
         _remaining_days = _calc_remaining_days(raw_df)
         st.error(
             f"🔴 **稼働率低下アラート**: 直近稼働率 {_sel_last_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています "
-            f"（空床 {_sel_empty}床 = 機会損失 約{_sel_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_sel_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
+            f"（空床 {_sel_empty}床 = 未活用病床コスト 約{_sel_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_sel_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
             "**対策:**\n"
             "- 🏥 予定入院の前倒しを外来担当医へ依頼\n"
             "- 📞 連携室へ依頼：紹介元クリニック・病院へ空床受入れ可能を発信\n"
             "- 💬 外来担当医に入院推奨閾値の引き下げを相談（通院患者の入院検討）\n"
-            "- 🔄 C群患者の戦略的在院調整（平均在院日数21日以内で調整可、限界利益28,900円/日を維持）\n"
-            "- 📋 B群患者も在院継続で限界利益確保（リハ加算1: 110点算定中）"
+            "- 🔄 C群患者の戦略的在院調整（平均在院日数21日以内で調整可、運営貢献額28,900円/日を維持）\n"
+            "- 📋 B群患者も在院継続で運営貢献額確保（リハ加算1: 110点算定中）"
         )
         # 回復トレンドチェック
         if len(raw_df) >= 3:
@@ -1249,7 +1249,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"📈 **回復トレンド検出**: 直近3日で {_trend_slope_r:+.1f}% の上昇傾向。{_recovery_msg}\n\n"
                     "**継続すべき対策:**\n"
                     "- 🏥 新規入院の受入継続（効果が出ています）\n"
-                    "- 🔄 C群患者の戦略的在院調整を維持（限界利益28,900円/日を確保中）\n"
+                    "- 🔄 C群患者の戦略的在院調整を維持（運営貢献額28,900円/日を確保中）\n"
                     "- ✅ 現在の方針は正しい方向 — 焦らず継続"
                 )
         # 月平均目標トラッカー
@@ -1260,7 +1260,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"⛔ **月平均{_mt['monthly_target_pct']:.0f}%達成は困難**: "
                     f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
                     f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** が必要（100%超のため達成困難）\n\n"
-                    f"**月間機会損失見込み**: 約{int(_mt['gap_patients'] * 25000 * _mt['days_remaining'] // 10000)}万円"
+                    f"**月間未活用病床コスト見込み**: 約{int(_mt['gap_patients'] * 25000 * _mt['days_remaining'] // 10000)}万円"
                 )
             elif _mt["difficulty"] == "hard":
                 st.warning(
@@ -1370,7 +1370,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             st.metric("在院患者数", f"{_brief_patients}名", delta=f"空床 {_brief_empty}床")
             if _brief_empty > (_view_beds * 0.10):
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0 if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
-                st.caption(f"⚠️ 空床{_brief_empty}床 = 機会損失 約{_brief_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * 34000 * _remaining_days // 10000:.0f}万円")
+                st.caption(f"⚠️ 空床{_brief_empty}床 = 未活用病床コスト 約{_brief_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * 34000 * _remaining_days // 10000:.0f}万円")
 
         # 病棟比較ミニバッジ
         with _brief_cols[2]:
@@ -1422,7 +1422,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     st.markdown("- 連携室へ依頼：紹介元へ空床受入れ可能を発信")
                     st.markdown("- 外来へ予定入院の前倒しを依頼")
                     st.markdown("- C群の戦略的在院調整を検討")
-                    st.markdown("- B群は在院継続で限界利益確保（限界利益30,000円/日）")
+                    st.markdown("- B群は在院継続で運営貢献額確保（運営貢献額30,000円/日）")
             elif _last_occ_brief > target_upper * 100:
                 st.markdown("🟡 **高稼働 — 退院調整検討**")
                 st.markdown("- A群→B群への移行準備確認")
@@ -1461,7 +1461,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
 if _is_actual_data_mode:
     # 実績データモード: 戦略比較は非表示
     tab_names = [
-        "日次推移", "フェーズ構成", "収支分析", "経営判断フラグ",
+        "日次推移", "フェーズ構成", "運営分析", "運営改善アラート",
         "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
     ]
     tab_names.append("データ")
@@ -1471,7 +1471,7 @@ if _is_actual_data_mode:
 else:
     # シミュレーションモード（従来通り）
     tab_names = [
-        "日次推移", "フェーズ構成", "収支分析", "経営判断フラグ",
+        "日次推移", "フェーズ構成", "運営分析", "運営改善アラート",
         "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
     ]
     if st.session_state.comparison is not None:
@@ -2205,11 +2205,11 @@ if _DATA_MANAGER_AVAILABLE:
                     st.metric("今月入院数（実績）", f"{_monthly_kpi['今月入院数_実績']}名")
                     st.metric("今月入院数（予測込み）", f"{_monthly_kpi['今月入院数_合計']}名")
                 with kpi_col3:
-                    gross_profit = _monthly_kpi["推定月次限界利益"]  # bed_data_manager側のキー名
+                    gross_profit = _monthly_kpi["推定月次運営貢献額"]  # bed_data_manager側のキー名
                     if abs(gross_profit) >= 10000:
-                        st.metric("推定月次限界利益", f"¥{gross_profit/10000:,.1f}万")
+                        st.metric("推定月次運営貢献額", f"¥{gross_profit/10000:,.1f}万")
                     else:
-                        st.metric("推定月次限界利益", f"¥{gross_profit:,}")
+                        st.metric("推定月次運営貢献額", f"¥{gross_profit:,}")
                     st.metric("推定平均在院日数", f"{_monthly_kpi['推定平均在院日数']}日",
                              help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
 
@@ -2326,7 +2326,7 @@ with tabs[_tab_idx["日次推移"]]:
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
+                    f"（空床{_total_empty}床 = 未活用病床コスト 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
                     "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
@@ -2465,15 +2465,15 @@ with tabs[_tab_idx["日次推移"]]:
 
     # 病棟別在院患者数は病棟セレクターで切り替え
 
-    # --- 日次限界利益推移 ---
+    # --- 日次運営貢献額推移 ---
     fig, ax = plt.subplots(figsize=(12, 4))
     _add_weekend_bg(ax, _weekend_days)
-    colors_profit = [COLOR_PROFIT if v >= 0 else COLOR_A for v in df["日次限界利益"]]
-    ax.bar(df["日"], df["日次限界利益"] / 10000, color=colors_profit, alpha=0.8)
+    colors_profit = [COLOR_PROFIT if v >= 0 else COLOR_A for v in df["日次運営貢献額"]]
+    ax.bar(df["日"], df["日次運営貢献額"] / 10000, color=colors_profit, alpha=0.8)
     ax.axhline(y=0, color="black", linewidth=0.5)
     ax.set_xlabel("日")
-    ax.set_ylabel("限界利益（万円）")
-    ax.set_title("日次限界利益推移")
+    ax.set_ylabel("運営貢献額（万円）")
+    ax.set_title("日次運営貢献額推移")
     ax.set_xlim(0.5, days_in_month + 0.5)
     ax.grid(True, alpha=0.3, axis="y")
     st.pyplot(fig)
@@ -2538,10 +2538,10 @@ with tabs[_tab_idx["フェーズ構成"]]:
         看護必要度が最も高い<br>
         初期加算(150点)+リハ栄養口腔連携(110点)+物価対応(49点)算定<br>
         <b>収入36,000円 / 変動費12,000円</b><br>
-        <span style="color:#E74C3C;"><b>限界利益24,000円/日（約2.4万円/日）</b></span>
+        <span style="color:#E74C3C;"><b>運営貢献額24,000円/日（約2.4万円/日）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
-        💡 多すぎると初期変動費で限界利益圧迫<br>
+        💡 多すぎると初期変動費で運営貢献額圧迫<br>
         目安：全体の15〜20%
         </p>
         </div>
@@ -2556,10 +2556,10 @@ with tabs[_tab_idx["フェーズ構成"]]:
         コストが下がり始める<br>
         初期加算(150点)+リハ栄養口腔連携(110点)+物価対応(49点)算定<br>
         <b>収入36,000円 / 変動費6,000円</b><br>
-        <span style="color:#27AE60;"><b>限界利益30,000円/日（約3.0万円/日・★稼ぎ頭）</b></span>
+        <span style="color:#27AE60;"><b>運営貢献額30,000円/日（約3.0万円/日・★安定貢献層）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
-        💡 この層を厚くすることが限界利益最大化の鍵<br>
+        💡 この層を厚くすることが運営貢献額の最大化の鍵<br>
         目安：全体の40〜50%
         </p>
         </div>
@@ -2574,10 +2574,10 @@ with tabs[_tab_idx["フェーズ構成"]]:
         コスト最小だが長期滞留リスク<br>
         物価対応(49点)のみ算定<br>
         <b>収入33,400円 / 変動費4,500円</b><br>
-        <span style="color:#2980B9;"><b>限界利益28,900円/日（約2.9万円/日・良好だが要調整）</b></span>
+        <span style="color:#2980B9;"><b>運営貢献額28,900円/日（約2.9万円/日・良好だが要調整）</b></span>
         </p>
         <p style="margin:4px 0; font-size:0.85em; color:#666;">
-        💡 需給調整弁。稼働率維持に活用<br>
+        💡 退院調整の柔軟性が高い層。稼働率維持に活用<br>
         ※14日超で初期加算(1,500円)+リハ栄養口腔連携加算(1,100円)消失<br>
         目安：全体の30〜40%
         </p>
@@ -2677,18 +2677,18 @@ with tabs[_tab_idx["フェーズ構成"]]:
     # 乖離の一文解説
     _b_diff = _actual_phase["B群"] - _ideal["B群"]
     if _b_diff >= 0:
-        st.success(f"B群（稼ぎ頭）は理想比率を **+{_b_diff:.1f}%** 上回っています。良好な状態です。")
+        st.success(f"B群（安定貢献層）は理想比率を **+{_b_diff:.1f}%** 上回っています。良好な状態です。")
     elif _b_diff > -5:
-        st.warning(f"B群（稼ぎ頭）は理想比率を **{_b_diff:.1f}%** 下回っています。やや注意が必要です。")
+        st.warning(f"B群（安定貢献層）は理想比率を **{_b_diff:.1f}%** 下回っています。やや注意が必要です。")
     else:
-        st.error(f"B群（稼ぎ頭）は理想比率を **{_b_diff:.1f}%** 下回っています。退院・入院バランスの見直しが急務です。")
+        st.error(f"B群（安定貢献層）は理想比率を **{_b_diff:.1f}%** 下回っています。退院・入院バランスの見直しが急務です。")
 
     # 病棟別フェーズ構成は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
-# ===== タブ3: 収支分析 =====
-with tabs[_tab_idx["収支分析"]]:
-    st.subheader("収支分析")
+# ===== タブ3: 運営分析 =====
+with tabs[_tab_idx["運営分析"]]:
+    st.subheader("運営分析")
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
     if not _is_actual_data_mode and _selected_ward_key != "全体":
@@ -2706,9 +2706,9 @@ with tabs[_tab_idx["収支分析"]]:
 
     # --- メトリクスカード ---
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("月次収益", fmt_yen(summary["月次収益"]))
+    c1.metric("月次診療報酬", fmt_yen(summary["月次診療報酬"]))
     c2.metric("月次コスト", fmt_yen(summary["月次コスト"]))
-    c3.metric("月次限界利益", fmt_yen(summary["月次限界利益"]))
+    c3.metric("月次運営貢献額", fmt_yen(summary["月次運営貢献額"]))
     c4.metric("平均稼働率", f"{summary['平均稼働率']:.1f}%")
 
     c5, c6, c7, c8, c9 = st.columns(5)
@@ -2720,45 +2720,45 @@ with tabs[_tab_idx["収支分析"]]:
               help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
     st.caption("※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠")
 
-    # --- 日次収益・コスト・限界利益 ---
+    # --- 日次診療報酬・コスト・運営貢献額 ---
     fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(df["日"], df["日次収益"] / 10000, color=COLOR_REVENUE, linewidth=2, label="収益")
+    ax.plot(df["日"], df["日次診療報酬"] / 10000, color=COLOR_REVENUE, linewidth=2, label="診療報酬収入")
     ax.plot(df["日"], df["日次コスト"] / 10000, color=COLOR_COST, linewidth=2, label="コスト")
-    ax.plot(df["日"], df["日次限界利益"] / 10000, color=COLOR_PROFIT, linewidth=2, label="限界利益")
+    ax.plot(df["日"], df["日次運営貢献額"] / 10000, color=COLOR_PROFIT, linewidth=2, label="運営貢献額")
     ax.axhline(y=0, color="black", linewidth=0.5)
     ax.set_xlabel("日")
     ax.set_ylabel("金額（万円）")
-    ax.set_title("日次収益・コスト・限界利益推移")
+    ax.set_title("日次診療報酬・コスト・運営貢献額推移")
     ax.legend()
     ax.set_xlim(1, days_in_month)
     ax.grid(True, alpha=0.3)
     st.pyplot(fig)
     plt.close(fig)
 
-    # --- 累積限界利益推移 ---
+    # --- 累積運営貢献額推移 ---
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.fill_between(
-        df["日"], df["累積限界利益"] / 10000, 0,
-        where=df["累積限界利益"] >= 0, color=COLOR_PROFIT, alpha=0.3,
+        df["日"], df["累積運営貢献額"] / 10000, 0,
+        where=df["累積運営貢献額"] >= 0, color=COLOR_PROFIT, alpha=0.3,
     )
     ax.fill_between(
-        df["日"], df["累積限界利益"] / 10000, 0,
-        where=df["累積限界利益"] < 0, color=COLOR_A, alpha=0.3,
+        df["日"], df["累積運営貢献額"] / 10000, 0,
+        where=df["累積運営貢献額"] < 0, color=COLOR_A, alpha=0.3,
     )
-    ax.plot(df["日"], df["累積限界利益"] / 10000, color=COLOR_PROFIT, linewidth=2)
+    ax.plot(df["日"], df["累積運営貢献額"] / 10000, color=COLOR_PROFIT, linewidth=2)
     ax.axhline(y=0, color="black", linewidth=0.5)
     ax.set_xlabel("日")
-    ax.set_ylabel("累積限界利益（万円）")
-    ax.set_title("累積限界利益推移")
+    ax.set_ylabel("累積運営貢献額（万円）")
+    ax.set_title("累積運営貢献額推移")
     ax.set_xlim(1, days_in_month)
     ax.grid(True, alpha=0.3)
     st.pyplot(fig)
     plt.close(fig)
 
-    # --- フェーズ別限界利益の内訳 ---
+    # --- フェーズ別運営貢献額の内訳 ---
     st.markdown("---")
-    st.subheader("📊 フェーズ別限界利益の内訳")
-    # 限界利益単価（変動費のみ）: A=24000, B=30000, C=28900
+    st.subheader("📊 フェーズ別運営貢献額の内訳")
+    # 運営貢献額単価（変動費のみ）: A=24000, B=30000, C=28900
     _profit_per_day = {
         "A群": _active_cli_params.get("phase_a_revenue", 36000) - _active_cli_params.get("phase_a_cost", 12000),
         "B群": _active_cli_params.get("phase_b_revenue", 36000) - _active_cli_params.get("phase_b_cost", 6000),
@@ -2774,7 +2774,7 @@ with tabs[_tab_idx["収支分析"]]:
         _pct_a = (_phase_profit_a / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
         st.markdown(
             f'<div style="background-color:#FDEDEC; padding:10px; border-radius:8px; text-align:center;">'
-            f'<b style="color:#E74C3C;">A群の限界利益</b><br>'
+            f'<b style="color:#E74C3C;">A群の運営貢献額</b><br>'
             f'<span style="font-size:1.3em;">{_phase_profit_a/10000:,.0f}万円</span><br>'
             f'<span style="font-size:0.9em;">全体の {_pct_a:.1f}%</span></div>',
             unsafe_allow_html=True,
@@ -2783,7 +2783,7 @@ with tabs[_tab_idx["収支分析"]]:
         _pct_b = (_phase_profit_b / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
         st.markdown(
             f'<div style="background-color:#EAFAF1; padding:10px; border-radius:8px; text-align:center;">'
-            f'<b style="color:#27AE60;">B群の限界利益</b><br>'
+            f'<b style="color:#27AE60;">B群の運営貢献額</b><br>'
             f'<span style="font-size:1.3em;">{_phase_profit_b/10000:,.0f}万円</span><br>'
             f'<span style="font-size:0.9em;">全体の {_pct_b:.1f}%</span></div>',
             unsafe_allow_html=True,
@@ -2792,23 +2792,23 @@ with tabs[_tab_idx["収支分析"]]:
         _pct_c = (_phase_profit_c / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
         st.markdown(
             f'<div style="background-color:#EBF5FB; padding:10px; border-radius:8px; text-align:center;">'
-            f'<b style="color:#2980B9;">C群の限界利益</b><br>'
+            f'<b style="color:#2980B9;">C群の運営貢献額</b><br>'
             f'<span style="font-size:1.3em;">{_phase_profit_c/10000:,.0f}万円</span><br>'
             f'<span style="font-size:0.9em;">全体の {_pct_c:.1f}%</span></div>',
             unsafe_allow_html=True,
         )
 
-    # 限界利益のどこが効いているかの一文解説
+    # 運営貢献額のどこが効いているかの一文解説
     _max_phase = max([("A群", _pct_a), ("B群", _pct_b), ("C群", _pct_c)], key=lambda x: x[1])
     _phase_desc = {"A群": "A群（急性期）", "B群": "B群（回復期）", "C群": "C群（退院準備期）"}
-    st.info(f"💡 今月の限界利益の **{_max_phase[1]:.0f}%** は **{_phase_desc[_max_phase[0]]}** が生み出しています。")
+    st.info(f"💡 今月の運営貢献額の **{_max_phase[1]:.0f}%** は **{_phase_desc[_max_phase[0]]}** が生み出しています。")
 
     # 病棟別収支は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
-# ===== タブ4: 経営判断フラグ =====
-with tabs[_tab_idx["経営判断フラグ"]]:
-    st.subheader("経営判断フラグ")
+# ===== タブ4: 運営改善アラート =====
+with tabs[_tab_idx["運営改善アラート"]]:
+    st.subheader("運営改善アラート")
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
     if not _is_actual_data_mode and _selected_ward_key != "全体":
@@ -2829,7 +2829,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 機会損失 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
+                    f"（空床{_total_empty}床 = 未活用病床コスト 約{_total_empty * 34000 // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * 34000 * _remaining_days // 10000:.0f}万円**）\n\n"
                     "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
@@ -2839,12 +2839,12 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             st.markdown(HELP_TEXTS["tab_flags"])
 
     # --- フラグ一覧テーブル ---
-    flag_df = df[["日", "稼働率", "在院患者数", "経営判断フラグ"]].copy()
+    flag_df = df[["日", "稼働率", "在院患者数", "運営改善アラート"]].copy()
     flag_df["稼働率"] = (flag_df["稼働率"] * 100).round(1).astype(str) + "%"
 
     def highlight_flags(row):
         """フラグに基づき行の背景色を設定"""
-        flags = row["経営判断フラグ"]
+        flags = row["運営改善アラート"]
         if "日次赤字" in flags:
             return ["background-color: #FADBD8"] * len(row)
         elif "稼働率低下" in flags:
@@ -2882,9 +2882,9 @@ with tabs[_tab_idx["経営判断フラグ"]]:
     st.subheader("ベッドコントロール優先原則")
     st.info(
         "**📌 判断の優先順位（看護必要度基準を満たす前提で）**\n\n"
-        "1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床は収益ゼロ、1床/日≈2.5万円の機会損失\n\n"
-        "2️⃣ **平均在院日数21日以内で戦略的在院調整を活用** — C群でも限界利益28,900円/日を生む\n\n"
-        "3️⃣ **限界利益を減らさない** — 退院させて空床を出すより、在院日数の最適化で稼働率を維持\n\n"
+        "1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床は診療報酬収入ゼロ、1床/日≈2.5万円の未活用病床コスト\n\n"
+        "2️⃣ **平均在院日数21日以内で戦略的在院調整を活用** — C群でも運営貢献額28,900円/日を生む\n\n"
+        "3️⃣ **運営貢献額を減らさない** — 退院させて空床を出すより、在院日数の最適化で稼働率を維持\n\n"
         "⚠️ 退院を急ぐべきは「満床で新規入院を断らざるを得ない場合」のみ"
     )
 
@@ -2899,7 +2899,7 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             "- ① 予定入院の前倒しを外来担当医へ依頼\n"
             "- ② 連携室へ依頼：紹介元クリニック・病院へ空床受入れ可能を発信\n"
             "- ③ 外来担当医に入院推奨閾値の引き下げを相談\n\n"
-            "**注意:** C群患者は在院継続で限界利益確保。空床1床/日 ≈ 2.5万円の機会損失。"
+            "**注意:** C群患者は在院継続で運営貢献額確保。空床1床/日 ≈ 2.5万円の未活用病床コスト。"
             "平均在院日数21日以内であれば戦略的在院調整で稼働率を維持する。"
         )
     elif avg_occ > target_upper * 100:
@@ -2922,14 +2922,14 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             st.info(
                 f"C群構成比 {summary['C群平均構成比']:.1f}% は高めですが、稼働率{avg_occ:.1f}%で余裕あり。\n\n"
                 "**判断:** 平均在院日数21日以内ならC群の戦略的在院調整で稼働率維持を優先。"
-                "在院継続で限界利益28,900円/日を確保。"
+                "在院継続で運営貢献額28,900円/日を確保。"
             )
 
     # --- 今日のアクションリスト ---
     st.markdown("---")
     st.subheader("📋 今日のアクションリスト")
     _last_row = df.iloc[-1]
-    _last_flags = _last_row.get("経営判断フラグ", "正常運用")
+    _last_flags = _last_row.get("運営改善アラート", "正常運用")
     _last_occ = _last_row["稼働率"] * 100
     _last_patients = int(_last_row["在院患者数"])
     _last_empty = _view_beds - _last_patients
@@ -2945,17 +2945,17 @@ with tabs[_tab_idx["経営判断フラグ"]]:
             _action_items.append(f"⚠️ 高稼働のためC群から{_discharge_target}名の退院調整を検討（稼働率{_last_occ:.1f}%）")
         else:
             # 稼働率に余裕がある場合はC群の戦略的在院調整を推奨
-            _action_items.append(f"C群{_last_c}名は戦略的在院調整で稼働率維持（限界利益28,900円/日/名 × 空床よりプラス）")
+            _action_items.append(f"C群{_last_c}名は戦略的在院調整で稼働率維持（運営貢献額28,900円/日/名 × 空床よりプラス）")
     if "稼働率低下" in _last_flags:
         _remaining_days = _calc_remaining_days(_active_raw_df)
-        _action_items.append(f"🔴 空床{_last_empty}床（機会損失 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * 34000 * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
-        _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で限界利益確保し稼働率維持を優先")
+        _action_items.append(f"🔴 空床{_last_empty}床（未活用病床コスト 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * 34000 * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
+        _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で運営貢献額確保し稼働率維持を優先")
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
     if "A群過多" in _last_flags:
         _action_items.append("A群の新規入院ペースを確認（数日でB群に移行予定）")
     if "B群不足" in _last_flags:
-        _action_items.append("B群患者のリハビリ進捗を確認、在院継続で限界利益確保")
+        _action_items.append("B群患者のリハビリ進捗を確認、在院継続で運営貢献額確保")
     if _last_empty > 0 and "正常運用" in _last_flags:
         _action_items.append(f"空床{_last_empty}床（受入余力{min(5, _last_empty)}名）→ 外来・連携室へ空床状況を共有し入院受入を促進")
     if _last_b > 0:
@@ -3074,7 +3074,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         _ws_c1, _ws_c2, _ws_c3 = st.columns(3)
         _ws_c1.metric("稼働率", f"{_ward_status['occupancy_rate']*100:.1f}%")
         _ws_c2.metric("ステータススコア", f"{_ward_status['score_numeric']}")
-        _ws_c3.metric("1床あたり限界利益", fmt_yen(int(_ward_status.get('profit_per_bed', 0))))
+        _ws_c3.metric("1床あたり運営貢献額", fmt_yen(int(_ward_status.get('profit_per_bed', 0))))
 
         if _ward_status.get("messages"):
             st.markdown("**メッセージ:**")
@@ -3144,8 +3144,8 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         ax.bar(_deltas, _pdiffs, color=_bar_colors, alpha=0.8)
         ax.axhline(y=0, color="black", linewidth=0.5)
         ax.set_xlabel("在院日数変化（日）")
-        ax.set_ylabel("限界利益変化（万円）")
-        ax.set_title("在院日数変化が月次限界利益に与える影響")
+        ax.set_ylabel("運営貢献額変化（万円）")
+        ax.set_title("在院日数変化が月次運営貢献額に与える影響")
         ax.set_xticks(_deltas)
         ax.set_xticklabels([f"{d:+d}" for d in _deltas])
         ax.grid(True, alpha=0.3, axis="y")
@@ -3155,14 +3155,14 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         st.info(
             f"**最適在院日数レンジ:** {_optimal_los['min_los']:.1f} 〜 {_optimal_los['max_los']:.1f} 日 "
             f"（最適値: {_optimal_los['optimal_los']} 日）\n\n"
-            f"期待月次限界利益: {fmt_yen(_optimal_los['expected_monthly_profit'])}\n\n"
+            f"期待月次運営貢献額: {fmt_yen(_optimal_los['expected_monthly_profit'])}\n\n"
             f"現在の設定: {avg_los} 日"
         )
 
         st.markdown("---")
 
-        # --- 💰 収益最大化アドバイザー ---
-        st.subheader("\U0001f4b0 収益最大化アドバイザー")
+        # --- 💰 病棟運営最適化アドバイザー ---
+        st.subheader("\U0001f4b0 病棟運営最適化アドバイザー")
 
         # 限界価値分析
         _marginal = calculate_marginal_bed_value(_cli_params)
@@ -3176,13 +3176,13 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         # 限界価値パネル
         st.markdown("##### 限界価値分析")
         _mv_c1, _mv_c2, _mv_c3 = st.columns(3)
-        _mv_c1.metric("A群 限界利益/日", fmt_yen(int(_gross_a)))
-        _mv_c2.metric("B群 限界利益/日", fmt_yen(int(_gross_b)), delta="稼ぎ頭")
-        _mv_c3.metric("C群 限界利益/日", fmt_yen(int(_gross_c)), delta="最高効率")
+        _mv_c1.metric("A群 運営貢献額/日", fmt_yen(int(_gross_a)))
+        _mv_c2.metric("B群 運営貢献額/日", fmt_yen(int(_gross_b)), delta="安定貢献層")
+        _mv_c3.metric("C群 運営貢献額/日", fmt_yen(int(_gross_c)), delta="最高効率")
 
         _mv_c4, _mv_c5, _mv_c6 = st.columns(3)
-        _mv_c4.metric("新規1名 生涯期待限界利益", fmt_yen(_lifetime))
-        _mv_c5.metric("新規1名 日平均限界利益", fmt_yen(_daily_avg))
+        _mv_c4.metric("新規1名 生涯期待運営貢献額", fmt_yen(_lifetime))
+        _mv_c5.metric("新規1名 日平均運営貢献額", fmt_yen(_daily_avg))
         _mv_c6.metric("損益分岐日数", f"{_breakeven}日")
 
         # C群 vs 新規の判断基準
@@ -3242,13 +3242,13 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         # 経済効果
         _econ_cols = st.columns(4)
         _econ_cols[0].metric(
-            "退院による限界利益減",
+            "退院による運営貢献額減",
             fmt_yen(_econ["daily_lost_profit"]),
             delta=f"-{fmt_yen(_econ['daily_lost_profit'])}" if _econ["daily_lost_profit"] > 0 else "0",
             delta_color="inverse",
         )
         _econ_cols[1].metric(
-            "新規入院の初日限界利益",
+            "新規入院の初日運営貢献額",
             fmt_yen(_econ["daily_gained_profit"]),
         )
         _econ_cols[2].metric(
@@ -3258,7 +3258,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
             delta_color="normal",
         )
         _econ_cols[3].metric(
-            "新規の将来期待限界利益",
+            "新規の将来期待運営貢献額",
             fmt_yen(_econ["future_gain_from_new"]),
         )
 
@@ -3288,7 +3288,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
                 "推奨B群退院": f"{_d_plan['recommendation']['b_discharge']}名",
                 "推奨入院": f"{_d_plan['recommendation']['new_admissions']}名",
                 "翌日稼働率": f"{_d_plan['after_state']['occupancy']*100:.1f}%",
-                "日次限界利益変化": fmt_yen(_d_plan['economics']['daily_net_impact']),
+                "日次運営貢献額変化": fmt_yen(_d_plan['economics']['daily_net_impact']),
             })
 
         _demand_df = pd.DataFrame(_demand_results)
@@ -3437,7 +3437,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         st.metric("A群", f"{_bl['a']}名")
                         st.metric("B群", f"{_bl['b']}名")
                         st.metric("C群", f"{_bl['c']}名")
-                        st.metric("日次限界利益", fmt_yen(_bl["daily_profit"]))
+                        st.metric("日次運営貢献額", fmt_yen(_bl["daily_profit"]))
 
                     with _mc2:
                         st.markdown("**After（シナリオ後）**")
@@ -3469,7 +3469,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         _profit_delta_val = _df_diff["daily_profit"]
                         _profit_delta_str = f"+{fmt_yen(int(_profit_delta_val))}" if _profit_delta_val >= 0 else f"-{fmt_yen(abs(int(_profit_delta_val)))}"
                         st.metric(
-                            "日次限界利益",
+                            "日次運営貢献額",
                             fmt_yen(_sc["daily_profit"]),
                             delta=_profit_delta_str,
                         )
@@ -3598,12 +3598,12 @@ if "\U0001f52e What-if分析" in _tab_idx:
                                 "B群": _wr["after"]["b"],
                                 "C群": _wr["after"]["c"],
                                 "稼働率": f"{_wr['occupancy']*100:.1f}%",
-                                "日次限界利益": fmt_yen(_wr["daily_profit"]),
+                                "日次運営貢献額": fmt_yen(_wr["daily_profit"]),
                             })
                         st.dataframe(pd.DataFrame(_result_table), width="stretch", hide_index=True)
 
-                        # 稼働率・限界利益推移グラフ
-                        st.markdown("### 📊 稼働率・限界利益推移")
+                        # 稼働率・運営貢献額推移グラフ
+                        st.markdown("### 📊 稼働率・運営貢献額推移")
                         _fig_w, (_ax_occ_w, _ax_profit_w) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
 
                         _dates_w = [str(r["date"]) for r in _w_results]
@@ -3620,10 +3620,10 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         for _xi, _yv in enumerate(_occs_w):
                             _ax_occ_w.text(_xi, _yv + 0.5, f"{_yv:.1f}%", ha="center", fontsize=8)
 
-                        # 限界利益
+                        # 運営貢献額
                         _profit_colors = ["#27AE60" if p >= 0 else "#E74C3C" for p in _profits_w]
                         _ax_profit_w.bar(_dates_w, _profits_w, color=_profit_colors, alpha=0.8)
-                        _ax_profit_w.set_ylabel("日次限界利益 (万円)")
+                        _ax_profit_w.set_ylabel("日次運営貢献額 (万円)")
                         _ax_profit_w.axhline(y=0, color="gray", linewidth=0.5)
                         for _xi, _yv in enumerate(_profits_w):
                             _ax_profit_w.text(_xi, _yv + 0.3, f"{_yv:.1f}", ha="center", fontsize=8)
@@ -3643,7 +3643,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         with _ws3:
                             st.metric("平均稼働率", f"{_w_summary['avg_occupancy']*100:.1f}%")
                         with _ws4:
-                            st.metric("限界利益合計", fmt_yen(_w_summary["total_profit"]))
+                            st.metric("運営貢献額合計", fmt_yen(_w_summary["total_profit"]))
 
             # ==================================================================
             # 入院需要変動シナリオ
@@ -3688,7 +3688,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                     with _sc1:
                         st.markdown("**Before（現状）**")
                         st.metric("稼働率", f"{_surge_result['baseline_occupancy']*100:.1f}%")
-                        st.metric("月次限界利益", fmt_yen(int(_surge_result["baseline_profit"])))
+                        st.metric("月次運営貢献額", fmt_yen(int(_surge_result["baseline_profit"])))
                     with _sc2:
                         st.markdown("**After（シナリオ）**")
                         _s_occ_delta = (_surge_result["scenario_occupancy"] - _surge_result["baseline_occupancy"]) * 100
@@ -3700,7 +3700,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         )
                         _s_profit_delta_str = f"+{fmt_yen(abs(int(_s_profit_delta)))}" if _s_profit_delta >= 0 else f"-{fmt_yen(abs(int(_s_profit_delta)))}"
                         st.metric(
-                            "月次限界利益",
+                            "月次運営貢献額",
                             fmt_yen(int(_surge_result["scenario_profit"])),
                             delta=_s_profit_delta_str,
                         )
@@ -3790,8 +3790,8 @@ with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
 
         st.markdown("---")
 
-        # --- 限界利益効率トレンド ---
-        st.markdown("### 限界利益効率トレンド")
+        # --- 運営貢献効率トレンド ---
+        st.markdown("### 運営貢献効率トレンド")
         _profit_trend_label = _trend_arrows.get(_trends.get("profit_efficiency_trend", "stable"),
                                                  _trends.get("profit_efficiency_trend", ""))
         st.markdown(f"**トレンド:** {_profit_trend_label}")
@@ -3803,8 +3803,8 @@ with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
             _ppb_days = _days_range[_ppb_start:]
             ax.plot(_ppb_days, [v / 10000 for v in _ppb_ma], color=COLOR_PROFIT, linewidth=2.5)
             ax.set_xlabel("日")
-            ax.set_ylabel("1床あたり限界利益（万円）")
-            ax.set_title("1床あたり限界利益トレンド（移動平均）")
+            ax.set_ylabel("1床あたり運営貢献額（万円）")
+            ax.set_title("1床あたり運営貢献額トレンド（移動平均）")
             ax.grid(True, alpha=0.3)
             st.pyplot(fig)
             plt.close(fig)
@@ -3832,7 +3832,7 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
 
         # --- 比較テーブル ---
         compare_keys = [
-            "月次収益", "月次コスト", "月次限界利益",
+            "月次診療報酬", "月次コスト", "月次運営貢献額",
             "平均稼働率", "月間入院数", "月間退院数",
             "平均在院日数",
             "目標レンジ内日数", "目標レンジ内率",
@@ -3846,7 +3846,7 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
         compare_df.index.name = "戦略"
 
         # 金額カラムをフォーマット
-        for col in ["月次収益", "月次コスト", "月次限界利益"]:
+        for col in ["月次診療報酬", "月次コスト", "月次運営貢献額"]:
             compare_df[col] = compare_df[col].apply(lambda x: fmt_yen_full(int(x)))
 
         # パーセンテージカラム
@@ -3857,7 +3857,7 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
 
         # --- 主要指標の棒グラフ比較 ---
         strategies_list = list(comparison.keys())
-        profits = [comparison[s]["月次限界利益"] / 10000 for s in strategies_list]
+        profits = [comparison[s]["月次運営貢献額"] / 10000 for s in strategies_list]
         occ_rates = [comparison[s]["平均稼働率"] for s in strategies_list]
         in_range = [comparison[s]["目標レンジ内率"] for s in strategies_list]
 
@@ -3865,7 +3865,7 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
         bar_colors = [COLOR_A, COLOR_B, COLOR_C]
 
         axes[0].bar(strategies_list, profits, color=bar_colors, alpha=0.8)
-        axes[0].set_title("月次限界利益（万円）")
+        axes[0].set_title("月次運営貢献額（万円）")
         axes[0].grid(True, alpha=0.3, axis="y")
         for i, v in enumerate(profits):
             axes[0].text(i, v + max(profits)*0.02, f"{v:.0f}", ha="center", fontsize=9)
@@ -3888,14 +3888,14 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
 
         # --- 最適戦略のハイライト ---
         st.markdown("---")
-        best_profit = max(comparison.items(), key=lambda x: x[1]["月次限界利益"])
+        best_profit = max(comparison.items(), key=lambda x: x[1]["月次運営貢献額"])
         best_occ = min(comparison.items(),
                        key=lambda x: abs(x[1]["平均稼働率"] - (target_lower + target_upper) / 2 * 100))
         best_range = max(comparison.items(), key=lambda x: x[1]["目標レンジ内率"])
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.success(f"**限界利益最大:** {best_profit[0]}\n\n{fmt_yen(best_profit[1]['月次限界利益'])}")
+            st.success(f"**運営貢献額最大:** {best_profit[0]}\n\n{fmt_yen(best_profit[1]['月次運営貢献額'])}")
         with col2:
             st.success(f"**稼働率最適:** {best_occ[0]}\n\n{best_occ[1]['平均稼働率']:.1f}%")
         with col3:

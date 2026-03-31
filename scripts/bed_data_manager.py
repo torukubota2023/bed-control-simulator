@@ -400,7 +400,7 @@ def predict_monthly_kpi(
 
     Returns:
         dict: 月末予想稼働率, 月末予想在院患者数, 今月の入院数合計,
-              推定平均在院日数, 推定月次限界利益
+              推定平均在院日数, 推定月次運営貢献額
     """
     if len(df) == 0:
         return {}
@@ -456,8 +456,8 @@ def predict_monthly_kpi(
     los_denominator = (total_new_admissions + total_discharges_month) / 2
     estimated_avg_los = total_patient_days / max(los_denominator, 1) if total_patient_days > 0 else 18.0
 
-    # 推定月次限界利益
-    # 今月実績分の限界利益
+    # 推定月次運営貢献額
+    # 今月実績分の運営貢献額
     actual_gross_profit = 0.0
     if len(month_data) > 0:
         for _, row in month_data.iterrows():
@@ -499,7 +499,7 @@ def predict_monthly_kpi(
         "今月入院数_予測": predicted_remaining_admissions,
         "今月入院数_合計": total_admissions,
         "推定平均在院日数": round(estimated_avg_los, 1),
-        "推定月次限界利益": int(round(predicted_gross_profit)),
+        "推定月次運営貢献額": int(round(predicted_gross_profit)),
         "残り日数": remaining_days,
     }
 

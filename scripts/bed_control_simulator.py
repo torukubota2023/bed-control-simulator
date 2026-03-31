@@ -3,12 +3,12 @@
 ベッドコントロールシミュレーター（CLI版）
 
 地域包括医療病棟（94床）向けのベッド運用シミュレーター。
-稼働率90〜95%を維持しつつ、患者フェーズ構成比を最適化し限界利益を最大化する。
+稼働率90〜95%を維持しつつ、患者フェーズ構成比を最適化し運営貢献額を最大化する。
 
 患者フェーズ定義：
-  - A群（1〜5日目）：入院初期、変動費高・限界利益小
-  - B群（6〜14日目）：回復期、変動費中・限界利益大（最も限界利益を生む）
-  - C群（15日目以降）：安定期、変動費小・限界利益中（需給調整弁）
+  - A群（1〜5日目）：入院初期、変動費高・運営貢献額小
+  - B群（6〜14日目）：回復期、変動費中・運営貢献額大（最も運営貢献額を生む）
+  - C群（15日目以降）：安定期、変動費小・運営貢献額中（退院調整の柔軟性が高い層）
 
 使い方:
   python scripts/bed_control_simulator.py
@@ -108,7 +108,7 @@ def create_default_params() -> dict[str, Any]:
 
     Returns:
         dict: 全パラメータのデフォルト値を格納した辞書。
-              病棟基本設定・収益コスト・加算・閾値・乱数シードを含む。
+              病棟基本設定・報酬・費用・加算・閾値・乱数シードを含む。
     """
     return {
         # --- 病棟基本設定 ---
@@ -122,8 +122,8 @@ def create_default_params() -> dict[str, Any]:
         "admission_variation_coeff": 1.0,         # 入院数の変動係数
         "initial_occupancy": 0.90,               # 初期稼働率
 
-        # --- 収益・コスト（1日1患者あたり、円） ---
-        # コストモデル: 限界利益ベース（変動費のみ差引き）
+        # --- 報酬・費用（1日1患者あたり、円） ---
+        # コストモデル: 運営貢献額ベース（変動費のみ差引き）
         # 変動費 = 薬剤費 + 材料費 + 検査費 + 給食費
         # 固定費（看護人件費・施設維持費等）は空床でも発生するため含めない
         "phase_a_revenue": 36000,                 # A群 収益（入院14日以内: 基本3,290点+初期加算150点+リハ栄養口腔連携110点+物価対応49点=3,599点≈36,000円）
@@ -138,8 +138,8 @@ def create_default_params() -> dict[str, Any]:
         "within_14days_bonus": 0,                 # 14日以内退院加算
         "rehab_fee": 0,                           # リハビリ加算
 
-        # --- 機会損失 ---
-        "opportunity_cost": 25000,                # 空床1日あたり機会損失（円）（限界利益ベース）
+        # --- 未活用病床コスト ---
+        "opportunity_cost": 25000,                # 空床1日あたり未活用病床コスト（円）（運営貢献額ベース）
 
         # --- 閾値 ---
         "discharge_promotion_threshold": 0.95,    # 退院促進開始の稼働率閾値
@@ -188,7 +188,7 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
     monthly_adm: int = params["monthly_admissions"]
     daily_adm_mean: float = monthly_adm / days  # 1日あたり平均入院数（≒5.0）
 
-    # 収益・コストテーブル
+    # 報酬・費用テーブル
     rev = {
         "A": params["phase_a_revenue"],
         "B": params["phase_b_revenue"],
@@ -432,7 +432,7 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
         phase_b_ratio = phase_b / max(total_patients, 1)
         phase_c_ratio = phase_c / max(total_patients, 1)
 
-        # --- 日次収益 ---
+        # --- 日次診療報酬 ---
         daily_revenue = (
             phase_a * rev["A"]
             + phase_b * rev["B"]
@@ -455,7 +455,7 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
 
         daily_profit = daily_revenue - daily_cost
 
-        # 機会損失（空床分）
+        # 未活用病床コスト（空床分）
         opportunity_loss = empty_beds_final * params["opportunity_cost"]
 
         # --- フラグ判定 ---
@@ -579,7 +579,7 @@ def compare_strategies(
 
     Returns:
         pd.DataFrame: 戦略名をカラムに持つ比較表（行＝指標）。
-        月次限界利益が最大の戦略をコンソールに表示する。
+        月次運営貢献額が最大の戦略をコンソールに表示する。
     """
     if strategies is None:
         strategies = ["rotation", "stable", "balanced"]
@@ -593,10 +593,10 @@ def compare_strategies(
 
     comparison = pd.DataFrame(summaries)
 
-    # 月次限界利益が最大の戦略を特定して表示
+    # 月次運営貢献額が最大の戦略を特定して表示
     profits = {s: summaries[s]["total_profit"] for s in strategies}
     best = max(profits, key=profits.get)  # type: ignore[arg-type]
-    print(f"\n  >>> 月次限界利益最大戦略: {best}（限界利益 {profits[best]:,.0f} 円）")
+    print(f"\n  >>> 月次運営貢献額最大戦略: {best}（運営貢献額 {profits[best]:,.0f} 円）")
 
     return comparison
 
@@ -611,7 +611,7 @@ def plot_simulation(df: pd.DataFrame, strategy_name: str) -> None:
     サブプロット構成:
         (1) 稼働率推移（目標レンジ90-95%を帯で表示）
         (2) A/B/C構成比の積み上げ面グラフ
-        (3) 日次限界利益推移（棒グラフ）
+        (3) 日次運営貢献額推移（棒グラフ）
         (4) 新規入院・退院数の並列棒グラフ
 
     Args:
@@ -667,7 +667,7 @@ def plot_simulation(df: pd.DataFrame, strategy_name: str) -> None:
     ax2.set_ylim(0, 100)
     ax2.grid(True, alpha=0.3)
 
-    # --- (3) 日次限界利益推移 ---
+    # --- (3) 日次運営貢献額推移 ---
     ax3 = axes[1, 0]
     colors_profit = ["green" if v >= 0 else "red" for v in df["daily_profit"]]
     ax3.bar(
@@ -675,8 +675,8 @@ def plot_simulation(df: pd.DataFrame, strategy_name: str) -> None:
         color=colors_profit, alpha=0.7, width=0.8,
     )
     ax3.set_xlabel("日")
-    ax3.set_ylabel("日次限界利益 (万円)")
-    ax3.set_title("日次限界利益推移")
+    ax3.set_ylabel("日次運営貢献額 (万円)")
+    ax3.set_title("日次運営貢献額推移")
     ax3.axhline(y=0, color="black", linewidth=0.5)
     ax3.grid(True, alpha=0.3)
 
@@ -717,7 +717,7 @@ def plot_strategy_comparison(comparison_df: pd.DataFrame) -> None:
     """
     戦略比較用の棒グラフを作成し PNG 保存する。
 
-    主要6指標（限界利益、稼働率、目標レンジ日数、機会損失、B群構成比、空床日数）を
+    主要6指標（運営貢献額、稼働率、目標レンジ日数、未活用病床コスト、B群構成比、空床日数）を
     戦略間で横並び比較する。
 
     Args:
@@ -732,10 +732,10 @@ def plot_strategy_comparison(comparison_df: pd.DataFrame) -> None:
 
     # 比較する指標（表示名、キー、スケーリング分母、単位）
     metrics = [
-        ("月次限界利益", "total_profit", 1e4, "万円"),
+        ("月次運営貢献額", "total_profit", 1e4, "万円"),
         ("平均稼働率", "avg_occupancy", 0.01, "%"),  # 0.xx → xx%
         ("目標レンジ日数", "days_in_target_range", 1, "日"),
-        ("機会損失合計", "total_opportunity_loss", 1e4, "万円"),
+        ("未活用病床コスト合計", "total_opportunity_loss", 1e4, "万円"),
         ("B群平均構成比", "avg_phase_b_ratio", 0.01, "%"),
         ("空床日数合計", "total_empty_bed_days", 1, "床日"),
     ]
@@ -789,7 +789,7 @@ def assess_ward_status(
     スコアリング（100点満点）:
       - 稼働率ゾーン（40点）
       - フェーズ構成バランス（30点）
-      - 限界利益効率（20点）
+      - 運営貢献効率（20点）
       - トレンド安定性（10点）
 
     Args:
@@ -856,15 +856,15 @@ def assess_ward_status(
     else:
         phase_balance = "balanced"
 
-    # --- 限界利益効率（20点満点） ---
+    # --- 運営貢献効率（20点満点） ---
     daily_profit = row["daily_profit"]
     profit_per_bed = daily_profit / num_beds
-    efficiency_ratio = profit_per_bed / 25000  # 基準値 25,000円/床（限界利益ベース）
+    efficiency_ratio = profit_per_bed / 25000  # 基準値 25,000円/床（運営貢献額ベース）
     profit_score = min(20, int(efficiency_ratio * 20))
     profit_score = max(0, profit_score)
 
     if daily_profit < 0:
-        messages.append(f"本日赤字運用（限界利益 {daily_profit:,.0f} 円）")
+        messages.append(f"本日目標未達の運用（運営貢献額 {daily_profit:,.0f} 円）")
 
     # --- トレンド安定性（10点満点） ---
     # 直近3日の稼働率標準偏差
@@ -1054,7 +1054,7 @@ def suggest_actions(
             "priority": 2,
             "category": "hold",
             "action": "B群不足。退院を急がず在院継続推奨",
-            "expected_impact": "B群比率改善による限界利益最大化",
+            "expected_impact": "B群比率改善による運営貢献額の最大化",
         })
 
     # A群>35%
@@ -1094,12 +1094,12 @@ def suggest_actions(
             "expected_impact": "C群比率の適正化",
         })
 
-    # 日次限界利益<0
+    # 日次運営貢献額<0
     if ward_status["profit_per_bed"] * params["num_beds"] < 0:
         actions.append({
             "priority": 3,
             "category": "alert",
-            "action": "本日赤字運用",
+            "action": "本日目標未達の運用",
             "expected_impact": "フェーズ構成・稼働率の早急な見直し",
         })
 
@@ -1115,7 +1115,7 @@ def simulate_los_impact(
     delta_days_range: range = range(-2, 3),
 ) -> list[dict[str, Any]]:
     """
-    平均在院日数をN日変動させた場合の限界利益インパクトをLittle's lawで推計する。
+    平均在院日数をN日変動させた場合の運営貢献額インパクトをLittle's lawで推計する。
 
     Args:
         df: simulate_bed_control() の戻り値。
@@ -1123,7 +1123,7 @@ def simulate_los_impact(
         delta_days_range: 在院日数の変動幅（デフォルト -2〜+2）。
 
     Returns:
-        list[dict]: 各変動シナリオの月次限界利益・稼働率・フェーズ構成。
+        list[dict]: 各変動シナリオの月次運営貢献額・稼働率・フェーズ構成。
     """
     num_beds = params["num_beds"]
     days_in_month = params["days_in_month"]
@@ -1134,7 +1134,7 @@ def simulate_los_impact(
     # ベースラインの平均在院日数
     base_los = params["avg_length_of_stay"]
 
-    # ベースライン月次限界利益（delta=0の参照用）
+    # ベースライン月次運営貢献額（delta=0の参照用）
     baseline_profit: int | None = None
 
     results: list[dict[str, Any]] = []
@@ -1151,7 +1151,7 @@ def simulate_los_impact(
         new_avg_patients = min(new_avg_patients_uncapped, num_beds)
         new_occupancy = new_avg_patients / num_beds
 
-        # 修正: 稼働率100%超の場合、超過分を機会損失として計上
+        # 修正: 稼働率100%超の場合、超過分を未活用病床コストとして計上
         excess_patients = max(0, new_avg_patients_uncapped - num_beds)
 
         # フェーズ構成比: A=5日, B=9日(6-14), C=max(0, LOS-14)日
@@ -1169,7 +1169,7 @@ def simulate_los_impact(
             b_ratio = 0.0
             c_ratio = 0.0
 
-        # 日次限界利益 = 実際の患者数（キャップ後） * 各フェーズの限界利益加重平均
+        # 日次運営貢献額 = 実際の患者数（キャップ後） * 各フェーズの運営貢献額加重平均
         _a_profit = params.get("phase_a_revenue", 36000) - params.get("phase_a_cost", 12000)
         _b_profit = params.get("phase_b_revenue", 36000) - params.get("phase_b_cost", 6000)
         _c_profit = params.get("phase_c_revenue", 33400) - params.get("phase_c_cost", 4500)
@@ -1177,13 +1177,13 @@ def simulate_los_impact(
             a_ratio * _a_profit + b_ratio * _b_profit + c_ratio * _c_profit
         )
 
-        # 機会損失: 空床コスト + 超過需要による機会損失
+        # 未活用病床コスト: 空床コスト + 超過需要による未活用病床コスト
         empty_beds = max(0, num_beds - new_avg_patients)
         opportunity_loss = empty_beds * opportunity_cost
-        # 修正: 受け入れ不能な超過患者分の機会損失を加算
+        # 修正: 受け入れ不能な超過患者分の未活用病床コストを加算
         excess_opportunity_loss = excess_patients * opportunity_cost
 
-        # 月次限界利益（超過機会損失を差し引く）
+        # 月次運営貢献額（超過未活用病床コストを差し引く）
         monthly_profit = int((daily_profit - opportunity_loss - excess_opportunity_loss) * days_in_month)
 
         if delta == 0:
@@ -1220,7 +1220,7 @@ def calculate_optimal_los_range(
         params: パラメータ辞書。
 
     Returns:
-        dict: 最小LOS・最大LOS・最適LOS・予想月次限界利益。
+        dict: 最小LOS・最大LOS・最適LOS・予想月次運営貢献額。
     """
     num_beds = params["num_beds"]
     days_in_month = params["days_in_month"]
@@ -1236,7 +1236,7 @@ def calculate_optimal_los_range(
     los_for_lower = (num_beds * target_lower) / daily_adm
     los_for_upper = (num_beds * target_upper) / daily_adm
 
-    # 修正: 稼働率100%を超えるLOSは除外し、目標レンジ内で限界利益最大のLOSを探索
+    # 修正: 稼働率100%を超えるLOSは除外し、目標レンジ内で運営貢献額最大のLOSを探索
     # 探索範囲を合理的な範囲（14〜25日）に設定
     base_los = params["avg_length_of_stay"]
     search_min = max(1, 14)
@@ -1244,7 +1244,7 @@ def calculate_optimal_los_range(
     search_range = range(search_min - base_los, search_max - base_los + 1)
     los_results = simulate_los_impact(df, params, search_range)
 
-    # 修正: 稼働率100%超のシナリオを除外し、目標レンジ内で限界利益最大を探索
+    # 修正: 稼働率100%超のシナリオを除外し、目標レンジ内で運営貢献額最大を探索
     candidates_in_target = [
         r for r in los_results
         if target_lower <= r["estimated_occupancy"] <= target_upper
@@ -1278,7 +1278,7 @@ def calculate_trends(
         window: 移動平均のウィンドウサイズ（デフォルト7日）。
 
     Returns:
-        dict: 稼働率・フェーズ構成比・限界利益効率のトレンドと移動平均。
+        dict: 稼働率・フェーズ構成比・運営貢献効率のトレンドと移動平均。
     """
     num_beds = params["num_beds"]
     alerts: list[str] = []
@@ -1306,7 +1306,7 @@ def calculate_trends(
     b_trend, b_ma = _calc_trend(df["phase_b_ratio"], effective_window)
     c_trend, c_ma = _calc_trend(df["phase_c_ratio"], effective_window)
 
-    # 限界利益効率トレンド
+    # 運営貢献効率トレンド
     profit_per_bed = df["daily_profit"] / num_beds
     profit_trend, profit_ma = _calc_trend(profit_per_bed, effective_window)
 
@@ -1315,13 +1315,13 @@ def calculate_trends(
     target_upper = params["target_occupancy_upper"]
 
     if b_trend == "falling":
-        alerts.append("B群比率が下降トレンド — 限界利益低下リスク")
+        alerts.append("B群比率が下降トレンド — 運営貢献額低下リスク")
     if occ_trend == "falling" and occ_ma[-1] < target_lower:
         alerts.append("稼働率が目標レンジ下限を下回るトレンド")
     if occ_trend == "rising" and occ_ma[-1] > target_upper:
         alerts.append("稼働率が目標レンジ上限を上回るトレンド")
     if profit_trend == "falling":
-        alerts.append("限界利益効率が下降トレンド")
+        alerts.append("運営貢献効率が下降トレンド")
 
     return {
         "occupancy_trend": occ_trend,
@@ -1365,7 +1365,7 @@ def whatif_discharge(
     new_patients = baseline_patients - n_discharge
     new_occupancy = new_patients / num_beds
 
-    # フェーズ別限界利益（収益 - コスト）
+    # フェーズ別運営貢献額（収益 - コスト）
     phase_gross = {
         "A": params["phase_a_revenue"] - params["phase_a_cost"],
         "B": params["phase_b_revenue"] - params["phase_b_cost"],
@@ -1490,7 +1490,7 @@ def whatif_mixed_scenario(
     """
     現場のリアルな退院シナリオをシミュレーション。
     A/B/C群それぞれの退院人数と新規入院数を指定して、
-    稼働率・限界利益・フェーズ構成の変化を計算する。
+    稼働率・運営貢献額・フェーズ構成の変化を計算する。
     """
     row = df.iloc[day_index]
 
@@ -1518,7 +1518,7 @@ def whatif_mixed_scenario(
     new_total = new_a + new_b + new_c
     new_occupancy = new_total / params["num_beds"]
 
-    # 限界利益計算
+    # 運営貢献額計算
     gross = {
         "A": params["phase_a_revenue"] - params["phase_a_cost"],
         "B": params["phase_b_revenue"] - params["phase_b_cost"],
@@ -1557,7 +1557,7 @@ def whatif_mixed_scenario(
     # A群比率チェック
     new_a_ratio = new_a / new_total_safe
     if new_a_ratio > 0.35:
-        messages.append("⚠️ A群が35%超。初期コスト増で限界利益圧迫の恐れ")
+        messages.append("⚠️ A群が35%超。初期コスト増で運営貢献額圧迫の恐れ")
 
     return {
         "scenario_name": (
@@ -1710,7 +1710,7 @@ def whatif_weekly_plan(
     }
 
 
-# ======================== 収益最大化アドバイザー ============================ #
+# ======================== 病棟運営最適化アドバイザー ============================ #
 
 
 def calculate_marginal_bed_value(params: dict[str, Any]) -> dict[str, Any]:
@@ -1737,18 +1737,18 @@ def calculate_marginal_bed_value(params: dict[str, Any]) -> dict[str, Any]:
     b_days = min(9, max(0, avg_los - 5))
     c_days = max(0, avg_los - 14)
 
-    # 新規入院1名の生涯期待限界利益
+    # 新規入院1名の生涯期待運営貢献額
     lifetime_profit = a_days * gross_a + b_days * gross_b + c_days * gross_c
-    # 新規入院1名の日平均限界利益
+    # 新規入院1名の日平均運営貢献額
     daily_avg_profit = lifetime_profit / max(avg_los, 1)
 
-    # C群を1日延長する純価値（機会損失なしの場合）
+    # C群を1日延長する純価値（未活用病床コストなしの場合）
     c_hold_value = gross_c
     # C群を退院させて新規を入れた場合の損益変化
     replace_day1_impact = -gross_c + gross_a  # 当日の損益変化
     replace_lifetime_impact = lifetime_profit - gross_c  # 生涯で見た純効果
 
-    # 損益分岐日数: 何日で新規入院の累積限界利益がC群延長を上回るか
+    # 損益分岐日数: 何日で新規入院の累積運営貢献額がC群延長を上回るか
     breakeven_days = 0
     cum_new = 0
     cum_hold = 0
@@ -1846,7 +1846,7 @@ def optimize_discharge_plan(
                 f"空床{empty_beds}床で入院需要{expected_daily_demand}名を収容可能"
             )
             reasoning.append(
-                "→ C群は退院させず持たせる（限界利益2.9万/日を継続獲得）"
+                "→ C群は退院させず持たせる（運営貢献額2.9万/日を継続獲得）"
             )
             optimal_c_discharge = 0
             recommended_admissions = expected_daily_demand
@@ -1876,13 +1876,13 @@ def optimize_discharge_plan(
     # === 経済効果の計算 ===
     total_discharge = optimal_c_discharge + optimal_b_discharge
 
-    # 退院による限界利益減少
+    # 退院による運営貢献額減少
     lost_profit = (
         optimal_c_discharge * marginal["phase_gross"]["C"]
         + optimal_b_discharge * marginal["phase_gross"]["B"]
     )
 
-    # 新規入院による限界利益増加（初日はA群）
+    # 新規入院による運営貢献額増加（初日はA群）
     gained_profit = recommended_admissions * marginal["phase_gross"]["A"]
 
     # 将来利益（新規入院の生涯期待値）
@@ -1971,7 +1971,7 @@ def generate_decision_report(
 
     lines.append(f"■ トレンド: 稼働率={trends['occupancy_trend']}, "
                  f"B群={trends['phase_b_trend']}, "
-                 f"限界利益効率={trends['profit_efficiency_trend']}")
+                 f"運営貢献効率={trends['profit_efficiency_trend']}")
 
     if trends["alerts"]:
         for alert in trends["alerts"]:
@@ -1996,13 +1996,13 @@ def generate_decision_report(
     )
 
     lines.append(
-        f"■ C群2名退院シナリオ: 限界利益差 {whatif_2c['profit_diff']:+,}円/日, "
+        f"■ C群2名退院シナリオ: 運営貢献額差 {whatif_2c['profit_diff']:+,}円/日, "
         f"{whatif_2c['recommendation']}"
     )
 
     summary_text = "\n".join(lines)
 
-    # 収益最大化アドバイザー
+    # 病棟運営最適化アドバイザー
     optimization = optimize_discharge_plan(df, last_idx, params)
 
     return {
@@ -2030,7 +2030,7 @@ def main() -> None:
         2. 各戦略の日次結果をCSV出力（output/フォルダ）
         3. 各戦略のグラフ出力（PNG）
         4. 戦略比較表をコンソール出力＋CSV出力
-        5. 最適戦略（限界利益最大）を表示
+        5. 最適戦略（運営貢献額最大）を表示
     """
     print("=" * 60)
     print(" ベッドコントロールシミュレーター v1.0")
@@ -2073,7 +2073,7 @@ def main() -> None:
         # サマリー表示
         s = summaries[strat]
         print(f"  平均稼働率: {s['avg_occupancy'] * 100:.1f}%")
-        print(f"  月次限界利益: {s['total_profit']:,.0f} 円")
+        print(f"  月次運営貢献額: {s['total_profit']:,.0f} 円")
         print(
             f"  目標レンジ日数: {s['days_in_target_range']} / "
             f"{params['days_in_month']} 日"
@@ -2109,7 +2109,7 @@ def main() -> None:
 
     print("\n" + "=" * 60)
     print(f" 最適戦略: {strategy_labels[best]}（{best}）")
-    print(f" 月次限界利益: {profits[best]:,.0f} 円")
+    print(f" 月次運営貢献額: {profits[best]:,.0f} 円")
     print("=" * 60)
 
     # --- 各戦略の詳細一覧 ---
@@ -2119,7 +2119,7 @@ def main() -> None:
         s = summaries[strat]
         print(
             f"  {label}({strat}): "
-            f"限界利益 {s['total_profit']:>12,.0f} 円 | "
+            f"運営貢献額 {s['total_profit']:>12,.0f} 円 | "
             f"稼働率 {s['avg_occupancy'] * 100:.1f}% | "
             f"目標レンジ {s['days_in_target_range']}日"
         )
@@ -2141,7 +2141,7 @@ def main() -> None:
     print(f"    A群 {ws['phase_a_ratio']*100:.1f}% / "
           f"B群 {ws['phase_b_ratio']*100:.1f}% / "
           f"C群 {ws['phase_c_ratio']*100:.1f}%")
-    print(f"  限界利益効率: {ws['profit_per_bed']:,.0f} 円/床")
+    print(f"  運営貢献効率: {ws['profit_per_bed']:,.0f} 円/床")
     if ws["messages"]:
         for msg in ws["messages"]:
             print(f"  ! {msg}")
@@ -2169,7 +2169,7 @@ def main() -> None:
         sign = "+" if li["delta_days"] >= 0 else ""
         pc = li["phase_composition"]
         print(f"  LOS {sign}{li['delta_days']}日: "
-              f"月次限界利益 {li['estimated_monthly_profit']:>12,}円 "
+              f"月次運営貢献額 {li['estimated_monthly_profit']:>12,}円 "
               f"(差分 {li['profit_diff']:>+10,}円) "
               f"稼働率 {li['estimated_occupancy']*100:.1f}% "
               f"A:{pc['A']*100:.0f}%/B:{pc['B']*100:.0f}%/C:{pc['C']*100:.0f}%")
@@ -2179,7 +2179,7 @@ def main() -> None:
     print(f"\n【最適在院日数】")
     print(f"  最適LOS: {opt['optimal_los']}日 "
           f"（目標稼働率レンジ対応: {opt['min_los']:.1f}〜{opt['max_los']:.1f}日）")
-    print(f"  予想月次限界利益: {opt['expected_monthly_profit']:,}円")
+    print(f"  予想月次運営貢献額: {opt['expected_monthly_profit']:,}円")
 
     print(f"\n完了。出力先: {OUTPUT_DIR}")
 
