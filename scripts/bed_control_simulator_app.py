@@ -3191,23 +3191,111 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
 
         # --- LOS最適化 ---
         st.subheader("在院日数（LOS）最適化分析")
+
+        # 前提条件の明示
+        _los_monthly_adm = _cli_params["monthly_admissions"]
+        st.markdown(
+            f"> **前提条件:** 月間入院数を **{_los_monthly_adm}名で固定** したまま、"
+            f"平均在院日数だけを変化させた場合のシミュレーションです。"
+            f"在院日数が変わると稼働率も変わる点にご注意ください。"
+        )
+
         _los_impact = simulate_los_impact(_raw_df, _cli_params)
         _optimal_los = calculate_optimal_los_range(_raw_df, _cli_params)
 
-        fig, ax = plt.subplots(figsize=(10, 4))
+        # --- 2段グラフ: 上=運営貢献額変化、下=稼働率変化 ---
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), height_ratios=[3, 2])
+        fig.subplots_adjust(hspace=0.35)
+
         _deltas = [r["delta_days"] for r in _los_impact]
         _pdiffs = [r["profit_diff"] / 10000 for r in _los_impact]
+        _occs = [r["estimated_occupancy"] * 100 for r in _los_impact]
+        _actual_los_labels = [f"{avg_los + d}日\n({d:+d}日)" for d in _deltas]
+
+        # 上段: 運営貢献額変化
         _bar_colors = [COLOR_PROFIT if v >= 0 else COLOR_A for v in _pdiffs]
-        ax.bar(_deltas, _pdiffs, color=_bar_colors, alpha=0.8)
-        ax.axhline(y=0, color="black", linewidth=0.5)
-        ax.set_xlabel("在院日数変化（日）")
-        ax.set_ylabel("運営貢献額変化（万円）")
-        ax.set_title("在院日数変化が月次運営貢献額に与える影響")
-        ax.set_xticks(_deltas)
-        ax.set_xticklabels([f"{d:+d}" for d in _deltas])
-        ax.grid(True, alpha=0.3, axis="y")
+        bars = ax1.bar(range(len(_deltas)), _pdiffs, color=_bar_colors, alpha=0.8)
+        ax1.axhline(y=0, color="black", linewidth=0.5)
+        ax1.set_ylabel("運営貢献額の変化（万円/月）")
+        ax1.set_title(f"在院日数を変えたら？（月間入院数 {_los_monthly_adm}名で固定）")
+        ax1.set_xticks(range(len(_deltas)))
+        ax1.set_xticklabels(_actual_los_labels)
+        ax1.grid(True, alpha=0.3, axis="y")
+        # 棒グラフの上に金額表示
+        for bar_obj, val in zip(bars, _pdiffs):
+            _y_pos = bar_obj.get_height() if val >= 0 else bar_obj.get_height()
+            ax1.text(bar_obj.get_x() + bar_obj.get_width() / 2, _y_pos,
+                     f"{val:+.0f}万", ha="center",
+                     va="bottom" if val >= 0 else "top",
+                     fontsize=10, fontweight="bold")
+
+        # 下段: 稼働率変化
+        _occ_colors = []
+        for o in _occs:
+            if o > 100:
+                _occ_colors.append("#E74C3C")  # 赤: 100%超（入院拒否発生）
+            elif o >= 90:
+                _occ_colors.append("#27AE60")  # 緑: 目標レンジ
+            else:
+                _occ_colors.append("#F39C12")  # 黄: 90%未満（空床多い）
+        ax2.bar(range(len(_deltas)), _occs, color=_occ_colors, alpha=0.8)
+        ax2.axhline(y=90, color="#27AE60", linewidth=1, linestyle="--", label="目標下限 90%")
+        ax2.axhline(y=95, color="#F39C12", linewidth=1, linestyle="--", label="目標上限 95%")
+        ax2.axhline(y=100, color="#E74C3C", linewidth=1, linestyle="--", label="満床 100%")
+        ax2.set_ylabel("推定稼働率（%）")
+        ax2.set_xlabel("平均在院日数")
+        ax2.set_xticks(range(len(_deltas)))
+        ax2.set_xticklabels(_actual_los_labels)
+        ax2.set_ylim(max(0, min(_occs) - 10), max(_occs) + 5)
+        ax2.grid(True, alpha=0.3, axis="y")
+        ax2.legend(fontsize=8, loc="lower right")
+        # 棒グラフの上に稼働率表示
+        for i, o in enumerate(_occs):
+            ax2.text(i, o + 0.5, f"{o:.0f}%", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
         st.pyplot(fig)
         plt.close(fig)
+
+        # --- 解説パネル ---
+        # 各シナリオの要約テーブル
+        _los_table_data = []
+        for r in _los_impact:
+            _d = r["delta_days"]
+            _los_val = avg_los + _d
+            _occ_val = r["estimated_occupancy"] * 100
+            _diff_val = r["profit_diff"] / 10000
+            if _occ_val > 100:
+                _comment = "⚠️ 満床超過 → 入院を断るコストが発生"
+            elif _occ_val >= 90:
+                _comment = "✅ 目標レンジ内"
+            else:
+                _comment = "⚠️ 空床が増える → 空床コストが発生"
+            _los_table_data.append({
+                "在院日数": f"{_los_val}日 ({_d:+d}日)",
+                "推定稼働率": f"{_occ_val:.0f}%",
+                "月次運営貢献額の変化": f"{_diff_val:+.0f}万円",
+                "状況": _comment,
+            })
+        st.dataframe(
+            pd.DataFrame(_los_table_data),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown(
+            "**📖 このグラフの読み方：**\n\n"
+            "- **上段（棒グラフ・青/赤）:** 在院日数を変えたときの運営貢献額の増減です。"
+            "現在の設定（±0）を基準に、プラスなら青、マイナスなら赤で表示します。\n"
+            "- **下段（棒グラフ・色分け）:** そのときの推定稼働率です。"
+            "緑=目標レンジ（90〜95%）、黄=空床多い（90%未満）、赤=満床超過（100%超）です。\n\n"
+            "**ポイント:**\n"
+            "- 在院日数が**長すぎる**と → 稼働率が100%を超え、新規入院を断るコストが発生 → **マイナス**\n"
+            "- 在院日数が**短すぎる**と → 稼働率が下がり空床が増える → **空床コストが発生**\n"
+            "- **最適なのは、稼働率が90〜95%に収まる在院日数**です\n\n"
+            "⚠️ このシミュレーションは「月間入院数が一定」という前提です。"
+            "在院日数を短くしても入院数が増えなければ、空床が増えて運営貢献額はむしろ下がります。"
+            "**退院促進と入院確保はセットで考える必要があります。**"
+        )
 
         st.info(
             f"**最適在院日数レンジ:** {_optimal_los['min_los']:.1f} 〜 {_optimal_los['max_los']:.1f} 日 "
