@@ -1112,7 +1112,7 @@ def suggest_actions(
 def simulate_los_impact(
     df: pd.DataFrame,
     params: dict[str, Any],
-    delta_days_range: range = range(-2, 3),
+    delta_days_range: range = range(-3, 4),
 ) -> list[dict[str, Any]]:
     """
     平均在院日数をN日変動させた場合の運営貢献額インパクトを推計する。
@@ -1128,7 +1128,7 @@ def simulate_los_impact(
     Args:
         df: simulate_bed_control() の戻り値。
         params: パラメータ辞書。
-        delta_days_range: 在院日数の変動幅（デフォルト -2〜+2）。
+        delta_days_range: 在院日数の変動幅（デフォルト -3〜+3）。
 
     Returns:
         list[dict]: 各変動シナリオの月次運営貢献額・稼働率・フェーズ構成。
