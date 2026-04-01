@@ -1115,7 +1115,12 @@ def simulate_los_impact(
     delta_days_range: range = range(-2, 3),
 ) -> list[dict[str, Any]]:
     """
-    平均在院日数をN日変動させた場合の運営貢献額インパクトをLittle's lawで推計する。
+    平均在院日数をN日変動させた場合の運営貢献額インパクトを推計する。
+
+    前提: 月間入院数を固定したまま在院日数だけを変化させる。
+    在院日数が変わると平均在院患者数が変わり（平均患者数 = 日次入院数 × 在院日数）、
+    結果として稼働率が変動する。稼働率が100%を超える場合は入院を断るコストを計上し、
+    稼働率が低い場合は空床コストを計上する。
 
     Args:
         df: simulate_bed_control() の戻り値。
@@ -1144,7 +1149,8 @@ def simulate_los_impact(
         if new_los < 1:
             continue
 
-        # Little's law: 平均患者数 = 入院レート * 平均在院日数
+        # 平均患者数 = 日次入院数 × 平均在院日数（月間入院数が一定の前提）
+        # ※入院数が変わらないまま在院日数だけ短くすると患者数が減り稼働率が下がる
         new_avg_patients_uncapped = daily_adm * new_los
 
         # 修正: 病床数を超える患者は受け入れ不可（物理的制約）
@@ -1213,7 +1219,7 @@ def calculate_optimal_los_range(
     df: pd.DataFrame, params: dict[str, Any]
 ) -> dict[str, Any]:
     """
-    Little's lawの逆算で最適LOS範囲を算出する。
+    月間入院数を固定した前提で、稼働率が目標レンジ（90〜95%）に収まる在院日数の範囲を算出する。
 
     Args:
         df: simulate_bed_control() の戻り値。
