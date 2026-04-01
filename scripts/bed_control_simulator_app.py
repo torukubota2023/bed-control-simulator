@@ -3228,6 +3228,11 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
             f"平均在院日数が変わると稼働率も変わる点にご注意ください。"
             f"上のスライダーで月間入院数を変えると再計算されます。"
         )
+        st.caption(
+            "※ 推定稼働率にはLittle's lawの理論値に稼働効率係数（0.94）を乗じています。"
+            "入退院の曜日偏り・週末効果・ベッド回転ラグ等により、"
+            "理論値と現場実績には約6%の差があるため補正しています。"
+        )
 
         _los_impact = simulate_los_impact(_raw_df, _los_params)
         _optimal_los = calculate_optimal_los_range(_raw_df, _los_params)
