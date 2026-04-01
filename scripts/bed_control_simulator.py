@@ -1145,7 +1145,13 @@ def simulate_los_impact(
     #    dfの実績値ではなくパラメータから計算する必要がある
     monthly_adm = params["monthly_admissions"]
     daily_adm = monthly_adm / days_in_month
-    base_avg_patients = daily_adm * base_los
+
+    # 稼働効率係数: Little's law の理論値と現場実績の差を補正する
+    # 理論上 150名/月 × 18日 / 30日 = 90患者 → 96%稼働率
+    # 実績では約90%（曜日偏り・週末効果・転棟タイムラグ等のため）
+    # 補正係数 0.94 ≒ 90/96 で現場に近い推計値を出す
+    utilization_factor = params.get("utilization_factor", 0.94)
+    base_avg_patients = daily_adm * base_los * utilization_factor
 
     # ベースライン月次運営貢献額（delta=0の参照用）
     baseline_profit: int | None = None
@@ -1245,7 +1251,8 @@ def calculate_optimal_los_range(
     # Little's law で基準患者数を計算（月間入院数パラメータに連動）
     monthly_adm = params["monthly_admissions"]
     daily_adm = monthly_adm / days_in_month
-    base_avg_patients = daily_adm * base_los_val
+    utilization_factor = params.get("utilization_factor", 0.94)
+    base_avg_patients = daily_adm * base_los_val * utilization_factor
 
     # 実績稼働率ベースでLOS範囲を算出
     # 稼働率 = base_avg_patients * (LOS / base_los) / num_beds
