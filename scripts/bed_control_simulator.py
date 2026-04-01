@@ -1119,8 +1119,11 @@ def simulate_los_impact(
 
     前提: 月間入院数を固定したまま在院日数だけを変化させる。
     在院日数が変わると平均在院患者数が変わり（平均患者数 = 日次入院数 × 在院日数）、
-    結果として稼働率が変動する。稼働率が100%を超える場合は入院を断るコストを計上し、
-    稼働率が低い場合は空床コストを計上する。
+    結果として稼働率が変動する。
+
+    稼働率の変動と運営貢献額の関係:
+    - 稼働率が100%未満のとき: 在院日数が増える → 患者数が増える → 運営貢献額が増加
+    - 稼働率が100%を超えるとき: 入院を断る必要が生じる → 超過分のコストを計上
 
     Args:
         df: simulate_bed_control() の戻り値。
@@ -1150,14 +1153,13 @@ def simulate_los_impact(
             continue
 
         # 平均患者数 = 日次入院数 × 平均在院日数（月間入院数が一定の前提）
-        # ※入院数が変わらないまま在院日数だけ短くすると患者数が減り稼働率が下がる
         new_avg_patients_uncapped = daily_adm * new_los
 
-        # 修正: 病床数を超える患者は受け入れ不可（物理的制約）
+        # 病床数を超える患者は受け入れ不可（物理的制約）
         new_avg_patients = min(new_avg_patients_uncapped, num_beds)
         new_occupancy = new_avg_patients / num_beds
 
-        # 修正: 稼働率100%超の場合、超過分を未活用病床コストとして計上
+        # 100%超過分: 入院を断る必要がある患者数
         excess_patients = max(0, new_avg_patients_uncapped - num_beds)
 
         # フェーズ構成比: A=5日, B=9日(6-14), C=max(0, LOS-14)日
@@ -1175,7 +1177,7 @@ def simulate_los_impact(
             b_ratio = 0.0
             c_ratio = 0.0
 
-        # 日次運営貢献額 = 実際の患者数（キャップ後） * 各フェーズの運営貢献額加重平均
+        # 日次運営貢献額 = 実際の患者数（キャップ後） × 各フェーズの運営貢献額加重平均
         _a_profit = params.get("phase_a_revenue", 36000) - params.get("phase_a_cost", 12000)
         _b_profit = params.get("phase_b_revenue", 36000) - params.get("phase_b_cost", 6000)
         _c_profit = params.get("phase_c_revenue", 33400) - params.get("phase_c_cost", 4500)
@@ -1183,14 +1185,13 @@ def simulate_los_impact(
             a_ratio * _a_profit + b_ratio * _b_profit + c_ratio * _c_profit
         )
 
-        # 未活用病床コスト: 空床コスト + 超過需要による未活用病床コスト
-        empty_beds = max(0, num_beds - new_avg_patients)
-        opportunity_loss = empty_beds * opportunity_cost
-        # 修正: 受け入れ不能な超過患者分の未活用病床コストを加算
+        # コスト計上: 100%超過分のみ
+        # ※空床コストは計上しない（空床があること自体は、入院需要がなければコストではない）
+        # ※超過分のみ「入院を断るコスト」として計上する
         excess_opportunity_loss = excess_patients * opportunity_cost
 
-        # 月次運営貢献額（超過未活用病床コストを差し引く）
-        monthly_profit = int((daily_profit - opportunity_loss - excess_opportunity_loss) * days_in_month)
+        # 月次運営貢献額（超過コストのみ差し引く）
+        monthly_profit = int((daily_profit - excess_opportunity_loss) * days_in_month)
 
         if delta == 0:
             baseline_profit = monthly_profit
