@@ -4,7 +4,7 @@
 
 おもろまちメディカルセンター（94床）向け
 CLI版(bed_control_simulator.py)をインポートし、インタラクティブなUI上で
-稼働率・在院日数・診療報酬構造をシミュレートする。
+稼働率・平均在院日数・診療報酬構造をシミュレートする。
 """
 
 import sys
@@ -1304,7 +1304,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 f"このペースが続くと約{_days_to_breach}日後に目標下限を下回る可能性\n\n"
                 "**予防策:**\n"
                 "- 🏥 外来へ予定入院の前倒しを依頼 / 連携室へ空床状況の発信を依頼\n"
-                "- 🔄 今週退院予定のC群患者の退院日を再検討（在院日数の最適化余地があれば活用）\n"
+                "- 🔄 今週退院予定のC群患者の退院日を再検討（平均在院日数の最適化余地があれば活用）\n"
                 "- 📋 退院集中日の分散を検討"
             )
 
@@ -2941,7 +2941,7 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         "**📌 判断の優先順位（看護必要度基準を満たす前提で）**\n\n"
         "1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床は診療報酬収入ゼロ、1床/日≈2.5万円の未活用病床コスト\n\n"
         "2️⃣ **平均在院日数21日以内で戦略的在院調整を活用** — C群でも運営貢献額28,900円/日を生む\n\n"
-        "3️⃣ **運営貢献額を減らさない** — 退院させて空床を出すより、在院日数の最適化で稼働率を維持\n\n"
+        "3️⃣ **運営貢献額を減らさない** — 退院させて空床を出すより、平均在院日数の最適化で稼働率を維持\n\n"
         "⚠️ 退院を急ぐべきは「満床で新規入院を断らざるを得ない場合」のみ"
     )
 
@@ -3190,18 +3190,29 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         st.markdown("---")
 
         # --- LOS最適化 ---
-        st.subheader("在院日数（LOS）最適化分析")
+        st.subheader("平均在院日数（LOS）最適化分析")
 
-        # 前提条件の明示
-        _los_monthly_adm = _cli_params["monthly_admissions"]
+        # 前提条件: 月間入院数をスライダーで変更可能にする
+        _los_default_adm = _cli_params["monthly_admissions"]
+        _los_monthly_adm = st.slider(
+            "月間入院数（この値を固定して平均在院日数を変化させます）",
+            min_value=50, max_value=300, value=int(_los_default_adm), step=10,
+            key="los_monthly_adm_slider",
+            help="月間入院数を変更するとグラフが再計算されます。当院の実績は約150名/月です。"
+        )
+        # スライダーの値で一時的にパラメータを上書き
+        _los_params = dict(_cli_params)
+        _los_params["monthly_admissions"] = _los_monthly_adm
+
         st.markdown(
             f"> **前提条件:** 月間入院数を **{_los_monthly_adm}名で固定** したまま、"
             f"平均在院日数だけを変化させた場合のシミュレーションです。"
-            f"在院日数が変わると稼働率も変わる点にご注意ください。"
+            f"平均在院日数が変わると稼働率も変わる点にご注意ください。"
+            f"上のスライダーで月間入院数を変えると再計算されます。"
         )
 
-        _los_impact = simulate_los_impact(_raw_df, _cli_params)
-        _optimal_los = calculate_optimal_los_range(_raw_df, _cli_params)
+        _los_impact = simulate_los_impact(_raw_df, _los_params)
+        _optimal_los = calculate_optimal_los_range(_raw_df, _los_params)
 
         # --- 2段グラフ: 上=運営貢献額変化、下=稼働率変化 ---
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), height_ratios=[3, 2])
@@ -3217,7 +3228,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         bars = ax1.bar(range(len(_deltas)), _pdiffs, color=_bar_colors, alpha=0.8)
         ax1.axhline(y=0, color="black", linewidth=0.5)
         ax1.set_ylabel("運営貢献額の変化（万円/月）")
-        ax1.set_title(f"在院日数を変えたら？（月間入院数 {_los_monthly_adm}名で固定）")
+        ax1.set_title(f"平均在院日数を変えたら？（月間入院数 {_los_monthly_adm}名で固定）")
         ax1.set_xticks(range(len(_deltas)))
         ax1.set_xticklabels(_actual_los_labels)
         ax1.grid(True, alpha=0.3, axis="y")
@@ -3275,7 +3286,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
             else:
                 _comment = "📉 空床多い → 入院確保が急務"
             _los_table_data.append({
-                "在院日数": f"{_los_val}日 ({_d:+d}日)",
+                "平均在院日数": f"{_los_val}日 ({_d:+d}日)",
                 "推定稼働率": f"{_occ_val:.0f}%",
                 "月次運営貢献額の変化": f"{_diff_val:+.0f}万円",
                 "状況": _comment,
@@ -3288,25 +3299,25 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
 
         st.markdown(
             "**📖 このグラフの読み方：**\n\n"
-            "- **上段（棒グラフ・青/赤）:** 在院日数を変えたときの運営貢献額の増減です。"
+            "- **上段（棒グラフ・青/赤）:** 平均在院日数を変えたときの運営貢献額の増減です。"
             "現在の設定（±0）を基準に、プラスなら青、マイナスなら赤で表示します。\n"
             "- **下段（棒グラフ・色分け）:** そのときの推定稼働率です。"
             "緑=目標レンジ（90〜95%）、黄=90%未満、赤=満床超過（100%超）です。\n\n"
             "**ポイント（稼働率で意味が変わります）:**\n\n"
-            "| 稼働率 | 在院日数を延ばすと | 在院日数を短くすると |\n"
+            "| 稼働率 | 平均在院日数を延ばすと | 平均在院日数を短くすると |\n"
             "|:---:|:---|:---|\n"
             "| **100%未満**（当院の通常） | ✅ 空床が埋まり運営貢献額が**増える** | ⚠️ 空床が増え運営貢献額が**減る** |\n"
             "| **100%付近** | ❌ 入院を断るコストが発生し**マイナスに転じる** | 回転が速まり新規を受けやすくなる |\n\n"
-            "**当院の実態（稼働率90%前後）では、在院日数を少し延ばすことで空床が減り、"
+            "**当院の実態（稼働率90%前後）では、平均在院日数を少し延ばすことで空床が減り、"
             "運営貢献額が増える場合があります。** "
-            "ただし、在院日数の延長は医学的に適切な範囲内で判断してください。\n\n"
+            "ただし、平均在院日数の延長は医学的に適切な範囲内で判断してください。\n\n"
             "⚠️ このシミュレーションは「月間入院数が一定」という前提です。"
-            "在院日数を短くしても入院数を増やせれば稼働率は維持できます。"
+            "平均在院日数を短くしても入院数を増やせれば稼働率は維持できます。"
             "**退院促進と入院確保はセットで考える必要があります。**"
         )
 
         st.info(
-            f"**最適在院日数レンジ:** {_optimal_los['min_los']:.1f} 〜 {_optimal_los['max_los']:.1f} 日 "
+            f"**最適平均在院日数レンジ:** {_optimal_los['min_los']:.1f} 〜 {_optimal_los['max_los']:.1f} 日 "
             f"（最適値: {_optimal_los['optimal_los']} 日）\n\n"
             f"期待月次運営貢献額: {fmt_yen(_optimal_los['expected_monthly_profit'])}\n\n"
             f"現在の設定: {avg_los} 日"
