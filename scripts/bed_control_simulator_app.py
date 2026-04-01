@@ -2306,13 +2306,27 @@ else:
 # ---------------------------------------------------------------------------
 # _active_raw_df と _active_display_df のフォールバック設定
 # ---------------------------------------------------------------------------
-# 実績データもシミュレーションデータも利用できない場合のフォールバック
 if '_active_raw_df' not in locals():
-    _active_raw_df = pd.DataFrame()  # 空のDataFrame
+    _active_raw_df = pd.DataFrame()
 if '_active_display_df' not in locals():
-    _active_display_df = pd.DataFrame()  # 空のDataFrame
+    _active_display_df = pd.DataFrame()
 if '_active_cli_params' not in locals():
-    _active_cli_params = {}  # 空の辞書
+    _active_cli_params = {}
+
+# --- サイドバーの現在値で分析パラメータを同期 ---
+# シミュレーション実行時に保存された sim_params は再実行まで更新されないため、
+# LOS最適化・限界価値分析など「パラメータのみで計算する分析関数」には
+# スライダーの最新値を反映させる。
+if _active_cli_params:
+    _current_sidebar_params = _build_cli_params(params_dict)
+    _active_cli_params = _active_cli_params.copy()
+    for _sync_key in (
+        "monthly_admissions", "avg_length_of_stay", "days_in_month",
+        "phase_a_revenue", "phase_a_cost", "phase_b_revenue", "phase_b_cost",
+        "phase_c_revenue", "phase_c_cost", "opportunity_cost",
+        "first_day_bonus", "within_14days_bonus", "rehab_fee",
+    ):
+        _active_cli_params[_sync_key] = _current_sidebar_params[_sync_key]
 
 # ===== タブ1: 日次推移 =====
 with tabs[_tab_idx["📊 日次推移"]]:
