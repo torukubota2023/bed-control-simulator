@@ -1140,15 +1140,12 @@ def simulate_los_impact(
     # ベースラインの平均在院日数
     base_los = params["avg_length_of_stay"]
 
-    # シミュレーション結果から実績の平均患者数を取得（理論値ではなく実績ベース）
-    _tp_col = "total_patients" if "total_patients" in df.columns else "在院患者数"
-    if _tp_col in df.columns:
-        base_avg_patients = float(df[_tp_col].mean())
-    else:
-        # フォールバック: パラメータから推計（従来のLittle's law）
-        monthly_adm = params["monthly_admissions"]
-        daily_adm = monthly_adm / days_in_month
-        base_avg_patients = daily_adm * base_los
+    # Little's law で基準患者数を計算（月間入院数パラメータに連動）
+    # ※ params["monthly_admissions"] はスライダーで変更可能なため、
+    #    dfの実績値ではなくパラメータから計算する必要がある
+    monthly_adm = params["monthly_admissions"]
+    daily_adm = monthly_adm / days_in_month
+    base_avg_patients = daily_adm * base_los
 
     # ベースライン月次運営貢献額（delta=0の参照用）
     baseline_profit: int | None = None
@@ -1245,14 +1242,10 @@ def calculate_optimal_los_range(
     target_lower = params["target_occupancy_lower"]
     target_upper = params["target_occupancy_upper"]
 
-    # 実績ベースの平均患者数を取得
-    _tp_col = "total_patients" if "total_patients" in df.columns else "在院患者数"
-    if _tp_col in df.columns:
-        base_avg_patients = float(df[_tp_col].mean())
-    else:
-        monthly_adm = params["monthly_admissions"]
-        daily_adm = monthly_adm / days_in_month
-        base_avg_patients = daily_adm * base_los_val
+    # Little's law で基準患者数を計算（月間入院数パラメータに連動）
+    monthly_adm = params["monthly_admissions"]
+    daily_adm = monthly_adm / days_in_month
+    base_avg_patients = daily_adm * base_los_val
 
     # 実績稼働率ベースでLOS範囲を算出
     # 稼働率 = base_avg_patients * (LOS / base_los) / num_beds
