@@ -303,7 +303,7 @@ def build_pdf():
     ))
     story.append(Spacer(1, 3*mm))
     story.append(colored_box(
-        "ベスト戦略：入院初期にスコアを稼ぎ、Day8以降は速やかに退院支援。在院日数17日前後が最適ゾーン。",
+        "ベスト戦略：入院初期にスコアを稼ぎ、Day8以降は速やかに退院支援。在院日数19日前後が最適ゾーン。",
         NAVY, white, "HiraginoW6", 9
     ))
 
@@ -498,7 +498,7 @@ def build_pdf():
     story.append(Paragraph("稼働率を上げる正しい方法:", S["h3"]))
     story.append(Paragraph("1. <b>救急搬送受入の拡大</b> → 稼働率UP + 救急係数UP + 入院料最高値の一石三鳥", S["bullet"]))
     story.append(Paragraph("2. <b>介護施設との協力医療機関協定</b> → 安定した上り搬送ルート確保", S["bullet"]))
-    story.append(Paragraph("3. <b>在院日数は17日前後を目標</b> → 稼働率90%と必要度19%の両立ゾーン", S["bullet"]))
+    story.append(Paragraph("3. <b>在院日数は19日前後を目標</b> → 稼働率90%と必要度19%の両立ゾーン", S["bullet"]))
 
     story.append(PageBreak())
 
@@ -583,7 +583,7 @@ def build_pdf():
             "月次レビュー体制に移行",
             "ダッシュボードによるリアルタイム進捗可視化",
             "5F⇔6Fのベストプラクティス横展開",
-            "在院日数17日前後の最適ゾーン維持",
+            "在院日数19日前後の最適ゾーン維持",
         ]),
     ]
 

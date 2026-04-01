@@ -117,7 +117,7 @@ def create_default_params() -> dict[str, Any]:
         "target_occupancy_upper": 0.95,           # 目標稼働率上限
         "days_in_month": 30,                      # シミュレーション日数
         "monthly_admissions": 150,                # 月間入院件数（目安）
-        "avg_length_of_stay": 18,                 # 平均在院日数
+        "avg_length_of_stay": 19,                 # 平均在院日数
         "discharge_adjustment_days": 2,           # 退院調整に要するラグ日数
         "admission_variation_coeff": 1.0,         # 入院数の変動係数
         "initial_occupancy": 0.90,               # 初期稼働率

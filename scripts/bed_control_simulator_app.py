@@ -452,7 +452,7 @@ if target_upper < target_lower:
 if not _is_actual_data_mode:
     days_in_month = st.sidebar.number_input("月の日数", min_value=7, max_value=31, value=17)
     monthly_admissions = st.sidebar.number_input("月間新規入院数", min_value=50, max_value=300, value=150)
-    avg_los = st.sidebar.slider("平均在院日数", 10, 30, 18)
+    avg_los = st.sidebar.slider("平均在院日数", 10, 30, 19)
     discharge_adj = st.sidebar.number_input("退院調整日数", min_value=0, max_value=5, value=2)
     admission_var = st.sidebar.slider("入院流入変動係数", 0.50, 1.50, 1.00, step=0.05, format="%.2f")
 else:
@@ -655,7 +655,7 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
                 "target_occupancy_upper": 0.95,
                 "days_in_month": 17,
                 "monthly_admissions": 150,
-                "avg_length_of_stay": 18,
+                "avg_length_of_stay": 19,
                 "admission_variation_coeff": 1.0,
                 "occupancy_variation_coeff": 0.1,
                 "initial_occupancy": 0.85,
@@ -781,14 +781,14 @@ if run_button:
             # 10シード検証済み: 全シナリオmin>=80.8%, 5F下降7/10, 6F上昇8/10
             _ward_param_adj = {
                 "5F": {
-                    "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 18) - 4),
+                    "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 19) - 4),
                     "monthly_admissions": 35,
                     "admission_variation_coeff": 1.0,
                     "initial_occupancy": 0.91,
                     "random_seed": (params.get("random_seed") or 42) + 1,
                 },
                 "6F": {
-                    "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 18)),
+                    "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 19)),
                     "monthly_admissions": 60,
                     "admission_variation_coeff": 1.0,
                     "initial_occupancy": 0.82,
