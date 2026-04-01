@@ -1117,13 +1117,13 @@ def simulate_los_impact(
     """
     平均在院日数をN日変動させた場合の運営貢献額インパクトを推計する。
 
-    前提: 月間入院数を固定したまま在院日数だけを変化させる。
-    在院日数が変わると平均在院患者数が変わり（平均患者数 = 日次入院数 × 在院日数）、
-    結果として稼働率が変動する。
+    シミュレーション結果（df）の実績平均患者数を基準にして、在院日数の変動が
+    患者数・稼働率・運営貢献額にどう影響するかを推計する。
 
-    稼働率の変動と運営貢献額の関係:
-    - 稼働率が100%未満のとき: 在院日数が増える → 患者数が増える → 運営貢献額が増加
-    - 稼働率が100%を超えるとき: 入院を断る必要が生じる → 超過分のコストを計上
+    計算方法:
+    - dfから実際の平均患者数を取得（理論値ではなく実績ベース）
+    - 在院日数がN日変わると、平均患者数が (N日/基準LOS) の比率で増減すると仮定
+    - 100%を超える場合は入院を断るコストを計上
 
     Args:
         df: simulate_bed_control() の戻り値。
@@ -1135,12 +1135,20 @@ def simulate_los_impact(
     """
     num_beds = params["num_beds"]
     days_in_month = params["days_in_month"]
-    monthly_adm = params["monthly_admissions"]
-    daily_adm = monthly_adm / days_in_month
     opportunity_cost = params["opportunity_cost"]
 
     # ベースラインの平均在院日数
     base_los = params["avg_length_of_stay"]
+
+    # シミュレーション結果から実績の平均患者数を取得（理論値ではなく実績ベース）
+    _tp_col = "total_patients" if "total_patients" in df.columns else "在院患者数"
+    if _tp_col in df.columns:
+        base_avg_patients = float(df[_tp_col].mean())
+    else:
+        # フォールバック: パラメータから推計（従来のLittle's law）
+        monthly_adm = params["monthly_admissions"]
+        daily_adm = monthly_adm / days_in_month
+        base_avg_patients = daily_adm * base_los
 
     # ベースライン月次運営貢献額（delta=0の参照用）
     baseline_profit: int | None = None
@@ -1152,8 +1160,9 @@ def simulate_los_impact(
         if new_los < 1:
             continue
 
-        # 平均患者数 = 日次入院数 × 平均在院日数（月間入院数が一定の前提）
-        new_avg_patients_uncapped = daily_adm * new_los
+        # 実績ベースで患者数を推計:
+        # 在院日数がN日変わると、平均患者数は (new_los / base_los) 倍に変化
+        new_avg_patients_uncapped = base_avg_patients * (new_los / base_los)
 
         # 病床数を超える患者は受け入れ不可（物理的制約）
         new_avg_patients = min(new_avg_patients_uncapped, num_beds)
@@ -1231,17 +1240,29 @@ def calculate_optimal_los_range(
     """
     num_beds = params["num_beds"]
     days_in_month = params["days_in_month"]
-    monthly_adm = params["monthly_admissions"]
-    daily_adm = monthly_adm / days_in_month
+    base_los_val = params["avg_length_of_stay"]
 
     target_lower = params["target_occupancy_lower"]
     target_upper = params["target_occupancy_upper"]
 
-    # 稼働率目標レンジに収まるLOS範囲
-    # occupancy = daily_adm * LOS / num_beds
-    # LOS = occupancy * num_beds / daily_adm
-    los_for_lower = (num_beds * target_lower) / daily_adm
-    los_for_upper = (num_beds * target_upper) / daily_adm
+    # 実績ベースの平均患者数を取得
+    _tp_col = "total_patients" if "total_patients" in df.columns else "在院患者数"
+    if _tp_col in df.columns:
+        base_avg_patients = float(df[_tp_col].mean())
+    else:
+        monthly_adm = params["monthly_admissions"]
+        daily_adm = monthly_adm / days_in_month
+        base_avg_patients = daily_adm * base_los_val
+
+    # 実績稼働率ベースでLOS範囲を算出
+    # 稼働率 = base_avg_patients * (LOS / base_los) / num_beds
+    # LOS = target_occ * num_beds * base_los / base_avg_patients
+    if base_avg_patients > 0:
+        los_for_lower = (target_lower * num_beds * base_los_val) / base_avg_patients
+        los_for_upper = (target_upper * num_beds * base_los_val) / base_avg_patients
+    else:
+        los_for_lower = base_los_val * 0.8
+        los_for_upper = base_los_val * 1.2
 
     # 修正: 稼働率100%を超えるLOSは除外し、目標レンジ内で運営貢献額最大のLOSを探索
     # 探索範囲を合理的な範囲（14〜25日）に設定
