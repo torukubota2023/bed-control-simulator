@@ -3217,6 +3217,10 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         # スライダーの値で一時的にパラメータを上書き
         _los_params = dict(_cli_params)
         _los_params["monthly_admissions"] = _los_monthly_adm
+        # LOS分析は常に月単位（30日）で計算する
+        # ※シミュレーション日数（例: 17日）をそのまま使うと日次入院数が過大になり
+        #   全パターンで稼働率100%になってしまう
+        _los_params["days_in_month"] = 30
 
         st.markdown(
             f"> **前提条件:** 月間入院数を **{_los_monthly_adm}名で固定** したまま、"
