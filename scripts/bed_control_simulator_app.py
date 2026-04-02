@@ -4175,9 +4175,8 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
     if _is_actual_data_mode:
         _src = st.session_state.get("daily_data")
         if isinstance(_src, pd.DataFrame) and len(_src) > 0:
-            from scripts.bed_data_manager import aggregate_wards, calculate_daily_metrics as _cdm
             _agg = aggregate_wards(_src) if "ward" in _src.columns else _src
-            _dt_raw = _cdm(_agg, num_beds=_view_beds)
+            _dt_raw = calculate_daily_metrics(_agg, num_beds=_view_beds)
     else:
         _dt_raw = st.session_state.get("sim_df_raw")
 
