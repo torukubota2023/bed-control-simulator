@@ -3529,6 +3529,11 @@ if "\U0001f52e What-if分析" in _tab_idx:
             st.code(_DECISION_SUPPORT_ERROR)
         else:
             st.subheader("\U0001f52e What-if分析")
+            st.info(
+                "💡 **過去の任意の日に戻って「もしあの日こうしていたら？」をシミュレーションできます。**\n\n"
+                "実績データの中から日付を選び、退院・入院の人数を変えてみることで、"
+                "稼働率や運営貢献額がどう変わるかを即座に確認できます。"
+            )
             if _HELP_AVAILABLE and "tab_whatif" in HELP_TEXTS:
                 with st.expander("📖 このタブの見方と活用法"):
                     st.markdown(HELP_TEXTS["tab_whatif"])
@@ -3540,9 +3545,16 @@ if "\U0001f52e What-if分析" in _tab_idx:
                 _raw_df = _active_raw_df
                 _cli_params = _active_cli_params
 
+            _wi_dates = pd.to_datetime(_raw_df["date"]) if "date" in _raw_df.columns else None
+
             _scenario_type = st.radio(
-                "シナリオ選択",
+                "シナリオを選んでください",
                 ["今日の入退院シナリオ", "週間退院計画", "入院需要変動"],
+                captions=[
+                    "1日分の退院・入院を変えたら？",
+                    "1週間の退院計画を立てて検証",
+                    "入院需要が急増/急減したら？",
+                ],
                 horizontal=True,
                 key="whatif_scenario_type",
             )
@@ -3551,16 +3563,16 @@ if "\U0001f52e What-if分析" in _tab_idx:
             # 今日の入退院シナリオ（混合退院 + 新規入院）
             # ==================================================================
             if _scenario_type == "今日の入退院シナリオ":
-                st.markdown("#### 今日の入退院シナリオ")
+                st.markdown("#### 📅 日付を選んで「もしも」を試す")
+                st.caption("過去の任意の日を選び、退院・入院の人数を変えると稼働率や貢献額がどう変わるかシミュレーションします。")
                 # 日付ラベル付きの起点日選択
-                _wi_dates = pd.to_datetime(_raw_df["date"]) if "date" in _raw_df.columns else None
                 if _wi_dates is not None and len(_wi_dates) > 0:
                     _wi_date_options = {
                         i + 1: f"{d.strftime('%m/%d')}（{['月','火','水','木','金','土','日'][d.weekday()]}）"
                         for i, d in enumerate(_wi_dates)
                     }
                     _wi_day = st.select_slider(
-                        "起点日を選択（この日の病棟状態をベースにシミュレーション）",
+                        "🕐 どの日に戻りますか？",
                         options=list(_wi_date_options.keys()),
                         value=len(_raw_df),
                         format_func=lambda x: _wi_date_options[x],
@@ -3578,11 +3590,18 @@ if "\U0001f52e What-if分析" in _tab_idx:
                 _wi_cur_occ = _wi_row["occupancy_rate"]
                 _wi_date_label = _wi_dates.iloc[_wi_day - 1].strftime("%Y/%m/%d") if _wi_dates is not None else f"Day {_wi_day}"
 
-                st.markdown(
-                    f"**{_wi_date_label} の病棟状態**\n\n"
-                    f"在院 **{_wi_cur_total}名** | 稼働率 **{_wi_cur_occ*100:.1f}%** | "
-                    f"A群 **{_wi_cur_a}名** | B群 **{_wi_cur_b}名** | C群 **{_wi_cur_c}名**"
-                )
+                st.markdown(f"**📋 {_wi_date_label} の病棟状態（この状態からシミュレーション開始）**")
+                _state_cols = st.columns(5)
+                with _state_cols[0]:
+                    st.metric("在院患者数", f"{_wi_cur_total}名")
+                with _state_cols[1]:
+                    st.metric("稼働率", f"{_wi_cur_occ*100:.1f}%")
+                with _state_cols[2]:
+                    st.metric("A群（急性期）", f"{_wi_cur_a}名")
+                with _state_cols[3]:
+                    st.metric("B群（回復期）", f"{_wi_cur_b}名")
+                with _state_cols[4]:
+                    st.metric("C群（退院準備）", f"{_wi_cur_c}名")
 
                 st.markdown("---")
 
@@ -3651,7 +3670,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         new_admissions=_wi_new_adm,
                     )
 
-                    st.markdown("### 結果: Before → After")
+                    st.markdown(f"### 📊 結果: {_wi_date_label} の実績 → もしこうしていたら")
                     _mc1, _mc2 = st.columns(2)
                     _bl = _mix_result["baseline"]
                     _sc = _mix_result["scenario"]
@@ -3744,8 +3763,8 @@ if "\U0001f52e What-if分析" in _tab_idx:
             # 週間退院計画
             # ==================================================================
             elif _scenario_type == "週間退院計画":
-                st.markdown("#### 週間退院計画")
-                st.markdown("日別の退院・入院計画を入力してください。前日の結果が翌日のベースラインになります。")
+                st.markdown("#### 📅 1週間の退院計画を試す")
+                st.caption("開始日を選び、7日間の退院・入院計画を入力すると、日ごとの稼働率変化をシミュレーションします。前日の結果が翌日に反映されます。")
 
                 _wi_wk_max = max(len(_raw_df) - 6, 1)
                 if _wi_dates is not None and len(_wi_dates) > 0:
@@ -3754,7 +3773,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         for i in range(_wi_wk_max)
                     }
                     _wi_start_day = st.select_slider(
-                        "計画開始日を選択（この日から7日間の退院計画を立てます）",
+                        "🕐 いつから計画を始めますか？（7日間）",
                         options=list(_wi_wk_options.keys()),
                         value=_wi_wk_max,
                         format_func=lambda x: _wi_wk_options[x],
@@ -3889,7 +3908,8 @@ if "\U0001f52e What-if分析" in _tab_idx:
             # 入院需要変動シナリオ
             # ==================================================================
             else:
-                st.markdown("#### 入院需要変動シナリオ")
+                st.markdown("#### 📈 入院需要が変動したらどうなる？")
+                st.caption("GW明けの入院集中やお盆期間の減少など、入院需要の変動が稼働率に与える影響をシミュレーションします。")
 
                 # プリセットシナリオ
                 _surge_presets = {
