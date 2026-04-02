@@ -3552,7 +3552,22 @@ if "\U0001f52e What-if分析" in _tab_idx:
             # ==================================================================
             if _scenario_type == "今日の入退院シナリオ":
                 st.markdown("#### 今日の入退院シナリオ")
-                _wi_day = st.slider("対象日", 1, len(_raw_df), value=len(_raw_df), key="wi_day_mixed")
+                # 日付ラベル付きの起点日選択
+                _wi_dates = pd.to_datetime(_raw_df["date"]) if "date" in _raw_df.columns else None
+                if _wi_dates is not None and len(_wi_dates) > 0:
+                    _wi_date_options = {
+                        i + 1: f"{d.strftime('%m/%d')}（{['月','火','水','木','金','土','日'][d.weekday()]}）"
+                        for i, d in enumerate(_wi_dates)
+                    }
+                    _wi_day = st.select_slider(
+                        "起点日を選択（この日の病棟状態をベースにシミュレーション）",
+                        options=list(_wi_date_options.keys()),
+                        value=len(_raw_df),
+                        format_func=lambda x: _wi_date_options[x],
+                        key="wi_day_mixed",
+                    )
+                else:
+                    _wi_day = st.slider("起点日", 1, len(_raw_df), value=len(_raw_df), key="wi_day_mixed")
                 _wi_row = _raw_df.iloc[_wi_day - 1]
 
                 # 現在の病棟状態を表示
@@ -3561,9 +3576,10 @@ if "\U0001f52e What-if分析" in _tab_idx:
                 _wi_cur_b = int(_wi_row["phase_b_count"])
                 _wi_cur_c = int(_wi_row["phase_c_count"])
                 _wi_cur_occ = _wi_row["occupancy_rate"]
+                _wi_date_label = _wi_dates.iloc[_wi_day - 1].strftime("%Y/%m/%d") if _wi_dates is not None else f"Day {_wi_day}"
 
                 st.markdown(
-                    f"**現在の病棟状態（Day {_wi_day}）**\n\n"
+                    f"**{_wi_date_label} の病棟状態**\n\n"
                     f"在院 **{_wi_cur_total}名** | 稼働率 **{_wi_cur_occ*100:.1f}%** | "
                     f"A群 **{_wi_cur_a}名** | B群 **{_wi_cur_b}名** | C群 **{_wi_cur_c}名**"
                 )
@@ -3731,10 +3747,23 @@ if "\U0001f52e What-if分析" in _tab_idx:
                 st.markdown("#### 週間退院計画")
                 st.markdown("日別の退院・入院計画を入力してください。前日の結果が翌日のベースラインになります。")
 
-                _wi_start_day = st.slider(
-                    "開始日", 1, max(len(_raw_df) - 6, 1),
-                    value=max(len(_raw_df) - 6, 1), key="wi_weekly_start",
-                )
+                _wi_wk_max = max(len(_raw_df) - 6, 1)
+                if _wi_dates is not None and len(_wi_dates) > 0:
+                    _wi_wk_options = {
+                        i + 1: f"{_wi_dates.iloc[i].strftime('%m/%d')}（{['月','火','水','木','金','土','日'][_wi_dates.iloc[i].weekday()]}）"
+                        for i in range(_wi_wk_max)
+                    }
+                    _wi_start_day = st.select_slider(
+                        "計画開始日を選択（この日から7日間の退院計画を立てます）",
+                        options=list(_wi_wk_options.keys()),
+                        value=_wi_wk_max,
+                        format_func=lambda x: _wi_wk_options[x],
+                        key="wi_weekly_start",
+                    )
+                else:
+                    _wi_start_day = st.slider(
+                        "開始日", 1, _wi_wk_max, value=_wi_wk_max, key="wi_weekly_start",
+                    )
                 _n_plan_days = min(7, len(_raw_df) - _wi_start_day + 1)
 
                 _weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
