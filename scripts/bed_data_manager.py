@@ -776,6 +776,23 @@ def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataF
 
     df["occupancy_rate"] = df["total_patients"] / num_beds
     tp_safe = df["total_patients"].clip(lower=1)
+
+    # フェーズデータがない（全て0）場合、total_patientsからデフォルト比率で推定
+    _phase_sum = df["phase_a_count"].fillna(0) + df["phase_b_count"].fillna(0) + df["phase_c_count"].fillna(0)
+    _phase_missing = (_phase_sum == 0)
+    if _phase_missing.any():
+        # デフォルト比率: A群17%, B群45%, C群38%（地域包括医療病棟の標準的構成）
+        _default_a_ratio = params.get("phase_a_ratio_default", 0.17)
+        _default_b_ratio = params.get("phase_b_ratio_default", 0.45)
+        _default_c_ratio = params.get("phase_c_ratio_default", 0.38)
+        df.loc[_phase_missing, "phase_a_count"] = (df.loc[_phase_missing, "total_patients"] * _default_a_ratio).round()
+        df.loc[_phase_missing, "phase_b_count"] = (df.loc[_phase_missing, "total_patients"] * _default_b_ratio).round()
+        df.loc[_phase_missing, "phase_c_count"] = (
+            df.loc[_phase_missing, "total_patients"]
+            - df.loc[_phase_missing, "phase_a_count"]
+            - df.loc[_phase_missing, "phase_b_count"]
+        ).clip(lower=0)
+
     df["phase_a_ratio"] = df["phase_a_count"].fillna(0) / tp_safe
     df["phase_b_ratio"] = df["phase_b_count"].fillna(0) / tp_safe
     df["phase_c_ratio"] = df["phase_c_count"].fillna(0) / tp_safe
