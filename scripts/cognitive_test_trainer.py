@@ -36,63 +36,113 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# カスタムCSS（高齢者向け大きめフォント）
+# 文字サイズ設定（サイドバーで選択 → CSS に反映）
 # ---------------------------------------------------------------------------
-st.markdown("""
+FONT_SIZE_PRESETS = {
+    "標準": {
+        "base": 18, "h1": 2.2, "h2": 1.8, "h3": 1.5,
+        "btn": 1.2, "btn_pad": 0.6, "btn_h": 3,
+        "tab": 1.1, "tab_pad": 0.8,
+        "emoji": 3.5, "card_label": 1.2, "card_hint": 0.95,
+        "score": 3, "timer": 2, "result": 1.1,
+        "metric": 2, "input": 1.1, "input_pad": 0.5,
+    },
+    "大きめ": {
+        "base": 22, "h1": 2.6, "h2": 2.2, "h3": 1.8,
+        "btn": 1.5, "btn_pad": 0.8, "btn_h": 3.5,
+        "tab": 1.3, "tab_pad": 1.0,
+        "emoji": 4.5, "card_label": 1.5, "card_hint": 1.15,
+        "score": 3.5, "timer": 2.5, "result": 1.3,
+        "metric": 2.5, "input": 1.3, "input_pad": 0.6,
+    },
+    "特大": {
+        "base": 26, "h1": 3.0, "h2": 2.5, "h3": 2.1,
+        "btn": 1.8, "btn_pad": 1.0, "btn_h": 4.0,
+        "tab": 1.5, "tab_pad": 1.2,
+        "emoji": 5.5, "card_label": 1.8, "card_hint": 1.35,
+        "score": 4.0, "timer": 3.0, "result": 1.5,
+        "metric": 3.0, "input": 1.5, "input_pad": 0.7,
+    },
+}
+
+if "font_size" not in st.session_state:
+    st.session_state["font_size"] = "標準"
+
+# サイドバー最上部に文字サイズ切替を配置
+st.sidebar.markdown("### 🔤 文字の大きさ")
+_fs_cols = st.sidebar.columns(3)
+for _i, _label in enumerate(FONT_SIZE_PRESETS):
+    with _fs_cols[_i]:
+        if st.button(
+            _label,
+            key=f"fs_{_label}",
+            type="primary" if st.session_state["font_size"] == _label else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["font_size"] = _label
+            st.rerun()
+st.sidebar.markdown("---")
+
+_fs = FONT_SIZE_PRESETS[st.session_state["font_size"]]
+
+# ---------------------------------------------------------------------------
+# カスタムCSS（選択された文字サイズに応じて動的生成）
+# ---------------------------------------------------------------------------
+st.markdown(f"""
 <style>
     /* 全体のベースフォント */
-    html, body, [class*="css"] {
-        font-size: 18px;
-    }
+    html, body, [class*="css"] {{
+        font-size: {_fs['base']}px;
+    }}
     /* ヘッダー類 */
-    h1 { font-size: 2.2rem !important; }
-    h2 { font-size: 1.8rem !important; }
-    h3 { font-size: 1.5rem !important; }
+    h1 {{ font-size: {_fs['h1']}rem !important; }}
+    h2 {{ font-size: {_fs['h2']}rem !important; }}
+    h3 {{ font-size: {_fs['h3']}rem !important; }}
     /* ボタンを大きく */
-    .stButton > button {
-        font-size: 1.2rem !important;
-        padding: 0.6rem 1.5rem !important;
-        min-height: 3rem;
-    }
+    .stButton > button {{
+        font-size: {_fs['btn']}rem !important;
+        padding: {_fs['btn_pad']}rem 1.5rem !important;
+        min-height: {_fs['btn_h']}rem;
+    }}
     /* タブのフォント */
-    .stTabs [data-baseweb="tab"] {
-        font-size: 1.1rem !important;
-        padding: 0.8rem 1.2rem !important;
-    }
+    .stTabs [data-baseweb="tab"] {{
+        font-size: {_fs['tab']}rem !important;
+        padding: {_fs['tab_pad']}rem 1.2rem !important;
+    }}
     /* 大きな絵文字カード */
-    .emoji-card {
+    .emoji-card {{
         text-align: center;
         padding: 1rem;
         border-radius: 12px;
         background: #f8f9fa;
         border: 2px solid #dee2e6;
         margin: 0.3rem;
-    }
-    .emoji-card .emoji {
-        font-size: 3.5rem;
+    }}
+    .emoji-card .emoji {{
+        font-size: {_fs['emoji']}rem;
         display: block;
         margin-bottom: 0.3rem;
-    }
-    .emoji-card .label {
-        font-size: 1.2rem;
+    }}
+    .emoji-card .label {{
+        font-size: {_fs['card_label']}rem;
         font-weight: bold;
         color: #333;
-    }
-    .emoji-card .hint {
-        font-size: 0.95rem;
+    }}
+    .emoji-card .hint {{
+        font-size: {_fs['card_hint']}rem;
         color: #666;
-    }
+    }}
     /* スコア表示 */
-    .score-big {
-        font-size: 3rem;
+    .score-big {{
+        font-size: {_fs['score']}rem;
         font-weight: bold;
         text-align: center;
-    }
-    .score-pass { color: #28a745; }
-    .score-fail { color: #dc3545; }
+    }}
+    .score-pass {{ color: #28a745; }}
+    .score-fail {{ color: #dc3545; }}
     /* タイマー */
-    .timer-display {
-        font-size: 2rem;
+    .timer-display {{
+        font-size: {_fs['timer']}rem;
         font-weight: bold;
         text-align: center;
         padding: 0.5rem;
@@ -100,27 +150,27 @@ st.markdown("""
         background: #fff3cd;
         border: 2px solid #ffc107;
         margin-bottom: 1rem;
-    }
+    }}
     /* 正解/不正解 */
-    .result-correct {
+    .result-correct {{
         color: #28a745;
         font-weight: bold;
-        font-size: 1.1rem;
-    }
-    .result-incorrect {
+        font-size: {_fs['result']}rem;
+    }}
+    .result-incorrect {{
         color: #dc3545;
         font-weight: bold;
-        font-size: 1.1rem;
-    }
+        font-size: {_fs['result']}rem;
+    }}
     /* メトリック値を大きく */
-    [data-testid="stMetricValue"] {
-        font-size: 2rem !important;
-    }
+    [data-testid="stMetricValue"] {{
+        font-size: {_fs['metric']}rem !important;
+    }}
     /* 入力欄を大きく */
-    .stTextInput input {
-        font-size: 1.1rem !important;
-        padding: 0.5rem !important;
-    }
+    .stTextInput input {{
+        font-size: {_fs['input']}rem !important;
+        padding: {_fs['input_pad']}rem !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
