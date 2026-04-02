@@ -270,6 +270,21 @@ def calculate_daily_metrics(df: pd.DataFrame, num_beds: int = 94) -> pd.DataFram
     result["occupancy_rate"] = result["total_patients"] / num_beds
 
     # フェーズ構成比（ゼロ除算対応）
+    # phase_a/b/c_count が NULL または合計0の行は目標比率(A:18% B:43% C:39%)で自動推定
+    result["phase_a_count"] = pd.to_numeric(result["phase_a_count"], errors="coerce").fillna(0)
+    result["phase_b_count"] = pd.to_numeric(result["phase_b_count"], errors="coerce").fillna(0)
+    result["phase_c_count"] = pd.to_numeric(result["phase_c_count"], errors="coerce").fillna(0)
+    _total_phase = result["phase_a_count"] + result["phase_b_count"] + result["phase_c_count"]
+    _needs_estimate = _total_phase == 0
+    if _needs_estimate.any():
+        _tp_est = result.loc[_needs_estimate, "total_patients"]
+        result.loc[_needs_estimate, "phase_a_count"] = (_tp_est * 0.18).round()
+        result.loc[_needs_estimate, "phase_b_count"] = (_tp_est * 0.43).round()
+        result.loc[_needs_estimate, "phase_c_count"] = (
+            _tp_est
+            - result.loc[_needs_estimate, "phase_a_count"]
+            - result.loc[_needs_estimate, "phase_b_count"]
+        )
     tp = result["total_patients"].replace(0, np.nan)
     result["phase_a_ratio"] = result["phase_a_count"] / tp
     result["phase_b_ratio"] = result["phase_b_count"] / tp
