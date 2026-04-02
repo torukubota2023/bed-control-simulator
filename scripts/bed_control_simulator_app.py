@@ -2665,10 +2665,14 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
             f"B群（回復期）\n{sizes[1]:.1f}%",
             f"C群（退院準備）\n{sizes[2]:.1f}%",
         ]
-        ax.pie(
-            sizes, labels=labels, colors=[COLOR_A, COLOR_B, COLOR_C],
-            autopct=None, startangle=90, textprops={"fontsize": 10},
-        )
+        if sum(sizes) > 0:
+            ax.pie(
+                sizes, labels=labels, colors=[COLOR_A, COLOR_B, COLOR_C],
+                autopct=None, startangle=90, textprops={"fontsize": 10},
+            )
+        else:
+            ax.text(0.5, 0.5, "フェーズデータなし", ha="center", va="center",
+                    fontsize=12, transform=ax.transAxes)
         ax.set_title("A/B/C平均構成比")
         st.pyplot(fig)
         plt.close(fig)
