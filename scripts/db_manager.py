@@ -131,8 +131,32 @@ def save_daily_records(df, db_path=None):
         if 'date' in df_copy.columns:
             df_copy['date'] = pd.to_datetime(df_copy['date']).dt.strftime('%Y-%m-%d')
 
-        # REPLACE INTO で既存データを上書き
-        df_copy.to_sql('daily_records', conn, if_exists='replace', index=False)
+        # 行ごとにREPLACE INTOで保存（テーブルスキーマを保持）
+        cursor = conn.cursor()
+        for _, row in df_copy.iterrows():
+            cursor.execute("""
+                REPLACE INTO daily_records
+                (date, ward, total_patients, new_admissions, discharges,
+                 discharge_a, discharge_b, discharge_c,
+                 phase_a_count, phase_b_count, phase_c_count,
+                 avg_los, notes, data_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                row.get('date', ''),
+                row.get('ward', 'all'),
+                int(row['total_patients']) if pd.notna(row.get('total_patients')) else None,
+                int(row['new_admissions']) if pd.notna(row.get('new_admissions')) else None,
+                int(row['discharges']) if pd.notna(row.get('discharges')) else None,
+                int(row['discharge_a']) if pd.notna(row.get('discharge_a')) else 0,
+                int(row['discharge_b']) if pd.notna(row.get('discharge_b')) else 0,
+                int(row['discharge_c']) if pd.notna(row.get('discharge_c')) else 0,
+                int(row['phase_a_count']) if pd.notna(row.get('phase_a_count')) else None,
+                int(row['phase_b_count']) if pd.notna(row.get('phase_b_count')) else None,
+                int(row['phase_c_count']) if pd.notna(row.get('phase_c_count')) else None,
+                float(row['avg_los']) if pd.notna(row.get('avg_los')) else None,
+                str(row.get('notes', '')) if pd.notna(row.get('notes')) else '',
+                str(row.get('data_source', 'manual')) if pd.notna(row.get('data_source')) else 'manual',
+            ))
         conn.commit()
         print(f"日次記録を保存しました: {len(df_copy)}件")
 

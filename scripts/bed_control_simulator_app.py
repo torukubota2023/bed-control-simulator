@@ -557,11 +557,31 @@ if "sim_params" not in st.session_state:
 # 日次データ管理用セッション状態（SQLiteから自動復元）
 if "daily_data" not in st.session_state:
     _loaded_from_db = False
+    # 1) SQLiteから復元を試みる
     if _DB_AVAILABLE:
         _db_df = load_daily_records()
         if _db_df is not None and len(_db_df) > 0:
             st.session_state.daily_data = _db_df
             _loaded_from_db = True
+    # 2) DBが空の場合、CSVサンプルデータから自動読み込み（Streamlit Cloud対応）
+    if not _loaded_from_db:
+        _csv_fallback_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202603.csv")
+        if os.path.exists(_csv_fallback_path):
+            try:
+                _csv_df = pd.read_csv(_csv_fallback_path)
+                _csv_df["date"] = pd.to_datetime(_csv_df["date"])
+                if len(_csv_df) > 0:
+                    st.session_state.daily_data = _csv_df
+                    _loaded_from_db = True
+                    # DBにも保存して次回以降の起動を高速化
+                    if _DB_AVAILABLE:
+                        try:
+                            save_daily_records(_csv_df)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    # 3) どちらも失敗した場合は空のDataFrame
     if not _loaded_from_db:
         if _DATA_MANAGER_AVAILABLE:
             st.session_state.daily_data = dm_create_empty_dataframe()
