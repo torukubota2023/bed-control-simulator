@@ -171,6 +171,30 @@ st.markdown(f"""
         font-size: {_fs['input']}rem !important;
         padding: {_fs['input_pad']}rem !important;
     }}
+    /* --- レスポンシブ絵文字グリッド --- */
+    .emoji-grid {{
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+    }}
+    /* iPad 縦向き (~768px) 以下は 2 列 */
+    @media (max-width: 900px) {{
+        .emoji-grid {{
+            grid-template-columns: repeat(2, 1fr);
+        }}
+    }}
+    /* スマホ (~480px) 以下は 1 列 */
+    @media (max-width: 480px) {{
+        .emoji-grid {{
+            grid-template-columns: 1fr;
+        }}
+    }}
+    /* iPad でサイドバーを折りたたみやすく */
+    @media (max-width: 900px) {{
+        [data-testid="stSidebar"] {{
+            min-width: 0px !important;
+        }}
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -292,13 +316,32 @@ def render_item_card(item, category, show_hint=True):
 
 
 def render_board(pattern_key, board_index, show_hint=True):
-    """4アイテムのボードを表示"""
+    """4アイテムのボードを表示（HTMLグリッド — iPad レスポンシブ対応）"""
     items = get_board_items(pattern_key, board_index)
     cats = get_board_categories(board_index)
-    cols = st.columns(4)
-    for i, (item, cat) in enumerate(zip(items, cats)):
-        with cols[i]:
-            render_item_card(item, cat, show_hint=show_hint)
+    render_items_grid(items, cats, show_hint=show_hint)
+
+
+def render_items_grid(items, categories, show_hint=True):
+    """アイテム群をレスポンシブHTMLグリッドで描画"""
+    cards_html = ""
+    for item, cat in zip(items, categories):
+        emoji = EMOJI_MAP.get(item, "❓")
+        hint_html = f'<div class="hint">（{cat}）</div>' if show_hint else ""
+        cards_html += (
+            f'<div class="emoji-card">'
+            f'<span class="emoji">{emoji}</span>'
+            f'<div class="label">{item}</div>'
+            f'{hint_html}'
+            f'</div>'
+        )
+    st.markdown(f'<div class="emoji-grid">{cards_html}</div>', unsafe_allow_html=True)
+
+
+def render_all_items(pattern_key, show_hint=True):
+    """16アイテム全てを一覧グリッドで描画"""
+    items = PATTERNS[pattern_key]
+    render_items_grid(items, CATEGORIES, show_hint=show_hint)
 
 
 def generate_arithmetic_problems(count=20):
@@ -709,24 +752,21 @@ def render_test_mode():
 
         remaining = render_timer(st.session_state.test_timer_start, 120, "残り時間")
 
-        # 16カテゴリを4×4グリッドで入力
-        for board_idx in range(4):
-            cats = get_board_categories(board_idx)
-            cols = st.columns(4)
-            for j, cat in enumerate(cats):
-                idx = board_idx * 4 + j
-                with cols[j]:
-                    st.markdown(f"**{cat}**")
-                    ans = st.text_input(
-                        f"{cat}の答え",
-                        value=st.session_state.test_cued_answers.get(str(idx), ""),
-                        key=f"cued_{idx}",
-                        label_visibility="collapsed",
-                        placeholder=f"{cat}は？",
-                    )
-                    st.session_state.test_cued_answers[str(idx)] = ans
-            if board_idx < 3:
-                st.markdown("---")
+        # 16カテゴリをリスト形式で入力（iPad対応）
+        for idx in range(16):
+            cat = CATEGORIES[idx]
+            cols = st.columns([1, 2])
+            with cols[0]:
+                st.markdown(f"**{idx+1}. {cat}**")
+            with cols[1]:
+                ans = st.text_input(
+                    f"{cat}の答え",
+                    value=st.session_state.test_cued_answers.get(str(idx), ""),
+                    key=f"cued_{idx}",
+                    label_visibility="collapsed",
+                    placeholder=f"{cat}は？",
+                )
+                st.session_state.test_cued_answers[str(idx)] = ans
 
         st.markdown("")
         if st.button("採点する", type="primary", use_container_width=True):
@@ -765,45 +805,45 @@ def render_test_mode():
         st.markdown("")
 
         # スコア内訳
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        col_m1, col_m2 = st.columns(2)
         col_m1.metric("自由再生 正解", f"{len(score['free_correct'])} / 16")
         col_m2.metric("手がかり再生 正解", f"{len(score['cued_correct'])} / 16")
+        col_m3, col_m4 = st.columns(2)
         col_m3.metric("合計正解数", f"{len(score['all_correct'])} / 16")
         col_m4.metric("素点", f"{score['raw_score']} / 32")
 
         st.markdown("---")
 
-        # 各アイテム詳細
+        # 各アイテム詳細（HTMLグリッドで iPad 対応）
         st.subheader("各アイテムの結果")
-        for board_idx in range(4):
-            board_items = get_board_items(pk, board_idx)
-            board_cats = get_board_categories(board_idx)
-            cols = st.columns(4)
-            for j, (item, cat) in enumerate(zip(board_items, board_cats)):
-                idx = board_idx * 4 + j
-                emoji = EMOJI_MAP.get(item, "❓")
-                pts = score["item_scores"][idx]
-                with cols[j]:
-                    if pts == 2:
-                        st.markdown(
-                            f'<div class="result-correct">{emoji} {item}<br>'
-                            f'（{cat}）<br>⭕ 自由再生で正解 [2点]</div>',
-                            unsafe_allow_html=True,
-                        )
-                    elif pts == 1:
-                        st.markdown(
-                            f'<div class="result-correct">{emoji} {item}<br>'
-                            f'（{cat}）<br>🔺 手がかり再生で正解 [1点]</div>',
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown(
-                            f'<div class="result-incorrect">{emoji} {item}<br>'
-                            f'（{cat}）<br>❌ 不正解 [0点]</div>',
-                            unsafe_allow_html=True,
-                        )
-            if board_idx < 3:
-                st.markdown("---")
+        result_cards = ""
+        for idx in range(16):
+            item = PATTERNS[pk][idx]
+            cat = CATEGORIES[idx]
+            emoji = EMOJI_MAP.get(item, "❓")
+            pts = score["item_scores"][idx]
+            if pts == 2:
+                result_cards += (
+                    f'<div class="emoji-card" style="border-color:#28a745;">'
+                    f'<span class="emoji">{emoji}</span>'
+                    f'<div class="result-correct">{item}（{cat}）<br>⭕ 自由再生で正解 [2点]</div>'
+                    f'</div>'
+                )
+            elif pts == 1:
+                result_cards += (
+                    f'<div class="emoji-card" style="border-color:#ffc107;">'
+                    f'<span class="emoji">{emoji}</span>'
+                    f'<div class="result-correct">{item}（{cat}）<br>🔺 手がかり再生で正解 [1点]</div>'
+                    f'</div>'
+                )
+            else:
+                result_cards += (
+                    f'<div class="emoji-card" style="border-color:#dc3545;">'
+                    f'<span class="emoji">{emoji}</span>'
+                    f'<div class="result-incorrect">{item}（{cat}）<br>❌ 不正解 [0点]</div>'
+                    f'</div>'
+                )
+        st.markdown(f'<div class="emoji-grid">{result_cards}</div>', unsafe_allow_html=True)
 
         # 履歴追加
         add_history_entry("test", pk, score)
@@ -848,10 +888,7 @@ def render_training_mode():
 
         remaining = render_timer(st.session_state.train_timer_start, 120, "残り時間")
 
-        for board_idx in range(4):
-            render_board(pk, board_idx, show_hint=True)
-            if board_idx < 3:
-                st.markdown("")
+        render_all_items(pk, show_hint=True)
 
         st.markdown("")
         if st.button("覚えた！妨害課題へ", type="primary", use_container_width=True):
@@ -910,23 +947,20 @@ def render_training_mode():
 
         remaining = render_timer(st.session_state.train_timer_start, 120, "残り時間")
 
-        for board_idx in range(4):
-            cats = get_board_categories(board_idx)
-            cols = st.columns(4)
-            for j, cat in enumerate(cats):
-                idx = board_idx * 4 + j
-                with cols[j]:
-                    st.markdown(f"**{cat}**")
-                    ans = st.text_input(
-                        f"{cat}",
-                        value=st.session_state.train_cued_answers.get(str(idx), ""),
-                        key=f"train_cued_{idx}",
-                        label_visibility="collapsed",
-                        placeholder=f"{cat}は？",
-                    )
-                    st.session_state.train_cued_answers[str(idx)] = ans
-            if board_idx < 3:
-                st.markdown("---")
+        for idx in range(16):
+            cat = CATEGORIES[idx]
+            cols = st.columns([1, 2])
+            with cols[0]:
+                st.markdown(f"**{idx+1}. {cat}**")
+            with cols[1]:
+                ans = st.text_input(
+                    f"{cat}",
+                    value=st.session_state.train_cued_answers.get(str(idx), ""),
+                    key=f"train_cued_{idx}",
+                    label_visibility="collapsed",
+                    placeholder=f"{cat}は？",
+                )
+                st.session_state.train_cued_answers[str(idx)] = ans
 
         if st.button("採点する", type="primary", use_container_width=True):
             st.session_state.train_phase = "result"
@@ -964,33 +998,31 @@ def render_training_mode():
         st.markdown(f"**{comment}**")
         st.markdown("---")
 
-        # 各アイテム詳細
+        # 各アイテム詳細（HTMLグリッドで iPad 対応）
         st.subheader("各アイテムの結果")
-        for board_idx in range(4):
-            board_items = get_board_items(pk, board_idx)
-            board_cats = get_board_categories(board_idx)
-            cols = st.columns(4)
-            for j, (item, cat) in enumerate(zip(board_items, board_cats)):
-                idx = board_idx * 4 + j
-                emoji = EMOJI_MAP.get(item, "❓")
-                is_correct = idx in score["correct"]
-                user_ans = st.session_state.train_cued_answers.get(str(idx), "")
-                with cols[j]:
-                    if is_correct:
-                        st.markdown(
-                            f'<div class="result-correct">{emoji} {item}（{cat}）<br>'
-                            f'⭕ 正解</div>',
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        display_ans = user_ans if user_ans else "（未回答）"
-                        st.markdown(
-                            f'<div class="result-incorrect">{emoji} {item}（{cat}）<br>'
-                            f'❌ あなたの回答: {display_ans}</div>',
-                            unsafe_allow_html=True,
-                        )
-            if board_idx < 3:
-                st.markdown("---")
+        result_cards = ""
+        for idx in range(16):
+            item = items[idx]
+            cat = CATEGORIES[idx]
+            emoji = EMOJI_MAP.get(item, "❓")
+            is_correct = idx in score["correct"]
+            user_ans = st.session_state.train_cued_answers.get(str(idx), "")
+            if is_correct:
+                result_cards += (
+                    f'<div class="emoji-card" style="border-color:#28a745;">'
+                    f'<span class="emoji">{emoji}</span>'
+                    f'<div class="result-correct">{item}（{cat}）<br>⭕ 正解</div>'
+                    f'</div>'
+                )
+            else:
+                display_ans = user_ans if user_ans else "（未回答）"
+                result_cards += (
+                    f'<div class="emoji-card" style="border-color:#dc3545;">'
+                    f'<span class="emoji">{emoji}</span>'
+                    f'<div class="result-incorrect">{item}（{cat}）<br>❌ あなたの回答: {display_ans}</div>'
+                    f'</div>'
+                )
+        st.markdown(f'<div class="emoji-grid">{result_cards}</div>', unsafe_allow_html=True)
 
         add_history_entry("training", pk, score)
 
@@ -1020,9 +1052,10 @@ def render_progress():
     test_entries = [h for h in history if h["mode"] == "test"]
     train_entries = [h for h in history if h["mode"] == "training"]
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     col1.metric("総練習回数", f"{len(history)} 回")
     col2.metric("テスト本番", f"{len(test_entries)} 回")
+    col3, col4 = st.columns(2)
     col3.metric("トレーニング", f"{len(train_entries)} 回")
 
     if test_entries:
