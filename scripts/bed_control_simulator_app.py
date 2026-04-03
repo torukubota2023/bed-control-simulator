@@ -125,6 +125,226 @@ except Exception as _bm_err:
     _BED_MAP_ERROR = f"{_bm_err}\n{_bm_tb.format_exc()}"
 
 # ---------------------------------------------------------------------------
+# 入退院予測エンジン（曜日別・祝日対応）
+# ---------------------------------------------------------------------------
+try:
+    import jpholiday as _jpholiday
+    _JPHOLIDAY_AVAILABLE = True
+except ImportError:
+    _JPHOLIDAY_AVAILABLE = False
+
+
+def _is_holiday_or_weekend(d: date) -> bool:
+    """土日または日本の祝日かどうかを判定する。"""
+    if d.weekday() >= 5:  # 土=5, 日=6
+        return True
+    if _JPHOLIDAY_AVAILABLE:
+        return _jpholiday.is_holiday(d)
+    return False
+
+
+def _is_bridge_holiday(d: date) -> bool:
+    """祝日に挟まれた平日（飛び石連休の谷間）を判定する。
+    前日と翌日が両方とも祝日/土日ならTrue。"""
+    from datetime import timedelta
+    prev_day = d - timedelta(days=1)
+    next_day = d + timedelta(days=1)
+    return _is_holiday_or_weekend(prev_day) and _is_holiday_or_weekend(next_day)
+
+
+def _predict_admission_discharge(
+    df_history: pd.DataFrame,
+    num_beds: int,
+    horizon: int = 7,
+    min_weeks_for_dow: int = 2,
+) -> pd.DataFrame:
+    """過去の実績データから今後horizon日の入退院を予測する。
+
+    予測ロジック:
+        1. 曜日別平均（データが min_weeks_for_dow 週以上ある場合）
+           - 直近データに高い重みをかける指数加重平均を使用
+        2. 祝日・長期休日は「日曜パターン」を適用
+           （当院: 休日の入院≒0、退院は週末に多い傾向を反映）
+        3. 飛び石連休の谷間日も休日扱い
+        4. データが少ない場合は全体平均にフォールバック
+
+    Args:
+        df_history: 過去の日次データ（date, new_admissions, discharges列が必要）
+        num_beds: 病床数
+        horizon: 予測日数（デフォルト7日）
+        min_weeks_for_dow: 曜日別平均を使うために必要な最小週数
+
+    Returns:
+        DataFrame: date, pred_admissions, pred_discharges, pred_net,
+                   pred_patients, pred_occupancy, day_type, confidence
+    """
+    from datetime import timedelta
+
+    df = df_history.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    # --- 曜日別統計の構築 ---
+    df["weekday"] = df["date"].dt.dayofweek  # 0=月 ~ 6=日
+    n_days = len(df)
+    n_weeks = n_days / 7.0
+
+    # 指数加重: 直近ほど重みが大きい（半減期=14日）
+    halflife = 14
+    weights = np.exp(-np.log(2) * np.arange(n_days)[::-1] / halflife)
+    df["_weight"] = weights
+
+    use_dow = n_weeks >= min_weeks_for_dow
+
+    if use_dow:
+        # 曜日別の加重平均
+        dow_stats = {}
+        for dow in range(7):
+            mask = df["weekday"] == dow
+            subset = df[mask]
+            if len(subset) == 0:
+                dow_stats[dow] = {
+                    "adm_mean": float(df["new_admissions"].mean()),
+                    "dis_mean": float(df["discharges"].mean()),
+                    "adm_std": float(df["new_admissions"].std()),
+                    "dis_std": float(df["discharges"].std()),
+                    "n_samples": 0,
+                }
+            else:
+                w = subset["_weight"].values
+                w_norm = w / w.sum()
+                dow_stats[dow] = {
+                    "adm_mean": float(np.average(subset["new_admissions"].values, weights=w_norm)),
+                    "dis_mean": float(np.average(subset["discharges"].values, weights=w_norm)),
+                    "adm_std": float(subset["new_admissions"].std()),
+                    "dis_std": float(subset["discharges"].std()),
+                    "n_samples": len(subset),
+                }
+    else:
+        # フォールバック: 全体平均
+        global_stats = {
+            "adm_mean": float(df["new_admissions"].mean()),
+            "dis_mean": float(df["discharges"].mean()),
+            "adm_std": float(df["new_admissions"].std()),
+            "dis_std": float(df["discharges"].std()),
+            "n_samples": n_days,
+        }
+
+    # 日曜日のパターン（祝日に使用）
+    sunday_stats = None
+    if use_dow and dow_stats[6]["n_samples"] > 0:
+        sunday_stats = dow_stats[6]
+
+    # --- 予測生成 ---
+    last_date = df["date"].iloc[-1].date() if hasattr(df["date"].iloc[-1], "date") else df["date"].iloc[-1]
+    last_patients = int(df.iloc[-1].get("total_patients", 0) or 0)
+
+    rows = []
+    cum_patients = last_patients
+    for d_offset in range(1, horizon + 1):
+        target_date = last_date + timedelta(days=d_offset)
+        dow = target_date.weekday()
+        is_hol = _is_holiday_or_weekend(target_date)
+        is_bridge = not is_hol and _is_bridge_holiday(target_date)
+
+        # 日タイプ判定
+        if is_hol:
+            day_type = "休日"
+        elif is_bridge:
+            day_type = "連休谷間"
+        else:
+            day_type = "平日"
+
+        # 予測値の決定
+        if is_hol or is_bridge:
+            # 休日・連休谷間 → 日曜パターンを適用
+            if sunday_stats:
+                pred_adm = sunday_stats["adm_mean"]
+                pred_dis = sunday_stats["dis_mean"]
+                std_adm = sunday_stats["adm_std"]
+                std_dis = sunday_stats["dis_std"]
+            elif use_dow:
+                pred_adm = dow_stats[dow]["adm_mean"]
+                pred_dis = dow_stats[dow]["dis_mean"]
+                std_adm = dow_stats[dow]["adm_std"]
+                std_dis = dow_stats[dow]["dis_std"]
+            else:
+                pred_adm = global_stats["adm_mean"]
+                pred_dis = global_stats["dis_mean"]
+                std_adm = global_stats["adm_std"]
+                std_dis = global_stats["dis_std"]
+        elif use_dow:
+            pred_adm = dow_stats[dow]["adm_mean"]
+            pred_dis = dow_stats[dow]["dis_mean"]
+            std_adm = dow_stats[dow]["adm_std"]
+            std_dis = dow_stats[dow]["dis_std"]
+        else:
+            pred_adm = global_stats["adm_mean"]
+            pred_dis = global_stats["dis_mean"]
+            std_adm = global_stats["adm_std"]
+            std_dis = global_stats["dis_std"]
+
+        # 患者数の累積予測
+        pred_net = pred_adm - pred_dis
+        cum_patients = max(0, min(num_beds, cum_patients + pred_net))
+        pred_occ = cum_patients / num_beds
+
+        # 信頼度スコア（0-100）
+        # データ量と曜日別サンプル数に基づく
+        if use_dow:
+            _ns = dow_stats[dow]["n_samples"] if not (is_hol or is_bridge) else (sunday_stats["n_samples"] if sunday_stats else 0)
+        else:
+            _ns = n_days
+        confidence = min(100, int(20 * np.log1p(_ns) + 10 * np.log1p(n_days / 7)))
+
+        rows.append({
+            "date": target_date,
+            "weekday": dow,
+            "day_type": day_type,
+            "pred_admissions": round(max(0, pred_adm), 1),
+            "pred_discharges": round(max(0, pred_dis), 1),
+            "pred_net": round(pred_net, 1),
+            "pred_patients": round(cum_patients),
+            "pred_occupancy": round(pred_occ, 4),
+            "std_admissions": round(std_adm, 1) if not np.isnan(std_adm) else 0,
+            "std_discharges": round(std_dis, 1) if not np.isnan(std_dis) else 0,
+            "confidence": confidence,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _get_prediction_explanation(df_history: pd.DataFrame) -> tuple:
+    """予測ロジックの解説文と信頼度を返す。
+
+    Returns:
+        (explanation_text: str, overall_confidence: str, data_summary: str)
+    """
+    n_days = len(df_history)
+    n_weeks = n_days / 7.0
+
+    if n_weeks >= 8:
+        level = "高"
+        level_icon = "🟢"
+        method = "曜日別の指数加重平均（直近データに高い重み）"
+        detail = f"過去{n_days}日分（約{n_weeks:.0f}週間）のデータを使用。曜日ごとの傾向が安定的に反映されています。"
+    elif n_weeks >= 2:
+        level = "中"
+        level_icon = "🟡"
+        method = "曜日別の指数加重平均（直近データに高い重み）"
+        detail = f"過去{n_days}日分（約{n_weeks:.0f}週間）のデータを使用。データが増えるほど曜日別の精度が向上します。"
+    else:
+        level = "低"
+        level_icon = "🔴"
+        method = "全体平均（データ不足のため曜日別分析は未使用）"
+        detail = f"過去{n_days}日分のデータのみ。2週間以上のデータが蓄積されると曜日別予測に切り替わります。"
+
+    holiday_note = "✅ 日本の祝日を自動判定（jpholidayライブラリ使用）" if _JPHOLIDAY_AVAILABLE else "⚠️ 祝日判定ライブラリ未導入（土日のみ判定）"
+
+    return (method, f"{level_icon} 信頼度: **{level}**", detail, holiday_note)
+
+
+# ---------------------------------------------------------------------------
 # A/B/C群 自動計算ロジック（日齢バケットモデル）
 # ---------------------------------------------------------------------------
 def calculate_abc_groups(prev_abc, new_admissions, discharge_a, discharge_b, discharge_c, prev_buckets=None):
@@ -4217,10 +4437,10 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
         occ_gap = target_lower - _occ_now
 
         # ============================================================
-        # ① 空床リスクモニター
+        # ① 空床リスクモニター（予測エンジン駆動）
         # ============================================================
         st.markdown("### 🛏️ 空床リスクモニター")
-        st.caption("退院後の空床がどれくらいで埋まるかを可視化します。入院ペースが十分なら安心して退院できます。")
+        st.caption("過去の入退院パターンから今後7日間を予測します。データが蓄積するほど精度が向上します。")
 
         _m1, _m2, _m3, _m4 = st.columns(4)
         with _m1:
@@ -4242,41 +4462,78 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
                 st.metric("空床回復見込み", f"約{_fill_days:.0f}日",
                           delta=f"純増{_net_7d:.1f}名/日ペース")
 
-        # ---- 空床回復シミュレーター ----
-        st.markdown("#### 🔬 退院後の空床回復シミュレーション")
-        _sim_col1, _sim_col2 = st.columns(2)
-        with _sim_col1:
-            _sim_dis = st.slider("今後の退院予定（名/日）", 0, 10, int(round(_dis_7d)),
-                                  key="eb_sim_dis", help="今後1週間の1日あたり退院予定数")
-        with _sim_col2:
-            _sim_adm = st.slider("期待される入院（名/日）", 0, 15, int(round(_adm_7d)),
-                                  key="eb_sim_adm", help="紹介元からの1日あたり入院見込み数")
+        # ---- 予測エンジンによる7日間予測 ----
+        st.markdown("#### 🔮 今後7日間の入退院予測")
 
-        _sim_net = _sim_adm - _sim_dis
-        _sim_days = list(range(8))  # 0〜7日後
-        _sim_beds = [max(0, _empty_beds + _sim_dis * d - _sim_adm * d) for d in _sim_days]
-        _sim_occ = [(_pts_now - _sim_dis * d + _sim_adm * d) / _view_beds for d in _sim_days]
-        # 稼働率を0〜1にクリップ
-        _sim_occ = [max(0, min(1.0, o)) for o in _sim_occ]
+        _pred_df = _predict_admission_discharge(_dt_plot, num_beds=_view_beds, horizon=7)
+        _dow_names_jp = ["月", "火", "水", "木", "金", "土", "日"]
 
-        # グラフ: 空床数と稼働率の7日間推移予測
+        # 予測テーブル表示
+        _pred_display = _pred_df.copy()
+        _pred_display["日付"] = _pred_display["date"].apply(
+            lambda d: f"{d.month}/{d.day}({_dow_names_jp[d.weekday()]})")
+        _pred_display["種別"] = _pred_display["day_type"]
+        _pred_display["予測入院"] = _pred_display["pred_admissions"]
+        _pred_display["予測退院"] = _pred_display["pred_discharges"]
+        _pred_display["純増減"] = _pred_display["pred_net"]
+        _pred_display["予測患者数"] = _pred_display["pred_patients"].astype(int)
+        _pred_display["予測稼働率"] = (_pred_display["pred_occupancy"] * 100).round(1).astype(str) + "%"
+        _pred_display["信頼度"] = _pred_display["confidence"].apply(
+            lambda c: f"{'🟢' if c >= 60 else '🟡' if c >= 30 else '🔴'} {c}%")
+
+        st.dataframe(
+            _pred_display[["日付", "種別", "予測入院", "予測退院", "純増減",
+                           "予測患者数", "予測稼働率", "信頼度"]],
+            use_container_width=True, hide_index=True)
+
+        # グラフ: 予測入退院数と稼働率
         _fig_eb, (_ax_eb1, _ax_eb2) = plt.subplots(1, 2, figsize=(10, 3.5))
 
-        # 左: 空床数推移
-        _ax_eb1.bar(_sim_days, _sim_beds, color="#90CAF9", edgecolor="#1565C0", alpha=0.8)
-        _ax_eb1.axhline(y=0, color="#333", linewidth=0.5)
-        _ax_eb1.set_xlabel("日後", fontsize=10)
-        _ax_eb1.set_ylabel("空床数", fontsize=10)
-        _ax_eb1.set_title("空床数の推移予測", fontsize=11, fontweight="bold")
-        for i, v in enumerate(_sim_beds):
-            _ax_eb1.text(i, v + 0.3, f"{v:.0f}", ha="center", fontsize=9, color="#1565C0")
+        _pred_x = list(range(len(_pred_df)))
+        _pred_labels = [f"{r['date'].month}/{r['date'].day}\n({_dow_names_jp[r['weekday']]})"
+                        for _, r in _pred_df.iterrows()]
+        # 休日バーの色分け
+        _adm_colors = ["#BBDEFB" if r["day_type"] != "平日" else "#42A5F5"
+                       for _, r in _pred_df.iterrows()]
+        _dis_colors = ["#FFCDD2" if r["day_type"] != "平日" else "#EF5350"
+                       for _, r in _pred_df.iterrows()]
 
-        # 右: 稼働率推移
-        _ax_eb2.plot(_sim_days, [o * 100 for o in _sim_occ], "o-", color="#1565C0", linewidth=2, markersize=5)
-        _ax_eb2.axhline(y=target_lower * 100, color="#E74C3C", linestyle="--", linewidth=1, label=f"目標下限 {target_lower*100:.0f}%")
-        _ax_eb2.axhline(y=target_upper * 100, color="#27AE60", linestyle="--", linewidth=1, label=f"目標上限 {target_upper*100:.0f}%")
-        _ax_eb2.fill_between(_sim_days, target_lower * 100, target_upper * 100, alpha=0.1, color="#27AE60")
-        _ax_eb2.set_xlabel("日後", fontsize=10)
+        # 左: 入退院予測の棒グラフ
+        _bar_w = 0.35
+        _ax_eb1.bar([x - _bar_w/2 for x in _pred_x], _pred_df["pred_admissions"],
+                    _bar_w, color=_adm_colors, edgecolor="#1565C0", alpha=0.85, label="予測入院")
+        _ax_eb1.bar([x + _bar_w/2 for x in _pred_x], _pred_df["pred_discharges"],
+                    _bar_w, color=_dis_colors, edgecolor="#C62828", alpha=0.85, label="予測退院")
+        # 誤差範囲（±1σ）
+        _ax_eb1.errorbar([x - _bar_w/2 for x in _pred_x], _pred_df["pred_admissions"],
+                         yerr=_pred_df["std_admissions"], fmt="none", ecolor="#1565C0", capsize=3, alpha=0.5)
+        _ax_eb1.errorbar([x + _bar_w/2 for x in _pred_x], _pred_df["pred_discharges"],
+                         yerr=_pred_df["std_discharges"], fmt="none", ecolor="#C62828", capsize=3, alpha=0.5)
+        # 休日背景
+        for i, (_, r) in enumerate(_pred_df.iterrows()):
+            if r["day_type"] != "平日":
+                _ax_eb1.axvspan(i - 0.5, i + 0.5, color="#FFF9C4", alpha=0.3)
+        _ax_eb1.set_xticks(_pred_x)
+        _ax_eb1.set_xticklabels(_pred_labels, fontsize=8)
+        _ax_eb1.set_ylabel("人数", fontsize=10)
+        _ax_eb1.set_title("入退院予測（7日間）", fontsize=11, fontweight="bold")
+        _ax_eb1.legend(fontsize=8, loc="upper right")
+
+        # 右: 稼働率推移予測
+        _pred_occ_pct = [o * 100 for o in _pred_df["pred_occupancy"]]
+        _ax_eb2.plot(_pred_x, _pred_occ_pct, "o-", color="#1565C0", linewidth=2, markersize=5)
+        _ax_eb2.axhline(y=target_lower * 100, color="#E74C3C", linestyle="--", linewidth=1,
+                        label=f"目標下限 {target_lower*100:.0f}%")
+        _ax_eb2.axhline(y=target_upper * 100, color="#27AE60", linestyle="--", linewidth=1,
+                        label=f"目標上限 {target_upper*100:.0f}%")
+        _ax_eb2.fill_between(_pred_x, target_lower * 100, target_upper * 100,
+                             alpha=0.1, color="#27AE60")
+        # 休日背景
+        for i, (_, r) in enumerate(_pred_df.iterrows()):
+            if r["day_type"] != "平日":
+                _ax_eb2.axvspan(i - 0.5, i + 0.5, color="#FFF9C4", alpha=0.3)
+        _ax_eb2.set_xticks(_pred_x)
+        _ax_eb2.set_xticklabels(_pred_labels, fontsize=8)
         _ax_eb2.set_ylabel("稼働率 (%)", fontsize=10)
         _ax_eb2.set_title("稼働率の推移予測", fontsize=11, fontweight="bold")
         _ax_eb2.legend(fontsize=8)
@@ -4285,21 +4542,60 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
         st.pyplot(_fig_eb)
         plt.close(_fig_eb)
 
-        # 判定メッセージ
-        if _sim_net > 0:
-            _days_to_target = max(0, occ_gap / ((_sim_net) / _view_beds)) if occ_gap > 0 else 0
-            if occ_gap <= 0:
-                st.success(f"✅ 入院ペース（{_sim_adm}名/日）が退院（{_sim_dis}名/日）を上回っています。"
-                           f"空床は順調に埋まる見込みです。**臨床的に適切な退院を進めて問題ありません。**")
+        # ---- 予測ロジックの解説（グラフそば） ----
+        _pred_method, _pred_confidence, _pred_detail, _pred_holiday = \
+            _get_prediction_explanation(_dt_plot)
+        with st.expander("📐 この予測はどう計算されているか"):
+            st.markdown(f"""
+**予測手法:** {_pred_method}
+
+**{_pred_confidence}**
+
+{_pred_detail}
+
+**予測のしくみ:**
+1. **曜日別パターン学習** — 過去データの曜日ごとの入院数・退院数を集計し、直近のデータほど重く反映する指数加重平均を使用（半減期14日）
+2. **祝日・長期休日の自動判定** — {_pred_holiday}。祝日・連休の谷間は「日曜パターン」を適用（当院の特徴: 休日入院≒0、週末退院が多い）
+3. **誤差範囲の表示** — グラフのエラーバー（ヒゲ）は±1標準偏差。振れ幅の大きい曜日ほどヒゲが長くなります
+4. **信頼度スコア** — 各曜日のサンプル数と全体のデータ蓄積量から算出（0〜100%）
+
+**データ蓄積と精度向上のしくみ:**
+
+| データ蓄積量 | 予測モード | 期待される精度 |
+|:---:|:---:|:---:|
+| 2週間未満 | 全体平均（曜日区別なし） | 🔴 低 |
+| 2〜8週間 | 曜日別加重平均 | 🟡 中 |
+| 8週間以上 | 曜日別加重平均（安定） | 🟢 高 |
+
+💡 **2ヶ月分のデータが蓄積すると「金曜退院は多い」「月曜入院は少ない」など、当院固有のパターンが安定的に反映されます。**
+💡 **GW・年末年始などの長期連休は、祝日判定＋連休谷間判定で自動的に「入院≒0」パターンが適用されます。**
+""")
+
+        # ---- 判定メッセージ（予測ベース） ----
+        _pred_7d_adm = float(_pred_df["pred_admissions"].sum())
+        _pred_7d_dis = float(_pred_df["pred_discharges"].sum())
+        _pred_7d_net = _pred_7d_adm - _pred_7d_dis
+        _pred_last_occ = float(_pred_df.iloc[-1]["pred_occupancy"])
+
+        if _pred_7d_net > 0:
+            if _pred_last_occ >= target_lower:
+                st.success(f"✅ 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＞ 退院 **{_pred_7d_dis:.0f}名**"
+                           f"（純増 {_pred_7d_net:+.0f}名）。"
+                           f"稼働率は **{_pred_last_occ*100:.1f}%** に回復見込み。"
+                           f"**臨床的に適切な退院を進めて問題ありません。**")
             else:
-                st.info(f"📈 純増 {_sim_net:.1f}名/日のペースで、目標稼働率まで約 **{_days_to_target:.0f}日**。"
-                        f"入院ペースが維持されれば回復可能です。")
-        elif _sim_net == 0:
-            st.warning("⚠️ 入院数と退院数が均衡しています。稼働率は現状維持。"
-                       "空床を埋めるには**新規入院の促進**が必要です。")
+                st.info(f"📈 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＞ 退院 **{_pred_7d_dis:.0f}名**"
+                        f"（純増 {_pred_7d_net:+.0f}名）。"
+                        f"ただし7日後の予測稼働率 **{_pred_last_occ*100:.1f}%** は"
+                        f"目標 {target_lower*100:.0f}% に未到達。入院ペースの維持・強化が必要です。")
+        elif _pred_7d_net == 0:
+            st.warning(f"⚠️ 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ≒ 退院 **{_pred_7d_dis:.0f}名**。"
+                       "稼働率は横ばいの見込み。空床を埋めるには**新規入院の促進**が必要です。")
         else:
-            st.error(f"🔴 退院超過（純減 {abs(_sim_net):.1f}名/日）。放置すると稼働率が低下し続けます。  \n"
-                     f"**対策:** 紹介元への連携強化、救急受入体制の拡充を検討してください。")
+            st.error(f"🔴 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＜ 退院 **{_pred_7d_dis:.0f}名**"
+                     f"（純減 {_pred_7d_net:+.0f}名）。"
+                     f"稼働率は **{_pred_last_occ*100:.1f}%** まで低下する見込みです。  \n"
+                     f"**対策:** 紹介元への空床案内の発信、地域連携室との入院促進協議を検討してください。")
 
         st.markdown("---")
 
