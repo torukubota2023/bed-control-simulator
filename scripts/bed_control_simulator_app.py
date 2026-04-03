@@ -4167,8 +4167,8 @@ if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
 
 # ===== タブ: 👨‍⚕️ 退院タイミング =====
 with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
-    st.subheader("👨‍⚕️ 退院タイミング最適化")
-    st.caption("臨床医向け｜退院延期が稼働率・運営貢献額に与える影響を可視化します")
+    st.subheader("🔄 入退院バランス・空床リスクモニター")
+    st.caption("退院は臨床判断。問題は「退院後の空床がいつ埋まるか」と「入院ペースは足りているか」です。")
 
     # ---- データ取得 ----
     _dt_raw = None
@@ -4185,203 +4185,297 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
     else:
         # 最新日のデータ
         _last = _dt_raw.iloc[-1]
-        _b_now   = int(_last.get("phase_b_count", 0) or 0)
-        _c_now   = int(_last.get("phase_c_count", 0) or 0)
         _occ_now = float(_last.get("occupancy_rate", 0) or 0)
         _pts_now = int(_last.get("total_patients", 0) or 0)
+        _empty_beds = _view_beds - _pts_now
 
-        # パラメータ（UI設定値を優先、未定義時はデフォルト値）
+        # 入退院データ
+        _adm_today = int(_last.get("new_admissions", 0) or 0)
+        _dis_today = int(_last.get("discharges", 0) or 0)
+        _net_today = _adm_today - _dis_today
+
+        # 時系列データ（グラフ用）
+        _dt_plot = _dt_raw.copy()
+        _dt_plot["date"] = pd.to_datetime(_dt_plot["date"])
+
+        # 移動平均（データに含まれていない場合は計算）
+        if "admission_7d_ma" not in _dt_plot.columns:
+            _dt_plot["admission_7d_ma"] = _dt_plot["new_admissions"].rolling(7, min_periods=1).mean()
+        if "discharge_7d_ma" not in _dt_plot.columns:
+            _dt_plot["discharge_7d_ma"] = _dt_plot["discharges"].rolling(7, min_periods=1).mean()
+        if "daily_net_change" not in _dt_plot.columns:
+            _dt_plot["daily_net_change"] = _dt_plot["new_admissions"] - _dt_plot["discharges"]
+
+        # 直近7日の平均
+        _recent = _dt_plot.tail(7)
+        _adm_7d = float(_recent["new_admissions"].mean())
+        _dis_7d = float(_recent["discharges"].mean())
+        _net_7d = _adm_7d - _dis_7d
+
+        # パラメータ
         _ui_safe = ui if "ui" in dir() and isinstance(ui, dict) else {}
-        _b_rev  = _ui_safe.get("phase_b_daily_revenue", 36000)
-        _b_cost = _ui_safe.get("phase_b_daily_cost",    6000)
-        _c_rev  = _ui_safe.get("phase_c_daily_revenue", 33400)
-        _c_cost = _ui_safe.get("phase_c_daily_cost",    4500)
-        _b_contrib = _b_rev - _b_cost   # B群 運営貢献額/人/日
-        _c_contrib = _c_rev - _c_cost   # C群 運営貢献額/人/日
-
-        occ_gap   = target_lower - _occ_now          # 目標下限までの乖離（負なら超過）
-        occ_per_pt = 1.0 / _view_beds                 # 1名増減の稼働率変化
+        occ_gap = target_lower - _occ_now
 
         # ============================================================
-        # ① 現在の病棟ステータス
+        # ① 空床リスクモニター
         # ============================================================
-        st.markdown("### 🏥 現在の病棟ステータス")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            _occ_color = "🟢" if _occ_now >= target_lower else "🔴"
-            st.metric("稼働率", f"{_occ_color} {_occ_now*100:.1f}%",
-                      delta=f"目標 {target_lower*100:.0f}% {'✅達成' if _occ_now >= target_lower else f'▲{occ_gap*100:.1f}pt不足'}")
-        with c2:
-            st.metric("空床数", f"{_view_beds - _pts_now}床",
-                      delta=f"目標稼働には {max(0, round(occ_gap * _view_beds))}名必要")
-        with c3:
-            st.metric("🟢 B群（回復期）", f"{_b_now}名",
-                      delta=f"運営貢献 ¥{_b_contrib:,}/名/日")
-        with c4:
-            st.metric("🔵 C群（安定期）", f"{_c_now}名",
-                      delta=f"運営貢献 ¥{_c_contrib:,}/名/日")
+        st.markdown("### 🛏️ 空床リスクモニター")
+        st.caption("退院後の空床がどれくらいで埋まるかを可視化します。入院ペースが十分なら安心して退院できます。")
 
-        st.markdown("---")
+        _m1, _m2, _m3, _m4 = st.columns(4)
+        with _m1:
+            _occ_icon = "🟢" if _occ_now >= target_lower else "🔴"
+            st.metric("現在の稼働率", f"{_occ_icon} {_occ_now*100:.1f}%",
+                      delta=f"目標 {target_lower*100:.0f}%{'まで達成' if _occ_now >= target_lower else f' あと{occ_gap*100:.1f}pt'}")
+        with _m2:
+            st.metric("空床数", f"{_empty_beds}床",
+                      delta=f"{'余裕あり' if _empty_beds > 5 else '残りわずか'}")
+        with _m3:
+            st.metric("直近7日 入院ペース", f"{_adm_7d:.1f}名/日")
+        with _m4:
+            # 空床が埋まるまでの推定日数
+            _fill_days = _empty_beds / max(_adm_7d - _dis_7d, 0.01) if _net_7d > 0 else float("inf")
+            if _fill_days == float("inf") or _fill_days < 0:
+                st.metric("空床回復見込み", "⚠️ 不透明",
+                          delta="入院＜退院が続いています")
+            else:
+                st.metric("空床回復見込み", f"約{_fill_days:.0f}日",
+                          delta=f"純増{_net_7d:.1f}名/日ペース")
 
-        # ============================================================
-        # ② 退院1名あたりのコスト表示
-        # ============================================================
-        st.markdown("### 📉 退院させると何が失われるか")
+        # ---- 空床回復シミュレーター ----
+        st.markdown("#### 🔬 退院後の空床回復シミュレーション")
+        _sim_col1, _sim_col2 = st.columns(2)
+        with _sim_col1:
+            _sim_dis = st.slider("今後の退院予定（名/日）", 0, 10, int(round(_dis_7d)),
+                                  key="eb_sim_dis", help="今後1週間の1日あたり退院予定数")
+        with _sim_col2:
+            _sim_adm = st.slider("期待される入院（名/日）", 0, 15, int(round(_adm_7d)),
+                                  key="eb_sim_adm", help="紹介元からの1日あたり入院見込み数")
 
-        col_b, col_c = st.columns(2)
-        with col_b:
-            st.markdown("""
-<div style="background:#e8f5e9;border-radius:12px;padding:16px;border-left:5px solid #27AE60;">
-<h4 style="margin:0;color:#1B5E20;">🟢 B群（回復期）を1名退院させると…</h4>
-</div>""", unsafe_allow_html=True)
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                st.metric("失われる運営貢献額", f"¥{_b_contrib:,}/日",
-                          delta=f"¥{_b_contrib*7:,}/週", delta_color="inverse")
-            with bc2:
-                st.metric("稼働率の低下", f"-{occ_per_pt*100:.2f}pt/日",
-                          delta_color="inverse")
-            st.caption(f"💡 B群は初期加算（¥1,500×10日）・リハ連携加算（¥1,100×10日）が消えます。"
-                       f"在院14日以降は加算消失リスク大。")
+        _sim_net = _sim_adm - _sim_dis
+        _sim_days = list(range(8))  # 0〜7日後
+        _sim_beds = [max(0, _empty_beds + _sim_dis * d - _sim_adm * d) for d in _sim_days]
+        _sim_occ = [(_pts_now - _sim_dis * d + _sim_adm * d) / _view_beds for d in _sim_days]
+        # 稼働率を0〜1にクリップ
+        _sim_occ = [max(0, min(1.0, o)) for o in _sim_occ]
 
-        with col_c:
-            st.markdown("""
-<div style="background:#e3f2fd;border-radius:12px;padding:16px;border-left:5px solid #2980B9;">
-<h4 style="margin:0;color:#0D47A1;">🔵 C群（安定期）を1名退院させると…</h4>
-</div>""", unsafe_allow_html=True)
-            cc1, cc2 = st.columns(2)
-            with cc1:
-                st.metric("失われる運営貢献額", f"¥{_c_contrib:,}/日",
-                          delta=f"¥{_c_contrib*7:,}/週", delta_color="inverse")
-            with cc2:
-                st.metric("稼働率の低下", f"-{occ_per_pt*100:.2f}pt/日",
-                          delta_color="inverse")
-            st.caption(f"💡 C群は変動費が低く収益効率は良好。ただし在院長期化は転棟・転院検討が優先。")
+        # グラフ: 空床数と稼働率の7日間推移予測
+        _fig_eb, (_ax_eb1, _ax_eb2) = plt.subplots(1, 2, figsize=(10, 3.5))
 
-        st.markdown("---")
+        # 左: 空床数推移
+        _ax_eb1.bar(_sim_days, _sim_beds, color="#90CAF9", edgecolor="#1565C0", alpha=0.8)
+        _ax_eb1.axhline(y=0, color="#333", linewidth=0.5)
+        _ax_eb1.set_xlabel("日後", fontsize=10)
+        _ax_eb1.set_ylabel("空床数", fontsize=10)
+        _ax_eb1.set_title("空床数の推移予測", fontsize=11, fontweight="bold")
+        for i, v in enumerate(_sim_beds):
+            _ax_eb1.text(i, v + 0.3, f"{v:.0f}", ha="center", fontsize=9, color="#1565C0")
 
-        # ============================================================
-        # ③ 退院延期シミュレーター
-        # ============================================================
-        st.markdown("### 🔬 退院延期シミュレーター")
-        st.caption("スライダーを動かして「退院を何名・何日延ばすと稼働率が何%変わるか」を確認できます。")
+        # 右: 稼働率推移
+        _ax_eb2.plot(_sim_days, [o * 100 for o in _sim_occ], "o-", color="#1565C0", linewidth=2, markersize=5)
+        _ax_eb2.axhline(y=target_lower * 100, color="#E74C3C", linestyle="--", linewidth=1, label=f"目標下限 {target_lower*100:.0f}%")
+        _ax_eb2.axhline(y=target_upper * 100, color="#27AE60", linestyle="--", linewidth=1, label=f"目標上限 {target_upper*100:.0f}%")
+        _ax_eb2.fill_between(_sim_days, target_lower * 100, target_upper * 100, alpha=0.1, color="#27AE60")
+        _ax_eb2.set_xlabel("日後", fontsize=10)
+        _ax_eb2.set_ylabel("稼働率 (%)", fontsize=10)
+        _ax_eb2.set_title("稼働率の推移予測", fontsize=11, fontweight="bold")
+        _ax_eb2.legend(fontsize=8)
 
-        sim_col1, sim_col2 = st.columns(2)
-        with sim_col1:
-            st.markdown("**🟢 B群の退院延期**")
-            _sim_b_n = st.slider("B群 延期人数", 0, max(_b_now, 1), 1,
-                                  key="dt_sim_b_n")
-            _sim_b_d = st.slider("B群 延期日数", 1, 14, 3,
-                                  key="dt_sim_b_d")
-        with sim_col2:
-            st.markdown("**🔵 C群の退院延期**")
-            _sim_c_n = st.slider("C群 延期人数", 0, max(_c_now, 1), 0,
-                                  key="dt_sim_c_n")
-            _sim_c_d = st.slider("C群 延期日数", 1, 14, 3,
-                                  key="dt_sim_c_d")
-
-        # 効果計算
-        _total_delay_pts  = _sim_b_n + _sim_c_n
-        _new_pts          = _pts_now + _total_delay_pts
-        _new_occ          = _new_pts / _view_beds
-        _occ_delta        = _new_occ - _occ_now
-
-        _b_gain           = _sim_b_n * _b_contrib * _sim_b_d
-        _c_gain           = _sim_c_n * _c_contrib * _sim_c_d
-        _total_gain       = _b_gain + _c_gain
-
-        # 月間換算（残り日数）
-        import calendar as _cal
-        _today_dt = date.today()
-        _days_in_month = _cal.monthrange(_today_dt.year, _today_dt.month)[1]
-        _days_remaining = _days_in_month - _today_dt.day + 1
-        _monthly_gain_est = (_sim_b_n * _b_contrib + _sim_c_n * _c_contrib) * min(_sim_b_d if _sim_b_n > 0 else _sim_c_d, _days_remaining)
-
-        st.markdown("#### 📊 シミュレーション結果")
-        r1, r2, r3, r4 = st.columns(4)
-        with r1:
-            st.metric("延期後 稼働率",
-                      f"{_new_occ*100:.1f}%",
-                      delta=f"+{_occ_delta*100:.2f}pt")
-        with r2:
-            _reach = "✅ 目標達成" if _new_occ >= target_lower else f"あと{(target_lower - _new_occ)*100:.1f}pt"
-            st.metric("目標達成状況", _reach)
-        with r3:
-            st.metric("追加運営貢献額（期間合計）",
-                      f"¥{_total_gain:,.0f}",
-                      delta=f"B: ¥{_b_gain:,.0f} / C: ¥{_c_gain:,.0f}")
-        with r4:
-            st.metric(f"今月残り{_days_remaining}日の追加貢献額推計",
-                      f"¥{_monthly_gain_est:,.0f}")
+        _fig_eb.tight_layout()
+        st.pyplot(_fig_eb)
+        plt.close(_fig_eb)
 
         # 判定メッセージ
-        if _total_delay_pts == 0:
-            st.info("延期人数を設定するとシミュレーション結果が表示されます。")
-        elif _new_occ >= target_lower:
-            st.success(f"✅ **B群{_sim_b_n}名・C群{_sim_c_n}名の退院を延期すると目標稼働率 {target_lower*100:.0f}% を達成できます。**  \n"
-                       f"追加運営貢献額: **¥{_total_gain:,.0f}**（期間合計）")
+        if _sim_net > 0:
+            _days_to_target = max(0, occ_gap / ((_sim_net) / _view_beds)) if occ_gap > 0 else 0
+            if occ_gap <= 0:
+                st.success(f"✅ 入院ペース（{_sim_adm}名/日）が退院（{_sim_dis}名/日）を上回っています。"
+                           f"空床は順調に埋まる見込みです。**臨床的に適切な退院を進めて問題ありません。**")
+            else:
+                st.info(f"📈 純増 {_sim_net:.1f}名/日のペースで、目標稼働率まで約 **{_days_to_target:.0f}日**。"
+                        f"入院ペースが維持されれば回復可能です。")
+        elif _sim_net == 0:
+            st.warning("⚠️ 入院数と退院数が均衡しています。稼働率は現状維持。"
+                       "空床を埋めるには**新規入院の促進**が必要です。")
         else:
-            need = max(0, round((target_lower - _new_occ) * _view_beds))
-            st.warning(f"⚠️ この延期案でも目標稼働率まであと **{(target_lower - _new_occ)*100:.1f}pt** 不足。  \n"
-                       f"さらに **{need}名** の延期 or 新規入院促進が必要です。")
+            st.error(f"🔴 退院超過（純減 {abs(_sim_net):.1f}名/日）。放置すると稼働率が低下し続けます。  \n"
+                     f"**対策:** 紹介元への連携強化、救急受入体制の拡充を検討してください。")
 
         st.markdown("---")
 
         # ============================================================
-        # ④ 退院タイミング判断ガイド（医師向け）
+        # ② 入退院バランスダッシュボード
         # ============================================================
-        st.markdown("### 📋 退院タイミング判断ガイド")
+        st.markdown("### 📊 入退院バランスダッシュボード")
+        st.caption("稼働率の問題は「退院が多い」のではなく「入院が足りない」かもしれません。入口と出口のバランスを確認します。")
 
-        _occ_status = _occ_now * 100
-        guide_data = []
+        # ---- 日次バランスサマリー ----
+        _bal1, _bal2, _bal3, _bal4 = st.columns(4)
+        with _bal1:
+            st.metric("直近日 入院", f"{_adm_today}名",
+                      delta=f"7日平均 {_adm_7d:.1f}名")
+        with _bal2:
+            st.metric("直近日 退院", f"{_dis_today}名",
+                      delta=f"7日平均 {_dis_7d:.1f}名")
+        with _bal3:
+            _net_icon = "🟢" if _net_today >= 0 else "🔴"
+            st.metric("直近日 純増減", f"{_net_icon} {_net_today:+d}名",
+                      delta=f"7日平均 {_net_7d:+.1f}名")
+        with _bal4:
+            # 入退院比率（入院/退院）
+            _ratio = _adm_7d / max(_dis_7d, 0.1)
+            _ratio_icon = "🟢" if _ratio >= 1.0 else "🔴"
+            st.metric("入退院比率（7日）", f"{_ratio_icon} {_ratio:.2f}",
+                      delta="1.0以上なら稼働率↑")
 
-        if _occ_status >= target_upper * 100:
-            guide_data.append(("🟢", "稼働率は上限超え", "積極的に退院・転院を進めてください。新規入院受入余力を確保。"))
-        elif _occ_status >= target_lower * 100:
-            guide_data.append(("🟡", "稼働率は目標内", "B群の退院は計画通りで問題なし。C群は在院延長を検討。"))
+        # ---- グラフ: 入退院トレンド ----
+        if len(_dt_plot) >= 3:
+            _fig_bal, (_ax_bal1, _ax_bal2) = plt.subplots(2, 1, figsize=(10, 7), gridspec_kw={"height_ratios": [3, 2]})
+
+            _dates = _dt_plot["date"]
+
+            # 上段: 入院数 vs 退院数（棒グラフ + 移動平均線）
+            _bar_width = 0.35
+            _x_idx = np.arange(len(_dates))
+
+            # 棒が多すぎる場合は直近30日に絞る
+            _show_n = min(len(_dt_plot), 30)
+            _dp = _dt_plot.tail(_show_n).reset_index(drop=True)
+            _x_show = np.arange(_show_n)
+            _dates_show = _dp["date"]
+
+            _ax_bal1.bar(_x_show - _bar_width/2, _dp["new_admissions"], _bar_width,
+                        label="入院", color="#42A5F5", alpha=0.7, edgecolor="#1565C0")
+            _ax_bal1.bar(_x_show + _bar_width/2, _dp["discharges"], _bar_width,
+                        label="退院", color="#EF5350", alpha=0.7, edgecolor="#C62828")
+            _ax_bal1.plot(_x_show, _dp["admission_7d_ma"], "-", color="#1565C0",
+                         linewidth=2, label="入院 7日MA")
+            _ax_bal1.plot(_x_show, _dp["discharge_7d_ma"], "-", color="#C62828",
+                         linewidth=2, label="退院 7日MA")
+            _ax_bal1.set_ylabel("人数", fontsize=10)
+            _ax_bal1.set_title("入院数 vs 退院数（直近最大30日）", fontsize=11, fontweight="bold")
+            _ax_bal1.legend(fontsize=8, loc="upper left")
+            # X軸ラベル（日付）
+            _tick_step = max(1, _show_n // 10)
+            _ax_bal1.set_xticks(_x_show[::_tick_step])
+            _ax_bal1.set_xticklabels([d.strftime("%m/%d") for d in _dates_show.iloc[::_tick_step]], fontsize=8, rotation=45)
+
+            # 下段: 日次純増減（ウォーターフォール風）
+            _net_vals = _dp["daily_net_change"].values
+            _colors_net = ["#42A5F5" if v >= 0 else "#EF5350" for v in _net_vals]
+            _ax_bal2.bar(_x_show, _net_vals, color=_colors_net, alpha=0.8, edgecolor="none")
+            _ax_bal2.axhline(y=0, color="#333", linewidth=0.8)
+            _ax_bal2.set_ylabel("純増減（名）", fontsize=10)
+            _ax_bal2.set_title("日次純増減（入院 − 退院）", fontsize=11, fontweight="bold")
+            _ax_bal2.set_xticks(_x_show[::_tick_step])
+            _ax_bal2.set_xticklabels([d.strftime("%m/%d") for d in _dates_show.iloc[::_tick_step]], fontsize=8, rotation=45)
+
+            # 純増減がマイナス続きなら背景に薄い赤
+            _neg_streak = sum(1 for v in _net_vals[-7:] if v < 0)
+            if _neg_streak >= 5:
+                _ax_bal2.set_facecolor("#FFF3E0")
+
+            _fig_bal.tight_layout()
+            st.pyplot(_fig_bal)
+            plt.close(_fig_bal)
+
+        # ---- 曜日別パターン分析 ----
+        if len(_dt_plot) >= 7:
+            st.markdown("#### 📅 曜日別 入退院パターン")
+            _dow = _dt_plot.copy()
+            _dow["weekday"] = _dow["date"].dt.dayofweek  # 0=月, 6=日
+            _dow_names = ["月", "火", "水", "木", "金", "土", "日"]
+            _dow_adm = _dow.groupby("weekday")["new_admissions"].mean()
+            _dow_dis = _dow.groupby("weekday")["discharges"].mean()
+
+            _fig_dow, _ax_dow = plt.subplots(figsize=(8, 3.5))
+            _x_dow = np.arange(7)
+            _ax_dow.bar(_x_dow - 0.2, [_dow_adm.get(i, 0) for i in range(7)], 0.4,
+                       label="入院（平均）", color="#42A5F5", alpha=0.8)
+            _ax_dow.bar(_x_dow + 0.2, [_dow_dis.get(i, 0) for i in range(7)], 0.4,
+                       label="退院（平均）", color="#EF5350", alpha=0.8)
+            _ax_dow.set_xticks(_x_dow)
+            _ax_dow.set_xticklabels(_dow_names, fontsize=10)
+            _ax_dow.set_ylabel("平均人数", fontsize=10)
+            _ax_dow.set_title("曜日別の入退院パターン", fontsize=11, fontweight="bold")
+            _ax_dow.legend(fontsize=9)
+            _fig_dow.tight_layout()
+            st.pyplot(_fig_dow)
+            plt.close(_fig_dow)
+
+            # 曜日別のギャップ分析
+            _dow_gap = {d: _dow_adm.get(d, 0) - _dow_dis.get(d, 0) for d in range(7)}
+            _worst_days = sorted(_dow_gap.items(), key=lambda x: x[1])[:2]
+            _best_days = sorted(_dow_gap.items(), key=lambda x: x[1], reverse=True)[:2]
+
+            _gc1, _gc2 = st.columns(2)
+            with _gc1:
+                _worst_txt = "、".join([f"**{_dow_names[d]}**（{v:+.1f}名）" for d, v in _worst_days])
+                st.markdown(f"""
+<div style="background:#ffebee;border-radius:10px;padding:14px;border-left:5px solid #E74C3C;">
+<strong>🔴 退院超過が多い曜日:</strong> {_worst_txt}<br>
+→ この曜日に新規入院を集中させる工夫（紹介元との調整）が効果的
+</div>""", unsafe_allow_html=True)
+            with _gc2:
+                _best_txt = "、".join([f"**{_dow_names[d]}**（{v:+.1f}名）" for d, v in _best_days])
+                st.markdown(f"""
+<div style="background:#e8f5e9;border-radius:10px;padding:14px;border-left:5px solid #27AE60;">
+<strong>🟢 入院超過が多い曜日:</strong> {_best_txt}<br>
+→ この曜日のベッド確保を優先（退院調整のタイミング調整）
+</div>""", unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ============================================================
+        # ③ アクションガイド
+        # ============================================================
+        st.markdown("### 📋 状況別アクションガイド")
+
+        _actions = []
+        # 入退院バランスに基づく判定
+        if _net_7d >= 0.5:
+            _actions.append(("🟢", "入院ペース良好",
+                             f"直近7日の純増 {_net_7d:+.1f}名/日。入院が退院を上回っており、稼働率は改善傾向です。"
+                             "臨床的に適切なタイミングでの退院を進めてください。"))
+        elif _net_7d >= -0.5:
+            _actions.append(("🟡", "入退院が均衡",
+                             f"直近7日の純増減 {_net_7d:+.1f}名/日。稼働率は横ばいです。"
+                             "目標稼働率を下回っている場合は、紹介元への連携を少し強化してください。"))
         else:
-            gap_n = max(1, round((target_lower - _occ_now) * _view_beds))
-            guide_data.append(("🔴", f"稼働率が目標を {(target_lower - _occ_now)*100:.1f}pt 下回っています",
-                                f"今日退院予定の B群・C群患者 {gap_n}名の退院を1〜3日延期することを検討してください。"))
+            _actions.append(("🔴", "退院超過が続いています",
+                             f"直近7日の純増減 {_net_7d:+.1f}名/日。入院が退院に追いついていません。  \n"
+                             "**入院促進策:** 紹介元への空床情報の発信、救急受入枠の拡大、地域連携室との退院調整日の見直し"))
 
-        # B群に関するガイド
-        if _b_now > 0:
-            _b_ratio = _b_now / max(_pts_now, 1) * 100
-            if _b_ratio < 35:
-                guide_data.append(("🟡", f"B群比率が低め（{_b_ratio:.0f}%）",
-                                    "B群（回復期）患者が少ない状態。A群→B群へのフェーズ移行を確認し、B群在院期間を最大化してください。"))
-            else:
-                guide_data.append(("🟢", f"B群患者数は適正（{_b_now}名 / {_b_ratio:.0f}%）",
-                                    "運営貢献の主力層が確保されています。"))
+        # 空床数に基づく判定
+        if _empty_beds <= 3:
+            _actions.append(("🟢", f"空床わずか（{_empty_beds}床）",
+                             "ほぼ満床です。退院調整を計画的に進め、新規入院の受入枠を確保してください。"))
+        elif _empty_beds <= round(_view_beds * (1 - target_lower)):
+            _actions.append(("🟡", f"空床 {_empty_beds}床（目標範囲内）",
+                             f"入院ペース {_adm_7d:.1f}名/日が維持されれば問題ありません。"))
+        else:
+            _need_extra = _empty_beds - round(_view_beds * (1 - target_lower))
+            _actions.append(("🔴", f"空床 {_empty_beds}床（目標超過）",
+                             f"目標稼働率を達成するにはあと **{_need_extra}名** の入院が必要です。  \n"
+                             "**対策:** 紹介元への積極的な空床案内、地域連携室との連携強化"))
 
-        # C群に関するガイド
-        if _c_now > 0:
-            _c_ratio = _c_now / max(_pts_now, 1) * 100
-            if _c_ratio > 45:
-                guide_data.append(("🔴", f"C群比率が高め（{_c_ratio:.0f}%）",
-                                    "C群（安定期）患者が増加しています。転院・在宅復帰の調整を加速し、新規入院枠を確保してください。"))
-            else:
-                guide_data.append(("🟡", f"C群患者数は許容範囲（{_c_now}名 / {_c_ratio:.0f}%）",
-                                    "退院調整を継続しつつ、稼働率に応じて退院タイミングを調整してください。"))
+        # 入退院比率に基づく判定
+        _ratio_7d = _adm_7d / max(_dis_7d, 0.1)
+        if _ratio_7d < 0.8:
+            _actions.append(("🔴", f"入退院比率 {_ratio_7d:.2f}（入院不足）",
+                             "退院10名に対して入院8名未満。入院の「入口」に課題があります。  \n"
+                             "紹介元別の入院数を確認し、減少している紹介元をフォローしてください。"))
+        elif _ratio_7d < 1.0:
+            _actions.append(("🟡", f"入退院比率 {_ratio_7d:.2f}（やや入院不足）",
+                             "入院がわずかに退院を下回っています。トレンドの推移を注視してください。"))
 
-        for icon, title, msg in guide_data:
+        for icon, title, msg in _actions:
             bg = "#e8f5e9" if icon == "🟢" else "#fff3e0" if icon == "🟡" else "#ffebee"
             border = "#27AE60" if icon == "🟢" else "#F39C12" if icon == "🟡" else "#E74C3C"
             st.markdown(f"""
 <div style="background:{bg};border-radius:10px;padding:14px;margin-bottom:10px;border-left:5px solid {border};">
 <strong>{icon} {title}</strong><br>{msg}
 </div>""", unsafe_allow_html=True)
-
-        # 月間入院数ベースの新規入院余力
-        st.markdown("---")
-        st.markdown("### 📥 新規入院受入余力")
-        _monthly_adm = _ui_safe.get("monthly_admissions", 150)
-        _daily_adm_avg = _monthly_adm / 30
-        _empty_beds = _view_beds - _pts_now
-        _est_days_to_fill = _empty_beds / max(_daily_adm_avg, 0.1)
-        st.info(f"月間入院 **{_monthly_adm}件**（日平均 {_daily_adm_avg:.1f}件）のペースで、"
-                f"現在の空床 **{_empty_beds}床** が埋まるまで推定 **{_est_days_to_fill:.1f}日**。  \n"
-                f"退院を延期して空床を減らすほど、新規入院待機期間が短縮されます。")
 
 
 # ===== タブ: データ =====
