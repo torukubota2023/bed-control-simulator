@@ -961,8 +961,8 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
 
             # デフォルトパラメータで変換用パラメータ辞書を構築
             _pre_params_dict = {
-                "target_occupancy_lower": 0.90,
-                "target_occupancy_upper": 0.95,
+                "target_occupancy_lower": target_lower,
+                "target_occupancy_upper": target_upper,
                 "days_in_month": 17,
                 "monthly_admissions": 150,
                 "avg_length_of_stay": 19,
@@ -987,13 +987,13 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
                 "月間入院数": int(_pre_raw_df["new_admissions"].sum()),
                 "月間退院数": int(_pre_raw_df["discharges"].sum()),
                 "目標レンジ内日数": int(
-                    ((_pre_raw_df["occupancy_rate"] >= 0.90)
-                     & (_pre_raw_df["occupancy_rate"] <= 0.95)).sum()
+                    ((_pre_raw_df["occupancy_rate"] >= target_lower)
+                     & (_pre_raw_df["occupancy_rate"] <= target_upper)).sum()
                 ),
                 "目標レンジ内率": round(
                     float(
-                        ((_pre_raw_df["occupancy_rate"] >= 0.90)
-                         & (_pre_raw_df["occupancy_rate"] <= 0.95)).mean()
+                        ((_pre_raw_df["occupancy_rate"] >= target_lower)
+                         & (_pre_raw_df["occupancy_rate"] <= target_upper)).mean()
                     ) * 100, 1
                 ),
                 "A群平均構成比": round(float(_pre_raw_df["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_pre_raw_df["phase_a_ratio"].mean()) else 0.0,
@@ -1031,13 +1031,13 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
                         "月間入院数": int(_w_raw["new_admissions"].sum()),
                         "月間退院数": int(_w_raw["discharges"].sum()),
                         "目標レンジ内日数": int(
-                            ((_w_raw["occupancy_rate"] >= 0.90)
-                             & (_w_raw["occupancy_rate"] <= 0.95)).sum()
+                            ((_w_raw["occupancy_rate"] >= target_lower)
+                             & (_w_raw["occupancy_rate"] <= target_upper)).sum()
                         ),
                         "目標レンジ内率": round(
                             float(
-                                ((_w_raw["occupancy_rate"] >= 0.90)
-                                 & (_w_raw["occupancy_rate"] <= 0.95)).mean()
+                                ((_w_raw["occupancy_rate"] >= target_lower)
+                                 & (_w_raw["occupancy_rate"] <= target_upper)).mean()
                             ) * 100, 1
                         ),
                         "A群平均構成比": round(float(_w_raw["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_w_raw["phase_a_ratio"].mean()) else 0.0,
@@ -5133,7 +5133,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         _total_dis_wd = sum(_wd_values)
                         if _total_dis_wd > 0:
                             _fri_pct = _wd_values[4] / _total_dis_wd * 100
-                            if _fri_pct > 30:
+                            if _fri_pct > 25:
                                 _fri_loss = _wd_values[4] * 0.25 * 2 * _UNIT_PRICE_PER_DAY  # rough estimate
                                 st.warning(f"⚠️ 金曜退院が全体の{_fri_pct:.0f}%を占めています。週末の稼働率低下の要因の可能性があります。")
 
