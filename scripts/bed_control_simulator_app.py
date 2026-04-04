@@ -5483,7 +5483,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
                         _h4_adjust = st.slider(
                             "平均在院日数の調整（日）",
-                            min_value=-3.0, max_value=3.0, step=0.5, value=0.0,
+                            min_value=-15.0, max_value=15.0, step=0.5, value=0.0,
                             key="_hint_los_slider",
                             help="マイナス=早期退院、プラス=延長",
                         )
