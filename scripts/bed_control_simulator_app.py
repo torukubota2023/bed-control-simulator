@@ -5169,6 +5169,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
         # 各ヒントの改善額を積み上げ用に記録
         _hint_savings = {}
         _avg_occ_7d = None  # Hint 1 で算出、Hint 5 で参照
+        _annual_loss_total = 0  # Hint 1 で算出、他Hintで参照
 
         # =====================================================================
         # Hint 1: 稼働率ギャップ
@@ -5187,6 +5188,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             if _gap > 0:
                 _hints_found = True
                 _annual_loss = _gap * _ANNUAL_VALUE_PER_1PCT
+                _annual_loss_total = _annual_loss
                 _profit_pct = _annual_loss / _OPERATING_PROFIT * 100
 
                 with st.expander("⚠️ 稼働率ギャップ", expanded=True):
@@ -5196,6 +5198,17 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ検出</strong><br>
                         <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標90%まであと<strong>{_gap:.1f}%</strong>）</span><br>
                         <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # --- 具体策への導線 ---
+                    st.markdown("""
+                    <div style="background: #F0FDF4; border-left: 4px solid #22C55E; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                        <strong style="color: #1E293B;">📋 このギャップを埋めるための具体策</strong><br>
+                        <span style="color: #64748B;">以下の改善アクションを組み合わせることで、目標稼働率に近づけます：</span><br>
+                        <span style="color: #475569;">① 金曜退院の分散 → 土日の空床を削減</span><br>
+                        <span style="color: #475569;">② 医師別の退院曜日調整 → 特定医師の偏りを是正</span><br>
+                        <span style="color: #475569;">③ 在院日数の最適化 → 回転率の改善</span>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -5319,6 +5332,9 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                             with _h2c2:
                                 st.metric("年間改善額", f"{_hint2_annual/10000:.0f}万円",
                                           delta="改善余地あり")
+                            if _annual_loss_total > 0:
+                                _h2_gap_pct = min(100, _hint2_annual / _annual_loss_total * 100)
+                                st.caption(f"→ 稼働率ギャップ（年間{_annual_loss_total/10000:.0f}万円）の **{_h2_gap_pct:.0f}%** をカバー")
 
         # =====================================================================
         # Hint 3: 医師別の退院曜日偏り
@@ -5401,6 +5417,9 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                             with _h3c2:
                                 st.metric("年間改善額", f"{_hint3_saved/10000:.0f}万円",
                                           delta="改善余地あり")
+                            if _annual_loss_total > 0:
+                                _h3_gap_pct = min(100, _hint3_saved / _annual_loss_total * 100)
+                                st.caption(f"→ 稼働率ギャップの **{_h3_gap_pct:.0f}%** をカバー")
                         else:
                             st.info(f"{_hint3_doc} の金曜退院は0件です。調整の必要はありません。")
                     else:
@@ -5495,6 +5514,9 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                     f"月{abs(_h4_bed_days_change):.0f}ベッド日 × 年間 = "
                                     f"**{_h4_annual_value/10000:.0f}万円** の改善ポテンシャル"
                                 )
+                                if _annual_loss_total > 0:
+                                    _h4_gap_pct = min(100, _h4_annual_value / _annual_loss_total * 100)
+                                    st.caption(f"→ 稼働率ギャップの **{_h4_gap_pct:.0f}%** をカバー")
                             else:
                                 # 延長 → 稼働率は上がるがコスト増
                                 _h4_occ_gain = _h4_bed_days_change / (_view_beds * 30) * 100
@@ -5506,6 +5528,9 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                     f"年間 **{_h4_annual_gain/10000:.0f}万円** の効果"
                                     f"（ただし回転率は低下します）"
                                 )
+                                if _annual_loss_total > 0:
+                                    _h4e_gap_pct = min(100, _h4_annual_gain / _annual_loss_total * 100)
+                                    st.caption(f"→ 稼働率ギャップの **{_h4e_gap_pct:.0f}%** をカバー")
                         else:
                             st.caption("スライダーを動かして在院日数の調整効果をシミュレーションしてください。")
 
@@ -5540,6 +5565,17 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                 })
                 _stack_df = pd.DataFrame(_stack_rows)
                 st.dataframe(_stack_df, use_container_width=True, hide_index=True)
+
+                if _annual_loss_total > 0:
+                    _coverage_pct = min(100, _total_savings / _annual_loss_total * 100)
+                    st.markdown(f"##### 🎯 目標ギャップに対するカバー率: **{_coverage_pct:.0f}%**")
+                    st.progress(min(1.0, _coverage_pct / 100))
+                    if _coverage_pct >= 100:
+                        st.success("🎉 上記の改善策で目標稼働率90%を達成できる見込みです！")
+                    elif _coverage_pct >= 50:
+                        st.info(f"残り **{100 - _coverage_pct:.0f}%** は、新規入院経路の開拓や地域連携の強化で補完を検討してください。")
+                    else:
+                        st.warning(f"カバー率 **{_coverage_pct:.0f}%** — より積極的な改善策の検討が必要です。")
 
                 # 改善後の稼働率予測
                 if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:

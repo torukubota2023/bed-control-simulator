@@ -238,14 +238,14 @@ slide3.addShape(pres.shapes.RECTANGLE, {
 
 slide3.addText([
   { text: "年間 ", options: { fontSize: 24, color: C.white } },
-  { text: "1,113", options: { fontSize: 60, color: C.gold, bold: true } },
+  { text: "1,046", options: { fontSize: 60, color: C.gold, bold: true } },
   { text: " 万円", options: { fontSize: 24, color: C.white } },
 ], {
   x: 1.5, y: 3.1, w: 7.0, h: 1.0,
   fontFace: "Arial Black", align: "center", valign: "middle",
 });
 
-slide3.addText("= 年間黒字額 3,550万円 の 31% 相当", {
+slide3.addText("= 年間黒字額 3,550万円 の 29% 相当", {
   x: 1.5, y: 4.0, w: 7.0, h: 0.5,
   fontSize: 18, fontFace: "Calibri", color: C.lightBlue, align: "center", bold: true,
 });
@@ -326,7 +326,7 @@ slide4.addShape(pres.shapes.RECTANGLE, {
   x: 0.6, y: 4.7, w: 8.8, h: 0.6,
   fill: { color: C.navy },
 });
-slide4.addText("稼働率目標 90% まで、あと 1%。 その 1% = 年間 1,113万円。", {
+slide4.addText("稼働率目標 90% まで、あと 1%。 その 1% = 年間 1,046万円。", {
   x: 0.8, y: 4.7, w: 8.4, h: 0.6,
   fontSize: 16, fontFace: "Calibri", color: C.gold, bold: true, valign: "middle",
 });
@@ -358,8 +358,8 @@ slide5.addText([
   { text: "現在の稼働率 ", options: { fontSize: 16, color: C.white } },
   { text: "89%", options: { fontSize: 22, color: C.gold, bold: true } },
   { text: "  |  あと1%で年間 ", options: { fontSize: 16, color: C.white } },
-  { text: "+1,113万円", options: { fontSize: 22, color: C.gold, bold: true } },
-  { text: " （年間黒字額の31%相当）", options: { fontSize: 13, color: C.lightBlue } },
+  { text: "+1,046万円", options: { fontSize: 22, color: C.gold, bold: true } },
+  { text: " （年間黒字額の29%相当）", options: { fontSize: 13, color: C.lightBlue } },
 ], {
   x: 1.0, y: 1.8, w: 8.0, h: 0.8,
   fontFace: "Calibri", align: "center", valign: "middle",
@@ -835,7 +835,7 @@ slide11.addText("全職員が自発的に改善に動く仕組みを作る。", 
 
 // Key takeaways
 const takeaways = [
-  { text: "稼働率1% = 年間1,113万円 = 年間黒字額の31%", icon: "\u25A0" },
+  { text: "稼働率1% = 年間1,046万円", icon: "\u25A0" },
   { text: "「改善のヒント」で問題を自動検出し、金額で示す", icon: "\u25A0" },
   { text: "医師別の入退院パターンを可視化し、対話の根拠を作る", icon: "\u25A0" },
   { text: "改善の積み重ねで、一人ひとりの給与・賞与の原資を増やす", icon: "\u25A0" },
