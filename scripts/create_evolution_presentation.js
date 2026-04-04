@@ -245,13 +245,13 @@ slide3.addText([
   fontFace: "Arial Black", align: "center", valign: "middle",
 });
 
-slide3.addText("= 営業利益 3,550万円 の 31% 相当", {
+slide3.addText("= 年間黒字額 3,550万円 の 31% 相当", {
   x: 1.5, y: 4.0, w: 7.0, h: 0.5,
   fontSize: 18, fontFace: "Calibri", color: C.lightBlue, align: "center", bold: true,
 });
 
 // Footer note
-slide3.addText("たった1%の改善が、営業利益の約3分の1に匹敵する。", {
+slide3.addText("たった1%の改善が、年間黒字額の約3分の1に匹敵する。", {
   x: 0.6, y: 4.9, w: 8.8, h: 0.4,
   fontSize: 14, fontFace: "Georgia", color: C.medGray, italic: true,
 });
@@ -274,8 +274,8 @@ slide4.addShape(pres.shapes.RECTANGLE, {
 // Left column - big metrics
 const metrics = [
   { label: "売上高", value: "30\u51847,890\u4E07\u5186", y: 1.4 },
-  { label: "営業利益", value: "3,550\u4E07\u5186", y: 2.5 },
-  { label: "営業利益率", value: "1.15%", y: 3.6 },
+  { label: "年間黒字額", value: "3,550\u4E07\u5186", y: 2.5 },
+  { label: "黒字率", value: "1.15%", y: 3.6 },
 ];
 
 metrics.forEach((m) => {
@@ -359,7 +359,7 @@ slide5.addText([
   { text: "89%", options: { fontSize: 22, color: C.gold, bold: true } },
   { text: "  |  あと1%で年間 ", options: { fontSize: 16, color: C.white } },
   { text: "+1,113万円", options: { fontSize: 22, color: C.gold, bold: true } },
-  { text: " （営業利益の31%相当）", options: { fontSize: 13, color: C.lightBlue } },
+  { text: " （年間黒字額の31%相当）", options: { fontSize: 13, color: C.lightBlue } },
 ], {
   x: 1.0, y: 1.8, w: 8.0, h: 0.8,
   fontFace: "Calibri", align: "center", valign: "middle",
@@ -432,7 +432,7 @@ slide6.addText([
   { text: "土日の平均稼働率が82%に低下", options: { breakLine: true } },
   { text: "", options: { breakLine: true } },
   { text: "年間推定ロス: 576万円", options: { bold: true, color: C.red, breakLine: true } },
-  { text: "（営業利益の16%相当）", options: { color: C.red } },
+  { text: "（年間黒字額の16%相当）", options: { color: C.red } },
 ], {
   x: 0.9, y: 2.15, w: 3.7, h: 1.2,
   fontSize: 12, fontFace: "Calibri", color: C.subText, lineSpacingMultiple: 1.5,
@@ -469,7 +469,7 @@ slide6.addText("設計思想: データが問いかける仕組み", {
 const philosophy = [
   { num: "1", text: "何が起きているか\n事実の提示" },
   { num: "2", text: "いくらの影響か\n金額換算" },
-  { num: "3", text: "営業利益の何%か\n比率で実感" },
+  { num: "3", text: "年間黒字額の何%か\n比率で実感" },
   { num: "4", text: "どうすれば良いか\n改善策の提示" },
 ];
 
@@ -645,7 +645,7 @@ slide8.addText("稼働率換算: 約+2%", {
 });
 
 // Bottom note
-slide8.addText("個別は小さくても、積み重ねれば営業利益の 63% に相当する改善余地がある。", {
+slide8.addText("個別は小さくても、積み重ねれば年間黒字額の 63% に相当する改善余地がある。", {
   x: 0.6, y: 5.0, w: 8.8, h: 0.4,
   fontSize: 14, fontFace: "Georgia", color: C.medGray, italic: true,
 });
@@ -835,7 +835,7 @@ slide11.addText("全職員が自発的に改善に動く仕組みを作る。", 
 
 // Key takeaways
 const takeaways = [
-  { text: "稼働率1% = 年間1,113万円 = 営業利益の31%", icon: "\u25A0" },
+  { text: "稼働率1% = 年間1,113万円 = 年間黒字額の31%", icon: "\u25A0" },
   { text: "「改善のヒント」で問題を自動検出し、金額で示す", icon: "\u25A0" },
   { text: "医師別の入退院パターンを可視化し、対話の根拠を作る", icon: "\u25A0" },
   { text: "改善の積み重ねで、一人ひとりの給与・賞与の原資を増やす", icon: "\u25A0" },

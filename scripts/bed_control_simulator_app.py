@@ -660,7 +660,7 @@ def run_comparison(_params_hashable: tuple, params_dict_orig: dict):
 _UNIT_PRICE_PER_DAY = 30500  # 1日あたり入院単価
 _TOTAL_BEDS_METRIC = 94
 _ANNUAL_VALUE_PER_1PCT = _TOTAL_BEDS_METRIC * 0.01 * 365 * _UNIT_PRICE_PER_DAY  # ≈1,047万円
-_OPERATING_PROFIT = 35500000  # 営業利益3,550万円
+_OPERATING_PROFIT = 35500000  # 年間黒字額3,550万円
 
 # Get current occupancy from latest data if available
 _current_occ = None
@@ -681,14 +681,14 @@ if _current_occ is not None:
     st.sidebar.metric(
         label="稼働率1% の価値",
         value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
-        delta=f"営業利益の {_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%相当",
+        delta=f"年間黒字額の {_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%相当",
     )
     st.sidebar.caption(f"現在の稼働率: {_current_occ:.1f}% | 目標90%まであと{_gap_to_target:.1f}%")
 else:
     st.sidebar.metric(
         label="稼働率1% の価値",
         value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
-        delta=f"営業利益の {_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%相当",
+        delta=f"年間黒字額の {_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%相当",
     )
 st.sidebar.markdown("---")
 
@@ -5195,7 +5195,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
                         <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ検出</strong><br>
                         <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標90%まであと<strong>{_gap:.1f}%</strong>）</span><br>
-                        <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円（営業利益の{_profit_pct:.0f}%相当）</span>
+                        <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円（年間黒字額の{_profit_pct:.0f}%相当）</span>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -5224,7 +5224,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     st.info(
                         f"もし稼働率を **{_hint1_target:.1f}%** 改善できたら → "
                         f"年間 **{_hint1_annual_value/10000:.0f}万円** の改善 "
-                        f"（営業利益の **{_hint1_profit_impact:.0f}%** 相当、"
+                        f"（年間黒字額の **{_hint1_profit_impact:.0f}%** 相当、"
                         f"職員一人あたり年間 **{_hint1_per_person/10000:.1f}万円**）"
                     )
 
@@ -5319,7 +5319,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                 st.metric("移動する退院件数", f"{_hint2_moved}件/月")
                             with _h2c2:
                                 st.metric("年間改善額", f"{_hint2_annual/10000:.0f}万円",
-                                          delta=f"営業利益の{_hint2_profit_pct:.0f}%")
+                                          delta=f"年間黒字額の{_hint2_profit_pct:.0f}%")
 
         # =====================================================================
         # Hint 3: 医師別の退院曜日偏り
@@ -5401,7 +5401,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                 st.metric("移動する退院件数", f"{_hint3_move}件/月")
                             with _h3c2:
                                 st.metric("年間改善額", f"{_hint3_saved/10000:.0f}万円",
-                                          delta=f"営業利益の{_hint3_profit:.0f}%")
+                                          delta=f"年間黒字額の{_hint3_profit:.0f}%")
                         else:
                             st.info(f"{_hint3_doc} の金曜退院は0件です。調整の必要はありません。")
                     else:
@@ -5495,7 +5495,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                     f"空いたベッドに新入院が入れば → "
                                     f"月{abs(_h4_bed_days_change):.0f}ベッド日 × 年間 = "
                                     f"**{_h4_annual_value/10000:.0f}万円** の改善ポテンシャル"
-                                    f"（営業利益の**{_h4_profit_pct:.0f}%**相当）"
+                                    f"（年間黒字額の**{_h4_profit_pct:.0f}%**相当）"
                                 )
                             else:
                                 # 延長 → 稼働率は上がるがコスト増
@@ -5523,7 +5523,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             | 指標 | 数値 |
             |------|------|
             | 稼働率1% の年間価値 | **{_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円** |
-            | 営業利益に対する比率 | **{_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%** |
+            | 年間黒字額に対する比率 | **{_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%** |
             | 人件費率58%換算（290人） | 一人あたり年間 **約{_ANNUAL_VALUE_PER_1PCT*0.58/290/10000:.1f}万円** |
             """)
 
@@ -5534,14 +5534,14 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     _stack_rows.append({
                         "改善項目": _hint_name,
                         "年間改善額（万円）": round(_hint_val / 10000),
-                        "営業利益比（%）": round(_hint_val / _OPERATING_PROFIT * 100, 1),
+                        "黒字額比（%）": round(_hint_val / _OPERATING_PROFIT * 100, 1),
                     })
                 _stack_df = pd.DataFrame(_stack_rows)
                 _total_savings = sum(_hint_savings.values())
                 _stack_rows.append({
                     "改善項目": "合計",
                     "年間改善額（万円）": round(_total_savings / 10000),
-                    "営業利益比（%）": round(_total_savings / _OPERATING_PROFIT * 100, 1),
+                    "黒字額比（%）": round(_total_savings / _OPERATING_PROFIT * 100, 1),
                 })
                 _stack_df = pd.DataFrame(_stack_rows)
                 st.dataframe(_stack_df, use_container_width=True, hide_index=True)
