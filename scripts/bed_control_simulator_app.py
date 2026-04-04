@@ -1768,7 +1768,13 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     st.info(f"📈 回復トレンド（3日間で+{_slope_brief:.1f}%） — 対策継続を推奨")
 
             # 月平均達成見通し
-            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, _calendar_month_days, _view_beds) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
+            _brief_month_days = 31  # デフォルト
+            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+                _brief_date_ref = _active_raw_df["date"].iloc[-1] if "date" in _active_raw_df.columns else pd.Timestamp.now()
+                if isinstance(_brief_date_ref, str):
+                    _brief_date_ref = pd.to_datetime(_brief_date_ref)
+                _brief_month_days = calendar.monthrange(_brief_date_ref.year, _brief_date_ref.month)[1]
+            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, _brief_month_days, _view_beds) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
             if _mt_brief:
                 if _mt_brief["avg_so_far"] >= _mt_brief["monthly_target_pct"]:
                     st.caption(f"✅ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成ペース")
