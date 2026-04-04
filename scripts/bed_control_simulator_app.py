@@ -675,21 +675,12 @@ if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.sessi
     _current_occ = _latest_total_patients / _TOTAL_BEDS_METRIC * 100
 
 st.sidebar.markdown("---")
-if _current_occ is not None:
-    _gap_to_target = max(0, 90 - _current_occ)
-    _potential = _gap_to_target * _ANNUAL_VALUE_PER_1PCT
-    st.sidebar.metric(
-        label="稼働率1% の価値",
-        value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
-        delta="常勤医師1名分の手取り年収に相当",
-    )
-    st.sidebar.caption(f"現在の稼働率: {_current_occ:.1f}% | 目標90%まであと{_gap_to_target:.1f}%")
-else:
-    st.sidebar.metric(
-        label="稼働率1% の価値",
-        value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
-        delta="常勤医師1名分の手取り年収に相当",
-    )
+st.sidebar.metric(
+    label="稼働率1% の価値",
+    value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
+    delta="常勤医師1名分の手取り年収に相当",
+)
+_sidebar_occ_placeholder = st.sidebar.empty()  # target_lower 確定後に表示
 st.sidebar.markdown("---")
 
 # ---------------------------------------------------------------------------
@@ -731,6 +722,14 @@ target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step
 # 目標上限 < 下限のバリデーション
 if target_upper < target_lower:
     st.sidebar.warning("目標稼働率上限が下限より低く設定されています。値を確認してください。")
+
+# サイドバー基盤指標のcaptionを目標値反映で表示
+_target_occ_pct = target_lower * 100
+if _current_occ is not None:
+    _gap_to_target = max(0, _target_occ_pct - _current_occ)
+    _sidebar_occ_placeholder.caption(
+        f"現在の稼働率: {_current_occ:.1f}% | 目標{_target_occ_pct:.0f}%まであと{_gap_to_target:.1f}%"
+    )
 
 # シミュレーションモード専用のパラメータ
 if not _is_actual_data_mode:
@@ -5184,7 +5183,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             else:
                 _latest_data = _daily_df.sort_values("date").tail(7)
             _avg_occ_7d = _latest_data["total_patients"].mean() / _view_beds * 100
-            _gap = 90 - _avg_occ_7d
+            _gap = _target_occ_pct - _avg_occ_7d
             if _gap > 0:
                 _hints_found = True
                 _annual_loss = _gap * _ANNUAL_VALUE_PER_1PCT
@@ -5196,7 +5195,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     st.markdown(f"""
                     <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
                         <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ検出</strong><br>
-                        <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標90%まであと<strong>{_gap:.1f}%</strong>）</span><br>
+                        <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標{_target_occ_pct:.0f}%まであと<strong>{_gap:.1f}%</strong>）</span><br>
                         <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円</span>
                     </div>
                     """, unsafe_allow_html=True)
