@@ -746,23 +746,81 @@ else:
     discharge_adj = 2
     admission_var = 1.0
 
+# ---------------------------------------------------------------------------
+# 診療報酬プリセット定義
+# ---------------------------------------------------------------------------
+# 各フェーズの日次診療報酬は「基本入院料 + 初期加算 + リハビリ出来高推定」を
+# 合算した包括値。初日加算・14日以内加算・リハビリ出来高の個別欄は
+# 追加で上乗せしたい場合のみ使用。
+_FEE_PRESETS = {
+    "2024年度（令和6年度）": {
+        "desc": "基本 3,050点/日 ＋ 初期加算 150点/日（14日以内）",
+        "base_points": 3050,
+        "initial_bonus_points": 150,
+        "a_rev": 36000, "a_cost": 12000,   # 30,500 + 1,500(初期) + 4,000(リハ推定)
+        "b_rev": 36000, "b_cost": 6000,    # 同上
+        "c_rev": 33400, "c_cost": 4500,    # 30,500 + 2,900(リハ推定)
+        "day1_bonus": 0, "within_14_bonus": 0, "rehab_fee": 0,
+        "note": "初期加算1,500円/日・リハビリ出来高は各群の報酬に包含済み",
+    },
+    "2026年度（令和8年度）": {
+        "desc": "入院料1: イ3,367 / ロ3,267 / ハ3,117点（加重平均≈3,250点）＋ 初期加算 150点",
+        "base_points": 3250,  # 加重平均
+        "initial_bonus_points": 150,
+        "a_rev": 38500, "a_cost": 12000,   # 32,500 + 1,500(初期) + 4,500(リハ推定)
+        "b_rev": 38500, "b_cost": 6000,    # 同上
+        "c_rev": 35500, "c_cost": 4500,    # 32,500 + 3,000(リハ推定)
+        "day1_bonus": 0, "within_14_bonus": 0, "rehab_fee": 0,
+        "note": "入院料1（急性期非併設）の加重平均。初期加算・リハビリ出来高は各群に包含済み",
+    },
+}
+
+# --- 診療報酬プリセット選択 ---
+_fee_preset_name = st.sidebar.selectbox(
+    "診療報酬改定プリセット",
+    list(_FEE_PRESETS.keys()),
+    index=0,
+    help="改定年度を選ぶと診療報酬パラメータが自動設定されます。個別調整も可能です。",
+)
+_fee_preset = _FEE_PRESETS[_fee_preset_name]
+st.sidebar.caption(f"📋 {_fee_preset['desc']}")
+
+# プリセット切替時にセッションステートを更新
+if "prev_fee_preset" not in st.session_state:
+    st.session_state.prev_fee_preset = _fee_preset_name
+if st.session_state.prev_fee_preset != _fee_preset_name:
+    # プリセットが変更された → 各パラメータのセッションステートを上書き
+    for _k, _sk in [
+        ("a_rev", "a_rev"), ("a_cost", "a_cost"),
+        ("b_rev", "b_rev"), ("b_cost", "b_cost"),
+        ("c_rev", "c_rev"), ("c_cost", "c_cost"),
+        ("day1_bonus", "day1_bonus_input"), ("within_14_bonus", "within_14_bonus_input"),
+        ("rehab_fee", "rehab_fee_input"),
+    ]:
+        if _sk in st.session_state:
+            st.session_state[_sk] = _fee_preset[_k]
+    st.session_state.prev_fee_preset = _fee_preset_name
+    st.rerun()
+
 # --- 患者フェーズ別パラメータ（運営貢献額ベース：変動費のみ計上） ---
 with st.sidebar.expander("患者フェーズ別パラメータ"):
+    st.caption(f"ℹ️ {_fee_preset['note']}")
     st.markdown("**A群（急性期: 〜5日目）**")
-    phase_a_rev = st.number_input("A群 日次診療報酬（円）", value=36000, step=1000, key="a_rev")
-    phase_a_cost = st.number_input("A群 日次変動費（円）", value=12000, step=1000, key="a_cost")
+    phase_a_rev = st.number_input("A群 日次診療報酬（円）", value=_fee_preset["a_rev"], step=1000, key="a_rev")
+    phase_a_cost = st.number_input("A群 日次変動費（円）", value=_fee_preset["a_cost"], step=1000, key="a_cost")
     st.markdown("**B群（回復期: 6〜14日目）**")
-    phase_b_rev = st.number_input("B群 日次診療報酬（円）", value=36000, step=1000, key="b_rev")
-    phase_b_cost = st.number_input("B群 日次変動費（円）", value=6000, step=1000, key="b_cost")
+    phase_b_rev = st.number_input("B群 日次診療報酬（円）", value=_fee_preset["b_rev"], step=1000, key="b_rev")
+    phase_b_cost = st.number_input("B群 日次変動費（円）", value=_fee_preset["b_cost"], step=1000, key="b_cost")
     st.markdown("**C群（退院準備期: 15日目〜）**")
-    phase_c_rev = st.number_input("C群 日次診療報酬（円）", value=33400, step=1000, key="c_rev")
-    phase_c_cost = st.number_input("C群 日次変動費（円）", value=4500, step=1000, key="c_cost")
+    phase_c_rev = st.number_input("C群 日次診療報酬（円）", value=_fee_preset["c_rev"], step=1000, key="c_rev")
+    phase_c_cost = st.number_input("C群 日次変動費（円）", value=_fee_preset["c_cost"], step=1000, key="c_cost")
 
 # --- 追加パラメータ ---
 with st.sidebar.expander("追加パラメータ"):
-    day1_bonus = st.number_input("初日加算（円）", value=0, step=1000)
-    within_14_bonus = st.number_input("14日以内加算（円/日）", value=0, step=500)
-    rehab_fee = st.number_input("リハビリ出来高（円/日）", value=0, step=500)
+    st.caption("ℹ️ 初日加算・14日以内加算・リハビリ出来高はプリセットでA/B/C群報酬に包含済み。\n追加で上乗せしたい場合のみ入力してください。")
+    day1_bonus = st.number_input("初日加算（円）", value=_fee_preset["day1_bonus"], step=1000, key="day1_bonus_input")
+    within_14_bonus = st.number_input("14日以内加算（円/日）", value=_fee_preset["within_14_bonus"], step=500, key="within_14_bonus_input")
+    rehab_fee = st.number_input("リハビリ出来高（円/日）", value=_fee_preset["rehab_fee"], step=500, key="rehab_fee_input")
     opportunity_cost = st.number_input("未活用病床コスト（円/空床/日）", value=25000, step=1000)
     discharge_threshold = st.slider("退院促進閾値", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
     suppression_threshold = st.slider("新規入院抑制閾値", 0.80, 1.00, 0.97, step=0.01, format="%.2f")
