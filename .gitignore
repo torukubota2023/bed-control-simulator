@@ -18,6 +18,9 @@ output/*.png
 .claude/settings.local.json
 .mcp.json
 
+# Secrets
+.env
+
 # Node
 node_modules/
 package-lock.json
