@@ -1,0 +1,15 @@
+﻿id,name,type,doctor_id,active
+f5aecd49-0f04-506f-ad86-87bdece91992,外来紹介,経路,,True
+0f8da208-7aac-501f-b3e7-5dcfb2dbdee5,救急,経路,,True
+a5a280bc-3633-53dc-be5e-28e51c0e55bb,連携室,経路,,True
+71552dee-7555-51fc-9fa8-3bf2715a5eca,ウォークイン,経路,,True
+763dfac6-8215-57b7-83d6-e247dcca86d2,A医師,医師,37dc22e2-1b22-5bf2-831c-4da7eb019445,True
+4fb2cf02-2bad-541f-9a9c-9816293aa5eb,B医師,医師,4becbbd8-f091-53f6-9b52-95c8dbd6266e,True
+0624972b-5677-5702-a294-3dfc3c97e8b5,C医師,医師,6343afe5-d7a0-538c-99a5-d87abdb90c2d,True
+5eea7847-6989-5524-9de8-457bd2121807,D医師,医師,ab4d1b8b-4871-55c3-8fcf-51162a968675,True
+b375f558-7c95-589f-8a66-2a01456d67ac,E医師,医師,b706993d-be02-5db0-a00f-140542ec532f,True
+fc22c701-e32d-5a56-a658-0ad83f4aaf0d,F医師,医師,1da4bbe3-ce48-5776-af3a-7a4a29548c01,True
+dc14ed07-0ccd-5961-95fd-71bb8efe1b66,G医師,医師,d14a4c2a-6ff1-5ed5-b452-153ce5d11074,True
+cfe49835-a58b-5978-a45f-3e3ed94ac735,H医師,医師,4e2f1cda-f2fb-5537-827b-ab424ec51952,True
+bacebdd4-a7f8-5c67-ac4d-a172630e34ed,I医師,医師,0249521e-800e-5780-9992-6128d7bc8641,True
+916b43c1-ba27-5c81-b68a-fb276e1bbf25,J医師,医師,36c8403e-65bd-589f-9c08-4c6d4f952dfc,True

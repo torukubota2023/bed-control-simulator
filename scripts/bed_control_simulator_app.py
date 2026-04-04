@@ -5131,36 +5131,78 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                     st.info(f"{_selected_month} のデータがありません")
 
 # ---------------------------------------------------------------------------
-# タブ: 💡 改善のヒント
+# タブ: 💡 改善のヒント（インタラクティブ What-If シミュレーション付き）
 # ---------------------------------------------------------------------------
 if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒント" in _tab_idx:
     with tabs[_tab_idx["💡 改善のヒント"]]:
+        import plotly.graph_objects as go
+
         st.subheader("💡 改善のヒント")
-        st.caption("運用データから改善の種を自動検出して提示します")
+        st.caption("運用データから改善の種を自動検出し、What-Ifシミュレーションで効果を試算します")
 
         _detail_df = st.session_state.get("admission_details", pd.DataFrame())
         _daily_df = st.session_state.get("daily_data", pd.DataFrame())
+        _wd_labels = ["月", "火", "水", "木", "金", "土", "日"]
 
         _hints_found = False
+        # 各ヒントの改善額を積み上げ用に記録
+        _hint_savings = {}
+        _avg_occ_7d = None  # Hint 1 で算出、Hint 5 で参照
 
-        # --- Hint 1: Occupancy gap ---
+        # =====================================================================
+        # Hint 1: 稼働率ギャップ
+        # =====================================================================
         if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
             _latest_data = _daily_df.sort_values("date").tail(7)
             _avg_occ_7d = _latest_data["total_patients"].mean() / _TOTAL_BEDS_METRIC * 100
             _gap = 90 - _avg_occ_7d
             if _gap > 0:
+                _hints_found = True
                 _annual_loss = _gap * _ANNUAL_VALUE_PER_1PCT / 100
                 _profit_pct = _annual_loss / _OPERATING_PROFIT * 100
-                st.markdown(f"""
-                <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
-                    <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ</strong><br>
-                    <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標90%まであと<strong>{_gap:.1f}%</strong>）</span><br>
-                    <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円（営業利益の{_profit_pct:.0f}%相当）</span>
-                </div>
-                """, unsafe_allow_html=True)
-                _hints_found = True
 
-        # --- Hint 2: Discharge weekday concentration ---
+                with st.expander("⚠️ 稼働率ギャップ", expanded=True):
+                    # --- 検出アラート ---
+                    st.markdown(f"""
+                    <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                        <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ検出</strong><br>
+                        <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標90%まであと<strong>{_gap:.1f}%</strong>）</span><br>
+                        <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円（営業利益の{_profit_pct:.0f}%相当）</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # --- What-If シミュレーション ---
+                    st.markdown("##### 🔧 What-If シミュレーション")
+                    _hint1_default = min(_gap, 5.0)
+                    _hint1_default_rounded = round(_hint1_default * 2) / 2  # 0.5刻みに丸め
+                    _hint1_target = st.slider(
+                        "稼働率改善目標（%ポイント）",
+                        min_value=0.5, max_value=5.0, step=0.5,
+                        value=min(_hint1_default_rounded, 5.0),
+                        key="_hint_occ_slider",
+                    )
+                    _hint1_annual_value = _hint1_target * _ANNUAL_VALUE_PER_1PCT / 100
+                    _hint1_profit_impact = _hint1_annual_value / _OPERATING_PROFIT * 100
+                    _hint1_per_person = _hint1_annual_value * 0.58 / 290  # 人件費率58%, 290人
+
+                    _hint_savings["稼働率改善"] = _hint1_annual_value
+
+                    _h1c1, _h1c2 = st.columns(2)
+                    with _h1c1:
+                        st.metric("現在の稼働率", f"{_avg_occ_7d:.1f}%")
+                    with _h1c2:
+                        st.metric("改善後の稼働率", f"{_avg_occ_7d + _hint1_target:.1f}%", delta=f"+{_hint1_target:.1f}%")
+
+                    st.info(
+                        f"もし稼働率を **{_hint1_target:.1f}%** 改善できたら → "
+                        f"年間 **{_hint1_annual_value/10000:.0f}万円** の改善 "
+                        f"（営業利益の **{_hint1_profit_impact:.0f}%** 相当、"
+                        f"職員一人あたり年間 **{_hint1_per_person/10000:.1f}万円**）"
+                    )
+
+        # =====================================================================
+        # Hint 2: 金曜退院の集中
+        # =====================================================================
         if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
             _wd_dist = get_discharge_weekday_distribution(_detail_df)
             if _wd_dist:
@@ -5169,48 +5211,286 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     _fri_count = _wd_dist.get(4, 0)
                     _fri_pct_h = _fri_count / _total_dis_h * 100
                     if _fri_pct_h > 25:
-                        _expected_even = _total_dis_h / 5  # weekdays only
+                        _hints_found = True
+                        _expected_even = _total_dis_h / 5
                         _excess_fri = _fri_count - _expected_even
-                        _weekend_loss = _excess_fri * 2 * _UNIT_PRICE_PER_DAY  # 2 weekend days lost per excess Friday discharge
-                        _annual_fri_loss = _weekend_loss * 12
-                        _fri_profit_pct = _annual_fri_loss / _OPERATING_PROFIT * 100
-                        st.markdown(f"""
-                        <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
-                            <strong style="color: #1E293B; font-size: 16px;">⚠️ 金曜退院の集中</strong><br>
-                            <span style="color: #64748B;">金曜退院: {_fri_count}件（全体の<strong>{_fri_pct_h:.0f}%</strong>）→ 土日の稼働率低下の要因</span><br>
-                            <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_fri_loss/10000:.0f}万円（営業利益の{_fri_profit_pct:.0f}%相当）</span><br>
-                            <span style="color: #64748B; font-size: 13px;">金曜退院の一部を月曜にずらすだけで改善可能</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        _hints_found = True
 
-        # --- Hint 3: Doctor admission creation disparity ---
+                        with st.expander("⚠️ 金曜退院の集中", expanded=True):
+                            # --- 検出アラート ---
+                            st.markdown(f"""
+                            <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                                <strong style="color: #1E293B; font-size: 16px;">⚠️ 金曜退院の集中検出</strong><br>
+                                <span style="color: #64748B;">金曜退院: {_fri_count}件（全体の<strong>{_fri_pct_h:.0f}%</strong>）→ 土日の稼働率低下の要因</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            # --- 医師別の金曜集中テーブル ---
+                            st.markdown("##### 📋 医師別 金曜退院率")
+                            _dis_df_h2 = _detail_df[_detail_df["event_type"] == "discharge"]
+                            _doc_names_h2 = sorted(_dis_df_h2["attending_doctor"].unique())
+                            _fri_table_rows = []
+                            for _dn in _doc_names_h2:
+                                _doc_wd = get_discharge_weekday_distribution(_detail_df, _dn)
+                                if _doc_wd and sum(_doc_wd.values()) > 0:
+                                    _d_total = sum(_doc_wd.values())
+                                    _d_fri = _doc_wd.get(4, 0)
+                                    _d_fri_pct = _d_fri / _d_total * 100
+                                    _fri_table_rows.append({
+                                        "医師名": _dn,
+                                        "総退院数": _d_total,
+                                        "金曜退院数": _d_fri,
+                                        "金曜率(%)": round(_d_fri_pct, 1),
+                                        "集中": "⚠️" if _d_fri_pct > 30 else "",
+                                    })
+                            if _fri_table_rows:
+                                _fri_table_df = pd.DataFrame(_fri_table_rows).sort_values("金曜率(%)", ascending=False)
+                                st.dataframe(_fri_table_df, use_container_width=True, hide_index=True)
+
+                            # --- What-If シミュレーション ---
+                            st.markdown("##### 🔧 What-If シミュレーション")
+                            _hint2_move_pct = st.slider(
+                                "金曜退院のうち火〜木へ移動する割合（%）",
+                                min_value=0, max_value=100, step=10, value=50,
+                                key="_hint_fri_slider",
+                            )
+                            _hint2_moved = int(_excess_fri * _hint2_move_pct / 100)
+                            _hint2_weekend_saved = _hint2_moved * 2 * _UNIT_PRICE_PER_DAY
+                            _hint2_annual = _hint2_weekend_saved * 12
+                            _hint2_profit_pct = _hint2_annual / _OPERATING_PROFIT * 100
+
+                            _hint_savings["金曜退院分散"] = _hint2_annual
+
+                            # Before/After の曜日分布チャート
+                            _before_vals = [_wd_dist.get(i, 0) for i in range(7)]
+                            _after_vals = list(_before_vals)
+                            # 金曜から火〜木へ均等に振り分け
+                            _after_vals[4] = max(0, _after_vals[4] - _hint2_moved)
+                            _per_day_add = _hint2_moved / 3  # 火・水・木に均等配分
+                            for _di in [1, 2, 3]:
+                                _after_vals[_di] += _per_day_add
+
+                            _fig_h2 = go.Figure()
+                            _fig_h2.add_trace(go.Bar(
+                                x=_wd_labels, y=_before_vals,
+                                name="現在", marker_color="#94A3B8",
+                            ))
+                            _fig_h2.add_trace(go.Bar(
+                                x=_wd_labels, y=_after_vals,
+                                name="改善後", marker_color="#3B82F6",
+                            ))
+                            _fig_h2.update_layout(
+                                barmode="group", height=300,
+                                title="退院の曜日分布（現在 vs 改善後）",
+                                xaxis_title="曜日", yaxis_title="退院件数",
+                                margin=dict(t=40, b=40, l=40, r=20),
+                            )
+                            st.plotly_chart(_fig_h2, use_container_width=True)
+
+                            _h2c1, _h2c2 = st.columns(2)
+                            with _h2c1:
+                                st.metric("移動する退院件数", f"{_hint2_moved}件/月")
+                            with _h2c2:
+                                st.metric("年間改善額", f"{_hint2_annual/10000:.0f}万円",
+                                          delta=f"営業利益の{_hint2_profit_pct:.0f}%")
+
+        # =====================================================================
+        # Hint 3: 医師別の退院曜日偏り
+        # =====================================================================
         if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
-            _adm_df = _detail_df[_detail_df["event_type"] == "admission"]
-            if len(_adm_df) > 0:
-                _source_counts = _adm_df[_adm_df["source_doctor"] != ""]["source_doctor"].value_counts()
-                if len(_source_counts) >= 2:
-                    _top_creator = _source_counts.index[0]
-                    _top_count = _source_counts.iloc[0]
-                    _bottom_creator = _source_counts.index[-1]
-                    _bottom_count = _source_counts.iloc[-1]
-                    _diff = _top_count - _bottom_count
-                    if _diff >= 3:
-                        _potential_value = _diff * 0.5 * 14 * _UNIT_PRICE_PER_DAY  # half the gap * avg LOS * daily rate
-                        st.markdown(f"""
-                        <div style="background: #F0FDF4; border-left: 4px solid #10B981; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
-                            <strong style="color: #1E293B; font-size: 16px;">💡 入院創出の偏り</strong><br>
-                            <span style="color: #64748B;">{_top_creator}: <strong>{_top_count}件</strong> vs {_bottom_creator}: <strong>{_bottom_count}件</strong>（差: {_diff}件）</span><br>
-                            <span style="color: #10B981; font-weight: bold;">底上げポテンシャル: {_potential_value/10000:.0f}万円/月</span><br>
-                            <span style="color: #64748B; font-size: 13px;">入院創出が少ない医師のサポートで入院数を増やせる可能性</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        _hints_found = True
+            _dis_df_h3 = _detail_df[_detail_df["event_type"] == "discharge"]
+            _doc_names_h3 = sorted(_dis_df_h3["attending_doctor"].unique())
+            if len(_doc_names_h3) > 0:
+                with st.expander("🔍 医師別の退院曜日偏り", expanded=False):
+                    st.markdown("""
+                    <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                        <strong style="color: #1E293B; font-size: 16px;">🔍 医師別 退院曜日パターン分析</strong><br>
+                        <span style="color: #64748B;">特定の医師の退院曜日を調整した場合の効果をシミュレーションします</span>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        # --- Hint 4: Improvement stacking summary ---
-        if _hints_found:
+                    _hint3_doc = st.selectbox(
+                        "分析する医師を選択",
+                        _doc_names_h3,
+                        key="_hint_doc_select",
+                    )
+                    _doc_wd_h3 = get_discharge_weekday_distribution(_detail_df, _hint3_doc)
+                    if _doc_wd_h3 and sum(_doc_wd_h3.values()) > 0:
+                        _doc_vals_h3 = [_doc_wd_h3.get(i, 0) for i in range(7)]
+                        _doc_total_h3 = sum(_doc_vals_h3)
+                        _doc_fri_h3 = _doc_vals_h3[4]
+
+                        # 医師の現在の分布チャート
+                        _fig_h3 = go.Figure()
+                        _colors_h3 = ["#3B82F6" if i != 4 else "#EF4444" for i in range(7)]
+                        _fig_h3.add_trace(go.Bar(
+                            x=_wd_labels, y=_doc_vals_h3,
+                            marker_color=_colors_h3,
+                        ))
+                        _fig_h3.update_layout(
+                            height=250,
+                            title=f"{_hint3_doc} の退院曜日分布",
+                            xaxis_title="曜日", yaxis_title="退院件数",
+                            margin=dict(t=40, b=40, l=40, r=20),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(_fig_h3, use_container_width=True)
+
+                        # What-If: この医師の金曜退院を移動
+                        st.markdown("##### 🔧 What-If シミュレーション")
+                        _hint3_max_move = max(int(_doc_fri_h3), 0)
+                        if _hint3_max_move > 0:
+                            _hint3_move = st.slider(
+                                f"この医師の金曜退院を何件火〜木に移動？",
+                                min_value=0, max_value=_hint3_max_move, step=1,
+                                value=min(_hint3_max_move, max(1, _hint3_max_move // 2)),
+                                key="_hint_doc_fri_slider",
+                            )
+                            _hint3_saved = _hint3_move * 2 * _UNIT_PRICE_PER_DAY * 12
+                            _hint3_profit = _hint3_saved / _OPERATING_PROFIT * 100
+
+                            _hint_savings[f"{_hint3_doc}退院調整"] = _hint3_saved
+
+                            # Before/After
+                            _after_h3 = list(_doc_vals_h3)
+                            _after_h3[4] = max(0, _after_h3[4] - _hint3_move)
+                            _per_day_h3 = _hint3_move / 3
+                            for _di in [1, 2, 3]:
+                                _after_h3[_di] += _per_day_h3
+
+                            _fig_h3b = go.Figure()
+                            _fig_h3b.add_trace(go.Bar(x=_wd_labels, y=_doc_vals_h3, name="現在", marker_color="#94A3B8"))
+                            _fig_h3b.add_trace(go.Bar(x=_wd_labels, y=_after_h3, name="改善後", marker_color="#3B82F6"))
+                            _fig_h3b.update_layout(
+                                barmode="group", height=250,
+                                title=f"{_hint3_doc}: 退院曜日（現在 vs 改善後）",
+                                xaxis_title="曜日", yaxis_title="退院件数",
+                                margin=dict(t=40, b=40, l=40, r=20),
+                            )
+                            st.plotly_chart(_fig_h3b, use_container_width=True)
+
+                            _h3c1, _h3c2 = st.columns(2)
+                            with _h3c1:
+                                st.metric("移動する退院件数", f"{_hint3_move}件/月")
+                            with _h3c2:
+                                st.metric("年間改善額", f"{_hint3_saved/10000:.0f}万円",
+                                          delta=f"営業利益の{_hint3_profit:.0f}%")
+                        else:
+                            st.info(f"{_hint3_doc} の金曜退院は0件です。調整の必要はありません。")
+                    else:
+                        st.info(f"{_hint3_doc} の退院データがありません。")
+
+        # =====================================================================
+        # Hint 4: 在院日数の最適化
+        # =====================================================================
+        if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
+            _dis_df_h4 = _detail_df[_detail_df["event_type"] == "discharge"].copy()
+            if "los_days" in _dis_df_h4.columns and len(_dis_df_h4) > 0:
+                # 医師別の平均在院日数を算出
+                _dis_df_h4["los_days"] = pd.to_numeric(_dis_df_h4["los_days"], errors="coerce")
+                _los_by_doc = _dis_df_h4.groupby("attending_doctor")["los_days"].agg(["mean", "count"]).reset_index()
+                _los_by_doc.columns = ["医師名", "平均在院日数", "退院件数"]
+                _los_by_doc = _los_by_doc[_los_by_doc["退院件数"] >= 2]  # 2件以上のみ
+
+                # 極端な在院日数を検出（< 7日 or > 18日）
+                _short_los = _los_by_doc[_los_by_doc["平均在院日数"] < 7]
+                _long_los = _los_by_doc[_los_by_doc["平均在院日数"] > 18]
+                _has_outlier = len(_short_los) > 0 or len(_long_los) > 0
+
+                if _has_outlier or len(_los_by_doc) > 0:
+                    with st.expander("📊 在院日数の最適化", expanded=_has_outlier):
+                        if _has_outlier:
+                            _outlier_msgs = []
+                            for _, _r in _short_los.iterrows():
+                                _outlier_msgs.append(f"{_r['医師名']}: 平均{_r['平均在院日数']:.1f}日（短い）")
+                            for _, _r in _long_los.iterrows():
+                                _outlier_msgs.append(f"{_r['医師名']}: 平均{_r['平均在院日数']:.1f}日（長い）")
+                            st.markdown(f"""
+                            <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                                <strong style="color: #1E293B; font-size: 16px;">📊 在院日数の偏り検出</strong><br>
+                                <span style="color: #64748B;">{"、".join(_outlier_msgs)}</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            _hints_found = True
+                        else:
+                            st.markdown("""
+                            <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                                <strong style="color: #1E293B; font-size: 16px;">📊 在院日数の最適化シミュレーション</strong><br>
+                                <span style="color: #64748B;">医師別の在院日数を調整した場合の効果を試算します</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        # 医師別在院日数テーブル
+                        st.markdown("##### 📋 医師別 平均在院日数")
+                        _los_display = _los_by_doc.copy()
+                        _los_display["平均在院日数"] = _los_display["平均在院日数"].round(1)
+                        st.dataframe(_los_display, use_container_width=True, hide_index=True)
+
+                        # What-If シミュレーション
+                        st.markdown("##### 🔧 What-If シミュレーション")
+                        _h4_doc_list = _los_by_doc["医師名"].tolist()
+                        _h4_doc = st.selectbox(
+                            "在院日数を調整する医師を選択",
+                            _h4_doc_list,
+                            key="_hint_los_doc_select",
+                        )
+                        _h4_current_los = float(_los_by_doc[_los_by_doc["医師名"] == _h4_doc]["平均在院日数"].iloc[0])
+                        _h4_doc_count = int(_los_by_doc[_los_by_doc["医師名"] == _h4_doc]["退院件数"].iloc[0])
+
+                        _h4_adjust = st.slider(
+                            "平均在院日数の調整（日）",
+                            min_value=-3.0, max_value=3.0, step=0.5, value=0.0,
+                            key="_hint_los_slider",
+                            help="マイナス=早期退院、プラス=延長",
+                        )
+                        _h4_new_los = max(1.0, _h4_current_los + _h4_adjust)
+
+                        _h4c1, _h4c2 = st.columns(2)
+                        with _h4c1:
+                            st.metric("現在の平均在院日数", f"{_h4_current_los:.1f}日")
+                        with _h4c2:
+                            st.metric("調整後の平均在院日数", f"{_h4_new_los:.1f}日",
+                                      delta=f"{_h4_adjust:+.1f}日")
+
+                        # 効果試算
+                        if _h4_adjust != 0:
+                            # 在院日数が短くなる → 空いたベッドに新入院を入れられるポテンシャル
+                            # 在院日数が長くなる → 稼働率は上がるが回転率が下がる
+                            _h4_bed_days_change = _h4_adjust * _h4_doc_count  # 月あたりベッド日数変化
+                            if _h4_adjust < 0:
+                                # 早期退院 → 新入院受入ポテンシャル
+                                _h4_new_admissions = abs(_h4_bed_days_change) / max(_h4_new_los, 1)
+                                _h4_annual_value = abs(_h4_bed_days_change) * _UNIT_PRICE_PER_DAY * 12
+                                _h4_profit_pct = _h4_annual_value / _OPERATING_PROFIT * 100
+                                _hint_savings[f"{_h4_doc}在院日数最適化"] = _h4_annual_value
+                                st.success(
+                                    f"もし{_h4_doc}の患者が平均{abs(_h4_adjust):.1f}日早く退院し、"
+                                    f"空いたベッドに新入院が入れば → "
+                                    f"月{abs(_h4_bed_days_change):.0f}ベッド日 × 年間 = "
+                                    f"**{_h4_annual_value/10000:.0f}万円** の改善ポテンシャル"
+                                    f"（営業利益の**{_h4_profit_pct:.0f}%**相当）"
+                                )
+                            else:
+                                # 延長 → 稼働率は上がるがコスト増
+                                _h4_occ_gain = _h4_bed_days_change / (_TOTAL_BEDS_METRIC * 30) * 100
+                                _h4_annual_gain = _h4_occ_gain * _ANNUAL_VALUE_PER_1PCT / 100
+                                _hint_savings[f"{_h4_doc}在院日数延長"] = _h4_annual_gain
+                                st.info(
+                                    f"在院日数を{_h4_adjust:.1f}日延長 → "
+                                    f"稼働率が約{_h4_occ_gain:.2f}%上昇 → "
+                                    f"年間 **{_h4_annual_gain/10000:.0f}万円** の効果"
+                                    f"（ただし回転率は低下します）"
+                                )
+                        else:
+                            st.caption("スライダーを動かして在院日数の調整効果をシミュレーションしてください。")
+
+        # =====================================================================
+        # Hint 5: 改善の積み重ね効果（全スライダーの合計を動的に集計）
+        # =====================================================================
+        if _hints_found or len(_hint_savings) > 0:
             st.markdown("---")
-            st.markdown("#### 改善の積み重ね効果")
+            st.markdown("#### 🏗️ 改善の積み重ね効果")
+
+            # 基本指標テーブル
             st.markdown(f"""
             | 指標 | 数値 |
             |------|------|
@@ -5218,9 +5498,41 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             | 営業利益に対する比率 | **{_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%** |
             | 人件費率58%換算（290人） | 一人あたり年間 **約{_ANNUAL_VALUE_PER_1PCT*0.58/290/10000:.1f}万円** |
             """)
-            st.info("個別の改善は小さくても、積み重ねることで大きな効果になります。")
 
-        if not _hints_found:
+            # 各ヒントの積み上げサマリー
+            if len(_hint_savings) > 0:
+                _stack_rows = []
+                for _hint_name, _hint_val in _hint_savings.items():
+                    _stack_rows.append({
+                        "改善項目": _hint_name,
+                        "年間改善額（万円）": round(_hint_val / 10000),
+                        "営業利益比（%）": round(_hint_val / _OPERATING_PROFIT * 100, 1),
+                    })
+                _stack_df = pd.DataFrame(_stack_rows)
+                _total_savings = sum(_hint_savings.values())
+                _stack_rows.append({
+                    "改善項目": "合計",
+                    "年間改善額（万円）": round(_total_savings / 10000),
+                    "営業利益比（%）": round(_total_savings / _OPERATING_PROFIT * 100, 1),
+                })
+                _stack_df = pd.DataFrame(_stack_rows)
+                st.dataframe(_stack_df, use_container_width=True, hide_index=True)
+
+                # 改善後の稼働率予測
+                if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
+                    _curr_occ = _avg_occ_7d if _avg_occ_7d is not None else 85.0
+                    _occ_improvement = _total_savings / _ANNUAL_VALUE_PER_1PCT * 100
+                    _new_occ = _curr_occ + _occ_improvement
+                    st.success(
+                        f"すべての改善を実現した場合 → "
+                        f"稼働率 **{_curr_occ:.1f}%** → **{min(_new_occ, 100):.1f}%** "
+                        f"（+{_occ_improvement:.1f}%）、"
+                        f"年間 **{_total_savings/10000:.0f}万円** の改善"
+                    )
+            else:
+                st.info("個別の改善は小さくても、積み重ねることで大きな効果になります。")
+
+        if not _hints_found and len(_hint_savings) == 0:
             st.success("現時点で特に改善が必要なヒントはありません。データが蓄積されると自動で検出されます。")
 
 # ---------------------------------------------------------------------------

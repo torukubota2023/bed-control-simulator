@@ -80,6 +80,6 @@
 ## 運用ルール（必ず守ること）
 - **アプリ修正時の連動更新:** ベッドコントロールシミュレーター（bed_control_simulator_app.py）を修正した場合、以下も必ず確認・修正すること：
   - `scripts/help_content.py`（アプリ内の使い方説明文）
-  - `docs/admin/BedControl_Manual_v2.md`（運用マニュアル）
+  - `docs/admin/BedControl_Manual_v3.md`（運用マニュアル）
   - その他関連ドキュメント（設計書、メモ、プレゼン台本等）
   - 指示がなくても自動的に連動更新する

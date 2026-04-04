@@ -1,0 +1,11 @@
+﻿id,name,category,active
+37dc22e2-1b22-5bf2-831c-4da7eb019445,A医師,常勤病棟担当,True
+4becbbd8-f091-53f6-9b52-95c8dbd6266e,B医師,常勤病棟担当,True
+6343afe5-d7a0-538c-99a5-d87abdb90c2d,C医師,常勤病棟担当,True
+ab4d1b8b-4871-55c3-8fcf-51162a968675,D医師,常勤外来のみ,True
+b706993d-be02-5db0-a00f-140542ec532f,E医師,常勤病棟担当,True
+1da4bbe3-ce48-5776-af3a-7a4a29548c01,F医師,非常勤,True
+d14a4c2a-6ff1-5ed5-b452-153ce5d11074,G医師,常勤救急応援,True
+4e2f1cda-f2fb-5537-827b-ab424ec51952,H医師,常勤病棟担当,True
+0249521e-800e-5780-9992-6128d7bc8641,I医師,常勤外来のみ,True
+36c8403e-65bd-589f-9c08-4c6d4f952dfc,J医師,非常勤,True
