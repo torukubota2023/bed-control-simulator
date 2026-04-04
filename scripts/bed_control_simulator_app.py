@@ -676,7 +676,7 @@ if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.sessi
 
 st.sidebar.markdown("---")
 st.sidebar.metric(
-    label="稼働率1% の価値",
+    label="稼働率1%（≈1名の入院）の価値",
     value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
     delta="常勤医師1名分の手取り年収に相当",
 )
@@ -5569,7 +5569,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             st.markdown(f"""
             | 指標 | 数値 |
             |------|------|
-            | 稼働率1% の年間価値 | **{_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円** |
+            | 稼働率1%（≈1名の入院）の年間価値 | **{_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円** |
             | 人件費率58%換算（290人） | 一人あたり年間 **約{_ANNUAL_VALUE_PER_1PCT*0.58/290/10000:.1f}万円** |
             """)
 
