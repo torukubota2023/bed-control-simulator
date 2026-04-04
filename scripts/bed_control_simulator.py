@@ -250,7 +250,7 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
             3: 1.0,   # 木曜: 通常
             4: 0.5,   # 金曜: 少ない（週末前は入院控えめ）
             5: 0.1,   # 土曜: 救急のみ（ごく少数）
-            6: 0.05,  # 日曜: ほぼ入院なし
+            6: 0.0,   # 日曜: 入院なし
         }[_weekday]
 
         # バランス戦略用：事前にフェーズ構成比を計算
