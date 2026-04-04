@@ -1144,3 +1144,490 @@ def generate_sample_data(num_days: int = 30, num_beds: int | None = None, seed: 
     df["data_source"] = "demo"
 
     return df
+
+
+# ===========================================================================
+# 入退院詳細レコード管理（医師別・イベント単位）
+# ===========================================================================
+import uuid
+from collections import defaultdict
+
+# 入退院詳細レコードのカラム定義
+ADMISSION_DETAIL_COLUMNS = [
+    "id",                # ユニークイベントID (UUID)
+    "date",              # イベント日付 (YYYY-MM-DD)
+    "ward",              # 病棟 ("5F" or "6F")
+    "event_type",        # "admission" or "discharge"
+    "route",             # 入院経路（外来紹介/救急/連携室/ウォークイン）— 入院のみ
+    "source_doctor",     # 入院創出医 — 入院のみ、空欄可
+    "attending_doctor",  # 入院担当医/主治医
+    "los_days",          # 在院日数 — 退院のみ、入院時は空欄
+    "phase",             # A/B/C — 退院のみ、los_daysから自動計算
+]
+
+# 有効な入院経路
+VALID_ROUTES = ["外来紹介", "救急", "連携室", "ウォークイン"]
+
+# 有効なイベント種別
+VALID_EVENT_TYPES = ["admission", "discharge"]
+
+# 有効な病棟
+VALID_WARDS = ["5F", "6F"]
+
+
+def _los_to_phase(los_days: int) -> str:
+    """在院日数からフェーズ（A/B/C）を自動判定する。"""
+    if los_days <= 5:
+        return "A"
+    elif los_days <= 14:
+        return "B"
+    else:
+        return "C"
+
+
+def create_empty_detail_dataframe() -> pd.DataFrame:
+    """入退院詳細レコード用の空DataFrameを作成（カラム定義済み）。"""
+    df = pd.DataFrame(columns=ADMISSION_DETAIL_COLUMNS)
+    df["id"] = df["id"].astype("string")
+    df["date"] = pd.to_datetime(df["date"])
+    df["ward"] = df["ward"].astype("string")
+    df["event_type"] = df["event_type"].astype("string")
+    df["route"] = df["route"].astype("string")
+    df["source_doctor"] = df["source_doctor"].astype("string")
+    df["attending_doctor"] = df["attending_doctor"].astype("string")
+    df["los_days"] = df["los_days"].astype("Int64")
+    df["phase"] = df["phase"].astype("string")
+    return df
+
+
+def add_admission_event(
+    df: pd.DataFrame,
+    date: str | datetime,
+    ward: str,
+    route: str,
+    source_doctor: str,
+    attending_doctor: str,
+) -> pd.DataFrame:
+    """
+    入院イベントを追加する。
+
+    Args:
+        df: 既存の詳細DataFrame
+        date: 入院日（YYYY-MM-DD形式の文字列またはdatetime）
+        ward: 病棟（"5F" or "6F"）
+        route: 入院経路（外来紹介/救急/連携室/ウォークイン）
+        source_doctor: 入院創出医（空文字列可）
+        attending_doctor: 入院担当医/主治医
+
+    Returns:
+        レコード追加後のDataFrame
+    """
+    event_id = str(uuid.uuid4())
+    new_row = pd.DataFrame([{
+        "id": event_id,
+        "date": pd.to_datetime(date),
+        "ward": ward,
+        "event_type": "admission",
+        "route": route,
+        "source_doctor": source_doctor if source_doctor else pd.NA,
+        "attending_doctor": attending_doctor,
+        "los_days": pd.NA,
+        "phase": pd.NA,
+    }])
+    # 型を合わせる
+    new_row["id"] = new_row["id"].astype("string")
+    new_row["ward"] = new_row["ward"].astype("string")
+    new_row["event_type"] = new_row["event_type"].astype("string")
+    new_row["route"] = new_row["route"].astype("string")
+    new_row["source_doctor"] = new_row["source_doctor"].astype("string")
+    new_row["attending_doctor"] = new_row["attending_doctor"].astype("string")
+    new_row["los_days"] = new_row["los_days"].astype("Int64")
+    new_row["phase"] = new_row["phase"].astype("string")
+
+    df = pd.concat([df, new_row], ignore_index=True)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    return df
+
+
+def add_discharge_event(
+    df: pd.DataFrame,
+    date: str | datetime,
+    ward: str,
+    attending_doctor: str,
+    los_days: int,
+) -> pd.DataFrame:
+    """
+    退院イベントを追加する。phaseはlos_daysから自動計算。
+
+    Args:
+        df: 既存の詳細DataFrame
+        date: 退院日（YYYY-MM-DD形式の文字列またはdatetime）
+        ward: 病棟（"5F" or "6F"）
+        attending_doctor: 主治医
+        los_days: 在院日数
+
+    Returns:
+        レコード追加後のDataFrame
+    """
+    event_id = str(uuid.uuid4())
+    phase = _los_to_phase(los_days)
+    new_row = pd.DataFrame([{
+        "id": event_id,
+        "date": pd.to_datetime(date),
+        "ward": ward,
+        "event_type": "discharge",
+        "route": pd.NA,
+        "source_doctor": pd.NA,
+        "attending_doctor": attending_doctor,
+        "los_days": los_days,
+        "phase": phase,
+    }])
+    # 型を合わせる
+    new_row["id"] = new_row["id"].astype("string")
+    new_row["ward"] = new_row["ward"].astype("string")
+    new_row["event_type"] = new_row["event_type"].astype("string")
+    new_row["route"] = new_row["route"].astype("string")
+    new_row["source_doctor"] = new_row["source_doctor"].astype("string")
+    new_row["attending_doctor"] = new_row["attending_doctor"].astype("string")
+    new_row["los_days"] = new_row["los_days"].astype("Int64")
+    new_row["phase"] = new_row["phase"].astype("string")
+
+    df = pd.concat([df, new_row], ignore_index=True)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    return df
+
+
+def get_events_by_date(df: pd.DataFrame, date_str: str) -> pd.DataFrame:
+    """指定日付のイベントを抽出する。"""
+    target_date = pd.to_datetime(date_str)
+    return df[df["date"] == target_date].reset_index(drop=True)
+
+
+def get_events_by_doctor(
+    df: pd.DataFrame,
+    doctor_name: str,
+    role: str = "attending",
+) -> pd.DataFrame:
+    """
+    医師名でイベントを抽出する。
+
+    Args:
+        df: 詳細DataFrame
+        doctor_name: 医師名
+        role: "attending"（主治医）or "source"（入院創出医）
+
+    Returns:
+        該当医師のイベントDataFrame
+    """
+    if role == "source":
+        return df[df["source_doctor"] == doctor_name].reset_index(drop=True)
+    else:
+        return df[df["attending_doctor"] == doctor_name].reset_index(drop=True)
+
+
+def get_monthly_summary_by_doctor(
+    df: pd.DataFrame,
+    year_month_str: str,
+) -> dict:
+    """
+    指定月の医師別サマリーを返す。
+
+    Args:
+        df: 詳細DataFrame
+        year_month_str: "YYYY-MM" 形式（例: "2026-04"）
+
+    Returns:
+        dict: {
+            "doctor_name": {
+                "admissions": int,        # 主治医としての入院数
+                "admissions_created": int, # 入院創出医としての入院数
+                "discharges": int,         # 退院数
+                "avg_los": float,          # 平均在院日数
+                "phase_distribution": {"A": int, "B": int, "C": int},
+            },
+            ...
+        }
+    """
+    # 月でフィルタ
+    df_copy = df.copy()
+    df_copy["date"] = pd.to_datetime(df_copy["date"])
+    df_copy["year_month"] = df_copy["date"].dt.strftime("%Y-%m")
+    monthly = df_copy[df_copy["year_month"] == year_month_str]
+
+    # 全医師名を収集（attending_doctor + source_doctor）
+    doctors = set()
+    doctors.update(monthly["attending_doctor"].dropna().unique())
+    doctors.update(monthly["source_doctor"].dropna().unique())
+
+    result = {}
+    for doc in sorted(doctors):
+        # 主治医としての入院数
+        adm_attending = monthly[
+            (monthly["attending_doctor"] == doc) & (monthly["event_type"] == "admission")
+        ]
+        # 入院創出医としての入院数
+        adm_source = monthly[
+            (monthly["source_doctor"] == doc) & (monthly["event_type"] == "admission")
+        ]
+        # 退院数（主治医として）
+        dis = monthly[
+            (monthly["attending_doctor"] == doc) & (monthly["event_type"] == "discharge")
+        ]
+        # 平均在院日数
+        los_vals = dis["los_days"].dropna()
+        avg_los = float(los_vals.mean()) if len(los_vals) > 0 else 0.0
+
+        # フェーズ分布
+        phase_dist = {"A": 0, "B": 0, "C": 0}
+        for p in dis["phase"].dropna():
+            if p in phase_dist:
+                phase_dist[p] += 1
+
+        result[doc] = {
+            "admissions": len(adm_attending),
+            "admissions_created": len(adm_source),
+            "discharges": len(dis),
+            "avg_los": round(avg_los, 1),
+            "phase_distribution": phase_dist,
+        }
+
+    return result
+
+
+def get_discharge_weekday_distribution(
+    df: pd.DataFrame,
+    doctor_name: str | None = None,
+) -> dict:
+    """
+    退院の曜日別分布を返す。
+
+    Args:
+        df: 詳細DataFrame
+        doctor_name: 医師名（Noneなら全体）
+
+    Returns:
+        dict: {0: count, 1: count, ..., 6: count}  (0=月曜)
+    """
+    discharges = df[df["event_type"] == "discharge"].copy()
+    if doctor_name is not None:
+        discharges = discharges[discharges["attending_doctor"] == doctor_name]
+
+    discharges["date"] = pd.to_datetime(discharges["date"])
+    discharges["weekday"] = discharges["date"].dt.dayofweek  # 0=月曜
+
+    # 0〜6の全曜日を初期化
+    dist = {i: 0 for i in range(7)}
+    counts = discharges["weekday"].value_counts().to_dict()
+    dist.update({int(k): int(v) for k, v in counts.items()})
+    return dist
+
+
+def export_details_to_csv(df: pd.DataFrame) -> str:
+    """入退院詳細DataFrameをCSV文字列として返す（UTF-8）。"""
+    work = df.copy()
+    if "date" in work.columns:
+        work["date"] = pd.to_datetime(work["date"]).dt.strftime("%Y-%m-%d")
+    buf = io.StringIO()
+    work.to_csv(buf, index=False, encoding="utf-8")
+    return buf.getvalue()
+
+
+def import_details_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
+    """
+    CSVから入退院詳細レコードをインポートする。
+
+    Returns:
+        (DataFrame, エラーメッセージ) — エラーがなければ空文字列
+    """
+    try:
+        buf = io.StringIO(csv_content)
+        raw = pd.read_csv(buf)
+    except Exception as e:
+        return create_empty_detail_dataframe(), f"CSVの読み込みに失敗しました: {e}"
+
+    # 必須カラムチェック
+    required = ["date", "ward", "event_type", "attending_doctor"]
+    missing = [c for c in required if c not in raw.columns]
+    if missing:
+        return create_empty_detail_dataframe(), f"必須カラムが不足しています: {', '.join(missing)}"
+
+    # 型変換
+    try:
+        raw["date"] = pd.to_datetime(raw["date"])
+    except Exception:
+        return create_empty_detail_dataframe(), "date列の日付変換に失敗しました。YYYY-MM-DD形式で記載してください。"
+
+    # idがない場合はUUIDを自動生成
+    if "id" not in raw.columns:
+        raw["id"] = [str(uuid.uuid4()) for _ in range(len(raw))]
+
+    # オプションカラムの補完
+    for col in ["route", "source_doctor", "phase"]:
+        if col not in raw.columns:
+            raw[col] = pd.NA
+    if "los_days" not in raw.columns:
+        raw["los_days"] = pd.NA
+
+    # 文字列型
+    for col in ["id", "ward", "event_type", "route", "source_doctor",
+                 "attending_doctor", "phase"]:
+        if col in raw.columns:
+            raw[col] = raw[col].astype("string")
+
+    # 数値型
+    raw["los_days"] = pd.to_numeric(raw["los_days"], errors="coerce").astype("Int64")
+
+    # 退院レコードのphase自動計算（phaseが空でlos_daysがある場合）
+    discharge_mask = (raw["event_type"] == "discharge") & raw["los_days"].notna()
+    if discharge_mask.any():
+        raw.loc[discharge_mask, "phase"] = raw.loc[discharge_mask, "los_days"].apply(
+            lambda x: _los_to_phase(int(x))
+        ).astype("string")
+
+    # event_typeバリデーション
+    invalid_events = raw[~raw["event_type"].isin(VALID_EVENT_TYPES)]
+    if len(invalid_events) > 0:
+        return create_empty_detail_dataframe(), \
+            f"無効なevent_typeがあります（admission/dischargeのみ有効）: 行 {invalid_events.index.tolist()}"
+
+    # wardバリデーション
+    invalid_wards = raw[~raw["ward"].isin(VALID_WARDS)]
+    if len(invalid_wards) > 0:
+        return create_empty_detail_dataframe(), \
+            f"無効なwardがあります（5F/6Fのみ有効）: 行 {invalid_wards.index.tolist()}"
+
+    # 既知カラムだけ残す
+    raw = raw[[c for c in ADMISSION_DETAIL_COLUMNS if c in raw.columns]]
+
+    raw = raw.sort_values("date").reset_index(drop=True)
+    return raw, ""
+
+
+def save_details(
+    df: pd.DataFrame,
+    filepath: str = "data/admission_details.csv",
+) -> None:
+    """入退院詳細DataFrameをCSVファイルに保存する。"""
+    import os
+    work = df.copy()
+    if "date" in work.columns:
+        work["date"] = pd.to_datetime(work["date"]).dt.strftime("%Y-%m-%d")
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    work.to_csv(filepath, index=False, encoding="utf-8-sig")
+
+
+def load_details(
+    filepath: str = "data/admission_details.csv",
+) -> pd.DataFrame:
+    """CSVファイルから入退院詳細レコードを読み込む。ファイルがなければ空DataFrameを返す。"""
+    import os
+    if not os.path.exists(filepath):
+        return create_empty_detail_dataframe()
+
+    try:
+        raw = pd.read_csv(filepath)
+    except Exception:
+        return create_empty_detail_dataframe()
+
+    # 型変換
+    if "date" in raw.columns:
+        raw["date"] = pd.to_datetime(raw["date"])
+    for col in ["id", "ward", "event_type", "route", "source_doctor",
+                 "attending_doctor", "phase"]:
+        if col in raw.columns:
+            raw[col] = raw[col].astype("string")
+    if "los_days" in raw.columns:
+        raw["los_days"] = pd.to_numeric(raw["los_days"], errors="coerce").astype("Int64")
+
+    # 欠損カラム補完
+    for col in ADMISSION_DETAIL_COLUMNS:
+        if col not in raw.columns:
+            raw[col] = pd.NA
+
+    raw = raw[[c for c in ADMISSION_DETAIL_COLUMNS if c in raw.columns]]
+    return raw
+
+
+def analyze_doctor_performance(
+    df: pd.DataFrame,
+    doctor_name: str,
+    num_beds: int = 94,
+) -> dict:
+    """
+    医師別パフォーマンス分析を行う。
+
+    Args:
+        df: 入退院詳細DataFrame
+        doctor_name: 分析対象の医師名
+        num_beds: 総病床数（稼働率寄与度の計算用）
+
+    Returns:
+        dict: {
+            "monthly_admissions": int,          # 主治医としての月間入院数
+            "monthly_admissions_created": int,   # 入院創出医としての月間入院数
+            "monthly_discharges": int,           # 月間退院数
+            "avg_los": float,                    # 平均在院日数
+            "phase_distribution": {"A": int, "B": int, "C": int},
+            "discharge_weekday_dist": {0: int, ..., 6: int},  # 0=月曜
+            "occupancy_contribution_pct": float, # 稼働率への推定寄与度(%)
+        }
+    """
+    df_copy = df.copy()
+    df_copy["date"] = pd.to_datetime(df_copy["date"])
+
+    # 主治医としての入院
+    adm_attending = df_copy[
+        (df_copy["attending_doctor"] == doctor_name) & (df_copy["event_type"] == "admission")
+    ]
+    # 入院創出医としての入院
+    adm_source = df_copy[
+        (df_copy["source_doctor"] == doctor_name) & (df_copy["event_type"] == "admission")
+    ]
+    # 主治医としての退院
+    dis = df_copy[
+        (df_copy["attending_doctor"] == doctor_name) & (df_copy["event_type"] == "discharge")
+    ]
+
+    # 平均在院日数
+    los_vals = dis["los_days"].dropna()
+    avg_los = float(los_vals.mean()) if len(los_vals) > 0 else 0.0
+
+    # フェーズ分布
+    phase_dist = {"A": 0, "B": 0, "C": 0}
+    for p in dis["phase"].dropna():
+        if p in phase_dist:
+            phase_dist[p] += 1
+
+    # 退院曜日分布
+    weekday_dist = get_discharge_weekday_distribution(df_copy, doctor_name)
+
+    # 稼働率への推定寄与度
+    # = (この医師の入院患者が占める延べ患者日数) / (全体の延べ患者日数) の推定
+    # 入院数 × 平均在院日数 で延べ患者日数を推定
+    if avg_los > 0 and len(adm_attending) > 0:
+        # データの期間（日数）を算出
+        if len(df_copy) > 0:
+            date_range_days = max(
+                (df_copy["date"].max() - df_copy["date"].min()).days, 1
+            )
+        else:
+            date_range_days = 30
+        # この医師の推定延べ患者日数
+        doctor_patient_days = len(adm_attending) * avg_los
+        # 全体の推定延べ患者日数（病床数 × 日数）
+        total_capacity_days = num_beds * date_range_days
+        occupancy_contribution = (doctor_patient_days / total_capacity_days) * 100
+    else:
+        occupancy_contribution = 0.0
+
+    return {
+        "monthly_admissions": len(adm_attending),
+        "monthly_admissions_created": len(adm_source),
+        "monthly_discharges": len(dis),
+        "avg_los": round(avg_los, 1),
+        "phase_distribution": phase_dist,
+        "discharge_weekday_dist": weekday_dist,
+        "occupancy_contribution_pct": round(occupancy_contribution, 2),
+    }

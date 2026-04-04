@@ -124,6 +124,32 @@ except Exception as _bm_err:
     import traceback as _bm_tb
     _BED_MAP_ERROR = f"{_bm_err}\n{_bm_tb.format_exc()}"
 
+# 医師マスター管理モジュール
+_DOCTOR_MASTER_AVAILABLE = False
+try:
+    import doctor_master as dm_doctor
+    _DOCTOR_MASTER_AVAILABLE = True
+except Exception as _doc_err:
+    pass
+
+# 入退院詳細データ
+try:
+    from bed_data_manager import (
+        create_empty_detail_dataframe,
+        add_admission_event,
+        add_discharge_event,
+        get_events_by_date,
+        get_events_by_doctor,
+        get_monthly_summary_by_doctor,
+        get_discharge_weekday_distribution,
+        save_details,
+        load_details,
+        analyze_doctor_performance,
+    )
+    _DETAIL_DATA_AVAILABLE = True
+except Exception:
+    _DETAIL_DATA_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
 # ---------------------------------------------------------------------------
@@ -629,6 +655,38 @@ def run_comparison(_params_hashable: tuple, params_dict_orig: dict):
 
 
 # ---------------------------------------------------------------------------
+# サイドバー: 基盤指標（稼働率1%の価値）
+# ---------------------------------------------------------------------------
+_UNIT_PRICE_PER_DAY = 30500  # 1日あたり入院単価
+_TOTAL_BEDS_METRIC = 94
+_ANNUAL_VALUE_PER_1PCT = _TOTAL_BEDS_METRIC * 0.01 * 365 * _UNIT_PRICE_PER_DAY  # ≈1,047万円
+_OPERATING_PROFIT = 35500000  # 営業利益3,550万円
+
+# Get current occupancy from latest data if available
+_current_occ = None
+if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.session_state.daily_data) > 0:
+    _latest = st.session_state.daily_data.sort_values("date").iloc[-1]
+    _current_occ = _latest.get("total_patients", 0) / _TOTAL_BEDS_METRIC * 100
+
+st.sidebar.markdown("---")
+if _current_occ is not None:
+    _gap_to_target = max(0, 90 - _current_occ)
+    _potential = _gap_to_target * _ANNUAL_VALUE_PER_1PCT / 100
+    st.sidebar.metric(
+        label="稼働率1% の価値",
+        value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
+        delta=f"営業利益の {_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%相当",
+    )
+    st.sidebar.caption(f"現在の稼働率: {_current_occ:.1f}% | 目標90%まであと{_gap_to_target:.1f}%")
+else:
+    st.sidebar.metric(
+        label="稼働率1% の価値",
+        value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
+        delta=f"営業利益の {_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%相当",
+    )
+st.sidebar.markdown("---")
+
+# ---------------------------------------------------------------------------
 # サイドバー: データソース選択（グローバルモード切替）
 # ---------------------------------------------------------------------------
 st.sidebar.header("📊 データソース")
@@ -807,6 +865,13 @@ if "daily_data" not in st.session_state:
             st.session_state.daily_data = dm_create_empty_dataframe()
         else:
             st.session_state.daily_data = pd.DataFrame()
+
+# 入退院詳細データ（医師別）
+if "admission_details" not in st.session_state:
+    if _DETAIL_DATA_AVAILABLE:
+        st.session_state.admission_details = load_details()
+    else:
+        st.session_state.admission_details = pd.DataFrame()
 
 # A/B/C群 自動計算用の状態（SQLiteから自動復元）
 if "abc_state" not in st.session_state:
@@ -1722,6 +1787,10 @@ if _is_actual_data_mode:
     if _DATA_MANAGER_AVAILABLE:
         tab_names.append("📋 日次データ入力")
         tab_names.append("🔮 実績分析・予測")
+    if _DOCTOR_MASTER_AVAILABLE:
+        tab_names.append("👨‍⚕️ 医師別分析")
+        tab_names.append("💡 改善のヒント")
+        tab_names.append("⚙️ 医師マスター")
 else:
     # シミュレーションモード（従来通り）
     tab_names = [
@@ -1735,6 +1804,10 @@ else:
     if _DATA_MANAGER_AVAILABLE:
         tab_names.append("📋 日次データ入力")
         tab_names.append("🔮 実績分析・予測")
+    if _DOCTOR_MASTER_AVAILABLE:
+        tab_names.append("👨‍⚕️ 医師別分析")
+        tab_names.append("💡 改善のヒント")
+        tab_names.append("⚙️ 医師マスター")
 
 tabs = st.tabs(tab_names)
 # タブ名→インデックスのマッピング
@@ -2246,6 +2319,106 @@ if _DATA_MANAGER_AVAILABLE:
                     "まずデータを入力してください。操作方法がわからない場合は"
                     "「🎮 デモモード（サンプルデータ）」でお試しください。"
                 )
+
+        # === 入退院詳細入力 ===
+        if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE:
+            st.markdown("---")
+            st.markdown("#### 入退院詳細（医師別）")
+            st.caption("入院・退院ごとに経路と医師を記録します")
+
+            _detail_tab_adm, _detail_tab_dis = st.tabs(["🏥 入院記録", "🚪 退院記録"])
+
+            _active_doctors = dm_doctor.get_active_doctors() if _DOCTOR_MASTER_AVAILABLE else []
+            _doctor_names = [d["name"] for d in _active_doctors]
+            _routes = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else []
+            _source_options = dm_doctor.get_admission_source_options() if _DOCTOR_MASTER_AVAILABLE else {}
+
+            # Flatten source options for selectbox
+            _flat_sources = ["（なし）"]
+            for group_label, names in _source_options.items():
+                _flat_sources.append(f"--- {group_label} ---")
+                _flat_sources.extend(names)
+            _selectable_sources = [s for s in _flat_sources if not s.startswith("---")]
+
+            with _detail_tab_adm:
+                with st.form("admission_detail_form"):
+                    st.markdown("##### 入院を記録")
+                    _adm_col1, _adm_col2 = st.columns(2)
+                    with _adm_col1:
+                        _adm_date = st.date_input("入院日", value=date.today(), key="adm_detail_date")
+                        _adm_ward = st.selectbox("病棟", ["5F", "6F"], key="adm_detail_ward")
+                    with _adm_col2:
+                        _adm_route = st.selectbox("入院経路", _routes, key="adm_detail_route")
+
+                    _adm_col3, _adm_col4 = st.columns(2)
+                    with _adm_col3:
+                        _adm_source = st.selectbox("入院創出医（入院を生んだ医師）", _selectable_sources, key="adm_detail_source")
+                    with _adm_col4:
+                        _adm_attending = st.selectbox("入院担当医（主治医）", [""] + _doctor_names, key="adm_detail_attending")
+
+                    _adm_submit = st.form_submit_button("入院を記録", type="primary")
+                    if _adm_submit:
+                        if not _adm_attending:
+                            st.error("入院担当医を選択してください")
+                        else:
+                            _source_name = _adm_source if _adm_source != "（なし）" else ""
+                            st.session_state.admission_details = add_admission_event(
+                                st.session_state.admission_details,
+                                str(_adm_date), _adm_ward, _adm_route,
+                                _source_name, _adm_attending
+                            )
+                            save_details(st.session_state.admission_details)
+                            st.success(f"✅ 入院記録を追加しました（{_adm_attending}先生, {_adm_route}）")
+                            st.rerun()
+
+            with _detail_tab_dis:
+                with st.form("discharge_detail_form"):
+                    st.markdown("##### 退院を記録")
+                    _dis_col1, _dis_col2 = st.columns(2)
+                    with _dis_col1:
+                        _dis_date = st.date_input("退院日", value=date.today(), key="dis_detail_date")
+                        _dis_ward = st.selectbox("病棟", ["5F", "6F"], key="dis_detail_ward")
+                    with _dis_col2:
+                        _dis_attending = st.selectbox("担当医（主治医）", [""] + _doctor_names, key="dis_detail_attending")
+                        _dis_los = st.number_input("在院日数", min_value=1, max_value=365, value=14, key="dis_detail_los")
+
+                    # Show auto-calculated phase
+                    if _dis_los <= 5:
+                        st.info(f"フェーズ: **A群**（急性期 1-5日）| 在院{_dis_los}日")
+                    elif _dis_los <= 14:
+                        st.info(f"フェーズ: **B群**（回復期 6-14日）| 在院{_dis_los}日")
+                    else:
+                        st.info(f"フェーズ: **C群**（退院準備期 15日以上）| 在院{_dis_los}日")
+
+                    _dis_submit = st.form_submit_button("退院を記録", type="primary")
+                    if _dis_submit:
+                        if not _dis_attending:
+                            st.error("担当医を選択してください")
+                        else:
+                            st.session_state.admission_details = add_discharge_event(
+                                st.session_state.admission_details,
+                                str(_dis_date), _dis_ward, _dis_attending, _dis_los
+                            )
+                            save_details(st.session_state.admission_details)
+                            st.success(f"✅ 退院記録を追加しました（{_dis_attending}先生, 在院{_dis_los}日）")
+                            st.rerun()
+
+            # Show recent records
+            if len(st.session_state.admission_details) > 0:
+                st.markdown("##### 直近の記録")
+                _recent = st.session_state.admission_details.sort_values("date", ascending=False).head(20).copy()
+                _display_cols = {
+                    "date": "日付", "ward": "病棟", "event_type": "種別",
+                    "route": "経路", "source_doctor": "入院創出医",
+                    "attending_doctor": "担当医", "los_days": "在院日数", "phase": "フェーズ"
+                }
+                _available_detail_cols = [c for c in _display_cols.keys() if c in _recent.columns]
+                _recent_display = _recent[_available_detail_cols].rename(
+                    columns={k: v for k, v in _display_cols.items() if k in _available_detail_cols}
+                )
+                if "種別" in _recent_display.columns:
+                    _recent_display["種別"] = _recent_display["種別"].map({"admission": "入院", "discharge": "退院"})
+                st.dataframe(_recent_display, use_container_width=True, hide_index=True)
 
     # ----- タブ: 🔮 実績分析・予測 -----
     with tabs[_dm_tab_analysis_idx]:
@@ -4795,6 +4968,260 @@ with tabs[_tab_idx["データ"]]:
         file_name="bed_control_simulation.csv",
         mime="text/csv",
     )
+
+# ---------------------------------------------------------------------------
+# タブ: ⚙️ 医師マスター
+# ---------------------------------------------------------------------------
+if _DOCTOR_MASTER_AVAILABLE and "⚙️ 医師マスター" in _tab_idx:
+    with tabs[_tab_idx["⚙️ 医師マスター"]]:
+        st.subheader("⚙️ 医師マスター設定")
+        st.caption("入退院データに紐づける医師・入院経路を管理します")
+
+        _doc_tab1, _doc_tab2 = st.tabs(["👨‍⚕️ 医師管理", "🛣️ 入院経路管理"])
+
+        with _doc_tab1:
+            # --- Add doctor form ---
+            with st.form("add_doctor_form"):
+                st.markdown("##### 医師を追加")
+                _doc_col1, _doc_col2 = st.columns(2)
+                with _doc_col1:
+                    _new_doc_name = st.text_input("医師名", placeholder="例: 田中太郎")
+                with _doc_col2:
+                    _new_doc_cat = st.selectbox("区分", ["常勤病棟担当", "常勤外来のみ", "非常勤", "常勤救急応援"])
+                _add_doc_submit = st.form_submit_button("追加", type="primary")
+                if _add_doc_submit and _new_doc_name.strip():
+                    dm_doctor.add_doctor(_new_doc_name.strip(), _new_doc_cat)
+                    st.success(f"✅ {_new_doc_name} を追加しました")
+                    st.rerun()
+
+            # --- Current doctor list ---
+            st.markdown("##### 登録済み医師一覧")
+            _active_docs = dm_doctor.get_active_doctors()
+            if len(_active_docs) > 0:
+                _doc_display = pd.DataFrame(_active_docs)[["name", "category"]]
+                _doc_display.columns = ["医師名", "区分"]
+                st.dataframe(_doc_display, use_container_width=True, hide_index=True)
+
+                # Delete doctor
+                with st.expander("医師を削除"):
+                    _del_doc_name = st.selectbox("削除する医師", [d["name"] for d in _active_docs], key="del_doc_select")
+                    if st.button("削除", key="del_doc_btn"):
+                        _del_doc = next((d for d in _active_docs if d["name"] == _del_doc_name), None)
+                        if _del_doc:
+                            dm_doctor.deactivate_doctor(_del_doc["id"])
+                            st.success(f"✅ {_del_doc_name} を削除しました")
+                            st.rerun()
+            else:
+                st.info("医師が登録されていません。上のフォームから追加してください。")
+
+        with _doc_tab2:
+            # --- Current routes ---
+            st.markdown("##### 入院経路一覧")
+            _routes = dm_doctor.get_admission_routes()
+            for r in _routes:
+                st.write(f"• {r}")
+
+            # --- Add route ---
+            with st.form("add_route_form"):
+                _new_route = st.text_input("新しい入院経路", placeholder="例: 院内紹介")
+                _add_route_submit = st.form_submit_button("追加")
+                if _add_route_submit and _new_route.strip():
+                    dm_doctor.add_admission_route(_new_route.strip())
+                    st.success(f"✅ {_new_route} を追加しました")
+                    st.rerun()
+
+            # --- Remove route ---
+            with st.expander("入院経路を削除"):
+                _del_route = st.selectbox("削除する経路", _routes, key="del_route_select")
+                if st.button("削除", key="del_route_btn"):
+                    dm_doctor.remove_admission_route(_del_route)
+                    st.success(f"✅ {_del_route} を削除しました")
+                    st.rerun()
+
+# ---------------------------------------------------------------------------
+# タブ: 👨‍⚕️ 医師別分析
+# ---------------------------------------------------------------------------
+if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師別分析" in _tab_idx:
+    with tabs[_tab_idx["👨‍⚕️ 医師別分析"]]:
+        st.subheader("👨‍⚕️ 医師別分析")
+
+        _detail_df = st.session_state.get("admission_details", pd.DataFrame())
+
+        if not isinstance(_detail_df, pd.DataFrame) or len(_detail_df) == 0:
+            st.info("入退院詳細データがありません。「日次データ入力」タブで入退院を記録してください。")
+        else:
+            # Month selector
+            _detail_df["date"] = pd.to_datetime(_detail_df["date"])
+            _available_months = _detail_df["date"].dt.to_period("M").unique().sort_values()
+            _month_options = [str(m) for m in _available_months]
+            _selected_month = st.selectbox("分析月", _month_options, index=len(_month_options)-1 if _month_options else 0)
+
+            if _selected_month:
+                _monthly_summary = get_monthly_summary_by_doctor(_detail_df, _selected_month)
+
+                if _monthly_summary:
+                    # --- Overview metrics ---
+                    _total_adm = sum(d.get("admissions", 0) for d in _monthly_summary.values())
+                    _total_dis = sum(d.get("discharges", 0) for d in _monthly_summary.values())
+                    _total_created = sum(d.get("admissions_created", 0) for d in _monthly_summary.values())
+
+                    _ov_col1, _ov_col2, _ov_col3 = st.columns(3)
+                    with _ov_col1:
+                        st.metric("月間入院数", f"{_total_adm}件")
+                    with _ov_col2:
+                        st.metric("月間退院数", f"{_total_dis}件")
+                    with _ov_col3:
+                        st.metric("入院創出（記録あり）", f"{_total_created}件")
+
+                    st.markdown("---")
+
+                    # --- Doctor-level table ---
+                    st.markdown("#### 医師別パフォーマンス")
+                    _doc_rows = []
+                    for doc_name, stats in sorted(_monthly_summary.items()):
+                        _doc_rows.append({
+                            "医師名": doc_name,
+                            "入院担当": stats.get("admissions", 0),
+                            "入院創出": stats.get("admissions_created", 0),
+                            "退院": stats.get("discharges", 0),
+                            "平均在院日数": f"{stats.get('avg_los', 0):.1f}" if stats.get("avg_los") else "-",
+                            "A群": stats.get("phase_a", 0),
+                            "B群": stats.get("phase_b", 0),
+                            "C群": stats.get("phase_c", 0),
+                        })
+                    if _doc_rows:
+                        st.dataframe(pd.DataFrame(_doc_rows), use_container_width=True, hide_index=True)
+
+                    # --- Discharge weekday distribution ---
+                    st.markdown("#### 退院曜日分布")
+                    _weekday_dist = get_discharge_weekday_distribution(_detail_df)
+                    if _weekday_dist:
+                        _wd_labels = ["月", "火", "水", "木", "金", "土", "日"]
+                        _wd_values = [_weekday_dist.get(i, 0) for i in range(7)]
+
+                        fig_wd, ax_wd = plt.subplots(figsize=(8, 3))
+                        _wd_colors = ["#2563EB" if i < 5 else "#EF4444" for i in range(7)]
+                        ax_wd.bar(_wd_labels, _wd_values, color=_wd_colors)
+                        ax_wd.set_ylabel("退院件数")
+                        ax_wd.set_title("全体の退院曜日分布")
+                        st.pyplot(fig_wd)
+                        plt.close(fig_wd)
+
+                        # Check Friday concentration
+                        _total_dis_wd = sum(_wd_values)
+                        if _total_dis_wd > 0:
+                            _fri_pct = _wd_values[4] / _total_dis_wd * 100
+                            if _fri_pct > 30:
+                                _fri_loss = _wd_values[4] * 0.25 * 2 * _UNIT_PRICE_PER_DAY  # rough estimate
+                                st.warning(f"⚠️ 金曜退院が全体の{_fri_pct:.0f}%を占めています。週末の稼働率低下の要因の可能性があります。")
+
+                    # --- Per-doctor weekday heatmap ---
+                    st.markdown("#### 医師別 退院曜日パターン")
+                    _doc_names_in_data = _detail_df[_detail_df["event_type"] == "discharge"]["attending_doctor"].unique()
+                    for _dn in sorted(_doc_names_in_data):
+                        _doc_wd = get_discharge_weekday_distribution(_detail_df, _dn)
+                        if _doc_wd and sum(_doc_wd.values()) > 0:
+                            _wd_vals = [_doc_wd.get(i, 0) for i in range(7)]
+                            _total_d = sum(_wd_vals)
+                            _fri_ratio = _wd_vals[4] / _total_d * 100 if _total_d > 0 else 0
+                            _pattern = " ".join([f"{_wd_labels[i]}:{_wd_vals[i]}" for i in range(7)])
+                            _flag = " ⚠️金曜集中" if _fri_ratio > 40 else ""
+                            st.write(f"**{_dn}**: {_pattern} （金曜率{_fri_ratio:.0f}%）{_flag}")
+                else:
+                    st.info(f"{_selected_month} のデータがありません")
+
+# ---------------------------------------------------------------------------
+# タブ: 💡 改善のヒント
+# ---------------------------------------------------------------------------
+if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒント" in _tab_idx:
+    with tabs[_tab_idx["💡 改善のヒント"]]:
+        st.subheader("💡 改善のヒント")
+        st.caption("運用データから改善の種を自動検出して提示します")
+
+        _detail_df = st.session_state.get("admission_details", pd.DataFrame())
+        _daily_df = st.session_state.get("daily_data", pd.DataFrame())
+
+        _hints_found = False
+
+        # --- Hint 1: Occupancy gap ---
+        if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
+            _latest_data = _daily_df.sort_values("date").tail(7)
+            _avg_occ_7d = _latest_data["total_patients"].mean() / _TOTAL_BEDS_METRIC * 100
+            _gap = 90 - _avg_occ_7d
+            if _gap > 0:
+                _annual_loss = _gap * _ANNUAL_VALUE_PER_1PCT / 100
+                _profit_pct = _annual_loss / _OPERATING_PROFIT * 100
+                st.markdown(f"""
+                <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                    <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ</strong><br>
+                    <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標90%まであと<strong>{_gap:.1f}%</strong>）</span><br>
+                    <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円（営業利益の{_profit_pct:.0f}%相当）</span>
+                </div>
+                """, unsafe_allow_html=True)
+                _hints_found = True
+
+        # --- Hint 2: Discharge weekday concentration ---
+        if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
+            _wd_dist = get_discharge_weekday_distribution(_detail_df)
+            if _wd_dist:
+                _total_dis_h = sum(_wd_dist.values())
+                if _total_dis_h > 0:
+                    _fri_count = _wd_dist.get(4, 0)
+                    _fri_pct_h = _fri_count / _total_dis_h * 100
+                    if _fri_pct_h > 25:
+                        _expected_even = _total_dis_h / 5  # weekdays only
+                        _excess_fri = _fri_count - _expected_even
+                        _weekend_loss = _excess_fri * 2 * _UNIT_PRICE_PER_DAY  # 2 weekend days lost per excess Friday discharge
+                        _annual_fri_loss = _weekend_loss * 12
+                        _fri_profit_pct = _annual_fri_loss / _OPERATING_PROFIT * 100
+                        st.markdown(f"""
+                        <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                            <strong style="color: #1E293B; font-size: 16px;">⚠️ 金曜退院の集中</strong><br>
+                            <span style="color: #64748B;">金曜退院: {_fri_count}件（全体の<strong>{_fri_pct_h:.0f}%</strong>）→ 土日の稼働率低下の要因</span><br>
+                            <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_fri_loss/10000:.0f}万円（営業利益の{_fri_profit_pct:.0f}%相当）</span><br>
+                            <span style="color: #64748B; font-size: 13px;">金曜退院の一部を月曜にずらすだけで改善可能</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        _hints_found = True
+
+        # --- Hint 3: Doctor admission creation disparity ---
+        if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
+            _adm_df = _detail_df[_detail_df["event_type"] == "admission"]
+            if len(_adm_df) > 0:
+                _source_counts = _adm_df[_adm_df["source_doctor"] != ""]["source_doctor"].value_counts()
+                if len(_source_counts) >= 2:
+                    _top_creator = _source_counts.index[0]
+                    _top_count = _source_counts.iloc[0]
+                    _bottom_creator = _source_counts.index[-1]
+                    _bottom_count = _source_counts.iloc[-1]
+                    _diff = _top_count - _bottom_count
+                    if _diff >= 3:
+                        _potential_value = _diff * 0.5 * 14 * _UNIT_PRICE_PER_DAY  # half the gap * avg LOS * daily rate
+                        st.markdown(f"""
+                        <div style="background: #F0FDF4; border-left: 4px solid #10B981; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                            <strong style="color: #1E293B; font-size: 16px;">💡 入院創出の偏り</strong><br>
+                            <span style="color: #64748B;">{_top_creator}: <strong>{_top_count}件</strong> vs {_bottom_creator}: <strong>{_bottom_count}件</strong>（差: {_diff}件）</span><br>
+                            <span style="color: #10B981; font-weight: bold;">底上げポテンシャル: {_potential_value/10000:.0f}万円/月</span><br>
+                            <span style="color: #64748B; font-size: 13px;">入院創出が少ない医師のサポートで入院数を増やせる可能性</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        _hints_found = True
+
+        # --- Hint 4: Improvement stacking summary ---
+        if _hints_found:
+            st.markdown("---")
+            st.markdown("#### 改善の積み重ね効果")
+            st.markdown(f"""
+            | 指標 | 数値 |
+            |------|------|
+            | 稼働率1% の年間価値 | **{_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円** |
+            | 営業利益に対する比率 | **{_ANNUAL_VALUE_PER_1PCT/_OPERATING_PROFIT*100:.0f}%** |
+            | 人件費率58%換算（290人） | 一人あたり年間 **約{_ANNUAL_VALUE_PER_1PCT*0.58/290/10000:.1f}万円** |
+            """)
+            st.info("個別の改善は小さくても、積み重ねることで大きな効果になります。")
+
+        if not _hints_found:
+            st.success("現時点で特に改善が必要なヒントはありません。データが蓄積されると自動で検出されます。")
 
 # ---------------------------------------------------------------------------
 # フッター

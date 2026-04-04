@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/sync-pull.sh",
+            "statusMessage": "GitHub から最新を取得中..."
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Read|Edit|Write",
@@ -7,6 +18,17 @@
           {
             "type": "command",
             "command": "bash scripts/hooks/pre-tool-guard.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/sync-push.sh",
+            "statusMessage": "GitHub へプッシュ中..."
           }
         ]
       }
