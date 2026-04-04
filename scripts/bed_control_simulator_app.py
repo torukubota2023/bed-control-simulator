@@ -665,8 +665,14 @@ _OPERATING_PROFIT = 35500000  # 営業利益3,550万円
 # Get current occupancy from latest data if available
 _current_occ = None
 if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.session_state.daily_data) > 0:
-    _latest = st.session_state.daily_data.sort_values("date").iloc[-1]
-    _current_occ = _latest.get("total_patients", 0) / _TOTAL_BEDS_METRIC * 100
+    _dd_for_occ = st.session_state.daily_data
+    if "ward" in _dd_for_occ.columns:
+        # 病棟別データの場合、同一日付のtotal_patientsを合算
+        _latest_date = _dd_for_occ["date"].max()
+        _latest_total_patients = _dd_for_occ[_dd_for_occ["date"] == _latest_date]["total_patients"].sum()
+    else:
+        _latest_total_patients = _dd_for_occ.sort_values("date").iloc[-1].get("total_patients", 0)
+    _current_occ = _latest_total_patients / _TOTAL_BEDS_METRIC * 100
 
 st.sidebar.markdown("---")
 if _current_occ is not None:
@@ -5153,7 +5159,12 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
         # Hint 1: 稼働率ギャップ
         # =====================================================================
         if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
-            _latest_data = _daily_df.sort_values("date").tail(7)
+            if "ward" in _daily_df.columns:
+                # 病棟別データの場合、日付ごとに合算してから直近7日を取得
+                _agg_daily = _daily_df.groupby("date").agg({"total_patients": "sum"}).reset_index()
+                _latest_data = _agg_daily.sort_values("date").tail(7)
+            else:
+                _latest_data = _daily_df.sort_values("date").tail(7)
             _avg_occ_7d = _latest_data["total_patients"].mean() / _TOTAL_BEDS_METRIC * 100
             _gap = 90 - _avg_occ_7d
             if _gap > 0:
