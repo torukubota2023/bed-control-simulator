@@ -2706,6 +2706,11 @@ if _is_actual_data_mode:
     _active_cli_params = dict(st.session_state.actual_params)  # コピーして病棟別に上書き可能にする
     if _selected_ward_key in ("5F", "6F"):
         _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
+        # 月間入院数も病棟の病床比率で按分（全体150名→各病棟75名）
+        _bed_ratio = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
+        _active_cli_params["monthly_admissions"] = int(
+            _active_cli_params.get("monthly_admissions", 150) * _bed_ratio
+        )
     # 実データモードでは days_in_month をデータ日数に合わせる
     days_in_month = len(df)
     # カレンダー上の月日数（目標計算用）
@@ -2726,14 +2731,23 @@ else:
         _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
         _active_cli_params = st.session_state.sim_params.copy()
         _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
+        _bed_ratio_sim = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
+        _active_cli_params["monthly_admissions"] = int(
+            _active_cli_params.get("monthly_admissions", 150) * _bed_ratio_sim
+        )
         _view_beds = get_ward_beds(_selected_ward_key)
     else:
         df = st.session_state.sim_df
         summary = st.session_state.sim_summary
         _active_raw_df = st.session_state.sim_df_raw
-        _active_cli_params = st.session_state.sim_params
+        _active_cli_params = st.session_state.sim_params.copy()
         # Ward selected but ward data not available - need to re-run simulation
         if _selected_ward_key in ("5F", "6F"):
+            _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
+            _bed_ratio_fallback = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
+            _active_cli_params["monthly_admissions"] = int(
+                _active_cli_params.get("monthly_admissions", 150) * _bed_ratio_fallback
+            )
             _view_beds = get_ward_beds(_selected_ward_key)
 
 # カレンダー月日数のフォールバック（シミュレーションモードでは days_in_month がカレンダー月日数）
@@ -2764,6 +2778,13 @@ if _active_cli_params:
         "first_day_bonus", "within_14days_bonus", "rehab_fee",
     ):
         _active_cli_params[_sync_key] = _current_sidebar_params[_sync_key]
+    # 病棟別表示では monthly_admissions と num_beds を病床比率で再スケール
+    if _selected_ward_key in ("5F", "6F"):
+        _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
+        _bed_ratio_sync = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
+        _active_cli_params["monthly_admissions"] = int(
+            _active_cli_params["monthly_admissions"] * _bed_ratio_sync
+        )
 
 # ===== タブ1: 日次推移 =====
 with tabs[_tab_idx["📊 日次推移"]]:
@@ -3649,10 +3670,12 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
 
         # 前提条件: 月間入院数をスライダーで変更可能にする
         _los_default_adm = _cli_params["monthly_admissions"]
+        # 病棟切替でスライダーのデフォルト値をリセットするためキーに病棟名を含める
+        _los_slider_key = f"los_monthly_adm_slider_{_selected_ward_key}"
         _los_monthly_adm = st.slider(
             "月間入院数（この値を固定して平均在院日数を変化させます）",
             min_value=50, max_value=300, value=int(_los_default_adm), step=10,
-            key="los_monthly_adm_slider",
+            key=_los_slider_key,
             help="月間入院数を変更するとグラフが再計算されます。当院の実績は約150名/月です。"
         )
         # スライダーの値で一時的にパラメータを上書き
@@ -5611,6 +5634,6 @@ else:
         f"戦略: **{strategy}** | "
         f"病床数: {_view_beds} | "
         f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}% | "
-        f"月間入院: {monthly_admissions}件 | "
+        f"月間入院: {_active_cli_params.get('monthly_admissions', monthly_admissions)}件 | "
         f"平均在院日数: {avg_los}日"
     )
