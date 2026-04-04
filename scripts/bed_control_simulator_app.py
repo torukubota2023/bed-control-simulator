@@ -677,7 +677,7 @@ if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.sessi
 st.sidebar.markdown("---")
 if _current_occ is not None:
     _gap_to_target = max(0, 90 - _current_occ)
-    _potential = _gap_to_target * _ANNUAL_VALUE_PER_1PCT / 100
+    _potential = _gap_to_target * _ANNUAL_VALUE_PER_1PCT
     st.sidebar.metric(
         label="稼働率1% の価値",
         value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
@@ -5186,7 +5186,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             _gap = 90 - _avg_occ_7d
             if _gap > 0:
                 _hints_found = True
-                _annual_loss = _gap * _ANNUAL_VALUE_PER_1PCT / 100
+                _annual_loss = _gap * _ANNUAL_VALUE_PER_1PCT
                 _profit_pct = _annual_loss / _OPERATING_PROFIT * 100
 
                 with st.expander("⚠️ 稼働率ギャップ", expanded=True):
@@ -5209,7 +5209,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         value=min(_hint1_default_rounded, 5.0),
                         key="_hint_occ_slider",
                     )
-                    _hint1_annual_value = _hint1_target * _ANNUAL_VALUE_PER_1PCT / 100
+                    _hint1_annual_value = _hint1_target * _ANNUAL_VALUE_PER_1PCT
                     _hint1_profit_impact = _hint1_annual_value / _OPERATING_PROFIT * 100
                     _hint1_per_person = _hint1_annual_value * 0.58 / 290  # 人件費率58%, 290人
 
@@ -5498,7 +5498,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                             else:
                                 # 延長 → 稼働率は上がるがコスト増
                                 _h4_occ_gain = _h4_bed_days_change / (_view_beds * 30) * 100
-                                _h4_annual_gain = _h4_occ_gain * _ANNUAL_VALUE_PER_1PCT / 100
+                                _h4_annual_gain = _h4_occ_gain * _ANNUAL_VALUE_PER_1PCT
                                 _hint_savings[f"{_h4_doc}在院日数延長"] = _h4_annual_gain
                                 st.info(
                                     f"在院日数を{_h4_adjust:.1f}日延長 → "
