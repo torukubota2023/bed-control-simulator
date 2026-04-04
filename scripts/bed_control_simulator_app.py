@@ -1768,7 +1768,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     st.info(f"📈 回復トレンド（3日間で+{_slope_brief:.1f}%） — 対策継続を推奨")
 
             # 月平均達成見通し
-            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, 31, _view_beds) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
+            _mt_brief = _calc_monthly_target(_active_raw_df, target_lower, _calendar_month_days, _view_beds) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
             if _mt_brief:
                 if _mt_brief["avg_so_far"] >= _mt_brief["monthly_target_pct"]:
                     st.caption(f"✅ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成ペース")
@@ -2701,6 +2701,11 @@ if _is_actual_data_mode:
     _active_cli_params = st.session_state.actual_params
     # 実データモードでは days_in_month をデータ日数に合わせる
     days_in_month = len(df)
+    # カレンダー上の月日数（目標計算用）
+    _data_month_ref = df["日付"].iloc[-1] if "日付" in df.columns else (df["date"].iloc[-1] if "date" in df.columns else pd.Timestamp.now())
+    if isinstance(_data_month_ref, str):
+        _data_month_ref = pd.to_datetime(_data_month_ref)
+    _calendar_month_days = calendar.monthrange(_data_month_ref.year, _data_month_ref.month)[1]
 else:
     # シミュレーションモード
     if not _simulation_available:
@@ -2723,6 +2728,10 @@ else:
         # Ward selected but ward data not available - need to re-run simulation
         if _selected_ward_key in ("5F", "6F"):
             _view_beds = get_ward_beds(_selected_ward_key)
+
+# カレンダー月日数のフォールバック（シミュレーションモードでは days_in_month がカレンダー月日数）
+if '_calendar_month_days' not in locals():
+    _calendar_month_days = days_in_month
 
 # ---------------------------------------------------------------------------
 # _active_raw_df と _active_display_df のフォールバック設定
@@ -2835,7 +2844,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
     _mt_chart = None
     for _mt_src_df in [_active_raw_df, df]:
         if _mt_chart is None and isinstance(_mt_src_df, pd.DataFrame) and len(_mt_src_df) > 0:
-            _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, 31, _view_beds)
+            _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, _calendar_month_days, _view_beds)
     if _mt_chart and _mt_chart["days_remaining"] > 0 and _mt_chart["avg_so_far"] < _mt_chart["monthly_target_pct"]:
         _chart_last_day = len(df["稼働率"])  # データの最終日番号
         _chart_end_day = _mt_chart["total_days"]  # 月末日番号
@@ -3160,7 +3169,7 @@ with tabs[_tab_idx["💰 運営分析"]]:
     _target_occ_line = target_lower  # 0.90
     # 稼働率90%時の月次診療報酬目標 = 病床数 × 90% × 日数 × 加重平均日次報酬（約28,000円）
     _weighted_daily_rev = 28000  # A/B/C群の加重平均運営貢献額
-    _target_monthly_rev = _view_beds * _target_occ_line * days_in_month * _weighted_daily_rev
+    _target_monthly_rev = _view_beds * _target_occ_line * _calendar_month_days * _weighted_daily_rev
     _actual_monthly_rev = summary["月次運営貢献額"]
     _achievement_rate = (_actual_monthly_rev / _target_monthly_rev * 100) if _target_monthly_rev > 0 else 0
     _actual_avg_occ = summary["平均稼働率"]
@@ -5160,12 +5169,14 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
         # =====================================================================
         if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
             if "ward" in _daily_df.columns:
-                # 病棟別データの場合、日付ごとに合算してから直近7日を取得
-                _agg_daily = _daily_df.groupby("date").agg({"total_patients": "sum"}).reset_index()
-                _latest_data = _agg_daily.sort_values("date").tail(7)
+                if _selected_ward_key in ("5F", "6F"):
+                    _hint_daily = _daily_df[_daily_df["ward"] == _selected_ward_key]
+                else:
+                    _hint_daily = _daily_df.groupby("date").agg({"total_patients": "sum"}).reset_index()
+                _latest_data = _hint_daily.sort_values("date").tail(7)
             else:
                 _latest_data = _daily_df.sort_values("date").tail(7)
-            _avg_occ_7d = _latest_data["total_patients"].mean() / _TOTAL_BEDS_METRIC * 100
+            _avg_occ_7d = _latest_data["total_patients"].mean() / _view_beds * 100
             _gap = 90 - _avg_occ_7d
             if _gap > 0:
                 _hints_found = True
@@ -5482,7 +5493,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                 )
                             else:
                                 # 延長 → 稼働率は上がるがコスト増
-                                _h4_occ_gain = _h4_bed_days_change / (_TOTAL_BEDS_METRIC * 30) * 100
+                                _h4_occ_gain = _h4_bed_days_change / (_view_beds * 30) * 100
                                 _h4_annual_gain = _h4_occ_gain * _ANNUAL_VALUE_PER_1PCT / 100
                                 _hint_savings[f"{_h4_doc}在院日数延長"] = _h4_annual_gain
                                 st.info(

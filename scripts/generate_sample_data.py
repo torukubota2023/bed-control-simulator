@@ -1,10 +1,15 @@
 """
 ベッドコントロールシミュレーター用サンプルデータ生成スクリプト
 
-3ファイルを生成:
-  1. data/doctor_master.csv      - 医師マスタ（10名）
-  2. data/admission_routes.csv   - 入院経路マスタ
-  3. data/admission_details.csv  - 入退院詳細（2026年3月、約150入院・140退院）
+4ファイルを生成:
+  1. data/doctor_master.csv                   - 医師マスタ（10名）
+  2. data/admission_routes.csv                - 入院経路マスタ
+  3. data/admission_details.csv               - 入退院詳細（2026年3月、約150入院・140退院）
+  4. data/sample_actual_data_ward_202603.csv   - 病棟別日次サマリー
+
+病棟特性:
+  5F（外科・整形科, 47床）: 低稼働率 ~85%, 短在院日数 ~12日, 空床目立つ
+  6F（内科・ペイン, 47床）: 高稼働率 ~95%, 長在院日数 ~22日, 満床・入院断り
 
 固定シードで決定論的に生成。
 """
@@ -57,6 +62,8 @@ for d in DOCTORS:
 
 DOCTOR_BY_KEY = {d["key"]: d for d in DOCTORS}
 
+WARD_BEDS = {"5F": 47, "6F": 47}
+
 
 def write_doctor_master():
     path = DATA_DIR / "doctor_master.csv"
@@ -107,7 +114,7 @@ def write_admission_routes():
 
 
 # ---------------------------------------------------------------------------
-# 3. 入退院詳細
+# 3. 入退院詳細（日次シミュレーション方式）
 # ---------------------------------------------------------------------------
 
 def los_to_phase(los: int) -> str:
@@ -119,122 +126,224 @@ def los_to_phase(los: int) -> str:
         return "C"
 
 
+def _pick_5f_admission_details():
+    """5F入院の経路・入院創出医・担当医を決定"""
+    r = random.random()
+    if r < 0.35:
+        route = "外来紹介"
+    elif r < 0.55:
+        route = "救急"
+    elif r < 0.80:
+        route = "連携室"
+    else:
+        route = "ウォークイン"
+
+    if route == "救急":
+        source = random.choice(["C", "G", "C"])
+    elif route == "外来紹介":
+        r2 = random.random()
+        if r2 < 0.35:
+            source = "D"
+        elif r2 < 0.55:
+            source = "C"
+        elif r2 < 0.70:
+            source = "H"
+        elif r2 < 0.85:
+            source = "I"
+        else:
+            source = "F"
+    elif route == "連携室":
+        source = random.choice(["C", "C", "D", "H"])
+    else:
+        source = random.choice(["C", "H", "G"])
+
+    # 5F担当医: C（外科）or H（ペイン短期）
+    if source in ["C"]:
+        attending = "C"
+    elif source in ["H"]:
+        attending = "H"
+    else:
+        attending = random.choices(["C", "H"], weights=[60, 40])[0]
+
+    if random.random() < 0.03:
+        attending = "F"
+
+    return route, source, attending
+
+
+def _pick_6f_admission_details():
+    """6F入院の経路・入院創出医・担当医を決定"""
+    r = random.random()
+    if r < 0.45:
+        route = "外来紹介"
+    elif r < 0.70:
+        route = "救急"
+    elif r < 0.85:
+        route = "連携室"
+    else:
+        route = "ウォークイン"
+
+    if route == "救急":
+        source = "G" if random.random() < 0.70 else random.choice(["A", "B", "E"])
+    elif route == "外来紹介":
+        r2 = random.random()
+        if r2 < 0.40:
+            source = "D"
+        elif r2 < 0.58:
+            source = "A"
+        elif r2 < 0.74:
+            source = "B"
+        elif r2 < 0.88:
+            source = "E"
+        else:
+            source = "I"
+    elif route == "連携室":
+        source = random.choice(["A", "B", "E", "D"])
+    else:
+        source = random.choice(["A", "B", "E", "G"])
+
+    if route == "救急" and source == "G":
+        if random.random() < 0.45:
+            attending = "G"
+        else:
+            attending = random.choice(["A", "B", "E"])
+    else:
+        attending = random.choices(["A", "B", "E"], weights=[35, 35, 30])[0]
+
+    return route, source, attending
+
+
+def _pick_5f_discharge_details():
+    """5F退院の担当医・LOS・フェーズを決定"""
+    # C医師55%, H医師42%, F医師3%
+    r = random.random()
+    if r < 0.55:
+        doc = "C"
+        # 外科: 短〜中LOS（平均14日程度）
+        los = max(5, int(random.gauss(14, 4)))
+        los = min(los, 22)
+    elif r < 0.97:
+        doc = "H"
+        # ペイン: 短期入院（平均7日程度）
+        los = max(2, int(random.gauss(7, 2)))
+        los = min(los, 12)
+    else:
+        doc = "F"
+        los = max(5, int(random.gauss(10, 3)))
+        los = min(los, 16)
+
+    phase = los_to_phase(los)
+    return doc, los, phase
+
+
+def _pick_6f_discharge_details(is_friday=False):
+    """6F退院の担当医・LOS・フェーズを決定"""
+    # 金曜日はB医師の退院確率UP
+    if is_friday:
+        # B医師60%, A医師22%, E医師10%, G医師8%
+        r = random.random()
+        if r < 0.60:
+            doc = "B"
+        elif r < 0.82:
+            doc = "A"
+        elif r < 0.92:
+            doc = "E"
+        else:
+            doc = "G"
+    else:
+        # 通常日: A医師30%, B医師15%, E医師25%, G医師25%, F5%, J0%（稀）
+        r = random.random()
+        if r < 0.30:
+            doc = "A"
+        elif r < 0.45:
+            doc = "B"
+        elif r < 0.70:
+            doc = "E"
+        elif r < 0.95:
+            doc = "G"
+        elif r < 0.98:
+            doc = "F"
+        else:
+            doc = "J"
+
+    # 6F: 長いLOS
+    if doc == "E":
+        los = max(15, int(random.gauss(28, 5)))
+        los = min(los, 42)
+    elif doc == "A":
+        los = max(12, int(random.gauss(24, 5)))
+        los = min(los, 38)
+    elif doc == "B":
+        los = max(10, int(random.gauss(22, 5)))
+        los = min(los, 32)
+    elif doc == "G":
+        los = max(8, int(random.gauss(19, 4)))
+        los = min(los, 28)
+    else:  # F, J
+        los = max(12, int(random.gauss(17, 4)))
+        los = min(los, 22)
+
+    phase = los_to_phase(los)
+    return doc, los, phase
+
+
 def generate_admission_details():
-    """2026年3月のサンプルデータ生成"""
+    """日次シミュレーションで入退院を生成
+
+    各日の入退院数を稼働率ターゲットに基づき決定:
+    - 5F: 稼働率 ~85% (40人前後/47床)
+    - 6F: 稼働率 ~95% (45人前後/47床)
+    """
     start_date = date(2026, 3, 1)
     end_date = date(2026, 3, 31)
     num_days = (end_date - start_date).days + 1
 
-    # --- 病棟担当医と担当病棟のマッピング ---
-    # 5F: 外科系 (C医師) + ペイン (H医師)
-    # 6F: 内科系 (A, B, E医師) + G医師(救急)
-    ward_doctors = {
-        "5F": ["C", "H"],
-        "6F": ["A", "B", "E", "G"],
-    }
+    # 初期患者数
+    patients_5f = 41
+    patients_6f = 44
 
-    # --- 入院数の目標: 約150件 ---
-    # 日あたり約 4.8件 → 平日5件、土日3件程度
     records = []
-
-    # ===== 入院イベント生成 =====
     admission_count = 0
+    discharge_count = 0
+
     for day_offset in range(num_days):
         current_date = start_date + timedelta(days=day_offset)
         dow = current_date.weekday()  # 0=Mon ... 6=Sun
         is_weekend = dow >= 5
+        is_friday = dow == 4
 
-        # 日あたり入院数
+        # ====== 5F: 低稼働パターン ======
+        # 目標: ~40人 (85%)
+        # 入院: 平日2-3件、週末1件
+        # 退院: 入院より多め → 空床が残る
         if is_weekend:
-            n_admissions = random.choice([3, 3, 4, 4])
+            n_adm_5f = random.choice([1, 1, 1, 2])
+            n_dis_5f = random.choice([1, 1, 2, 2])
         else:
-            n_admissions = random.choice([5, 5, 6, 6, 7])
+            # 基本入院数
+            n_adm_5f = random.choice([2, 2, 3, 3])
+            # 退院数: 入院と同等〜やや多め（空床を維持）
+            base_dis = random.choice([2, 2, 2, 3, 3])
+            # 患者数が目標(40)より多ければ退院増
+            if patients_5f > 41:
+                base_dis += 1
+            elif patients_5f < 39:
+                base_dis = max(1, base_dis - 1)
+            n_dis_5f = base_dis
 
-        for _ in range(n_admissions):
-            # 入院経路の決定
-            r = random.random()
-            if r < 0.40:
-                route = "外来紹介"
-            elif r < 0.65:
-                route = "救急"
-            elif r < 0.85:
-                route = "連携室"
-            else:
-                route = "ウォークイン"
+        # 退院数は患者数を超えない
+        n_dis_5f = min(n_dis_5f, patients_5f)
+        # 入院数はベッド数を超えない
+        n_adm_5f = min(n_adm_5f, WARD_BEDS["5F"] - patients_5f + n_dis_5f)
+        n_adm_5f = max(0, n_adm_5f)
 
-            # 入院創出医 (source_doctor)
-            if route == "救急":
-                # G医師が救急の中心（70%）
-                source = "G" if random.random() < 0.70 else random.choice(["A", "B", "E"])
-            elif route == "外来紹介":
-                # D医師が外来紹介の40%を占める（入院創出多い）
-                r2 = random.random()
-                if r2 < 0.40:
-                    source = "D"
-                elif r2 < 0.55:
-                    source = "A"
-                elif r2 < 0.70:
-                    source = "B"
-                elif r2 < 0.80:
-                    source = "E"
-                elif r2 < 0.88:
-                    source = "C"
-                elif r2 < 0.93:
-                    source = "H"
-                elif r2 < 0.97:
-                    source = "F"
-                else:
-                    # I医師はほとんど入院創出しない（3%程度）
-                    source = "I"
-            elif route == "連携室":
-                # 連携室経由: 特定の医師に偏らない
-                source = random.choice(["A", "B", "C", "E", "D"])
-            else:  # ウォークイン
-                source = random.choice(["A", "B", "E", "G"])
-
-            # 担当医 (attending_doctor): 病棟担当医のみ
-            # D, I は外来のみ → 担当医にならない
-            # F, J は非常勤 → 少数のみ
-            if route == "救急" and source == "G":
-                # G医師が救急で入院した場合、G医師が担当することも多い
-                if random.random() < 0.50:
-                    attending = "G"
-                    ward = "6F"
-                else:
-                    # 他の内科医に振る
-                    attending = random.choice(["A", "B", "E"])
-                    ward = "6F"
-            else:
-                # 病棟選択
-                r3 = random.random()
-                if source == "C":
-                    ward = "5F"
-                    attending = "C"
-                elif source == "H":
-                    ward = "5F"
-                    attending = "H"
-                elif r3 < 0.55:
-                    ward = "6F"
-                    attending = random.choices(
-                        ["A", "B", "E"],
-                        weights=[35, 30, 25],
-                    )[0]
-                else:
-                    ward = "5F"
-                    attending = random.choices(
-                        ["C", "H"],
-                        weights=[60, 40],
-                    )[0]
-
-            # 非常勤医師が担当になるケース（少数）
-            if random.random() < 0.03:
-                attending = "F"
-                ward = random.choice(["5F", "6F"])
-
+        # 5F入院レコード生成
+        for _ in range(n_adm_5f):
+            route, source, attending = _pick_5f_admission_details()
             records.append({
                 "id": fixed_uuid(f"adm_{current_date}_{admission_count}"),
                 "date": current_date.isoformat(),
-                "ward": ward,
+                "ward": "5F",
                 "event_type": "admission",
                 "route": route,
                 "source_doctor": DOCTOR_BY_KEY[source]["name"],
@@ -244,118 +353,93 @@ def generate_admission_details():
             })
             admission_count += 1
 
-    print(f"  入院数: {admission_count}")
-
-    # ===== 退院イベント生成 =====
-    # 約140件の退院。各担当医の特性を反映。
-    discharge_count = 0
-
-    # 担当医ごとの退院パターン定義
-    # (doctor_key, count, los_distribution, friday_weight, saturday_weight)
-    discharge_plans = [
-        # A医師: 内科主治医、入院多い、金曜退院やや多め(30%)
-        ("A", 30, {"min": 5, "max": 20, "mean": 11, "long_pct": 0.15},
-         {"fri": 0.30, "sat": 0.03}),
-        # B医師: 金曜退院に集中(50%+)、土曜退院もある
-        ("B", 25, {"min": 5, "max": 18, "mean": 10, "long_pct": 0.10},
-         {"fri": 0.52, "sat": 0.08}),
-        # C医師: 外科、高回転、曜日バランス良好
-        ("C", 28, {"min": 3, "max": 12, "mean": 7, "long_pct": 0.05},
-         {"fri": 0.18, "sat": 0.02}),
-        # E医師: 在院日数長め（C群多い60%）
-        ("E", 18, {"min": 5, "max": 25, "mean": 9, "long_pct": 0.50},
-         {"fri": 0.22, "sat": 0.03}),
-        # G医師: 救急応援
-        ("G", 15, {"min": 4, "max": 15, "mean": 9, "long_pct": 0.10},
-         {"fri": 0.20, "sat": 0.05}),
-        # H医師: ペイン、短期入院（A群）多い
-        ("H", 20, {"min": 2, "max": 8, "mean": 4, "long_pct": 0.0},
-         {"fri": 0.20, "sat": 0.02}),
-        # F医師: 非常勤、少ない
-        ("F", 3, {"min": 5, "max": 14, "mean": 9, "long_pct": 0.10},
-         {"fri": 0.20, "sat": 0.0}),
-        # J医師: 週1回、極少
-        ("J", 1, {"min": 7, "max": 12, "mean": 9, "long_pct": 0.0},
-         {"fri": 0.50, "sat": 0.0}),
-    ]
-
-    # 平日の日付リスト（月〜金）
-    weekdays = []
-    fridays = []
-    saturdays = []
-    all_days = []
-    for day_offset in range(num_days):
-        d = start_date + timedelta(days=day_offset)
-        dow = d.weekday()
-        all_days.append(d)
-        if dow < 5:
-            weekdays.append(d)
-        if dow == 4:
-            fridays.append(d)
-        if dow == 5:
-            saturdays.append(d)
-
-    # 月〜木の日付
-    mon_to_thu = [d for d in weekdays if d.weekday() < 4]
-
-    for doc_key, count, los_dist, day_weights in discharge_plans:
-        attending_name = DOCTOR_BY_KEY[doc_key]["name"]
-
-        # 病棟
-        if doc_key in ["C", "H"]:
-            ward = "5F"
-        else:
-            ward = "6F"
-
-        # 各退院の曜日を決める
-        n_friday = int(count * day_weights["fri"])
-        n_saturday = int(count * day_weights["sat"])
-        n_other = count - n_friday - n_saturday
-
-        # 金曜日の退院
-        fri_dates = [random.choice(fridays) for _ in range(n_friday)]
-        # 土曜日の退院
-        sat_dates = [random.choice(saturdays) for _ in range(n_saturday)] if n_saturday > 0 else []
-
-        # その他（月〜木中心、日曜はなし）
-        if doc_key == "C":
-            # C医師は火〜木中心（曜日バランス良好）
-            tue_to_thu = [d for d in weekdays if d.weekday() in [1, 2, 3]]
-            other_dates = [random.choice(tue_to_thu) for _ in range(n_other)]
-        else:
-            other_dates = [random.choice(mon_to_thu) for _ in range(n_other)]
-
-        discharge_dates = fri_dates + sat_dates + other_dates
-
-        for i, d_date in enumerate(discharge_dates):
-            # 在院日数
-            if random.random() < los_dist["long_pct"] and los_dist["max"] >= 15:
-                los = random.randint(15, max(15, los_dist["max"]))
-            else:
-                los = max(los_dist["min"],
-                          int(random.gauss(los_dist["mean"], 3)))
-                los = min(los, los_dist["max"])
-                los = max(los, 1)
-
-            phase = los_to_phase(los)
-
+        # 5F退院レコード生成
+        for _ in range(n_dis_5f):
+            doc, los, phase = _pick_5f_discharge_details()
             records.append({
-                "id": fixed_uuid(f"dis_{doc_key}_{d_date}_{discharge_count}"),
-                "date": d_date.isoformat(),
-                "ward": ward,
+                "id": fixed_uuid(f"dis_{current_date}_{discharge_count}"),
+                "date": current_date.isoformat(),
+                "ward": "5F",
                 "event_type": "discharge",
                 "route": "",
                 "source_doctor": "",
-                "attending_doctor": attending_name,
+                "attending_doctor": DOCTOR_BY_KEY[doc]["name"],
                 "los_days": str(los),
                 "phase": phase,
             })
             discharge_count += 1
 
+        patients_5f = patients_5f + n_adm_5f - n_dis_5f
+
+        # ====== 6F: 高稼働パターン ======
+        # 目標: ~45人 (95%)
+        # 入院: 平日2件（満床で受けられない日も）
+        # 退院: 少なめ → 満床が続く、金曜に集中
+        if is_weekend:
+            n_adm_6f = random.choice([1, 1, 1, 2])
+            n_dis_6f = random.choice([0, 0, 1, 1])
+        elif is_friday:
+            # 金曜は退院集中日
+            n_adm_6f = random.choice([1, 2, 2, 2])
+            n_dis_6f = random.choice([3, 4, 4, 5, 5])
+        else:
+            n_adm_6f = random.choice([2, 2, 2, 3])
+            # 通常日は退院少ない（月〜木）
+            n_dis_6f = random.choice([1, 1, 2, 2, 2])
+            # 患者数が多すぎれば退院増
+            if patients_6f >= 47:
+                n_dis_6f += 1
+            elif patients_6f < 43:
+                n_dis_6f = max(0, n_dis_6f - 1)
+
+        n_dis_6f = min(n_dis_6f, patients_6f)
+        # 満床なら入院制限
+        available_6f = WARD_BEDS["6F"] - patients_6f + n_dis_6f
+        if available_6f <= 0:
+            n_adm_6f = 0
+        else:
+            n_adm_6f = min(n_adm_6f, available_6f)
+        n_adm_6f = max(0, n_adm_6f)
+
+        # 6F入院レコード生成
+        for _ in range(n_adm_6f):
+            route, source, attending = _pick_6f_admission_details()
+            records.append({
+                "id": fixed_uuid(f"adm_{current_date}_{admission_count}"),
+                "date": current_date.isoformat(),
+                "ward": "6F",
+                "event_type": "admission",
+                "route": route,
+                "source_doctor": DOCTOR_BY_KEY[source]["name"],
+                "attending_doctor": DOCTOR_BY_KEY[attending]["name"],
+                "los_days": "",
+                "phase": "",
+            })
+            admission_count += 1
+
+        # 6F退院レコード生成
+        for _ in range(n_dis_6f):
+            doc, los, phase = _pick_6f_discharge_details(is_friday=is_friday)
+            records.append({
+                "id": fixed_uuid(f"dis_{current_date}_{discharge_count}"),
+                "date": current_date.isoformat(),
+                "ward": "6F",
+                "event_type": "discharge",
+                "route": "",
+                "source_doctor": "",
+                "attending_doctor": DOCTOR_BY_KEY[doc]["name"],
+                "los_days": str(los),
+                "phase": phase,
+            })
+            discharge_count += 1
+
+        patients_6f = patients_6f + n_adm_6f - n_dis_6f
+
+    print(f"  入院数: {admission_count}")
     print(f"  退院数: {discharge_count}")
 
     # 日付順にソート
-    records.sort(key=lambda x: x["date"])
+    records.sort(key=lambda x: (x["date"], x["event_type"]))
 
     # CSVに書き出し
     path = DATA_DIR / "admission_details.csv"
@@ -374,9 +458,178 @@ def generate_admission_details():
 
 
 # ---------------------------------------------------------------------------
+# 4. 病棟別日次サマリー生成
+# ---------------------------------------------------------------------------
+DOW_NAMES_JP = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+
+
+def generate_ward_daily_summary(records):
+    """入退院詳細データから病棟別日次サマリーを生成"""
+    start_date = date(2026, 3, 1)
+    end_date = date(2026, 3, 31)
+    num_days = (end_date - start_date).days + 1
+
+    # 初期患者数（admission_detailsと同じ）
+    current_patients = {"5F": 41, "6F": 44}
+
+    # 日別・病棟別の入退院を集計
+    daily_events = {}
+    for day_offset in range(num_days):
+        d = start_date + timedelta(days=day_offset)
+        for ward in ["5F", "6F"]:
+            daily_events[(d, ward)] = {
+                "admissions": 0,
+                "discharges": 0,
+                "discharge_a": 0,
+                "discharge_b": 0,
+                "discharge_c": 0,
+                "los_list": [],
+            }
+
+    for r in records:
+        d = date.fromisoformat(r["date"])
+        ward = r["ward"]
+        key = (d, ward)
+        if key not in daily_events:
+            continue
+        if r["event_type"] == "admission":
+            daily_events[key]["admissions"] += 1
+        elif r["event_type"] == "discharge":
+            daily_events[key]["discharges"] += 1
+            phase = r["phase"]
+            if phase == "A":
+                daily_events[key]["discharge_a"] += 1
+            elif phase == "B":
+                daily_events[key]["discharge_b"] += 1
+            elif phase == "C":
+                daily_events[key]["discharge_c"] += 1
+            if r["los_days"]:
+                daily_events[key]["los_list"].append(int(r["los_days"]))
+
+    # 日次サマリー生成
+    rows = []
+    # フェーズ構成比
+    phase_ratio = {
+        "5F": {"a": 0.28, "b": 0.45, "c": 0.27},
+        "6F": {"a": 0.08, "b": 0.25, "c": 0.67},
+    }
+
+    for day_offset in range(num_days):
+        d = start_date + timedelta(days=day_offset)
+        dow = d.weekday()
+        dow_name = DOW_NAMES_JP[dow]
+
+        for ward in ["5F", "6F"]:
+            ev = daily_events[(d, ward)]
+            beds = WARD_BEDS[ward]
+
+            current_patients[ward] = current_patients[ward] + ev["admissions"] - ev["discharges"]
+            current_patients[ward] = max(0, min(beds, current_patients[ward]))
+            total = current_patients[ward]
+
+            occupancy = total / beds * 100
+
+            # フェーズ別患者数
+            pr = phase_ratio[ward]
+            pa = round(total * pr["a"])
+            pb = round(total * pr["b"])
+            pc = total - pa - pb
+
+            # 平均在院日数
+            if ev["los_list"]:
+                avg_los = sum(ev["los_list"]) / len(ev["los_list"])
+            else:
+                avg_los = 12.0 if ward == "5F" else 22.0
+
+            notes = _generate_note(ward, dow_name, occupancy, total, beds,
+                                   ev["admissions"], ev["discharges"], d)
+
+            rows.append({
+                "date": d.isoformat(),
+                "ward": ward,
+                "total_patients": total,
+                "new_admissions": ev["admissions"],
+                "discharges": ev["discharges"],
+                "discharge_a": ev["discharge_a"],
+                "discharge_b": ev["discharge_b"],
+                "discharge_c": ev["discharge_c"],
+                "phase_a_count": pa,
+                "phase_b_count": pb,
+                "phase_c_count": pc,
+                "avg_los": round(avg_los, 1),
+                "notes": notes,
+            })
+
+    path = DATA_DIR / "sample_actual_data_ward_202603.csv"
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "ward", "total_patients", "new_admissions",
+                     "discharges", "discharge_a", "discharge_b", "discharge_c",
+                     "phase_a_count", "phase_b_count", "phase_c_count",
+                     "avg_los", "notes"])
+        for r in rows:
+            w.writerow([
+                r["date"], r["ward"], r["total_patients"],
+                r["new_admissions"], r["discharges"],
+                r["discharge_a"], r["discharge_b"], r["discharge_c"],
+                r["phase_a_count"], r["phase_b_count"], r["phase_c_count"],
+                r["avg_los"], r["notes"],
+            ])
+    print(f"  -> {path} ({len(rows)} rows)")
+    return rows
+
+
+def _generate_note(ward, dow_name, occupancy, total, beds,
+                   admissions, discharges, d):
+    """病棟特性に応じたノートを生成"""
+    parts = [dow_name]
+
+    if ward == "5F":
+        empty = beds - total
+        parts.append(f"{occupancy:.1f}%")
+        if occupancy <= 80:
+            parts.append(f"空床{empty}床 稼働率低迷")
+        elif occupancy <= 85:
+            parts.append(f"空床{empty}床 稼働率低め")
+        elif occupancy <= 88:
+            parts.append(f"空床{empty}床")
+        else:
+            parts.append("稼働率回復中")
+
+        if discharges > admissions + 1:
+            parts.append("退院超過")
+        elif admissions > discharges + 1:
+            parts.append("入院増加も空床残る")
+
+    else:  # 6F
+        empty = beds - total
+        parts.append(f"{occupancy:.1f}%")
+        if occupancy >= 100:
+            parts.append("満床 入院断り発生")
+        elif occupancy >= 97:
+            parts.append(f"残{empty}床 入院制限中")
+        elif occupancy >= 95:
+            parts.append("満床近い 受入余力なし")
+        elif occupancy >= 91:
+            parts.append("高稼働")
+        else:
+            parts.append("稼働率やや低下")
+
+        if d.weekday() == 4 and discharges >= 4:
+            parts.append(f"金曜退院集中({discharges}名)")
+        elif d.weekday() == 4 and discharges >= 3:
+            parts.append("金曜退院多め")
+
+        if admissions == 0 and d.weekday() < 5 and occupancy >= 95:
+            parts.append("新規受入困難")
+
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # 検証
 # ---------------------------------------------------------------------------
-def verify(records):
+def verify(records, ward_rows=None):
     """生成データの品質チェック"""
     admissions = [r for r in records if r["event_type"] == "admission"]
     discharges = [r for r in records if r["event_type"] == "discharge"]
@@ -385,12 +638,30 @@ def verify(records):
     print(f"総入院数: {len(admissions)}")
     print(f"総退院数: {len(discharges)}")
 
-    # B医師の金曜退院率
+    # 病棟別入院数
+    ward_5f_adm = [r for r in admissions if r["ward"] == "5F"]
+    ward_6f_adm = [r for r in admissions if r["ward"] == "6F"]
+    print(f"\n5F入院: {len(ward_5f_adm)}, 6F入院: {len(ward_6f_adm)}")
+
+    # 病棟別退院数
+    ward_5f_dis = [r for r in discharges if r["ward"] == "5F"]
+    ward_6f_dis = [r for r in discharges if r["ward"] == "6F"]
+    print(f"5F退院: {len(ward_5f_dis)}, 6F退院: {len(ward_6f_dis)}")
+
+    # 病棟別平均在院日数
+    if ward_5f_dis:
+        avg_5f = sum(int(r["los_days"]) for r in ward_5f_dis if r["los_days"]) / len(ward_5f_dis)
+        print(f"5F平均在院日数: {avg_5f:.1f}日")
+    if ward_6f_dis:
+        avg_6f = sum(int(r["los_days"]) for r in ward_6f_dis if r["los_days"]) / len(ward_6f_dis)
+        print(f"6F平均在院日数: {avg_6f:.1f}日")
+
+    # B医師の金曜退院率（6F）
     b_discharges = [r for r in discharges if r["attending_doctor"] == "B医師"]
     b_friday = [r for r in b_discharges
                 if date.fromisoformat(r["date"]).weekday() == 4]
     b_fri_pct = len(b_friday) / len(b_discharges) * 100 if b_discharges else 0
-    print(f"B医師の金曜退院率: {b_fri_pct:.0f}% ({len(b_friday)}/{len(b_discharges)})")
+    print(f"\nB医師の金曜退院率: {b_fri_pct:.0f}% ({len(b_friday)}/{len(b_discharges)})")
 
     # A医師の金曜退院率
     a_discharges = [r for r in discharges if r["attending_doctor"] == "A医師"]
@@ -409,10 +680,6 @@ def verify(records):
     d_source = [r for r in admissions if r["source_doctor"] == "D医師"]
     print(f"D医師の入院創出数: {len(d_source)}")
 
-    # I医師の入院創出数
-    i_source = [r for r in admissions if r["source_doctor"] == "I医師"]
-    print(f"I医師の入院創出数: {len(i_source)}")
-
     # G医師の救急経路率
     g_admissions = [r for r in admissions if r["source_doctor"] == "G医師"]
     g_emergency = [r for r in g_admissions if r["route"] == "救急"]
@@ -425,23 +692,40 @@ def verify(records):
     h_a_pct = len(h_a_phase) / len(h_discharges) * 100 if h_discharges else 0
     print(f"H医師のA群割合: {h_a_pct:.0f}% ({len(h_a_phase)}/{len(h_discharges)})")
 
-    # 稼働率概算 (94床)
-    # 退院患者のLOS合計は在院日数の一部のみ（3月以前入院分もある）
-    total_patient_days = sum(int(r["los_days"]) for r in discharges if r["los_days"])
-    avg_los = total_patient_days / len(discharges) if discharges else 0
-    # 実際の稼働率は日次集計アプリで算出。ここでは平均在院日数のみ表示
-    print(f"退院患者の平均在院日数: {avg_los:.1f}日")
-    print(f"退院患者の延べ在院日数: {total_patient_days}日")
-
-    # 病棟別入院数
-    ward_5f = len([r for r in admissions if r["ward"] == "5F"])
-    ward_6f = len([r for r in admissions if r["ward"] == "6F"])
-    print(f"5F入院: {ward_5f}, 6F入院: {ward_6f}")
-
-    # 週末退院の確認
+    # 週末退院
     weekend_dis = [r for r in discharges
                    if date.fromisoformat(r["date"]).weekday() >= 5]
     print(f"週末退院数: {len(weekend_dis)}")
+
+    # 6F金曜退院集中度
+    fri_6f_dis = [r for r in discharges
+                  if r["ward"] == "6F"
+                  and date.fromisoformat(r["date"]).weekday() == 4]
+    print(f"6F金曜退院数: {len(fri_6f_dis)}")
+
+    # 病棟別稼働率
+    if ward_rows:
+        print("\n=== 病棟別稼働率 ===")
+        for ward in ["5F", "6F"]:
+            ward_data = [r for r in ward_rows if r["ward"] == ward]
+            if ward_data:
+                patients = [r["total_patients"] for r in ward_data]
+                beds = WARD_BEDS[ward]
+                avg_occ = sum(patients) / len(patients) / beds * 100
+                max_p = max(patients)
+                min_p = min(patients)
+                full_days = sum(1 for p in patients if p >= beds)
+                print(f"{ward}: 平均稼働率 {avg_occ:.1f}% "
+                      f"(患者数 {min_p}-{max_p}, 満床日数 {full_days})")
+
+        # 全体稼働率
+        daily_totals = {}
+        for r in ward_rows:
+            d = r["date"]
+            daily_totals[d] = daily_totals.get(d, 0) + r["total_patients"]
+        total_beds = sum(WARD_BEDS.values())
+        avg_total_occ = sum(daily_totals.values()) / len(daily_totals) / total_beds * 100
+        print(f"全体: 平均稼働率 {avg_total_occ:.1f}% (94床)")
 
 
 # ---------------------------------------------------------------------------
@@ -455,5 +739,7 @@ if __name__ == "__main__":
     write_admission_routes()
     print("\n3. 入退院詳細")
     records = generate_admission_details()
-    verify(records)
+    print("\n4. 病棟別日次サマリー")
+    ward_rows = generate_ward_daily_summary(records)
+    verify(records, ward_rows)
     print("\n生成完了!")
