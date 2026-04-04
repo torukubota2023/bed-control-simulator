@@ -5217,8 +5217,8 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     _hint1_default_rounded = round(_hint1_default * 2) / 2  # 0.5刻みに丸め
                     _hint1_target = st.slider(
                         "稼働率改善目標（%ポイント）",
-                        min_value=0.5, max_value=5.0, step=0.5,
-                        value=min(_hint1_default_rounded, 5.0),
+                        min_value=0.5, max_value=10.0, step=0.5,
+                        value=min(_hint1_default_rounded, 10.0),
                         key="_hint_occ_slider",
                     )
                     _hint1_annual_value = _hint1_target * _ANNUAL_VALUE_PER_1PCT
