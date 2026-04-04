@@ -231,6 +231,28 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
         # ========== STEP 2: 退院判定 ========== #
         discharged_indices: list[int] = []
 
+        # --- 曜日別の退院・入院係数（現実の退院パターンを再現） ---
+        # 金曜退院集中 → 土日空床増加 → 月曜入院で回復、という典型パターン
+        _weekday = current_date.weekday()  # 0=月, 4=金, 5=土, 6=日
+        _weekday_discharge_factor = {
+            0: 0.6,   # 月曜: 抑制（入院日のため退院控えめ）
+            1: 0.7,   # 火曜: 抑制
+            2: 0.7,   # 水曜: 抑制
+            3: 0.8,   # 木曜: やや抑制
+            4: 2.5,   # 金曜: 退院集中（週末前に帰りたい）
+            5: 0.15,  # 土曜: 退院ほぼなし
+            6: 0.1,   # 日曜: 退院ほぼなし
+        }[_weekday]
+        _weekday_admission_factor = {
+            0: 1.5,   # 月曜: 入院多い（週明け外来からの入院）
+            1: 1.2,   # 火曜: やや多い
+            2: 1.0,   # 水曜: 通常
+            3: 1.0,   # 木曜: 通常
+            4: 0.7,   # 金曜: やや少ない
+            5: 0.25,  # 土曜: 救急のみ
+            6: 0.15,  # 日曜: 救急のみ
+        }[_weekday]
+
         # バランス戦略用：事前にフェーズ構成比を計算
         if strategy == "balanced":
             phases_pre = [_get_phase(p) for p in patients]
@@ -264,7 +286,8 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
                 base_prob = 0.0
 
             phase = _get_phase(los)
-            prob = base_prob
+            # 曜日別退院係数を基本確率に適用（金曜集中・土日抑制）
+            prob = base_prob * _weekday_discharge_factor
 
             # --- 稼働率フロア保護（全戦略共通、80%以下への低下を防止）---
             # 現実の病院運営では稼働率80%未満は経営的に許容されず退院抑制が働く
@@ -363,6 +386,8 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
         # 入院需要をポアソン分布で生成
         # 空床が多い時は待機患者がいるため需要が増える
         demand_lambda = daily_adm_mean * params["admission_variation_coeff"]
+        # 曜日別入院係数を適用（月曜多い・土日少ない）
+        demand_lambda *= _weekday_admission_factor
         if empty_beds > 10:
             # 空床が多い時は待機患者から追加入院
             demand_lambda *= 1.3
