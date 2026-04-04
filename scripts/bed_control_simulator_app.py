@@ -2703,7 +2703,9 @@ if _is_actual_data_mode:
     df = st.session_state.actual_df
     summary = st.session_state.actual_summary
     _active_raw_df = st.session_state.actual_df_raw
-    _active_cli_params = st.session_state.actual_params
+    _active_cli_params = dict(st.session_state.actual_params)  # コピーして病棟別に上書き可能にする
+    if _selected_ward_key in ("5F", "6F"):
+        _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
     # 実データモードでは days_in_month をデータ日数に合わせる
     days_in_month = len(df)
     # カレンダー上の月日数（目標計算用）
