@@ -5052,7 +5052,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
         else:
             # Month selector
             _detail_df["date"] = pd.to_datetime(_detail_df["date"])
-            _available_months = _detail_df["date"].dt.to_period("M").unique().sort_values()
+            _available_months = sorted(_detail_df["date"].dt.to_period("M").unique())
             _month_options = [str(m) for m in _available_months]
             _selected_month = st.selectbox("分析月", _month_options, index=len(_month_options)-1 if _month_options else 0)
 
