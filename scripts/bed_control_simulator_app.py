@@ -3674,7 +3674,7 @@ A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%
         _los_slider_key = f"los_monthly_adm_slider_{_selected_ward_key}"
         _los_monthly_adm = st.slider(
             "月間入院数（この値を固定して平均在院日数を変化させます）",
-            min_value=50, max_value=300, value=int(_los_default_adm), step=10,
+            min_value=50, max_value=300, value=int(_los_default_adm), step=5,
             key=_los_slider_key,
             help="月間入院数を変更するとグラフが再計算されます。当院の実績は約150名/月です。"
         )
