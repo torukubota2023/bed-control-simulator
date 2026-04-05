@@ -132,6 +132,14 @@ try:
 except Exception as _doc_err:
     pass
 
+# HOPE送信用サマリー生成モジュール
+_HOPE_AVAILABLE = False
+try:
+    from hope_message_generator import render_hope_tab as _render_hope_tab
+    _HOPE_AVAILABLE = True
+except Exception:
+    pass
+
 # 入退院詳細データ
 try:
     from bed_data_manager import (
@@ -1860,6 +1868,8 @@ if _is_actual_data_mode:
         tab_names.append("👨‍⚕️ 医師別分析")
         tab_names.append("💡 改善のヒント")
         tab_names.append("⚙️ 医師マスター")
+    if _HOPE_AVAILABLE:
+        tab_names.append("📨 HOPE送信")
 else:
     # シミュレーションモード（従来通り）
     tab_names = [
@@ -1877,6 +1887,8 @@ else:
         tab_names.append("👨‍⚕️ 医師別分析")
         tab_names.append("💡 改善のヒント")
         tab_names.append("⚙️ 医師マスター")
+    if _HOPE_AVAILABLE:
+        tab_names.append("📨 HOPE送信")
 
 tabs = st.tabs(tab_names)
 # タブ名→インデックスのマッピング
@@ -5675,6 +5687,13 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
         if not _hints_found and len(_hint_savings) == 0:
             st.success("現時点で特に改善が必要なヒントはありません。データが蓄積されると自動で検出されます。")
+
+# ---------------------------------------------------------------------------
+# HOPE送信用サマリータブ
+# ---------------------------------------------------------------------------
+if _HOPE_AVAILABLE and "📨 HOPE送信" in _tab_idx:
+    with tabs[_tab_idx["📨 HOPE送信"]]:
+        _render_hope_tab()
 
 # ---------------------------------------------------------------------------
 # フッター

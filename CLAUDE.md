@@ -24,7 +24,7 @@
 - **設計書:** [bed_control_evolution_design.md](docs/admin/bed_control_evolution_design.md)
 - **理事向けプレゼン:** [bed_control_evolution_presentation.pptx](docs/admin/bed_control_evolution_presentation.pptx)
 - **ビジョン:** 精神論を、数字に変える。
-- **新モジュール:** `scripts/doctor_master.py`（医師マスター管理）
+- **新モジュール:** `scripts/doctor_master.py`（医師マスター管理）、`scripts/hope_message_generator.py`（HOPE送信用サマリー生成）
 - **新機能:**
   - 常時表示の基盤指標（稼働率1% = 年間1,046万円）
   - 「改善のヒント」自動検出（金額換算付き）
@@ -32,6 +32,7 @@
   - 入退院詳細入力（経路・入院創出医・担当医・在院日数）
   - 医師マスター設定画面
   - 病棟別分析（5F/6F切替、病棟単位の改善のヒント）
+  - HOPE送信用サマリー（ToDo一斉送信用メッセージ生成、400文字制限対応）
 - **将来構想（未実装）:**
   - 第2層: 改善仮説の保存・比較（What-if分析の名前付き保存）
   - 第3層: 提案書ドラフト自動生成（経営会議向け）
