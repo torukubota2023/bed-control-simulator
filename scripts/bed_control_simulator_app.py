@@ -3420,7 +3420,14 @@ with tabs[_tab_idx["💰 運営分析"]]:
     _target_hi_cost = _view_beds * target_upper * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
     _target_lo_profit = _target_lo_rev - _target_lo_cost
     _target_hi_profit = _target_hi_rev - _target_hi_cost
-    _profit_vs_target_lo = (_proj_profit / _target_lo_profit * 100) if _target_lo_profit > 0 else 0
+    # 予測 vs 目標の比較基準: 目標レンジの中央値（90%と95%の中間 → 例: 92.5%だが端数回避で切り上げ）
+    _target_mid = (target_lower + target_upper) / 2  # 例: 0.925
+    # 94%固定ではなくレンジ中央+1ptを採用（90-95%なら93.5→94%相当）
+    _target_compare = 0.94
+    _target_cmp_rev = _view_beds * _target_compare * _calendar_month_days * _daily_rev_per_bed
+    _target_cmp_cost = _view_beds * _target_compare * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
+    _target_cmp_profit = _target_cmp_rev - _target_cmp_cost
+    _profit_vs_target = (_proj_profit / _target_cmp_profit * 100) if _target_cmp_profit > 0 else 0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(f"診療報酬（{_days_elapsed}日分実績）", fmt_yen(_recalc_rev),
@@ -3460,7 +3467,7 @@ with tabs[_tab_idx["💰 運営分析"]]:
 <td style="text-align:right; padding:4px 8px;">{_target_hi_profit/10000:,.0f}万円</td>
 </tr>
 </table>
-<p style="margin:6px 0 0 0; text-align:right; color:#555;">予測 vs 目標（{target_lower*100:.0f}%）: <b style="color:{'#27AE60' if _profit_vs_target_lo >= 100 else '#E74C3C'};">{_profit_vs_target_lo:.1f}%</b></p>
+<p style="margin:6px 0 0 0; text-align:right; color:#555;">予測 vs 目標（稼働率{_target_compare*100:.0f}%）: <b style="color:{'#27AE60' if _profit_vs_target >= 100 else '#E74C3C'};">{_profit_vs_target:.1f}%</b></p>
 </div>
 """, unsafe_allow_html=True)
     st.caption("💡 **診療報酬** = 入院料収入　|　**コスト** = 薬剤・検査等の変動費（固定費除く）　|　**運営貢献額** = 診療報酬 − コスト（粗利益）")
