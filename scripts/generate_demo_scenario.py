@@ -117,7 +117,7 @@ RED = RGBColor(0xE7, 0x4C, 0x3C)
 
 # ===== TITLE =====
 add_paragraph_with_style(
-    "ベッドコントロールシミュレーター\n幹部会議 実演シナリオ（約15分）",
+    "ベッドコントロールシミュレーター\n幹部会議 実演シナリオ（約18分）",
     size=Pt(16), color=NAVY, bold=True,
     align=WD_ALIGN_PARAGRAPH.CENTER, space_after=Pt(8), space_before=Pt(24)
 )
@@ -407,13 +407,110 @@ add_serif_with_highlight([
 add_separator()
 
 # ===== Scene 7 =====
-add_scene_heading("■ Scene 7　まとめ —「見える」が「動ける」に変わる　(2分)")
+add_scene_heading("■ Scene 7　「稼働率が上がると、私たちの賞与はどうなるか」　(2分)")
+
+# Highlight badge
+p = doc.add_paragraph()
+p.paragraph_format.space_after = Pt(8)
+run = p.add_run("★ ここから全職員に関わる話です")
+set_font(run, size=Pt(12), color=RED, bold=True)
+
+add_serif("💬 少し話を変えます。ここからは皆さん一人ひとりに関わる話です。")
+
+add_serif_with_highlight([
+    ("💬 私は事務の専門家ではありませんので、AIと一緒に試算した概算です。正確な数字は事務部門に確認が必要ですが、大きな方向性としてお聞きください。", {}),
+])
+
+add_empty_line()
+
+add_serif_with_highlight([
+    ("💬 まず、2026年度の診療報酬改定。先ほどプリセットを切り替えてお見せしましたが、同じ稼働率でも入院料が上がるため、運営貢献額が月あたり約", {}),
+    ("600万円", {'color': RED, 'bold': True}),
+    ("増えます。年間にすると", {}),
+    ("約7,200万円", {'color': RED, 'bold': True}),
+    ("の増収です。", {}),
+])
+
+add_serif_with_highlight([
+    ("💬 当院の人件費率は58%です。この増収分を人件費率で按分すると、職員290名に対して一人あたり年間約", {}),
+    ("14万円", {'color': RED, 'bold': True}),
+    ("。これは賞与に換算すると、", {}),
+    ("約10%の増額", {'color': RED, 'bold': True}),
+    ("に相当します。改定の恩恵だけで、です。", {}),
+])
+
+add_empty_line()
+
+add_serif_with_highlight([
+    ("💬 さらに。今の稼働率89%を目標の", {}),
+    ("94%", {'color': RED, 'bold': True}),
+    ("まで引き上げたらどうなるか。稼働率1%の年間価値は約1,100万円ですから、5ポイント改善で年間約", {}),
+    ("5,500万円", {'color': RED, 'bold': True}),
+    ("の増収。人件費按分で一人あたり年間約", {}),
+    ("11万円", {'color': RED, 'bold': True}),
+    ("。賞与に換算して、さらに", {}),
+    ("約8%の増額", {'color': RED, 'bold': True}),
+    ("です。", {}),
+])
+
+add_empty_line()
+
+# Table for summary
+table = doc.add_table(rows=4, cols=4)
+table.alignment = WD_TABLE_ALIGNMENT.CENTER
+# Set table width
+tbl2 = table._tbl
+tblPr2 = tbl2.tblPr if tbl2.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+tblW2 = parse_xml(f'<w:tblW {nsdecls("w")} w:type="pct" w:w="4500"/>')
+tblPr2.append(tblW2)
+
+_bonus_data = [
+    ["", "年間増収", "一人あたり", "賞与影響"],
+    ["改定効果のみ", "+7,200万円", "+14万円", "約+10%"],
+    ["稼働率94%達成", "+5,500万円", "+11万円", "約+8%"],
+    ["合計", "+1億2,700万円", "+25万円", "約+18%"],
+]
+for r_idx, row_data in enumerate(_bonus_data):
+    for c_idx, cell_text in enumerate(row_data):
+        cell = table.cell(r_idx, c_idx)
+        cell.text = ""
+        run = cell.paragraphs[0].add_run(cell_text)
+        is_header = (r_idx == 0)
+        is_total = (r_idx == 3)
+        _r_color = NAVY if is_header else RED if is_total else DARK_BLUE
+        _r_bold = is_header or is_total
+        set_font(run, size=Pt(10), color=_r_color, bold=_r_bold)
+        if is_header:
+            shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="DCE6F1" w:val="clear"/>')
+            cell._element.get_or_add_tcPr().append(shading)
+        if c_idx >= 1:
+            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+add_empty_line()
+
+add_serif_with_highlight([
+    ("💬 つまり、改定と稼働率改善を合わせれば、", {}),
+    ("賞与が約2割増える可能性", {'color': RED, 'bold': True}),
+    ("がある。繰り返しますが、これは事務専門でない副院長がAIと計算した概算です。ただ、方向性は間違っていないと思います。", {}),
+])
+
+add_serif_with_highlight([
+    ("💬 「今より1日あたり4〜5名多く入院がいる状態を維持する」。それだけで、皆さん一人ひとりの年間賞与が", {}),
+    ("約25万円増える", {'color': RED, 'bold': True}),
+    ("計算になります。", {}),
+])
+
+add_separator()
+
+# ===== Scene 8 =====
+add_scene_heading("■ Scene 8　まとめ —「見える」が「動ける」に変わる　(1分)")
 
 add_serif("💬 今日お見せしたことをまとめます。")
 add_empty_line()
 add_serif("💬 1つ目。稼働率の現在地と、残り日数でいくら取り戻せるかが分かる。")
 add_serif("💬 2つ目。平均在院日数が基準を超えそうなとき、「C群からあと何名」と具体的に分かる。")
 add_serif("💬 3つ目。病棟ごとに課題が違うことが一目で分かり、的確に手が打てる。")
+add_serif("💬 4つ目。稼働率の改善が、皆さんの賞与にどうつながるかが見える。")
 add_empty_line()
 add_serif("💬 このアプリに必要なのは、毎日5分のデータ入力だけです。電子カルテとの連携なし。追加コストゼロ。")
 add_empty_line()
@@ -425,13 +522,13 @@ add_serif(
 )
 
 add_serif(
-    "💬 そして病棟で患者さんを受けてくださる看護スタッフの皆さん。「また入院が来た」「ベッドが足りない」——そう感じる日もあるでしょう。でもこのデータが示しているのは、皆さんが1名を受けるたびに、病院に年間1,000万円の価値が生まれているということです。皆さんの頑張りは、ちゃんと数字に表れています。",
+    "💬 そして病棟で患者さんを受けてくださる看護スタッフの皆さん。「また入院が来た」「ベッドが足りない」——そう感じる日もあるでしょう。でもこのデータが示しているのは、皆さんが1名を受けるたびに、病院に年間1,000万円の価値が生まれ、それが皆さんの賞与に返ってくるということです。",
     size=Pt(12), color=NAVY, bold=False
 )
 
 add_empty_line()
 
-add_serif("💬 目的は、誰かを責めることではありません。「見えなかったものを見えるようにする」こと。見えれば、自分で考えて、自分で動ける。そういう文化を、このアプリで一緒につくっていきたいと思います。")
+add_serif("💬 目的は、誰かを責めることではありません。「見えなかったものを見えるようにする」こと。見えれば、自分で考えて、自分で動ける。そしてその頑張りは、数字を通じてちゃんと自分に返ってくる。そういう文化を、このアプリで一緒につくっていきたいと思います。")
 
 add_serif("💬 まずは1ヶ月、試してみませんか。ご質問はありますか？")
 
@@ -453,6 +550,8 @@ qa_pairs = [
      "A. 使いません。このツールは病棟全体の傾向を把握し、改善の方向性を示すものです。将来的に医師別分析機能もありますが、目的は個人攻撃ではなく、貢献の可視化とフィードバックです。"),
     ("Q. 2026年改定で平均在院日数が20日になったらどうするのか？",
      "A. アプリのプリセットを切り替えるだけで対応できます。当院は85歳以上が20%を超えているため+1日の緩和で21日以内ですが、もし患者構成が変わった場合はチェックボックスを外せば20日基準に切り替わります。今から改定後の影響をシミュレーションして備えることが重要です。"),
+    ("Q. 賞与の試算は本当に正確なのか？",
+     "A. あくまでAIと計算した概算です。人件費率58%で按分し、増収分が賞与に反映されると仮定した試算ですので、実際の配分は事務部門・経営判断によります。ただ「稼働率が上がれば病院の収入が増え、それが職員に還元される」という方向性は間違いありません。大事なのは正確な数字より、自分たちの仕事がどう病院経営につながっているかを理解することです。"),
 ]
 
 for q, a in qa_pairs:
