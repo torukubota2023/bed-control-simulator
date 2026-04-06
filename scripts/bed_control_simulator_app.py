@@ -770,6 +770,8 @@ _FEE_PRESETS = {
         "c_rev": 33400, "c_cost": 4500,    # 30,500 + 2,900(リハ推定)
         "day1_bonus": 0, "within_14_bonus": 0, "rehab_fee": 0,
         "note": "初期加算1,500円/日・リハビリ出来高は各群の報酬に包含済み",
+        "max_avg_los": 21,  # 地域包括医療病棟の算定基準: 平均在院日数上限
+        "max_avg_los_relaxed": 21,  # 85歳以上20%以上の場合（+0日、同じ）
     },
     "2026年度（令和8年度）": {
         "desc": "入院料1: イ3,367 / ロ3,267 / ハ3,117点（加重平均≈3,250点）＋ 初期加算 150点",
@@ -780,6 +782,8 @@ _FEE_PRESETS = {
         "c_rev": 35500, "c_cost": 4500,    # 32,500 + 3,000(リハ推定)
         "day1_bonus": 0, "within_14_bonus": 0, "rehab_fee": 0,
         "note": "入院料1（急性期非併設）の加重平均。初期加算・リハビリ出来高は各群に包含済み",
+        "max_avg_los": 20,  # 2026年改定で21→20日に短縮
+        "max_avg_los_relaxed": 21,  # 85歳以上20%以上の場合（+1日緩和）
     },
 }
 
@@ -792,6 +796,17 @@ _fee_preset_name = st.sidebar.selectbox(
 )
 _fee_preset = _FEE_PRESETS[_fee_preset_name]
 st.sidebar.caption(f"📋 {_fee_preset['desc']}")
+
+# 85歳以上20%以上の緩和措置
+_elderly_relaxation = st.sidebar.checkbox(
+    "85歳以上が20%以上（在院日数+1日緩和）",
+    value=True,
+    help="85歳以上の入院患者割合が20%以上の場合、平均在院日数の算定基準が+1日緩和されます",
+)
+_max_avg_los = _fee_preset.get("max_avg_los_relaxed", 21) if _elderly_relaxation else _fee_preset.get("max_avg_los", 21)
+_base_max_los = _fee_preset.get("max_avg_los", 21)
+_los_label = f"平均在院日数上限: {_max_avg_los}日以内" + (f"（通常{_base_max_los}日+1日緩和）" if _elderly_relaxation and _max_avg_los > _base_max_los else "")
+st.sidebar.caption(f"📏 {_los_label}")
 
 # プリセット切替時にセッションステートを更新
 if "prev_fee_preset" not in st.session_state:
@@ -3339,9 +3354,43 @@ with tabs[_tab_idx["💰 運営分析"]]:
     c6.metric("月間退院数", f"{summary['月間退院数']}人")
     c7.metric("目標レンジ内日数", f"{summary['目標レンジ内日数']}/{days_in_month}日")
     c8.metric("目標レンジ内率", f"{summary['目標レンジ内率']}%")
-    c9.metric("平均在院日数", f"{summary['平均在院日数']}日",
-              help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
-    st.caption("※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠")
+    _current_avg_los = summary["平均在院日数"]
+    _los_over = _current_avg_los - _max_avg_los
+    if _los_over > 0:
+        c9.metric("平均在院日数", f"{_current_avg_los}日", delta=f"基準超過 +{_los_over:.1f}日", delta_color="inverse",
+                  help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
+    else:
+        c9.metric("平均在院日数", f"{_current_avg_los}日", delta=f"基準内（余裕 {-_los_over:.1f}日）",
+                  help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
+    st.caption(f"※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠　|　算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）")
+
+    # --- 平均在院日数アラート ---
+    if _los_over > 0:
+        # C群患者数を取得
+        _c_count = 0
+        if "C群患者数" in df.columns:
+            _c_count = int(df["C群患者数"].iloc[-1]) if len(df) > 0 else 0
+        elif "phase_c_count" in df.columns:
+            _c_count = int(df["phase_c_count"].iloc[-1]) if len(df) > 0 else 0
+
+        _los_alert_lines = [
+            f"🚨 **平均在院日数 {_current_avg_los}日 — 算定基準（{_max_avg_los}日以内）を超過しています**\n\n",
+            f"地域包括医療病棟の施設基準を満たさなくなるリスクがあります。",
+            f" 現在 **+{_los_over:.1f}日超過** — 早急にC群（15日目以降）患者の退院調整が必要です。\n\n",
+            "**対策（C群患者からの退院促進）:**\n",
+            "- C群（在院15日以上）患者のリストアップ → 退院可能な患者から優先的に退院調整\n",
+            "- 転院先・在宅復帰先の早期確保（連携室への依頼）\n",
+            "- 退院前カンファレンスの前倒し実施\n",
+            "- 新規入院の受入れ（分母を増やす）による平均在院日数の引き下げ\n",
+        ]
+        if _c_count > 0:
+            _los_alert_lines.append(f"\n現在のC群患者数: **{_c_count}名** — この中から退院調整対象を選定してください")
+        st.error("".join(_los_alert_lines))
+    elif _los_over >= -1:
+        st.warning(
+            f"⚠️ **平均在院日数 {_current_avg_los}日 — 算定基準（{_max_avg_los}日以内）まで余裕 {-_los_over:.1f}日**\n\n"
+            "基準超過が近づいています。C群患者の退院タイミングに注意してください。"
+        )
 
     # --- 日次診療報酬・コスト・運営貢献額 ---
     fig, ax = plt.subplots(figsize=(12, 4))
