@@ -3555,7 +3555,7 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
     st.info(
         "**📌 判断の優先順位（看護必要度基準を満たす前提で）**\n\n"
         "1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床は診療報酬収入ゼロ、1床/日≈2.5万円の未活用病床コスト\n\n"
-        "2️⃣ **平均在院日数21日以内で戦略的在院調整を活用** — C群でも運営貢献額28,900円/日を生む\n\n"
+        f"2️⃣ **平均在院日数{_max_avg_los}日以内で戦略的在院調整を活用** — C群でも運営貢献額28,900円/日を生む\n\n"
         "3️⃣ **運営貢献額を減らさない** — 退院させて空床を出すより、平均在院日数の最適化で稼働率を維持\n\n"
         "⚠️ 退院を急ぐべきは「満床で新規入院を断らざるを得ない場合」のみ"
     )
@@ -3593,9 +3593,103 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         else:
             st.info(
                 f"C群構成比 {summary['C群平均構成比']:.1f}% は高めですが、稼働率{avg_occ:.1f}%で余裕あり。\n\n"
-                "**判断:** 平均在院日数21日以内ならC群の戦略的在院調整で稼働率維持を優先。"
+                "**判断:** 平均在院日数{_max_avg_los}日以内ならC群の戦略的在院調整で稼働率維持を優先。"
                 "在院継続で運営貢献額28,900円/日を確保。"
             )
+
+    # --- 平均在院日数 算定基準クリア計画 ---
+    _alert_current_los = summary["平均在院日数"]
+    _alert_los_over = _alert_current_los - _max_avg_los
+    if _alert_los_over > 0 and _calendar_month_days > days_in_month:
+        st.markdown("---")
+        st.subheader(f"🚨 平均在院日数 {_max_avg_los}日以内クリア計画")
+
+        # --- 計算に必要なデータを取得 ---
+        _alert_days_elapsed = days_in_month
+        _alert_days_left = _calendar_month_days - _alert_days_elapsed
+        _alert_total_adm = summary["月間入院数"]
+        _alert_total_dis = summary["月間退院数"]
+
+        # 在院患者延日数を逆算: avg_los = patient_days / ((adm + dis) / 2)
+        _alert_half_turnover = (_alert_total_adm + _alert_total_dis) / 2
+        _alert_patient_days_past = _alert_current_los * _alert_half_turnover
+
+        # 直近の在院患者数・C群数
+        _alert_last_patients = int(df["在院患者数"].iloc[-1]) if "在院患者数" in df.columns else int(df["total_patients"].iloc[-1]) if "total_patients" in df.columns else _view_beds
+        _alert_last_c = int(df["C群_患者数"].iloc[-1]) if "C群_患者数" in df.columns else 0
+
+        # 残り期間の予測（現在のペースが続く場合）
+        _alert_daily_adm = _alert_total_adm / max(_alert_days_elapsed, 1)
+        _alert_daily_dis_base = _alert_total_dis / max(_alert_days_elapsed, 1)
+        _alert_adm_remaining = round(_alert_daily_adm * _alert_days_left)
+        _alert_dis_remaining_base = round(_alert_daily_dis_base * _alert_days_left)
+
+        # 介入なし（現ペース継続）の月末予測
+        _alert_pd_remaining_base = _alert_last_patients * _alert_days_left  # 簡易推計
+        _alert_pd_month_base = _alert_patient_days_past + _alert_pd_remaining_base
+        _alert_adm_month = _alert_total_adm + _alert_adm_remaining
+        _alert_dis_month_base = _alert_total_dis + _alert_dis_remaining_base
+        _alert_ht_month_base = (_alert_adm_month + _alert_dis_month_base) / 2
+        _alert_los_month_base = _alert_pd_month_base / max(_alert_ht_month_base, 1)
+
+        # C群追加退院 n人の場合の計算（退院が早いほど効果大→平均で残りの半分と仮定）
+        _avg_save_days = _alert_days_left * 0.6  # 退院が早いほど効果大、平均6割の日数を節約
+        _alert_n_needed = 0
+        for _n in range(1, _alert_last_c + 20):
+            _pd_saved = _n * _avg_save_days
+            _new_pd = _alert_pd_month_base - _pd_saved
+            _new_dis = _alert_dis_month_base + _n
+            _new_ht = (_alert_adm_month + _new_dis) / 2
+            _new_los = _new_pd / max(_new_ht, 1)
+            if _new_los <= _max_avg_los:
+                _alert_n_needed = _n
+                break
+        else:
+            _alert_n_needed = _n  # 最大値
+
+        # 結果表示
+        st.error(
+            f"**現状**: 平均在院日数 **{_alert_current_los}日**（基準 {_max_avg_los}日以内を **+{_alert_los_over:.1f}日超過**）\n\n"
+            f"**月末予測（このままの場合）**: 約 **{_alert_los_month_base:.1f}日** — {'基準超過が継続' if _alert_los_month_base > _max_avg_los else '自然に基準内に収まる見込み'}\n\n"
+            f"**必要な対策**: 残り **{_alert_days_left}日** でC群（在院15日以上）患者を "
+            f"**追加{_alert_n_needed}名** 退院させれば基準クリア見込み"
+        )
+
+        # 具体的なアクションテーブル
+        _plan_col1, _plan_col2 = st.columns(2)
+        with _plan_col1:
+            st.markdown("**退院計画シミュレーション**")
+            _plan_rows = []
+            for _pn in range(0, min(_alert_n_needed + 3, _alert_last_c + 1)):
+                _pn_pd = _alert_pd_month_base - _pn * _avg_save_days
+                _pn_dis = _alert_dis_month_base + _pn
+                _pn_ht = (_alert_adm_month + _pn_dis) / 2
+                _pn_los = _pn_pd / max(_pn_ht, 1)
+                _pn_status = "✅ クリア" if _pn_los <= _max_avg_los else "❌ 超過"
+                _plan_rows.append({
+                    "C群追加退院数": f"{_pn}名",
+                    "予測平均在院日数": f"{_pn_los:.1f}日",
+                    "判定": _pn_status,
+                })
+            st.dataframe(pd.DataFrame(_plan_rows), hide_index=True, use_container_width=True)
+
+        with _plan_col2:
+            st.markdown("**退院候補の優先順位**")
+            st.markdown(
+                "1. **在院日数が最も長いC群患者**から順に退院調整\n"
+                "2. 退院先の確保状況を連携室に確認\n"
+                "3. 退院前カンファレンスを今週中に実施\n\n"
+                f"現在のC群患者: **{_alert_last_c}名**\n\n"
+                f"このうち **{_alert_n_needed}名** の退院で基準クリア\n\n"
+                "**同時に新規入院の受入れ**（分母増加）も有効:\n"
+                f"- 現在の入院ペース: 約{_alert_daily_adm:.1f}名/日\n"
+                f"- 入院を増やすほど平均在院日数は下がる"
+            )
+
+        st.caption(
+            f"※ 計算前提: 残り{_alert_days_left}日間の入院{_alert_adm_remaining}名・退院{_alert_dis_remaining_base}名（現ペース）"
+            f"＋C群追加退院による在院患者延日数の減少（退院1名あたり平均{_avg_save_days:.0f}日分）"
+        )
 
     # --- 今日のアクションリスト ---
     st.markdown("---")
@@ -3622,6 +3716,11 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         _remaining_days = _calc_remaining_days(_active_raw_df)
         _action_items.append(f"🔴 空床{_last_empty}床（未活用病床コスト 約{_last_empty * 34000 // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * 34000 * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
         _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で運営貢献額確保し稼働率維持を優先")
+    # 平均在院日数超過時のアクション
+    if _alert_los_over > 0 and _calendar_month_days > days_in_month:
+        _action_items.append(
+            f"🚨 **平均在院日数{_alert_current_los}日（基準{_max_avg_los}日超過）** → C群から{_alert_n_needed}名の退院調整を今週中に実施"
+        )
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
     if "A群過多" in _last_flags:
