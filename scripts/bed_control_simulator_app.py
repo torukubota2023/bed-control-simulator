@@ -3263,22 +3263,30 @@ with tabs[_tab_idx["💰 運営分析"]]:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_finance"])
 
-    # --- 月次目標達成率パネル（稼働率90%ラインベース） ---
+    # --- 稼働率ギャップ＆月次達成パネル ---
     _target_occ_line = target_lower  # 0.90
-    # 稼働率90%時の月次診療報酬目標 = 病床数 × 90% × 日数 × 加重平均日次報酬（約28,000円）
-    _weighted_daily_rev = 28000  # A/B/C群の加重平均運営貢献額
+    _actual_avg_occ = summary["平均稼働率"]
+    _occ_gap = _actual_avg_occ - _target_occ_line * 100  # 例: 87.2 - 90 = -2.8
+
+    # 金額ベースの計算（補助指標として表示）
+    _weighted_daily_rev = 28000
     _target_monthly_rev = _view_beds * _target_occ_line * _calendar_month_days * _weighted_daily_rev
     _actual_monthly_rev = summary["月次運営貢献額"]
     _achievement_rate = (_actual_monthly_rev / _target_monthly_rev * 100) if _target_monthly_rev > 0 else 0
-    _actual_avg_occ = summary["平均稼働率"]
 
-    # 色分け
-    if _achievement_rate >= 100:
-        _ach_bg = "#EAFAF1"; _ach_border = "#27AE60"; _ach_icon = "✅"; _ach_msg = "目標達成"
-    elif _achievement_rate >= 80:
-        _ach_bg = "#FEF9E7"; _ach_border = "#F39C12"; _ach_icon = "⚠️"; _ach_msg = "あと少し"
+    # 残り日数と未活用病床コスト
+    _days_elapsed = summary.get("シミュレーション日数", _calendar_month_days)
+    _days_left = max(0, _calendar_month_days - _days_elapsed)
+    _current_empty = max(0, _view_beds - round(_actual_avg_occ / 100 * _view_beds))
+    _remaining_cost = _current_empty * 34000 * _days_left
+
+    # 色分け（稼働率ベースで判定）
+    if _occ_gap >= 0:
+        _ach_bg = "#EAFAF1"; _ach_border = "#27AE60"; _ach_icon = "✅"; _ach_msg = "目標レンジ内"
+    elif _occ_gap >= -3:
+        _ach_bg = "#FEF9E7"; _ach_border = "#F39C12"; _ach_icon = "⚠️"; _ach_msg = "目標未達"
     else:
-        _ach_bg = "#FDEDEC"; _ach_border = "#E74C3C"; _ach_icon = "🔴"; _ach_msg = "要改善"
+        _ach_bg = "#FDEDEC"; _ach_border = "#E74C3C"; _ach_icon = "🔴"; _ach_msg = "大幅未達"
 
     # 稼働率の色分け
     if _actual_avg_occ < _target_occ_line * 100:
@@ -3288,14 +3296,26 @@ with tabs[_tab_idx["💰 運営分析"]]:
     else:
         _occ_color = "#F39C12"
 
+    # ギャップの表示文字列
+    _gap_sign = "+" if _occ_gap >= 0 else ""
+    _gap_str = f"{_gap_sign}{_occ_gap:.1f}pt"
+
+    # 残日数メッセージ
+    if _days_left > 0:
+        _remaining_msg = f"残り<b>{_days_left}日</b>で現ペース継続時の未活用病床コスト: <b>約{_remaining_cost // 10000:,.0f}万円</b>"
+    else:
+        _remaining_msg = "月末（実績確定）"
+
     st.markdown(f"""
 <div style="background:{_ach_bg}; padding:16px 20px; border-radius:10px; border-left:5px solid {_ach_border}; margin-bottom:16px;">
 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
 <div>
-<h3 style="margin:0; color:{_ach_border};">{_ach_icon} 月次目標達成率: {_achievement_rate:.1f}%　<span style="font-size:0.7em; color:#666;">（{_ach_msg}）</span></h3>
+<h3 style="margin:0; color:{_ach_border};">{_ach_icon} 稼働率 {_actual_avg_occ:.1f}%（目標{_target_occ_line*100:.0f}%比 {_gap_str}）　<span style="font-size:0.7em; color:#666;">— {_ach_msg}</span></h3>
 <p style="margin:4px 0 0 0; font-size:0.9em; color:#555;">
-稼働率最低ライン（{_target_occ_line*100:.0f}%）ベースの月次運営貢献額目標: <b>{_target_monthly_rev/10000:,.0f}万円</b>
-｜ 実績: <b>{_actual_monthly_rev/10000:,.0f}万円</b>
+運営貢献額: 実績 <b>{_actual_monthly_rev/10000:,.0f}万円</b> / 目標(90%ベース) <b>{_target_monthly_rev/10000:,.0f}万円</b>（達成率 {_achievement_rate:.1f}%）
+</p>
+<p style="margin:2px 0 0 0; font-size:0.9em; color:#555;">
+{_remaining_msg}
 </p>
 </div>
 <div style="text-align:center; padding:4px 16px;">
