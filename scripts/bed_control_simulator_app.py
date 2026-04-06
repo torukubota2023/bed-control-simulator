@@ -2966,12 +2966,30 @@ with tabs[_tab_idx["📊 日次推移"]]:
         fontsize=9, color="gray", va="bottom",
     )
 
-    # --- 月平均目標達成ライン（点線）---
-    # _active_raw_df と df の両方で試行（カラム名の違いに対応）
+    # --- 残り日数の目標達成ライン（常時表示）---
+    # _calc_monthly_target で計算、失敗時はフォールバックで直接計算
     _mt_chart = None
     for _mt_src_df in [_active_raw_df, df]:
         if _mt_chart is None and isinstance(_mt_src_df, pd.DataFrame) and len(_mt_src_df) > 0:
             _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, _calendar_month_days, _view_beds)
+
+    # フォールバック: _calc_monthly_targetが失敗しても残り日数があれば直接計算
+    if _mt_chart is None and _calendar_month_days > days_in_month:
+        _fb_avg = _avg_occ_pct
+        _fb_elapsed = days_in_month
+        _fb_remaining = _calendar_month_days - _fb_elapsed
+        _fb_target = target_lower * 100
+        _fb_required = (_fb_target * _calendar_month_days - _fb_avg * _fb_elapsed) / _fb_remaining
+        _mt_chart = {
+            "avg_so_far": round(_fb_avg, 1),
+            "days_elapsed": _fb_elapsed,
+            "days_remaining": _fb_remaining,
+            "total_days": _calendar_month_days,
+            "required_occ": round(_fb_required, 1),
+            "monthly_target_pct": _fb_target,
+            "difficulty": "impossible" if _fb_required > 100 else "hard" if _fb_required > 95 else "moderate" if _fb_required > 90 else "easy",
+        }
+
     if _mt_chart and _mt_chart["days_remaining"] > 0:
         _chart_last_day = len(df["稼働率"])  # データの最終日番号
         _chart_end_day = _mt_chart["total_days"]  # 月末日番号
