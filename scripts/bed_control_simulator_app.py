@@ -3409,15 +3409,61 @@ with tabs[_tab_idx["💰 運営分析"]]:
             _recalc_cost = _pa_days * phase_a_cost + _pb_days * phase_b_cost + _pc_days * phase_c_cost
             _recalc_profit = _recalc_rev - _recalc_cost
 
+    # --- 月末予測・目標値の計算 ---
+    _proj_rev = _recalc_rev / _days_elapsed * _calendar_month_days if _days_elapsed > 0 else _recalc_rev
+    _proj_cost = _recalc_cost / _days_elapsed * _calendar_month_days if _days_elapsed > 0 else _recalc_cost
+    _proj_profit = _proj_rev - _proj_cost
+    # 目標値（稼働率90%・95%での月間額）
+    _target_lo_rev = _view_beds * target_lower * _calendar_month_days * _daily_rev_per_bed
+    _target_hi_rev = _view_beds * target_upper * _calendar_month_days * _daily_rev_per_bed
+    _target_lo_cost = _view_beds * target_lower * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
+    _target_hi_cost = _view_beds * target_upper * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
+    _target_lo_profit = _target_lo_rev - _target_lo_cost
+    _target_hi_profit = _target_hi_rev - _target_hi_cost
+    _profit_vs_target_lo = (_proj_profit / _target_lo_profit * 100) if _target_lo_profit > 0 else 0
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("月次診療報酬", fmt_yen(_recalc_rev),
+    c1.metric(f"診療報酬（{_days_elapsed}日分実績）", fmt_yen(_recalc_rev),
               help="入院患者の診療報酬合計（入院料＋初期加算＋リハビリ出来高）")
-    c2.metric("月次コスト", fmt_yen(_recalc_cost),
+    c2.metric(f"コスト（{_days_elapsed}日分実績）", fmt_yen(_recalc_cost),
               help="薬剤費・材料費・検査費・給食費などの変動費合計（固定費は含まない）")
-    c3.metric("月次運営貢献額", fmt_yen(_recalc_profit),
+    c3.metric(f"運営貢献額（{_days_elapsed}日分実績）", fmt_yen(_recalc_profit),
               help="診療報酬 − 変動費コスト = 病棟が生み出す粗利益（固定費カバーに充てる額）")
     c4.metric("平均稼働率", f"{summary['平均稼働率']:.1f}%")
-    st.caption("💡 **診療報酬** = 入院料収入の合計　|　**コスト** = 薬剤・検査等の変動費（看護人件費等の固定費は除く）　|　**運営貢献額** = 診療報酬 − コスト（固定費を賄うための粗利益）")
+
+    # 月末予測・目標値
+    st.markdown(f"""
+<div style="background:#F8F9FA; padding:12px 16px; border-radius:8px; margin:8px 0 12px 0; font-size:0.9em;">
+<table style="width:100%; border-collapse:collapse;">
+<tr style="border-bottom:1px solid #DEE2E6;">
+<th style="text-align:left; padding:4px 8px; color:#666;">　</th>
+<th style="text-align:right; padding:4px 8px; color:#666;">診療報酬</th>
+<th style="text-align:right; padding:4px 8px; color:#666;">コスト</th>
+<th style="text-align:right; padding:4px 8px; color:#666;">運営貢献額</th>
+</tr>
+<tr style="border-bottom:1px solid #EEE;">
+<td style="padding:4px 8px;">📊 現ペース月末予測</td>
+<td style="text-align:right; padding:4px 8px; font-weight:bold;">{_proj_rev/10000:,.0f}万円</td>
+<td style="text-align:right; padding:4px 8px;">{_proj_cost/10000:,.0f}万円</td>
+<td style="text-align:right; padding:4px 8px; font-weight:bold;">{_proj_profit/10000:,.0f}万円</td>
+</tr>
+<tr style="border-bottom:1px solid #EEE;">
+<td style="padding:4px 8px;">🎯 目標値（稼働率{target_lower*100:.0f}%）</td>
+<td style="text-align:right; padding:4px 8px;">{_target_lo_rev/10000:,.0f}万円</td>
+<td style="text-align:right; padding:4px 8px;">{_target_lo_cost/10000:,.0f}万円</td>
+<td style="text-align:right; padding:4px 8px;">{_target_lo_profit/10000:,.0f}万円</td>
+</tr>
+<tr>
+<td style="padding:4px 8px;">🎯 目標値（稼働率{target_upper*100:.0f}%）</td>
+<td style="text-align:right; padding:4px 8px;">{_target_hi_rev/10000:,.0f}万円</td>
+<td style="text-align:right; padding:4px 8px;">{_target_hi_cost/10000:,.0f}万円</td>
+<td style="text-align:right; padding:4px 8px;">{_target_hi_profit/10000:,.0f}万円</td>
+</tr>
+</table>
+<p style="margin:6px 0 0 0; text-align:right; color:#555;">予測 vs 目標（{target_lower*100:.0f}%）: <b style="color:{'#27AE60' if _profit_vs_target_lo >= 100 else '#E74C3C'};">{_profit_vs_target_lo:.1f}%</b></p>
+</div>
+""", unsafe_allow_html=True)
+    st.caption("💡 **診療報酬** = 入院料収入　|　**コスト** = 薬剤・検査等の変動費（固定費除く）　|　**運営貢献額** = 診療報酬 − コスト（粗利益）")
 
     c5, c6, c7, c8, c9 = st.columns(5)
     c5.metric("月間入院数", f"{summary['月間入院数']}人")
