@@ -1167,12 +1167,11 @@ if run_button:
             # --- 病棟別シミュレーション（各47床）---
             # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
             # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
-            # 教育シナリオ（現実的な稼働率80%以上を維持、月平均<90%で警告発動）:
-            # 5F: 初期91%→avg~85% = レンジ内から急低下（残り13日で97%必要＝ハードシナリオ）
+            # 教育シナリオ:
+            # 5F: 初期91%→avg~85% = 稼働率低下傾向（課題：入院を増やすこと）
             #   adm=35, los=14 → 退院抑制があっても入院不足で稼働率低下
-            # 6F: 初期82%→avg~87% = レンジ外から回復中（残り13日で94%必要）
-            #   adm=60, los=18 → 入院が退院を上回り回復トレンド
-            # 10シード検証済み: 全シナリオmin>=80.8%, 5F下降7/10, 6F上昇8/10
+            # 6F: 初期96%→avg~95% = 常に高稼働（課題：長期入院の退院調整）
+            #   adm=75, los=21 → 長期入院が多く常に満床近い、C群の退院調整が必要
             _ward_param_adj = {
                 "5F": {
                     "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 19) - 4),
@@ -1183,9 +1182,9 @@ if run_button:
                 },
                 "6F": {
                     "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 19)),
-                    "monthly_admissions": 60,
+                    "monthly_admissions": 75,
                     "admission_variation_coeff": 1.0,
-                    "initial_occupancy": 0.82,
+                    "initial_occupancy": 0.96,
                     "random_seed": (params.get("random_seed") or 42) + 2,
                 },
             }
