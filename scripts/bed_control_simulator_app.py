@@ -741,7 +741,7 @@ if _current_occ is not None:
 
 # シミュレーションモード専用のパラメータ
 if not _is_actual_data_mode:
-    days_in_month = st.sidebar.number_input("月の日数", min_value=7, max_value=31, value=30)
+    days_in_month = st.sidebar.number_input("月の日数", min_value=7, max_value=31, value=19)
     monthly_admissions = st.sidebar.number_input("月間新規入院数", min_value=50, max_value=300, value=150)
     avg_los = st.sidebar.slider("平均在院日数", 10, 30, 18)
     discharge_adj = st.sidebar.number_input("退院調整日数", min_value=0, max_value=5, value=2)
