@@ -741,7 +741,7 @@ if _current_occ is not None:
 
 # シミュレーションモード専用のパラメータ
 if not _is_actual_data_mode:
-    days_in_month = st.sidebar.number_input("月の日数（経過日数）", min_value=7, max_value=31, value=19,
+    days_in_month = st.sidebar.number_input("月の日数（経過日数）", min_value=7, max_value=31, value=20,
                                               help="シミュレーション対象の日数（月の途中の場合は経過日数）")
     _sidebar_calendar_days = st.sidebar.number_input("カレンダー月日数", min_value=28, max_value=31, value=30,
                                                       help="月の実際の日数（例: 4月=30日）。経過日数より大きい場合、残り日数の分析が有効になります")
@@ -1182,9 +1182,11 @@ if run_button:
                 },
                 "6F": {
                     "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 19)),
-                    "monthly_admissions": 75,
-                    "admission_variation_coeff": 1.0,
-                    "initial_occupancy": 0.96,
+                    "monthly_admissions": 85,
+                    "admission_variation_coeff": 1.3,
+                    "initial_occupancy": 0.98,
+                    "target_occupancy_upper": 0.98,
+                    "admission_suppression_threshold": 1.00,
                     "random_seed": (params.get("random_seed") or 42) + 2,
                 },
             }
@@ -2955,6 +2957,15 @@ with tabs[_tab_idx["📊 日次推移"]]:
     ax.set_xlim(1, days_in_month)
     ax.grid(True, alpha=0.3)
 
+    # --- 月平均ライン（常時表示）---
+    _avg_occ_pct = df["稼働率"].mean() * 100
+    ax.axhline(y=_avg_occ_pct, color="gray", linestyle=":", linewidth=1, alpha=0.7)
+    ax.annotate(
+        f'月平均 {_avg_occ_pct:.1f}%',
+        xy=(2, _avg_occ_pct),
+        fontsize=9, color="gray", va="bottom",
+    )
+
     # --- 月平均目標達成ライン（点線）---
     # _active_raw_df と df の両方で試行（カラム名の違いに対応）
     _mt_chart = None
@@ -2989,14 +3000,6 @@ with tabs[_tab_idx["📊 日次推移"]]:
 
         # X軸の範囲を月末まで拡張
         ax.set_xlim(1, _chart_end_day + 0.5)
-
-        # 月平均の水平線（現在の平均）
-        ax.axhline(y=_mt_chart["avg_so_far"], color="gray", linestyle=":", linewidth=1, alpha=0.7)
-        ax.annotate(
-            f'月平均 {_mt_chart["avg_so_far"]:.1f}%',
-            xy=(2, _mt_chart["avg_so_far"]),
-            fontsize=9, color="gray", va="bottom",
-        )
 
     st.pyplot(fig)
     plt.close(fig)

@@ -421,20 +421,21 @@ def simulate_bed_control(params: dict[str, Any], strategy: str) -> pd.DataFrame:
             total_current = max(len(patients), 1)
             ratio_a = phases_current.count("A") / total_current
 
+            _bal_upper = params["target_occupancy_upper"]
             if occupancy_after_discharge < 0.90:
                 # 稼働率90%未満: 積極的に入院受入（空床全て使う）
                 max_admissions = empty_beds
-            elif occupancy_after_discharge <= 0.95:
-                # 稼働率90-95%: 通常運用
+            elif occupancy_after_discharge <= _bal_upper:
+                # 稼働率90%〜上限: 通常運用
                 # A群過多の場合のみ入院抑制
                 if ratio_a > 0.35:
                     max_admissions = max(0, empty_beds // 2)
                 else:
-                    target_upper = int(num_beds * params["target_occupancy_upper"])
+                    target_upper = int(num_beds * _bal_upper)
                     max_admissions = max(0, target_upper - len(patients))
             else:
-                # 稼働率95%超: 新規入院を抑制
-                max_admissions = max(0, int(num_beds * 0.95) - len(patients))
+                # 上限超: 新規入院を抑制
+                max_admissions = max(0, int(num_beds * _bal_upper) - len(patients))
 
         new_admissions = min(demand, max_admissions)
         excess_demand = max(0, demand - new_admissions)
