@@ -3288,15 +3288,19 @@ with tabs[_tab_idx["💰 運営分析"]]:
     _occ_gap = _actual_avg_occ - _target_occ_line * 100  # 例: 87.2 - 90 = -2.8
 
     # 金額ベースの計算（補助指標として表示）
+    # 目標は経過日数ベースで計算（19日分の実績を19日分の目標と比較）
     _weighted_daily_rev = 28000
-    _target_monthly_rev = _view_beds * _target_occ_line * _calendar_month_days * _weighted_daily_rev
+    _days_elapsed = summary.get("シミュレーション日数", days_in_month)
+    _target_monthly_rev = _view_beds * _target_occ_line * _days_elapsed * _weighted_daily_rev
     _actual_monthly_rev = summary["月次運営貢献額"]
     _achievement_rate = (_actual_monthly_rev / _target_monthly_rev * 100) if _target_monthly_rev > 0 else 0
 
-    # 残り日数と未活用病床コスト
-    _days_elapsed = summary.get("シミュレーション日数", days_in_month)
+    # 残り日数と未活用病床コスト（直近の空床数ベース）
     _days_left = max(0, _calendar_month_days - _days_elapsed)
-    _current_empty = max(0, _view_beds - round(_actual_avg_occ / 100 * _view_beds))
+    # 直近日の実績から空床数を取得（平均ではなく最新日）
+    _last_patients_col = "在院患者数" if "在院患者数" in df.columns else "total_patients"
+    _last_patients_val = int(df[_last_patients_col].iloc[-1]) if _last_patients_col in df.columns and len(df) > 0 else round(_actual_avg_occ / 100 * _view_beds)
+    _current_empty = max(0, _view_beds - _last_patients_val)
     _remaining_cost = _current_empty * 34000 * _days_left
 
     # 色分け（稼働率ベースで判定）
@@ -3331,7 +3335,7 @@ with tabs[_tab_idx["💰 運営分析"]]:
 <div>
 <h3 style="margin:0; color:{_ach_border};">{_ach_icon} 稼働率 {_actual_avg_occ:.1f}%（目標{_target_occ_line*100:.0f}%比 {_gap_str}）　<span style="font-size:0.7em; color:#666;">— {_ach_msg}</span></h3>
 <p style="margin:4px 0 0 0; font-size:0.9em; color:#555;">
-運営貢献額: 実績 <b>{_actual_monthly_rev/10000:,.0f}万円</b> / 目標(90%ベース) <b>{_target_monthly_rev/10000:,.0f}万円</b>（達成率 {_achievement_rate:.1f}%）
+運営貢献額({_days_elapsed}日分): 実績 <b>{_actual_monthly_rev/10000:,.0f}万円</b> / 目標(90%ベース) <b>{_target_monthly_rev/10000:,.0f}万円</b>（達成率 {_achievement_rate:.1f}%）
 </p>
 <p style="margin:2px 0 0 0; font-size:0.9em; color:#555;">
 {_remaining_msg}
