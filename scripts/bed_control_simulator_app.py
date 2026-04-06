@@ -990,7 +990,7 @@ def _auto_save_to_db():
 
 if "demo_data" not in st.session_state:
     # 教育用デモCSVを自動ロード
-    _demo_csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202603.csv")
+    _demo_csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
     if os.path.exists(_demo_csv_path):
         try:
             _auto_demo = pd.read_csv(_demo_csv_path)
