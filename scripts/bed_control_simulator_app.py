@@ -3314,10 +3314,19 @@ with tabs[_tab_idx["💰 運営分析"]]:
 
     # 金額ベースの計算（補助指標として表示）
     # 目標は経過日数ベースで計算（19日分の実績を19日分の目標と比較）
-    _weighted_daily_rev = 28000
+    # 加重平均日次運営貢献額（現在のプリセットから計算: A15%+B45%+C40%の比率）
+    _weighted_daily_rev = 0.15 * (phase_a_rev - phase_a_cost) + 0.45 * (phase_b_rev - phase_b_cost) + 0.40 * (phase_c_rev - phase_c_cost)
     _days_elapsed = summary.get("シミュレーション日数", days_in_month)
     _target_monthly_rev = _view_beds * _target_occ_line * _days_elapsed * _weighted_daily_rev
+    # 運営貢献額: 現在のプリセットでリアルタイム再計算
     _actual_monthly_rev = summary["月次運営貢献額"]
+    if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+        _has_phase_cols = all(c in _active_raw_df.columns for c in ["phase_a_count", "phase_b_count", "phase_c_count"])
+        if _has_phase_cols:
+            _pa_d = int(_active_raw_df["phase_a_count"].sum())
+            _pb_d = int(_active_raw_df["phase_b_count"].sum())
+            _pc_d = int(_active_raw_df["phase_c_count"].sum())
+            _actual_monthly_rev = (_pa_d * phase_a_rev + _pb_d * phase_b_rev + _pc_d * phase_c_rev) - (_pa_d * phase_a_cost + _pb_d * phase_b_cost + _pc_d * phase_c_cost)
     _achievement_rate = (_actual_monthly_rev / _target_monthly_rev * 100) if _target_monthly_rev > 0 else 0
 
     # 残り日数と未活用病床コスト（直近の空床数ベース）
@@ -3375,12 +3384,30 @@ with tabs[_tab_idx["💰 運営分析"]]:
 </div>
 """, unsafe_allow_html=True)
 
-    # --- メトリクスカード ---
+    # --- メトリクスカード（現在のプリセットでリアルタイム再計算）---
+    # フェーズ別患者日数からプリセットの報酬・コストで再計算
+    _recalc_rev = summary["月次診療報酬"]
+    _recalc_cost = summary["月次コスト"]
+    _recalc_profit = summary["月次運営貢献額"]
+    if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+        _has_phase = all(c in _active_raw_df.columns for c in ["phase_a_count", "phase_b_count", "phase_c_count"])
+        if _has_phase:
+            _pa_days = int(_active_raw_df["phase_a_count"].sum())
+            _pb_days = int(_active_raw_df["phase_b_count"].sum())
+            _pc_days = int(_active_raw_df["phase_c_count"].sum())
+            _recalc_rev = _pa_days * phase_a_rev + _pb_days * phase_b_rev + _pc_days * phase_c_rev
+            _recalc_cost = _pa_days * phase_a_cost + _pb_days * phase_b_cost + _pc_days * phase_c_cost
+            _recalc_profit = _recalc_rev - _recalc_cost
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("月次診療報酬", fmt_yen(summary["月次診療報酬"]))
-    c2.metric("月次コスト", fmt_yen(summary["月次コスト"]))
-    c3.metric("月次運営貢献額", fmt_yen(summary["月次運営貢献額"]))
+    c1.metric("月次診療報酬", fmt_yen(_recalc_rev),
+              help="入院患者の診療報酬合計（入院料＋初期加算＋リハビリ出来高）")
+    c2.metric("月次コスト", fmt_yen(_recalc_cost),
+              help="薬剤費・材料費・検査費・給食費などの変動費合計（固定費は含まない）")
+    c3.metric("月次運営貢献額", fmt_yen(_recalc_profit),
+              help="診療報酬 − 変動費コスト = 病棟が生み出す粗利益（固定費カバーに充てる額）")
     c4.metric("平均稼働率", f"{summary['平均稼働率']:.1f}%")
+    st.caption("💡 **診療報酬** = 入院料収入の合計　|　**コスト** = 薬剤・検査等の変動費（看護人件費等の固定費は除く）　|　**運営貢献額** = 診療報酬 − コスト（固定費を賄うための粗利益）")
 
     c5, c6, c7, c8, c9 = st.columns(5)
     c5.metric("月間入院数", f"{summary['月間入院数']}人")
