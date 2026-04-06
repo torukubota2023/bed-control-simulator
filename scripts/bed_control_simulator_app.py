@@ -741,7 +741,10 @@ if _current_occ is not None:
 
 # シミュレーションモード専用のパラメータ
 if not _is_actual_data_mode:
-    days_in_month = st.sidebar.number_input("月の日数", min_value=7, max_value=31, value=19)
+    days_in_month = st.sidebar.number_input("月の日数（経過日数）", min_value=7, max_value=31, value=19,
+                                              help="シミュレーション対象の日数（月の途中の場合は経過日数）")
+    _sidebar_calendar_days = st.sidebar.number_input("カレンダー月日数", min_value=28, max_value=31, value=30,
+                                                      help="月の実際の日数（例: 4月=30日）。経過日数より大きい場合、残り日数の分析が有効になります")
     monthly_admissions = st.sidebar.number_input("月間新規入院数", min_value=50, max_value=300, value=150)
     avg_los = st.sidebar.slider("平均在院日数", 10, 30, 18)
     discharge_adj = st.sidebar.number_input("退院調整日数", min_value=0, max_value=5, value=2)
@@ -2835,9 +2838,10 @@ else:
             )
             _view_beds = get_ward_beds(_selected_ward_key)
 
-# カレンダー月日数のフォールバック（シミュレーションモードでは days_in_month がカレンダー月日数）
+# カレンダー月日数のフォールバック
 if '_calendar_month_days' not in locals():
-    _calendar_month_days = days_in_month
+    # シミュレーションモード: サイドバーのカレンダー月日数を使用
+    _calendar_month_days = _sidebar_calendar_days if '_sidebar_calendar_days' in dir() else days_in_month
 
 # ---------------------------------------------------------------------------
 # _active_raw_df と _active_display_df のフォールバック設定
@@ -3290,7 +3294,7 @@ with tabs[_tab_idx["💰 運営分析"]]:
     _achievement_rate = (_actual_monthly_rev / _target_monthly_rev * 100) if _target_monthly_rev > 0 else 0
 
     # 残り日数と未活用病床コスト
-    _days_elapsed = summary.get("シミュレーション日数", _calendar_month_days)
+    _days_elapsed = summary.get("シミュレーション日数", days_in_month)
     _days_left = max(0, _calendar_month_days - _days_elapsed)
     _current_empty = max(0, _view_beds - round(_actual_avg_occ / 100 * _view_beds))
     _remaining_cost = _current_empty * 34000 * _days_left
