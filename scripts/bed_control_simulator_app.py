@@ -914,7 +914,7 @@ if "daily_data" not in st.session_state:
             _loaded_from_db = True
     # 2) DBが空の場合、CSVサンプルデータから自動読み込み（Streamlit Cloud対応）
     if not _loaded_from_db:
-        _csv_fallback_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202603.csv")
+        _csv_fallback_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
         if os.path.exists(_csv_fallback_path):
             try:
                 _csv_df = pd.read_csv(_csv_fallback_path)
@@ -1013,7 +1013,7 @@ if "data_mode" not in st.session_state:
 # シミュレーションモードのプリロード: 教育用実データを初期表示
 # ---------------------------------------------------------------------------
 if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
-    _preload_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202603.csv")
+    _preload_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
     if os.path.exists(_preload_csv):
         try:
             _pre_df = pd.read_csv(_preload_csv)
