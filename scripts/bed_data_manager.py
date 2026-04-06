@@ -31,6 +31,7 @@ DAILY_RECORD_COLUMNS = [
     "discharge_a",       # A群相当退院数（1-5日目退院）
     "discharge_b",       # B群相当退院数（6-14日目退院）
     "discharge_c",       # C群相当退院数（15日目以降退院）
+    "discharge_los_list",  # 退院患者の在院日数リスト（カンマ区切り, e.g. "3,12,18,25"）
     "phase_a_count",     # A群患者数（1-5日目）— 自動計算、手入力不要
     "phase_b_count",     # B群患者数（6-14日目）— 自動計算、手入力不要
     "phase_c_count",     # C群患者数（15日目以降）— 自動計算、手入力不要
@@ -45,6 +46,28 @@ REQUIRED_COLUMNS = [
     "new_admissions",
     "discharges",
 ]
+
+def parse_discharge_los_list(los_str: str) -> tuple:
+    """
+    カンマ区切りの在院日数文字列からA/B/C群退院数と平均在院日数を算出。
+
+    Args:
+        los_str: カンマ区切りの在院日数文字列 (e.g. "3,12,18,25")
+
+    Returns:
+        (los_list, discharge_a, discharge_b, discharge_c, avg_los)
+    """
+    if not los_str or str(los_str).strip() in ("", "nan", "<NA>"):
+        return [], 0, 0, 0, float("nan")
+    los_list = [int(x.strip()) for x in str(los_str).split(",") if x.strip().isdigit()]
+    if not los_list:
+        return [], 0, 0, 0, float("nan")
+    da = sum(1 for x in los_list if 1 <= x <= 5)
+    db = sum(1 for x in los_list if 6 <= x <= 14)
+    dc = sum(1 for x in los_list if x >= 15)
+    avg = sum(los_list) / len(los_list)
+    return los_list, da, db, dc, avg
+
 
 # 2026年度改定 地域包括医療病棟入院料1（一般病棟非併設）
 # 基本入院料: イ/ロ/ハ加重平均(全国平均 イ45%/ロ35%/ハ20%) ≈ 3,280点
@@ -126,6 +149,7 @@ def create_empty_dataframe() -> pd.DataFrame:
         df[col] = df[col].astype("Int64")  # nullable int
     df["avg_los"] = df["avg_los"].astype("Float64")  # nullable float
     df["notes"] = df["notes"].astype("string")
+    df["discharge_los_list"] = df["discharge_los_list"].astype("string")
     return df
 
 
@@ -207,6 +231,8 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
     for col in ["discharge_a", "discharge_b", "discharge_c"]:
         if col not in record_copy or record_copy[col] is None:
             record_copy[col] = 0
+    if "discharge_los_list" not in record_copy or record_copy["discharge_los_list"] is None:
+        record_copy["discharge_los_list"] = ""
     # phase_a/b/c_count はオプション（自動計算される場合がある）
     for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:
         if col not in record_copy:
@@ -222,6 +248,8 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
             new_row[col] = new_row[col].astype("Int64")
     new_row["avg_los"] = new_row["avg_los"].astype("Float64")
     new_row["notes"] = new_row["notes"].astype("string")
+    if "discharge_los_list" in new_row.columns:
+        new_row["discharge_los_list"] = new_row["discharge_los_list"].fillna("").astype("string")
 
     df = pd.concat([df, new_row], ignore_index=True)
     df["date"] = pd.to_datetime(df["date"])
@@ -627,6 +655,11 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
     for col in ["discharge_a", "discharge_b", "discharge_c"]:
         if col not in raw.columns:
             raw[col] = 0
+
+    # discharge_los_list がない場合は空文字で埋める（後方互換性）
+    if "discharge_los_list" not in raw.columns:
+        raw["discharge_los_list"] = ""
+    raw["discharge_los_list"] = raw["discharge_los_list"].fillna("").astype("string")
 
     # phase_a/b/c_count がない場合はNAで埋める（自動計算対応）
     for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:

@@ -530,7 +530,53 @@ add_empty_line()
 
 add_serif("💬 目的は、誰かを責めることではありません。「見えなかったものを見えるようにする」こと。見えれば、自分で考えて、自分で動ける。そしてその頑張りは、数字を通じてちゃんと自分に返ってくる。そういう文化を、このアプリで一緒につくっていきたいと思います。")
 
-add_serif("💬 まずは1ヶ月、試してみませんか。ご質問はありますか？")
+add_serif("💬 まずは1ヶ月、試してみませんか。")
+
+add_empty_line()
+
+add_serif("💬 最後に、今日お見せしきれなかった機能を簡単にご紹介します。", size=Pt(12), color=NAVY, bold=True)
+
+add_empty_line()
+
+# Feature list table
+feat_table = doc.add_table(rows=11, cols=2)
+feat_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+# Set table width
+_ft = feat_table._tbl
+_ftPr = _ft.tblPr if _ft.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+_ftW = parse_xml(f'<w:tblW {nsdecls("w")} w:type="pct" w:w="5000"/>')
+_ftPr.append(_ftW)
+
+_features = [
+    ["機能", "できること"],
+    ["📊 日次推移", "稼働率・入退院数の日別グラフ。曜日パターンや週末の谷が一目で分かる"],
+    ["🔄 フェーズ構成", "A群/B群/C群の構成比を可視化。理想構成比との乖離を表示"],
+    ["💰 運営分析", "診療報酬・コスト・運営貢献額を実績と月末予測で表示。改定前後の比較も可能"],
+    ["🚨 運営改善アラート", "在院日数超過の自動検知とC群退院クリア計画。「あと何名」を算出"],
+    ["🎯 意思決定ダッシュボード", "5日間の稼働率予測、最適在院日数レンジの算出、推奨アクション一覧"],
+    ["🔮 What-if分析", "「もし金曜退院を平準化したら？」「入院が5名増えたら？」を即シミュレーション"],
+    ["👨\u200d⚕️ 医師別分析", "入院創出医・担当医ごとの貢献度を可視化。フェーズ別の分析も可能"],
+    ["💡 改善のヒント", "金曜退院の平準化、月曜入院の強化など、改善策を金額換算で提示"],
+    ["📨 HOPE送信", "電子カルテのToDo一斉送信用メッセージを自動生成（400文字制限対応）"],
+    ["📋 日次データ入力", "5F/6F病棟ごとに在院患者数・入院数・退院患者の在院日数をスライダーで入力。毎日5分で完了"],
+]
+for r_idx, row_data in enumerate(_features):
+    for c_idx, cell_text in enumerate(row_data):
+        cell = feat_table.cell(r_idx, c_idx)
+        cell.text = ""
+        run = cell.paragraphs[0].add_run(cell_text)
+        is_header = (r_idx == 0)
+        _f_color = NAVY if is_header else DARK_BLUE
+        _f_bold = is_header or c_idx == 0
+        _f_size = Pt(10) if c_idx == 1 and not is_header else Pt(11)
+        set_font(run, size=_f_size, color=_f_color, bold=_f_bold)
+        if is_header:
+            shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="DCE6F1" w:val="clear"/>')
+            cell._element.get_or_add_tcPr().append(shading)
+
+add_empty_line()
+
+add_serif("💬 すべてブラウザで動きます。インストール不要。追加コストゼロ。ご質問はありますか？")
 
 add_separator()
 
@@ -539,7 +585,7 @@ add_paragraph_with_style("■ 想定Q&A", size=Pt(13), color=NAVY, bold=True, sp
 
 qa_pairs = [
     ("Q. データ入力の手間はどのくらいか？",
-     "A. 1日5分程度です。入院数・退院数・在院患者数をプルダウンと数字で入力するだけです。"),
+     "A. 1日5分程度です。在院患者数・入院数を入力し、退院患者はスライダーで在院日数を選ぶだけ。すべてマウスのみで操作可能です。"),
     ("Q. 平均在院日数の「C群から3名」はどうやって計算しているのか？",
      "A. 厚労省公式の平均在院日数（在院患者延日数÷半回転数）を使い、残り日数での入退院ペースを現ペースで推計した上で、C群退院の追加による在院患者延日数の減少と退院数の増加を反映しています。退院が早いほど効果が大きいため、退院1名あたり残り日数の6割分の患者日数を節約する前提です。"),
     ("Q. 数字の精度は信頼できるのか？",

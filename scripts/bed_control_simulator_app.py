@@ -93,6 +93,7 @@ try:
         TOTAL_BEDS,
         get_ward_beds,
         aggregate_wards,
+        parse_discharge_los_list,
     )
     _DATA_MANAGER_AVAILABLE = True
 except Exception as _dm_err:
@@ -2195,24 +2196,62 @@ if _DATA_MANAGER_AVAILABLE:
 
                 input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
 
-                st.markdown("**退院内訳（各群の退院数を入力 → 退院数は自動合算）**")
-                form_col5, form_col6, form_col7 = st.columns(3)
-                with form_col5:
-                    input_discharge_a = st.number_input("A群退院（1-5日目）", min_value=0, max_value=30, value=0, step=1)
-                with form_col6:
-                    input_discharge_b = st.number_input("B群退院（6-14日目）", min_value=0, max_value=30, value=0, step=1)
-                with form_col7:
-                    input_discharge_c = st.number_input("C群退院（15日目〜）", min_value=0, max_value=30, value=0, step=1)
+                # --- 退院患者の在院日数入力（個別精度） ---
+                st.markdown("**退院情報**")
+                st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
+                input_discharge_count = st.number_input(
+                    "退院人数（退院なしは0）", min_value=0, max_value=8, value=0, step=1,
+                    help="本日の退院患者数を入力。下のスライダーで各患者の在院日数を設定してください"
+                )
 
-                # 退院数は内訳から自動合算
-                auto_discharges = input_discharge_a + input_discharge_b + input_discharge_c
-                st.info(f"💡 退院数（自動合算）: **{auto_discharges}名**（A群:{input_discharge_a} + B群:{input_discharge_b} + C群:{input_discharge_c}）")
+                # 在院日数スライダー（8スロット常時描画 — フォーム内のためキー安定性が必要）
+                _los_options = list(range(1, 61))
+                st.markdown("**各退院患者の在院日数**（退院人数分だけスライダーを設定してください）")
+                _los_all = []
+                for _slot_row in range(0, 8, 2):
+                    _slot_cols = st.columns(2)
+                    for _ci, _col in enumerate(_slot_cols):
+                        _si = _slot_row + _ci
+                        with _col:
+                            _los_val = st.select_slider(
+                                f"退院{_si + 1}" if _si < input_discharge_count else f"（未使用）",
+                                options=_los_options,
+                                value=10,
+                                key=f"dm_los_slot_{_si}",
+                            )
+                            _los_all.append(_los_val)
+
+                # 退院人数分だけ有効値として集計
+                auto_discharges = input_discharge_count
+                _los_active = _los_all[:auto_discharges]
+                _auto_da = sum(1 for x in _los_active if 1 <= x <= 5)
+                _auto_db = sum(1 for x in _los_active if 6 <= x <= 14)
+                _auto_dc = sum(1 for x in _los_active if x >= 15)
+                if auto_discharges > 0:
+                    _avg_los_display = sum(_los_active) / len(_los_active)
+                    _phase_badges = " ".join(
+                        f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _los_active
+                    )
+                    st.info(
+                        f"💡 退院 **{auto_discharges}名**: {_phase_badges}\n\n"
+                        f"A群:{_auto_da} B群:{_auto_db} C群:{_auto_dc}　"
+                        f"平均在院日数: **{_avg_los_display:.1f}日**"
+                    )
+                else:
+                    st.info("💡 退院なし（退院人数を増やすとスライダーが有効になります）")
 
                 input_notes = st.text_input("備考（任意）", value="")
 
-                submitted = st.form_submit_button("追加", type="primary", width="stretch")
+                submitted = st.form_submit_button("追加", type="primary", use_container_width=True)
 
                 if submitted:
+                    # 在院日数リストからA/B/C退院数を算出
+                    _active_los = [st.session_state.get(f"dm_los_slot_{i}", 10) for i in range(input_discharge_count)]
+                    _los_str = ",".join(str(v) for v in _active_los)
+                    _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
+                    import math
+                    _avg_los_val = _calc_avg_los if not math.isnan(_calc_avg_los) else pd.NA
+
                     # A/B/C群を自動計算（日齢バケットモデル対応）
                     _prev_buckets = st.session_state.get("day_buckets", None)
 
@@ -2235,10 +2274,11 @@ if _DATA_MANAGER_AVAILABLE:
                         "discharge_a": int(input_discharge_a),
                         "discharge_b": int(input_discharge_b),
                         "discharge_c": int(input_discharge_c),
+                        "discharge_los_list": _los_str,
                         "phase_a_count": new_a,
                         "phase_b_count": new_b,
                         "phase_c_count": new_c,
-                        "avg_los": pd.NA,
+                        "avg_los": _avg_los_val,
                         "notes": input_notes,
                         "data_source": "manual",
                     }
@@ -2253,7 +2293,10 @@ if _DATA_MANAGER_AVAILABLE:
                         st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
                         if new_buckets is not None:
                             st.session_state.day_buckets = new_buckets
-                        st.success(f"{input_date} のデータを追加しました。（A群:{new_a} B群:{new_b} C群:{new_c} / 退院計:{auto_discharges}名）")
+                        _phase_detail = " ".join(
+                            f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
+                        ) if _active_los else "なし"
+                        st.success(f"{input_date} のデータを追加しました。（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}）")
                         _auto_save_to_db()
                         st.rerun()
                     else:
@@ -2273,9 +2316,10 @@ if _DATA_MANAGER_AVAILABLE:
 
                 # st.data_editor で編集可能テーブル（data_sourceカラムは非表示）
                 _display_cols = ["date_str", "total_patients", "new_admissions", "discharges",
+                                  "discharge_los_list",
                                   "discharge_a", "discharge_b", "discharge_c",
                                   "phase_a_count", "phase_b_count", "phase_c_count",
-                                  "notes"]
+                                  "avg_los", "notes"]
                 _display_cols_available = [c for c in _display_cols if c in display_data.columns]
                 edited_df = st.data_editor(
                     display_data[_display_cols_available].rename(columns={
@@ -2283,20 +2327,27 @@ if _DATA_MANAGER_AVAILABLE:
                         "total_patients": "在院患者数",
                         "new_admissions": "新規入院",
                         "discharges": "退院（自動）",
+                        "discharge_los_list": "退院LOS一覧",
                         "discharge_a": "A群退院",
                         "discharge_b": "B群退院",
                         "discharge_c": "C群退院",
                         "phase_a_count": "A群（自動）",
                         "phase_b_count": "B群（自動）",
                         "phase_c_count": "C群（自動）",
+                        "avg_los": "退院平均LOS",
                         "notes": "備考",
                     }),
                     column_config={
                         "日付": st.column_config.TextColumn(disabled=True),
                         "退院（自動）": st.column_config.NumberColumn(disabled=True),
+                        "退院LOS一覧": st.column_config.TextColumn(disabled=True, help="退院患者の在院日数（カンマ区切り）"),
+                        "A群退院": st.column_config.NumberColumn(disabled=True),
+                        "B群退院": st.column_config.NumberColumn(disabled=True),
+                        "C群退院": st.column_config.NumberColumn(disabled=True),
                         "A群（自動）": st.column_config.NumberColumn(disabled=True),
                         "B群（自動）": st.column_config.NumberColumn(disabled=True),
                         "C群（自動）": st.column_config.NumberColumn(disabled=True),
+                        "退院平均LOS": st.column_config.NumberColumn(disabled=True, format="%.1f"),
                     },
                     width="stretch",
                     height=min(400, 50 + len(display_data) * 35),

@@ -69,6 +69,7 @@ def init_tables(conn):
                 discharge_a INTEGER DEFAULT 0,
                 discharge_b INTEGER DEFAULT 0,
                 discharge_c INTEGER DEFAULT 0,
+                discharge_los_list TEXT DEFAULT '',
                 phase_a_count INTEGER,
                 phase_b_count INTEGER,
                 phase_c_count INTEGER,
@@ -78,6 +79,12 @@ def init_tables(conn):
                 PRIMARY KEY (date, ward)
             )
         """)
+
+        # Migration: discharge_los_list カラムを追加（既存DBの後方互換性）
+        cursor.execute("PRAGMA table_info(daily_records)")
+        _existing_cols = {row[1] for row in cursor.fetchall()}
+        if "discharge_los_list" not in _existing_cols:
+            cursor.execute("ALTER TABLE daily_records ADD COLUMN discharge_los_list TEXT DEFAULT ''")
 
         # abc_state テーブル
         cursor.execute("""
@@ -137,10 +144,10 @@ def save_daily_records(df, db_path=None):
             cursor.execute("""
                 REPLACE INTO daily_records
                 (date, ward, total_patients, new_admissions, discharges,
-                 discharge_a, discharge_b, discharge_c,
+                 discharge_a, discharge_b, discharge_c, discharge_los_list,
                  phase_a_count, phase_b_count, phase_c_count,
                  avg_los, notes, data_source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row.get('date', ''),
                 row.get('ward', 'all'),
@@ -150,6 +157,7 @@ def save_daily_records(df, db_path=None):
                 int(row['discharge_a']) if pd.notna(row.get('discharge_a')) else 0,
                 int(row['discharge_b']) if pd.notna(row.get('discharge_b')) else 0,
                 int(row['discharge_c']) if pd.notna(row.get('discharge_c')) else 0,
+                str(row.get('discharge_los_list', '')) if pd.notna(row.get('discharge_los_list')) else '',
                 int(row['phase_a_count']) if pd.notna(row.get('phase_a_count')) else None,
                 int(row['phase_b_count']) if pd.notna(row.get('phase_b_count')) else None,
                 int(row['phase_c_count']) if pd.notna(row.get('phase_c_count')) else None,
@@ -207,7 +215,7 @@ def _create_empty_daily_records():
     """
     columns = [
         'date', 'ward', 'total_patients', 'new_admissions', 'discharges',
-        'discharge_a', 'discharge_b', 'discharge_c',
+        'discharge_a', 'discharge_b', 'discharge_c', 'discharge_los_list',
         'phase_a_count', 'phase_b_count', 'phase_c_count',
         'avg_los', 'notes', 'data_source'
     ]
