@@ -2972,7 +2972,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
     for _mt_src_df in [_active_raw_df, df]:
         if _mt_chart is None and isinstance(_mt_src_df, pd.DataFrame) and len(_mt_src_df) > 0:
             _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, _calendar_month_days, _view_beds)
-    if _mt_chart and _mt_chart["days_remaining"] > 0 and _mt_chart["avg_so_far"] < _mt_chart["monthly_target_pct"]:
+    if _mt_chart and _mt_chart["days_remaining"] > 0:
         _chart_last_day = len(df["稼働率"])  # データの最終日番号
         _chart_end_day = _mt_chart["total_days"]  # 月末日番号
         _required_occ_pct = _mt_chart["required_occ"]
@@ -2982,16 +2982,21 @@ with tabs[_tab_idx["📊 日次推移"]]:
         _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
         _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
 
-        # 目標ラインの色を難易度で変更
-        _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
+        # 目標ラインの色：目標未達なら難易度別、達成済みなら緑
+        if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
+            _target_color = "#1E8449"
+            _target_label = f'現ペース維持で達成\n{_required_occ_pct:.1f}%以上'
+        else:
+            _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
+            _target_label = f'目標達成に必要\n{_required_occ_pct:.1f}%'
 
         ax.plot(_target_x, _target_y,
                 linestyle="--", linewidth=2.5, color=_target_color,
                 marker="", zorder=5)
 
-        # 必要稼働率のラベル
+        # ラベル
         ax.annotate(
-            f'目標達成に必要\n{_required_occ_pct:.1f}%',
+            _target_label,
             xy=(_chart_end_day - 2, _required_occ_pct),
             fontsize=10, fontweight="bold", color=_target_color,
             ha="right", va="bottom",
