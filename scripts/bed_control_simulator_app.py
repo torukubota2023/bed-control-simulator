@@ -1179,25 +1179,26 @@ if run_button:
             # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
             # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
             # 教育シナリオ:
-            # 5F: 初期91%→avg~85% = 稼働率低下傾向（課題：入院を増やすこと）
-            #   adm=35, los=14 → 退院抑制があっても入院不足で稼働率低下
-            # 6F: 初期96%→avg~95% = 常に高稼働（課題：長期入院の退院調整）
-            #   adm=75, los=21 → 長期入院が多く常に満床近い、C群の退院調整が必要
+            # 5F: 初期85%→avg~83% = 稼働率低下傾向（課題：入院を増やすこと）
+            #   adm=33, los=14 → 入院不足で稼働率低下、全体主義で6Fに支えてもらう
+            # 6F: 初期93%→avg~92% = 安定高稼働（ヘルパー病棟として余力あり）
+            #   adm=70, los=19 → 高めだが満床ではない、5Fを支える余裕がある
+            # 全体: avg~87-88% = 目標90%に対して2-3pt不足の緊迫感ある設定
             _ward_param_adj = {
                 "5F": {
-                    "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 19) - 4),
-                    "monthly_admissions": 35,
+                    "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 19) - 5),
+                    "monthly_admissions": 33,
                     "admission_variation_coeff": 1.0,
-                    "initial_occupancy": 0.91,
+                    "initial_occupancy": 0.85,
                     "random_seed": (params.get("random_seed") or 42) + 1,
                 },
                 "6F": {
-                    "avg_length_of_stay": min(21, params.get("avg_length_of_stay", 19)),
-                    "monthly_admissions": 85,
-                    "admission_variation_coeff": 1.3,
-                    "initial_occupancy": 0.98,
-                    "target_occupancy_upper": 0.98,
-                    "admission_suppression_threshold": 1.00,
+                    "avg_length_of_stay": min(19, params.get("avg_length_of_stay", 19)),
+                    "monthly_admissions": 70,
+                    "admission_variation_coeff": 1.2,
+                    "initial_occupancy": 0.93,
+                    "target_occupancy_upper": 0.96,
+                    "admission_suppression_threshold": 0.98,
                     "random_seed": (params.get("random_seed") or 42) + 2,
                 },
             }
