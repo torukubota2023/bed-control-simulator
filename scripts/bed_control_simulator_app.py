@@ -4723,8 +4723,8 @@ if "\U0001f52e What-if分析" in _tab_idx:
     with tabs[_tab_idx["\U0001f52e What-if分析"]]:
         if not _DECISION_SUPPORT_AVAILABLE:
             st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
-        if "_DECISION_SUPPORT_ERROR" in dir():
-            st.code(_DECISION_SUPPORT_ERROR)
+            if "_DECISION_SUPPORT_ERROR" in dir():
+                st.code(_DECISION_SUPPORT_ERROR)
         else:
             st.subheader("\U0001f52e What-if分析")
             st.info(
