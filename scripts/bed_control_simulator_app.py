@@ -666,9 +666,9 @@ def run_comparison(_params_hashable: tuple, params_dict_orig: dict):
 # ---------------------------------------------------------------------------
 # サイドバー: 基盤指標（稼働率1%の価値）
 # ---------------------------------------------------------------------------
-_UNIT_PRICE_PER_DAY = 30500  # 1日あたり入院単価
+_UNIT_PRICE_PER_DAY = 34960  # 1日あたり入院単価
 _TOTAL_BEDS_METRIC = 94
-_ANNUAL_VALUE_PER_1PCT = _TOTAL_BEDS_METRIC * 0.01 * 365 * _UNIT_PRICE_PER_DAY  # ≈1,047万円
+_ANNUAL_VALUE_PER_1PCT = _TOTAL_BEDS_METRIC * 0.01 * 365 * _UNIT_PRICE_PER_DAY  # ≈1,199万円
 _OPERATING_PROFIT = 35500000  # 年間黒字額3,550万円
 
 # Get monthly average occupancy from data if available
