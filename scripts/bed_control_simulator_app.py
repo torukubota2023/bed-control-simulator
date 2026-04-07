@@ -4236,8 +4236,8 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         _remaining_days = _calc_remaining_days(_active_raw_df)
         _action_items.append(f"🔴 空床{_last_empty}床（未活用病床コスト 約{_last_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
         _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で運営貢献額確保し稼働率維持を優先")
-    # 平均在院日数超過時のアクション
-    if _alert_los_over > 0 and _calendar_month_days > days_in_month:
+    # 平均在院日数超過時のアクション（全体表示時のみ — _alert_n_needed は全体ブロックで定義）
+    if _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key == "全体":
         _action_items.append(
             f"🚨 **平均在院日数{_alert_current_los}日（基準{_max_avg_los}日超過）** → C群から{_alert_n_needed}名の退院調整を今週中に実施"
         )
