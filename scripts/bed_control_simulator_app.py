@@ -1668,35 +1668,54 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
         bd_remaining_needed = total_bd_required - total_bd_done
         overall_required = bd_remaining_needed / (total_beds * days_remaining) * 100
 
-        scenarios = {}
-        for w_help, w_helped in [("6F", "5F"), ("5F", "6F")]:
-            helper_cap = ward_info[w_help]["beds"] * days_remaining
-            helped_cap = ward_info[w_helped]["beds"] * days_remaining
+        # --- 均等努力方式（Equal Effort）---
+        # 全体目標達成に必要な上昇幅Δを計算し、両病棟で等しく負担する
+        # 残り日数で各病棟が current_avg + Δ の稼働率を維持する前提
+        # 式: Σ(beds_w × remaining × (avg_w + Δ) / 100) = bd_remaining_needed
+        # → Σ(beds_w × avg_w) + Δ × Σ(beds_w) = bd_remaining_needed / remaining × 100
+        _sum_beds_avg = sum(ward_info[w]["avg"] * ward_info[w]["beds"] for w in wards)
+        _sum_beds = sum(ward_info[w]["beds"] for w in wards)
+        _needed_per_day = bd_remaining_needed / days_remaining if days_remaining > 0 else 0
+        # _needed_per_day = Σ(beds_w × (avg_w + Δ) / 100)
+        # = (_sum_beds_avg + Δ × _sum_beds) / 100
+        if _sum_beds > 0:
+            _delta = (_needed_per_day * 100 - _sum_beds_avg) / _sum_beds
+        else:
+            _delta = 0
 
-            helped_scenarios = []
-            for pct in [85, 86, 87, 88, 89, 90, 91, 91.5, 92, 93, 94, 95]:
-                helped_bd = helped_cap * (pct / 100)
-                helper_required = (bd_remaining_needed - helped_bd) / helper_cap * 100
-                helped_scenarios.append({
-                    "helped_pct": pct,
-                    "helper_required": round(helper_required, 1),
-                    "feasible": helper_required <= helper_cap_pct,
-                })
-
-            helped_last = ward_info[w_helped]["last_occ"]
-            helper_required_realistic = (bd_remaining_needed - helped_cap * (helped_last / 100)) / helper_cap * 100
-
-            scenarios[w_helped] = {
-                "helper_ward": w_help, "helped_ward": w_helped,
-                "scenarios": helped_scenarios,
-                "recommended": {
-                    "helped_pct": helped_last,
-                    "helper_required": round(helper_required_realistic, 1),
-                    "helper_last_occ": ward_info[w_help]["last_occ"],
-                    "margin": round(ward_info[w_help]["last_occ"] - helper_required_realistic, 1),
-                    "feasible": helper_required_realistic <= helper_cap_pct,
-                },
+        # 各病棟の均等努力目標
+        equal_effort = {}
+        for w in wards:
+            _target = ward_info[w]["avg"] + _delta
+            _over_cap = _target > helper_cap_pct
+            equal_effort[w] = {
+                "target": round(_target, 1),
+                "delta": round(_delta, 1),
+                "feasible": _target <= 100,
+                "within_cap": not _over_cap,
             }
+
+        # 多段階シナリオ（均等努力の上昇幅別）
+        _effort_scenarios = []
+        for d in [x * 0.5 for x in range(-2, 9)]:  # -1.0 ~ +4.0
+            _row = {"delta": round(d, 1)}
+            _all_feasible = True
+            _all_within_cap = True
+            for w in wards:
+                _t = ward_info[w]["avg"] + d
+                _row[w] = round(_t, 1)
+                if _t > 100:
+                    _all_feasible = False
+                if _t > helper_cap_pct:
+                    _all_within_cap = False
+            # この上昇幅での全体稼働率を計算
+            _total_bd = sum(ward_info[w]["beds"] * days_remaining * (ward_info[w]["avg"] + d) / 100 for w in wards)
+            _overall = (total_bd_done + _total_bd) / (total_beds * total_days) * 100
+            _row["overall"] = round(_overall, 1)
+            _row["achieves_target"] = _overall >= target_lower * 100
+            _row["feasible"] = _all_feasible
+            _row["within_cap"] = _all_within_cap
+            _effort_scenarios.append(_row)
 
         helper_ward = None
         helped_ward = None
@@ -1713,7 +1732,10 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
             "helper_cap_pct": helper_cap_pct,
             "days_elapsed": days_elapsed, "days_remaining": days_remaining,
             "total_days": total_days, "target_pct": target_lower * 100,
-            "wards": ward_info, "scenarios": scenarios,
+            "wards": ward_info,
+            "equal_effort": equal_effort,
+            "delta": round(_delta, 1),
+            "effort_scenarios": _effort_scenarios,
             "helper_ward": helper_ward, "helped_ward": helped_ward,
         }
     except Exception:
@@ -1833,33 +1855,34 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
                     f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成"
                 )
-            # --- 全体主義メッセージ（単体困難時に表示）---
+            # --- 全体主義メッセージ（単体困難時に表示 — 均等努力方式）---
             _hw_dfs = _get_holistic_ward_dfs()
             if _mt["difficulty"] in ("hard", "impossible") and _hw_dfs:
                 _cw = _calc_cross_ward_target(_hw_dfs, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds, helper_cap * 100)
-                if _cw and _cw["overall_achievable"] and _cw["helped_ward"] == _selected_ward_key:
-                    _hw = _cw["helper_ward"]
-                    _sc = _cw["scenarios"][_selected_ward_key]
-                    _rec = _sc["recommended"]
+                if _cw and _cw["overall_achievable"]:
+                    _ee = _cw["equal_effort"]
+                    _delta = _cw["delta"]
                     _lines = [
-                        f"🤝 **全体主義での目標達成**\n\n"
+                        f"🤝 **全体主義での目標達成 — 均等努力方式**\n\n"
                         f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
-                        f"**全体（94床）では達成可能**です。\n\n"
-                        f"**■ 推奨シナリオ（残り{_cw['days_remaining']}日）**\n"
-                        f"- {_selected_ward_key}が直近 **{_rec['helped_pct']:.1f}%** を維持 → "
-                        f"{_hw}は **{_rec['helper_required']:.1f}%以上** で全体達成 ✅\n"
-                        f"- {_hw}の直近稼働率: {_rec['helper_last_occ']:.1f}% → 余裕 **{_rec['margin']:.1f}ポイント**\n\n"
+                        f"**両病棟が均等に+{_delta:.1f}pt上昇**すれば全体達成可能です。\n\n"
+                        f"**■ 均等努力目標（残り{_cw['days_remaining']}日）**\n"
                     ]
-                    # シナリオ表
-                    _tbl = f"**■ {_selected_ward_key}の想定別 → {_hw}に必要な最低稼働率**\n\n"
-                    _tbl += f"| {_selected_ward_key}想定 | {_hw}必要最低 | 達成可否 |\n|---|---|---|\n"
-                    for _s in _sc["scenarios"]:
-                        if _s["feasible"]:
-                            _mark = "✅" if _s["helper_required"] <= _rec["helper_last_occ"] else "⚠️"
-                        else:
-                            _mark = "❌"
-                        _bold = "**" if abs(_s["helped_pct"] - _rec["helped_pct"]) < 0.1 else ""
-                        _tbl += f"| {_bold}{_s['helped_pct']:.1f}%{_bold} | {_bold}{_s['helper_required']:.1f}%{_bold} | {_mark} |\n"
+                    for w in ["5F", "6F"]:
+                        _wi = _cw["wards"][w]
+                        _ei = _ee[w]
+                        _cap_note = "" if _ei["within_cap"] else f" ⚠️上限{_cw['helper_cap_pct']:.0f}%超"
+                        _lines.append(f"- {w}: 現在平均 {_wi['avg']:.1f}% → 目標 **{_ei['target']:.1f}%**（+{_delta:.1f}pt）{_cap_note}\n")
+                    _lines.append("\n")
+                    # 多段階シナリオ表
+                    _tbl = "**■ 上昇幅別シナリオ**\n\n"
+                    _tbl += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
+                    for _es in _cw["effort_scenarios"]:
+                        _mark = "✅" if _es["achieves_target"] and _es["feasible"] else "⚠️" if _es["achieves_target"] else "❌"
+                        if not _es["within_cap"]:
+                            _mark = "🔶" if _es["achieves_target"] else "❌"
+                        _bold = "**" if abs(_es["delta"] - _delta) < 0.1 else ""
+                        _tbl += f"| {_bold}+{_es['delta']:.1f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
                     _lines.append(_tbl)
                     st.session_state["_holistic_table_content"] = ("info", "".join(_lines))
         return  # トレンドチェック不要
@@ -1905,51 +1928,50 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成可能"
             )
     elif _mt and _mt["avg_so_far"] >= _mt["monthly_target_pct"]:
-        # --- 全体主義チェック: ヘルパー病棟なら単体目標メッセージを全体主義に置換+多段階テーブル ---
+        # --- 全体主義チェック: 均等努力方式で両病棟の目標を表示 ---
         _holistic_msg_shown = False
         _holistic_ward_dfs2 = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs2:
             _cw_msg = _calc_cross_ward_target(_holistic_ward_dfs2, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds, helper_cap * 100)
-            if _cw_msg and _cw_msg["overall_achievable"] and _cw_msg["helped_ward"] and _cw_msg["helper_ward"] == _selected_ward_key:
-                _helped_msg = _cw_msg["helped_ward"]
-                _rec_msg = _cw_msg["scenarios"][_helped_msg]["recommended"]
-                _helper_need_msg = _rec_msg["helper_required"]
-                _helper_cap_display = _cw_msg.get("helper_cap_pct", 96.0)
-                if _rec_msg["feasible"]:
+            if _cw_msg and _cw_msg["overall_achievable"] and _cw_msg.get("helped_ward"):
+                _ee_msg = _cw_msg["equal_effort"]
+                _delta_msg = _cw_msg["delta"]
+                _ee_self = _ee_msg[_selected_ward_key]
+                _other_w = "6F" if _selected_ward_key == "5F" else "5F"
+                _ee_other = _ee_msg[_other_w]
+                if _ee_self["within_cap"] and _ee_other["within_cap"]:
                     st.success(
-                        f"🤝 **全体主義での目標達成ペース**: "
+                        f"🤝 **均等努力で全体目標達成ペース**: "
                         f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
-                        f"残り{_mt['days_remaining']}日は **{_helper_need_msg:.1f}%以上** を維持して{_helped_msg}を支えましょう"
-                        f"（ヘルパー上限: {_helper_cap_display:.0f}%）"
+                        f"両病棟とも **+{_delta_msg:.1f}pt** ずつ上昇すれば全体{_cw_msg['target_pct']:.0f}%達成"
+                        f"（{_selected_ward_key}→{_ee_self['target']:.1f}%, {_other_w}→{_ee_other['target']:.1f}%）"
                     )
                 else:
                     st.warning(
-                        f"🤝 **全体主義でも上限({_helper_cap_display:.0f}%)内では困難**: "
-                        f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
-                        f"{_helped_msg}を支えるには **{_helper_need_msg:.1f}%** が必要ですが、"
-                        f"ヘルパー上限 {_helper_cap_display:.0f}% を超えます。{_helped_msg}側の改善も必要です。"
+                        f"🤝 **均等努力では上限超過あり**: "
+                        f"両病棟+{_delta_msg:.1f}ptで全体達成ですが、一部が上限{_cw_msg['helper_cap_pct']:.0f}%を超えます。"
+                        f"（{_selected_ward_key}→{_ee_self['target']:.1f}%, {_other_w}→{_ee_other['target']:.1f}%）"
                     )
-                # ヘルパー病棟視点の多段階テーブル: 「自分がこの稼働率なら、相手はこれだけで済む」
-                _sc_helper = _cw_msg["scenarios"][_helped_msg]
+                # 均等努力の多段階テーブル
                 _h_lines = [
-                    f"🤝 **{_selected_ward_key}が{_helped_msg}を支える — 全体主義ベッドコントロール**\n\n"
-                    f"{_helped_msg}は単体での月平均{_cw_msg['target_pct']:.0f}%達成が困難"
-                    f"（必要: {_cw_msg['wards'][_helped_msg]['required_solo']:.1f}%）。"
-                    f"**{_selected_ward_key}が高めの稼働率を維持**することで、全体目標を達成できます。\n\n"
-                    f"**■ 推奨（残り{_cw_msg['days_remaining']}日）**\n"
-                    f"- {_helped_msg}が現状 **{_rec_msg['helped_pct']:.1f}%** を維持 → "
-                    f"{_selected_ward_key}は **{_helper_need_msg:.1f}%以上** で全体達成\n"
-                    f"- {_selected_ward_key}の直近: {_rec_msg['helper_last_occ']:.1f}% → 余裕 **{_rec_msg['margin']:.1f}ポイント**\n\n"
+                    f"🤝 **均等努力 — 全体主義ベッドコントロール**\n\n"
+                    f"両病棟が同じ上昇幅（Δ）で稼働率を上げ、全体{_cw_msg['target_pct']:.0f}%達成を目指します。\n\n"
+                    f"**■ 均等努力目標（残り{_cw_msg['days_remaining']}日）**\n"
                 ]
-                _h_tbl = f"**■ {_helped_msg}の想定別 → {_selected_ward_key}に必要な最低稼働率**\n\n"
-                _h_tbl += f"| {_helped_msg}想定 | {_selected_ward_key}必要最低 | 達成可否 |\n|---|---|---|\n"
-                for _hs in _sc_helper["scenarios"]:
-                    if _hs["feasible"]:
-                        _h_mark = "✅" if _hs["helper_required"] <= _rec_msg["helper_last_occ"] else "⚠️"
-                    else:
-                        _h_mark = "❌"
-                    _h_bold = "**" if abs(_hs["helped_pct"] - _rec_msg["helped_pct"]) < 0.1 else ""
-                    _h_tbl += f"| {_h_bold}{_hs['helped_pct']:.1f}%{_h_bold} | {_h_bold}{_hs['helper_required']:.1f}%{_h_bold} | {_h_mark} |\n"
+                for w in ["5F", "6F"]:
+                    _wi = _cw_msg["wards"][w]
+                    _ei = _ee_msg[w]
+                    _cap_note = "" if _ei["within_cap"] else f" ⚠️上限{_cw_msg['helper_cap_pct']:.0f}%超"
+                    _h_lines.append(f"- {w}: 現在平均 {_wi['avg']:.1f}% → 目標 **{_ei['target']:.1f}%**（+{_delta_msg:.1f}pt）{_cap_note}\n")
+                _h_lines.append("\n")
+                _h_tbl = "**■ 上昇幅別シナリオ**\n\n"
+                _h_tbl += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
+                for _es in _cw_msg["effort_scenarios"]:
+                    _mark = "✅" if _es["achieves_target"] and _es["feasible"] else "⚠️" if _es["achieves_target"] else "❌"
+                    if not _es["within_cap"]:
+                        _mark = "🔶" if _es["achieves_target"] else "❌"
+                    _bold = "**" if abs(_es["delta"] - _delta_msg) < 0.1 else ""
+                    _h_tbl += f"| {_bold}+{_es['delta']:.1f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
                 _h_lines.append(_h_tbl)
                 st.session_state["_holistic_table_content"] = ("info", "".join(_h_lines))
                 _holistic_msg_shown = True
@@ -1960,31 +1982,31 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 f"残り{_mt['days_remaining']}日も **{_mt['required_occ']:.1f}%以上** を維持すれば目標達成"
             )
 
-    # --- 全体主義メッセージ（追加表示: 困難側のみ — ヘルパー側は上で表示済み） ---
+    # --- 全体主義メッセージ（追加表示: 困難側 — 均等努力方式） ---
     _holistic_ward_dfs3 = _get_holistic_ward_dfs()
     if _holistic_ward_dfs3 and _mt and _selected_ward_key in ("5F", "6F"):
         _cw2 = _calc_cross_ward_target(_holistic_ward_dfs3, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds, helper_cap * 100)
         if _cw2 and _cw2["overall_achievable"]:
-            if _cw2["helped_ward"] == _selected_ward_key and _mt["difficulty"] in ("hard", "impossible"):
-                # 困難側: テーブル付き全体主義メッセージ（_render_ward_kpi_with_alert内と同様）
-                _hw2 = _cw2["helper_ward"]
-                _sc2 = _cw2["scenarios"][_selected_ward_key]
-                _rec2 = _sc2["recommended"]
+            if _cw2.get("helped_ward") == _selected_ward_key and _mt["difficulty"] in ("hard", "impossible"):
+                _ee2 = _cw2["equal_effort"]
+                _delta2 = _cw2["delta"]
                 _lines2 = [
-                    f"🤝 **全体主義での目標達成が可能**\n\n"
-                    f"{_selected_ward_key}単体は困難でも、{_hw2}の補完で全体{_cw2['target_pct']:.0f}%達成が可能です。\n\n"
-                    f"**推奨:** {_selected_ward_key}が {_rec2['helped_pct']:.1f}% 維持 → "
-                    f"{_hw2}は {_rec2['helper_required']:.1f}% 以上で達成（余裕 {_rec2['margin']:.1f}pt）\n\n"
+                    f"🤝 **均等努力で全体目標達成が可能**\n\n"
+                    f"{_selected_ward_key}単体は困難でも、両病棟が均等に **+{_delta2:.1f}pt** 上昇すれば全体{_cw2['target_pct']:.0f}%達成可能。\n\n"
                 ]
-                _tbl2 = f"**■ {_selected_ward_key}の想定別 → {_hw2}に必要な最低稼働率**\n\n"
-                _tbl2 += f"| {_selected_ward_key}想定 | {_hw2}必要最低 | 達成可否 |\n|---|---|---|\n"
-                for _s2 in _sc2["scenarios"]:
-                    if _s2["feasible"]:
-                        _m2 = "✅" if _s2["helper_required"] <= _rec2["helper_last_occ"] else "⚠️"
-                    else:
-                        _m2 = "❌"
-                    _b2 = "**" if abs(_s2["helped_pct"] - _rec2["helped_pct"]) < 0.1 else ""
-                    _tbl2 += f"| {_b2}{_s2['helped_pct']:.1f}%{_b2} | {_b2}{_s2['helper_required']:.1f}%{_b2} | {_m2} |\n"
+                for w in ["5F", "6F"]:
+                    _wi2 = _cw2["wards"][w]
+                    _ei2 = _ee2[w]
+                    _lines2.append(f"- {w}: 現在平均 {_wi2['avg']:.1f}% → 目標 **{_ei2['target']:.1f}%**（+{_delta2:.1f}pt）\n")
+                _lines2.append("\n")
+                _tbl2 = "**■ 上昇幅別シナリオ**\n\n"
+                _tbl2 += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
+                for _es2 in _cw2["effort_scenarios"]:
+                    _m2 = "✅" if _es2["achieves_target"] and _es2["feasible"] else "⚠️" if _es2["achieves_target"] else "❌"
+                    if not _es2["within_cap"]:
+                        _m2 = "🔶" if _es2["achieves_target"] else "❌"
+                    _b2 = "**" if abs(_es2["delta"] - _delta2) < 0.1 else ""
+                    _tbl2 += f"| {_b2}+{_es2['delta']:.1f}pt{_b2} | {_b2}{_es2['5F']:.1f}%{_b2} | {_b2}{_es2['6F']:.1f}%{_b2} | {_b2}{_es2['overall']:.1f}%{_b2} | {_m2} |\n"
                 _lines2.append(_tbl2)
                 st.session_state["_holistic_table_content"] = ("info", "".join(_lines2))
 
@@ -3303,39 +3325,35 @@ with tabs[_tab_idx["📊 日次推移"]]:
         _required_occ_pct = _mt_chart["required_occ"]
         _occ_pct_values = (df["稼働率"] * 100).tolist()
 
-        # --- 全体主義計算（先に実行して、目標線の描画方法を決定）---
-        _is_holistic_helper = False  # この病棟がヘルパー（助ける側）か
-        _holistic_req = None  # 全体達成に必要な稼働率
-        _holistic_over_cap = False  # 上限超過フラグ
+        # --- 全体主義計算（均等努力方式 — 目標線の描画方法を決定）---
+        _has_equal_effort = False
+        _ee_target = None  # この病棟の均等努力目標
+        _ee_over_cap = False
         _holistic_ward_dfs = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs:
             _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds, helper_cap * 100)
-            if _cw_chart and _cw_chart["overall_achievable"]:
-                _other_ward = "6F" if _selected_ward_key == "5F" else "5F"
-                if _other_ward in _cw_chart.get("scenarios", {}):
-                    _holistic_req = _cw_chart["scenarios"][_other_ward]["recommended"]["helper_required"]
-                    _solo_req = _cw_chart["wards"][_selected_ward_key].get("required_solo", 0)
-                    # ヘルパー病棟 = 単体目標は楽だが、全体主義目標はそれより高い
-                    if _holistic_req > _solo_req:
-                        _is_holistic_helper = True
-                        if _holistic_req > helper_cap * 100:
-                            _holistic_over_cap = True
+            if _cw_chart and _cw_chart["overall_achievable"] and _cw_chart.get("equal_effort"):
+                _ee_self_chart = _cw_chart["equal_effort"][_selected_ward_key]
+                _ee_target = _ee_self_chart["target"]
+                _has_equal_effort = True
+                if not _ee_self_chart["within_cap"]:
+                    _ee_over_cap = True
 
         # --- 目標ライン描画 ---
-        if _is_holistic_helper and _holistic_req is not None:
-            # ヘルパー病棟: 全体主義目標（青い線）を表示
-            # 上限超過時は上限値で線を引く（「ここまでは頑張ろう」）
-            _display_req = min(_holistic_req, helper_cap * 100)
+        if _has_equal_effort and _ee_target is not None:
+            # 均等努力目標（青い線）を表示
+            _display_req = min(_ee_target, helper_cap * 100) if _ee_over_cap else _ee_target
             _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
             _cross_y = [_occ_pct_values[-1], _display_req, _display_req]
-            _line_color = "#E67E22" if _holistic_over_cap else "#3498DB"
+            _line_color = "#E67E22" if _ee_over_cap else "#3498DB"
             ax.plot(_cross_x, _cross_y,
                     linestyle=":", linewidth=2.5, color=_line_color,
                     marker="", zorder=5, alpha=0.9)
-            if _holistic_over_cap:
-                _cross_label = f'ヘルパー上限\n{_display_req:.0f}%'
+            _delta_chart = _cw_chart["delta"]
+            if _ee_over_cap:
+                _cross_label = f'上限{helper_cap * 100:.0f}%'
             else:
-                _cross_label = f'全体達成に必要\n{_display_req:.1f}%'
+                _cross_label = f'均等努力目標\n{_display_req:.1f}%（+{_delta_chart:.1f}pt）'
             ax.annotate(
                 _cross_label,
                 xy=(_chart_end_day - 2, _display_req),
@@ -3344,7 +3362,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_line_color, alpha=0.9),
             )
         else:
-            # 通常表示 or 困難側病棟: 赤い単体目標線を表示
+            # 通常表示: 単体目標線を表示
             _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
             _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
 
