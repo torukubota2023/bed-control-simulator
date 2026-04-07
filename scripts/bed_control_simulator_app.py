@@ -1041,7 +1041,7 @@ if "data_mode" not in st.session_state:
 # ---------------------------------------------------------------------------
 # シミュレーションモードのプリロード: 教育用実データを初期表示
 # ---------------------------------------------------------------------------
-if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
+if not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
     _preload_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
     if os.path.exists(_preload_csv):
         try:
