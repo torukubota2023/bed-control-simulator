@@ -671,17 +671,16 @@ _TOTAL_BEDS_METRIC = 94
 _ANNUAL_VALUE_PER_1PCT = _TOTAL_BEDS_METRIC * 0.01 * 365 * _UNIT_PRICE_PER_DAY  # ≈1,047万円
 _OPERATING_PROFIT = 35500000  # 年間黒字額3,550万円
 
-# Get current occupancy from latest data if available
+# Get monthly average occupancy from data if available
 _current_occ = None
 if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.session_state.daily_data) > 0:
     _dd_for_occ = st.session_state.daily_data
     if "ward" in _dd_for_occ.columns:
-        # 病棟別データの場合、同一日付のtotal_patientsを合算
-        _latest_date = _dd_for_occ["date"].max()
-        _latest_total_patients = _dd_for_occ[_dd_for_occ["date"] == _latest_date]["total_patients"].sum()
+        # 病棟別データの場合、日付ごとにtotal_patientsを合算してから平均
+        _mean_total_patients = _dd_for_occ.groupby("date")["total_patients"].sum().mean()
     else:
-        _latest_total_patients = _dd_for_occ.sort_values("date").iloc[-1].get("total_patients", 0)
-    _current_occ = _latest_total_patients / _TOTAL_BEDS_METRIC * 100
+        _mean_total_patients = _dd_for_occ["total_patients"].mean()
+    _current_occ = _mean_total_patients / _TOTAL_BEDS_METRIC * 100
 
 st.sidebar.markdown("---")
 _sidebar_annual_value_placeholder = st.sidebar.empty()  # プリセット確定後に更新
@@ -733,7 +732,7 @@ _target_occ_pct = target_lower * 100
 if _current_occ is not None:
     _gap_to_target = max(0, _target_occ_pct - _current_occ)
     _sidebar_occ_placeholder.caption(
-        f"現在の稼働率: {_current_occ:.1f}% | 目標{_target_occ_pct:.0f}%まであと{_gap_to_target:.1f}%"
+        f"月平均稼働率: {_current_occ:.1f}% | 目標{_target_occ_pct:.0f}%まであと{_gap_to_target:.1f}%"
     )
 
 # シミュレーションモード専用のパラメータ
@@ -1989,12 +1988,13 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
         # 稼働率ゲージ（plotly gauge chart）
         with _brief_cols[0]:
             import plotly.graph_objects as go
-            _gauge_occ = float(_active_raw_df["occupancy_rate"].iloc[-1] * 100) if "occupancy_rate" in _active_raw_df.columns else float(_active_raw_df["稼働率"].iloc[-1])
+            _gauge_occ_col = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
+            _gauge_occ = float(_active_raw_df[_gauge_occ_col].mean() * 100) if _active_raw_df[_gauge_occ_col].mean() < 1.5 else float(_active_raw_df[_gauge_occ_col].mean())
             _gauge_fig = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=_gauge_occ,
                 number={"suffix": "%", "font": {"size": 28}},
-                title={"text": f"稼働率（{_selected_ward_key}）", "font": {"size": 14}},
+                title={"text": f"月平均稼働率（{_selected_ward_key}）", "font": {"size": 14}},
                 gauge={
                     "axis": {"range": [75, 100], "tickwidth": 1},
                     "bar": {"color": "#1f77b4"},
@@ -2030,11 +2030,11 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     _bw_beds = get_ward_beds(_bw)
                     if hasattr(st.session_state, 'sim_ward_raw_dfs') and _bw in st.session_state.get("sim_ward_raw_dfs", {}):
                         _bw_df = st.session_state.sim_ward_raw_dfs[_bw]
-                        _bw_occ = float(_bw_df["occupancy_rate"].iloc[-1] * 100)
+                        _bw_occ = float(_bw_df["occupancy_rate"].mean() * 100)
                     elif "_ward_raw_dfs" in dir() and _bw in _ward_raw_dfs:
                         _bw_df = _ward_raw_dfs[_bw]
                         _bw_occ_col = "occupancy_rate" if "occupancy_rate" in _bw_df.columns else "稼働率"
-                        _bw_occ = float(_bw_df[_bw_occ_col].iloc[-1] * 100) if _bw_df[_bw_occ_col].iloc[-1] < 1.5 else float(_bw_df[_bw_occ_col].iloc[-1])
+                        _bw_occ = float(_bw_df[_bw_occ_col].mean() * 100) if _bw_df[_bw_occ_col].mean() < 1.5 else float(_bw_df[_bw_occ_col].mean())
                     else:
                         _bw_occ = None
                     if _bw_occ is not None:
