@@ -3306,6 +3306,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
         # --- 全体主義計算（先に実行して、目標線の描画方法を決定）---
         _is_holistic_helper = False  # この病棟がヘルパー（助ける側）か
         _holistic_req = None  # 全体達成に必要な稼働率
+        _holistic_over_cap = False  # 上限超過フラグ
         _holistic_ward_dfs = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs:
             _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds, helper_cap * 100)
@@ -3315,24 +3316,32 @@ with tabs[_tab_idx["📊 日次推移"]]:
                     _holistic_req = _cw_chart["scenarios"][_other_ward]["recommended"]["helper_required"]
                     _solo_req = _cw_chart["wards"][_selected_ward_key].get("required_solo", 0)
                     # ヘルパー病棟 = 単体目標は楽だが、全体主義目標はそれより高い
-                    # （相手の分も補う必要があるため）
-                    if _holistic_req > _solo_req and _holistic_req <= helper_cap * 100:
+                    if _holistic_req > _solo_req:
                         _is_holistic_helper = True
+                        if _holistic_req > helper_cap * 100:
+                            _holistic_over_cap = True
 
         # --- 目標ライン描画 ---
         if _is_holistic_helper and _holistic_req is not None:
-            # ヘルパー病棟: 単体目標を消し、全体主義目標（青い線）のみ表示
+            # ヘルパー病棟: 全体主義目標（青い線）を表示
+            # 上限超過時は上限値で線を引く（「ここまでは頑張ろう」）
+            _display_req = min(_holistic_req, helper_cap * 100)
             _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-            _cross_y = [_occ_pct_values[-1], _holistic_req, _holistic_req]
+            _cross_y = [_occ_pct_values[-1], _display_req, _display_req]
+            _line_color = "#E67E22" if _holistic_over_cap else "#3498DB"
             ax.plot(_cross_x, _cross_y,
-                    linestyle=":", linewidth=2.5, color="#3498DB",
+                    linestyle=":", linewidth=2.5, color=_line_color,
                     marker="", zorder=5, alpha=0.9)
+            if _holistic_over_cap:
+                _cross_label = f'ヘルパー上限\n{_display_req:.0f}%'
+            else:
+                _cross_label = f'全体達成に必要\n{_display_req:.1f}%'
             ax.annotate(
-                f'全体達成に必要\n{_holistic_req:.1f}%',
-                xy=(_chart_end_day - 2, _holistic_req),
-                fontsize=10, fontweight="bold", color="#3498DB",
+                _cross_label,
+                xy=(_chart_end_day - 2, _display_req),
+                fontsize=10, fontweight="bold", color=_line_color,
                 ha="right", va="bottom",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#3498DB", alpha=0.9),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_line_color, alpha=0.9),
             )
         else:
             # 通常表示 or 困難側病棟: 赤い単体目標線を表示
