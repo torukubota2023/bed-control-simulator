@@ -3848,16 +3848,23 @@ with tabs[_tab_idx["💰 運営分析"]]:
     c8.metric("目標レンジ内率", f"{summary['目標レンジ内率']}%")
     _current_avg_los = summary["平均在院日数"]
     _los_over = _current_avg_los - _max_avg_los
-    if _los_over > 0:
+    _is_ward_view = _selected_ward_key in ("5F", "6F")
+    if _los_over > 0 and not _is_ward_view:
         c9.metric("平均在院日数", f"{_current_avg_los}日", delta=f"基準超過 +{_los_over:.1f}日", delta_color="inverse",
                   help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
-    else:
+    elif _los_over > 0 and _is_ward_view:
+        c9.metric("平均在院日数 ⓘ", f"{_current_avg_los}日",
+                  help="病棟単体の参考値です。算定基準は病院全体で判定されます。")
+    elif _los_over <= 0:
         c9.metric("平均在院日数", f"{_current_avg_los}日", delta=f"基準内（余裕 {-_los_over:.1f}日）",
                   help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
-    st.caption(f"※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠　|　算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）")
+    if not _is_ward_view:
+        st.caption(f"※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠　|　算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）")
+    else:
+        st.caption(f"※ 平均在院日数は病棟単体の参考値です。算定基準（{_max_avg_los}日以内）は**病院全体**で判定されます。")
 
     # --- 平均在院日数アラート ---
-    if _los_over > 0:
+    if _los_over > 0 and not _is_ward_view:
         # C群患者数を取得
         _c_count = 0
         if "C群患者数" in df.columns:
@@ -4100,10 +4107,10 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
                 "在院継続で運営貢献額28,900円/日を確保。"
             )
 
-    # --- 平均在院日数 算定基準クリア計画 ---
+    # --- 平均在院日数 算定基準クリア計画（全体表示時のみ — 算定基準は病院全体で判定） ---
     _alert_current_los = summary["平均在院日数"]
     _alert_los_over = _alert_current_los - _max_avg_los
-    if _alert_los_over > 0 and _calendar_month_days > days_in_month:
+    if _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key == "全体":
         st.markdown("---")
         st.subheader(f"🚨 平均在院日数 {_max_avg_los}日以内クリア計画")
 
@@ -4192,6 +4199,16 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         st.caption(
             f"※ 計算前提: 残り{_alert_days_left}日間の入院{_alert_adm_remaining}名・退院{_alert_dis_remaining_base}名（現ペース）"
             f"＋C群追加退院による在院患者延日数の減少（退院1名あたり平均{_avg_save_days:.0f}日分）"
+        )
+
+    # 病棟単体表示で在院日数超過の場合は参考メッセージのみ
+    elif _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key in ("5F", "6F"):
+        st.markdown("---")
+        st.info(
+            f"ℹ️ **{_selected_ward_key}の平均在院日数: {_alert_current_los:.1f}日**（参考値）\n\n"
+            f"算定基準（{_max_avg_los}日以内）は**病院全体**で判定されます。"
+            f"病棟単体の在院日数が長くても、全体で基準内であれば問題ありません。\n\n"
+            f"クリア計画は「全体（94床）」表示に切り替えてご確認ください。"
         )
 
     # --- 今日のアクションリスト ---
