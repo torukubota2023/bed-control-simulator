@@ -3232,44 +3232,69 @@ with tabs[_tab_idx["📊 日次推移"]]:
         _required_occ_pct = _mt_chart["required_occ"]
         _occ_pct_values = (df["稼働率"] * 100).tolist()
 
-        # 最終日の実績値から必要稼働率への点線
-        _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-        _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
-
-        # 目標ラインの色：目標未達なら難易度別、達成済みなら緑
-        if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
-            _target_color = "#1E8449"
-            _target_label = f'現ペース維持で達成\n{_required_occ_pct:.1f}%以上'
-        else:
-            _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
-            _target_label = f'目標達成に必要\n{_required_occ_pct:.1f}%'
-
-        ax.plot(_target_x, _target_y,
-                linestyle="--", linewidth=2.5, color=_target_color,
-                marker="", zorder=5)
-
-        # ラベル
-        ax.annotate(
-            _target_label,
-            xy=(_chart_end_day - 2, _required_occ_pct),
-            fontsize=10, fontweight="bold", color=_target_color,
-            ha="right", va="bottom",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
-        )
-
-        # --- 全体主義目標ライン（病棟別表示時のみ）---
+        # --- 全体主義計算（先に実行して、目標線の描画方法を決定）---
+        _is_holistic_helper = False  # この病棟がヘルパー（助ける側）か
+        _holistic_req = None  # 全体達成に必要な稼働率
         if _selected_ward_key in ("5F", "6F") and locals().get("_ward_data_available", False):
             _cw_chart = _calc_cross_ward_target(_ward_raw_dfs if "_ward_raw_dfs" in dir() else {}, target_lower, _calendar_month_days, get_ward_beds)
-            if _cw_chart and _cw_chart["overall_achievable"] and _cw_chart["helped_ward"] == _selected_ward_key:
-                _cross_req = _cw_chart["scenarios"][_selected_ward_key]["recommended"]["helped_pct"]
+            if _cw_chart and _cw_chart["overall_achievable"]:
+                _other_ward = "6F" if _selected_ward_key == "5F" else "5F"
+                if _other_ward in _cw_chart.get("scenarios", {}):
+                    _holistic_req = _cw_chart["scenarios"][_other_ward]["recommended"]["helper_required"]
+                    _solo_req = _cw_chart["wards"][_selected_ward_key].get("required_solo", 0)
+                    # ヘルパー病棟 = 単体目標は楽だが、全体主義目標はそれより高い
+                    # （相手の分も補う必要があるため）
+                    if _holistic_req > _solo_req and _holistic_req <= 100:
+                        _is_holistic_helper = True
+
+        # --- 目標ライン描画 ---
+        if _is_holistic_helper and _holistic_req is not None:
+            # ヘルパー病棟: 単体目標を消し、全体主義目標（青い線）のみ表示
+            _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+            _cross_y = [_occ_pct_values[-1], _holistic_req, _holistic_req]
+            ax.plot(_cross_x, _cross_y,
+                    linestyle=":", linewidth=2.5, color="#3498DB",
+                    marker="", zorder=5, alpha=0.9)
+            ax.annotate(
+                f'全体達成に必要\n{_holistic_req:.1f}%',
+                xy=(_chart_end_day - 2, _holistic_req),
+                fontsize=10, fontweight="bold", color="#3498DB",
+                ha="right", va="bottom",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#3498DB", alpha=0.9),
+            )
+        else:
+            # 通常表示 or 困難側病棟: 赤い単体目標線を表示
+            _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+            _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
+
+            if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
+                _target_color = "#1E8449"
+                _target_label = f'現ペース維持で達成\n{_required_occ_pct:.1f}%以上'
+            else:
+                _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
+                _target_label = f'目標達成に必要\n{_required_occ_pct:.1f}%'
+
+            ax.plot(_target_x, _target_y,
+                    linestyle="--", linewidth=2.5, color=_target_color,
+                    marker="", zorder=5)
+            ax.annotate(
+                _target_label,
+                xy=(_chart_end_day - 2, _required_occ_pct),
+                fontsize=10, fontweight="bold", color=_target_color,
+                ha="right", va="bottom",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
+            )
+
+            # 困難側病棟: 全体主義目標も青い点線で追加表示
+            if _holistic_req is not None and _holistic_req < _required_occ_pct and _holistic_req <= 100:
                 _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-                _cross_y = [_occ_pct_values[-1], _cross_req, _cross_req]
+                _cross_y = [_occ_pct_values[-1], _holistic_req, _holistic_req]
                 ax.plot(_cross_x, _cross_y,
                         linestyle=":", linewidth=2, color="#3498DB",
                         marker="", zorder=4, alpha=0.8)
                 ax.annotate(
-                    f'全体達成に必要\n{_cross_req:.1f}%',
-                    xy=(_chart_end_day - 2, _cross_req),
+                    f'全体達成に必要\n{_holistic_req:.1f}%',
+                    xy=(_chart_end_day - 2, _holistic_req),
                     fontsize=9, fontweight="bold", color="#3498DB",
                     ha="right", va="top",
                     bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#3498DB", alpha=0.85),
