@@ -722,6 +722,8 @@ _view_beds = total_beds
 
 target_lower = st.sidebar.slider("目標稼働率下限", 0.80, 1.00, 0.90, step=0.01, format="%.2f")
 target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
+helper_cap = st.sidebar.slider("ヘルパー病棟 上限稼働率", 0.90, 1.00, 0.96, step=0.01, format="%.2f",
+                                help="全体主義ベッドコントロールで、ヘルパー病棟に求める稼働率の上限。無理のない範囲を設定してください。")
 
 # 目標上限 < 下限のバリデーション
 if target_upper < target_lower:
@@ -1602,10 +1604,11 @@ def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
 # ---------------------------------------------------------------------------
 # 全体主義ベッドコントロール — 病棟間補完計算
 # ---------------------------------------------------------------------------
-def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, ward_beds_fn):
+def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, ward_beds_fn, helper_cap_pct=96.0):
     """
     全体主義計算: 一方の病棟が単体で月平均目標未達でも、
     他病棟の補完で全体94床として目標達成できるかを計算する。
+    helper_cap_pct: ヘルパー病棟に求める稼働率の上限（%）。これ以上は無理強いしない。
     """
     try:
         wards = ["5F", "6F"]
@@ -1677,7 +1680,7 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
                 helped_scenarios.append({
                     "helped_pct": pct,
                     "helper_required": round(helper_required, 1),
-                    "feasible": helper_required <= 100,
+                    "feasible": helper_required <= helper_cap_pct,
                 })
 
             helped_last = ward_info[w_helped]["last_occ"]
@@ -1691,7 +1694,7 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
                     "helper_required": round(helper_required_realistic, 1),
                     "helper_last_occ": ward_info[w_help]["last_occ"],
                     "margin": round(ward_info[w_help]["last_occ"] - helper_required_realistic, 1),
-                    "feasible": helper_required_realistic <= 100,
+                    "feasible": helper_required_realistic <= helper_cap_pct,
                 },
             }
 
@@ -1707,6 +1710,7 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
             "overall_avg": round(total_bd_done / (total_beds * days_elapsed) * 100, 1),
             "overall_required": round(overall_required, 1),
             "overall_achievable": overall_required <= 100,
+            "helper_cap_pct": helper_cap_pct,
             "days_elapsed": days_elapsed, "days_remaining": days_remaining,
             "total_days": total_days, "target_pct": target_lower * 100,
             "wards": ward_info, "scenarios": scenarios,
@@ -1832,7 +1836,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             # --- 全体主義メッセージ（単体困難時に表示）---
             _hw_dfs = _get_holistic_ward_dfs()
             if _mt["difficulty"] in ("hard", "impossible") and _hw_dfs:
-                _cw = _calc_cross_ward_target(_hw_dfs, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
+                _cw = _calc_cross_ward_target(_hw_dfs, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds, helper_cap * 100)
                 if _cw and _cw["overall_achievable"] and _cw["helped_ward"] == _selected_ward_key:
                     _hw = _cw["helper_ward"]
                     _sc = _cw["scenarios"][_selected_ward_key]
@@ -1905,16 +1909,26 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
         _holistic_msg_shown = False
         _holistic_ward_dfs2 = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs2:
-            _cw_msg = _calc_cross_ward_target(_holistic_ward_dfs2, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
+            _cw_msg = _calc_cross_ward_target(_holistic_ward_dfs2, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds, helper_cap * 100)
             if _cw_msg and _cw_msg["overall_achievable"] and _cw_msg["helped_ward"] and _cw_msg["helper_ward"] == _selected_ward_key:
                 _helped_msg = _cw_msg["helped_ward"]
                 _rec_msg = _cw_msg["scenarios"][_helped_msg]["recommended"]
                 _helper_need_msg = _rec_msg["helper_required"]
-                st.success(
-                    f"🤝 **全体主義での目標達成ペース**: "
-                    f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
-                    f"残り{_mt['days_remaining']}日は **{_helper_need_msg:.1f}%以上** を維持して{_helped_msg}を支えましょう"
-                )
+                _helper_cap_display = _cw_msg.get("helper_cap_pct", 96.0)
+                if _rec_msg["feasible"]:
+                    st.success(
+                        f"🤝 **全体主義での目標達成ペース**: "
+                        f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
+                        f"残り{_mt['days_remaining']}日は **{_helper_need_msg:.1f}%以上** を維持して{_helped_msg}を支えましょう"
+                        f"（ヘルパー上限: {_helper_cap_display:.0f}%）"
+                    )
+                else:
+                    st.warning(
+                        f"🤝 **全体主義でも上限({_helper_cap_display:.0f}%)内では困難**: "
+                        f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
+                        f"{_helped_msg}を支えるには **{_helper_need_msg:.1f}%** が必要ですが、"
+                        f"ヘルパー上限 {_helper_cap_display:.0f}% を超えます。{_helped_msg}側の改善も必要です。"
+                    )
                 # ヘルパー病棟視点の多段階テーブル: 「自分がこの稼働率なら、相手はこれだけで済む」
                 _sc_helper = _cw_msg["scenarios"][_helped_msg]
                 _h_lines = [
@@ -1949,7 +1963,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
     # --- 全体主義メッセージ（追加表示: 困難側のみ — ヘルパー側は上で表示済み） ---
     _holistic_ward_dfs3 = _get_holistic_ward_dfs()
     if _holistic_ward_dfs3 and _mt and _selected_ward_key in ("5F", "6F"):
-        _cw2 = _calc_cross_ward_target(_holistic_ward_dfs3, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
+        _cw2 = _calc_cross_ward_target(_holistic_ward_dfs3, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds, helper_cap * 100)
         if _cw2 and _cw2["overall_achievable"]:
             if _cw2["helped_ward"] == _selected_ward_key and _mt["difficulty"] in ("hard", "impossible"):
                 # 困難側: テーブル付き全体主義メッセージ（_render_ward_kpi_with_alert内と同様）
@@ -3294,7 +3308,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
         _holistic_req = None  # 全体達成に必要な稼働率
         _holistic_ward_dfs = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs:
-            _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds)
+            _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds, helper_cap * 100)
             if _cw_chart and _cw_chart["overall_achievable"]:
                 _other_ward = "6F" if _selected_ward_key == "5F" else "5F"
                 if _other_ward in _cw_chart.get("scenarios", {}):
@@ -3302,7 +3316,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
                     _solo_req = _cw_chart["wards"][_selected_ward_key].get("required_solo", 0)
                     # ヘルパー病棟 = 単体目標は楽だが、全体主義目標はそれより高い
                     # （相手の分も補う必要があるため）
-                    if _holistic_req > _solo_req and _holistic_req <= 100:
+                    if _holistic_req > _solo_req and _holistic_req <= helper_cap * 100:
                         _is_holistic_helper = True
 
         # --- 目標ライン描画 ---

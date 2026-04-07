@@ -204,31 +204,31 @@ add_operation("▶ パネルを指しながら")
 
 add_serif_with_highlight([
     ("💬 月平均稼働率 ", {}),
-    ("87.2%", {'color': RED, 'bold': True}),
+    ("89.5%", {'color': RED, 'bold': True}),
     ("。目標の", {}),
     ("90%", {'color': RED, 'bold': True}),
     ("に対して", {}),
-    ("マイナス2.8ポイント", {'color': RED, 'bold': True}),
+    ("マイナス0.5ポイント", {'color': RED, 'bold': True}),
     ("。これが今の私たちの現在地です。", {}),
 ])
 
 add_serif_with_highlight([
     ("💬 この下に書いてあるのが大事です。「運営貢献額：実績 ", {}),
-    ("4,389万円", {'color': RED, 'bold': True}),
+    ("4,450万円", {'color': RED, 'bold': True}),
     (" / 目標 ", {}),
     ("4,501万円", {'color': RED, 'bold': True}),
     ("（達成率 ", {}),
-    ("97.5%", {'color': RED, 'bold': True}),
+    ("98.9%", {'color': RED, 'bold': True}),
     ("）」「残り10日で現ペース継続時の未活用病床コスト：約", {}),
-    ("598万円", {'color': RED, 'bold': True}),
+    ("125万円", {'color': RED, 'bold': True}),
     ("」", {}),
 ])
 
 add_serif_with_highlight([
     ("💬 つまり、このまま何もしなければ、今月あと", {}),
-    ("598万円", {'color': RED, 'bold': True}),
+    ("125万円", {'color': RED, 'bold': True}),
     ("が消えていく。逆に言えば、残り10日の動き方次第で、", {}),
-    ("598万円", {'color': RED, 'bold': True}),
+    ("125万円", {'color': RED, 'bold': True}),
     ("を取り戻せる可能性がある。", {}),
 ])
 
@@ -515,7 +515,7 @@ add_empty_line()
 
 add_serif_with_highlight([
     ("💬 当院の全体目標は94床全体で", {}),
-    ("稼働率85%", {'color': RED, 'bold': True}),
+    ("稼働率90%", {'color': RED, 'bold': True}),
     ("。5Fだけ、6Fだけで達成する必要はありません。", {}),
 ])
 
@@ -526,10 +526,10 @@ add_empty_line()
 # Concept explanation
 add_serif_with_highlight([
     ("💬 例えば今月、5Fの稼働率が", {}),
-    ("83%", {'color': RED, 'bold': True}),
-    ("で、単体で85%達成は困難だとします。でも6Fが", {}),
-    ("91%以上", {'color': NAVY, 'bold': True}),
-    ("を維持すれば、全体では85%をクリアできる。6Fが5Fを「支える」わけです。", {}),
+    ("87%", {'color': RED, 'bold': True}),
+    ("で、単体で90%達成は困難だとします。でも6Fが", {}),
+    ("95%", {'color': NAVY, 'bold': True}),
+    ("を維持すれば、全体では90%をクリアできる。6Fが5Fを「支える」わけです。", {}),
 ])
 
 add_empty_line()
@@ -567,10 +567,10 @@ _htPr.append(_htW)
 
 _holistic_data = [
     ["5F想定", "6F必要最低", "達成可否"],
-    ["81.0%", "93.2%", "⚠️"],
-    ["82.0%", "91.5%", "✅"],
-    ["83.0%（現状）", "89.8%", "✅"],
-    ["84.0%", "88.1%", "✅"],
+    ["85.0%", "101%", "❌（96%上限超過）"],
+    ["86.0%", "98%", "❌（96%上限超過）"],
+    ["87.0%（現状）", "95%", "✅"],
+    ["88.0%", "92%", "✅"],
 ]
 for r_idx, row_data in enumerate(_holistic_data):
     for c_idx, cell_text in enumerate(row_data):
@@ -589,7 +589,7 @@ for r_idx, row_data in enumerate(_holistic_data):
 
 add_empty_line()
 
-add_serif("💬 「5Fがもし83%を維持できれば、6Fは89.8%で全体目標が達成できる」——こういう見方ができます。5Fだって、自分の稼働率を1%でも上げれば、6Fの負担が減る。お互いの頑張りが見える仕組みです。")
+add_serif("💬 「5Fがもし87%を維持できれば、6Fは95%で全体目標が達成できる」——こういう見方ができます。ヘルパー病棟には上限が設定されています。デフォルトは96%。無理のない範囲で協力する仕組みです。5Fだって、自分の稼働率を1%でも上げれば、6Fの負担が減る。お互いの頑張りが見える仕組みです。")
 
 add_empty_line()
 
