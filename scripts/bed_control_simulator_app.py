@@ -1362,6 +1362,9 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             _ward_raw_dfs = {}
             _ward_display_dfs = {}
 
+        # 全体主義計算用にセッションステートへ保存（全タブから参照可能に）
+        st.session_state.ward_raw_dfs = _ward_raw_dfs if _ward_data_available else {}
+
         # --- Ward selector データバインディング ---
         if _selected_ward_key in ("5F", "6F") and _ward_data_available and _selected_ward_key in _ward_raw_dfs:
             _view_beds = get_ward_beds(_selected_ward_key)
@@ -1712,6 +1715,19 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
         return None
 
 
+def _get_holistic_ward_dfs():
+    """全体主義計算用の病棟別データを取得（実績・シミュレーション両対応）"""
+    # 1. 実績データモードで保存されたデータ
+    dfs = st.session_state.get("ward_raw_dfs", {})
+    if dfs and "5F" in dfs and "6F" in dfs:
+        return dfs
+    # 2. シミュレーションモードのデータ
+    dfs = st.session_state.get("sim_ward_raw_dfs", {})
+    if dfs and "5F" in dfs and "6F" in dfs:
+        return dfs
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # 稼働率アラート付きKPI表示ヘルパー
 # ---------------------------------------------------------------------------
@@ -1812,8 +1828,9 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成"
                 )
             # --- 全体主義メッセージ（単体困難時に表示）---
-            if _mt["difficulty"] in ("hard", "impossible") and globals().get("_ward_data_available", False):
-                _cw = _calc_cross_ward_target(globals().get("_ward_raw_dfs", {}), target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
+            _hw_dfs = _get_holistic_ward_dfs()
+            if _mt["difficulty"] in ("hard", "impossible") and _hw_dfs:
+                _cw = _calc_cross_ward_target(_hw_dfs, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
                 if _cw and _cw["overall_achievable"] and _cw["helped_ward"] == _selected_ward_key:
                     _hw = _cw["helper_ward"]
                     _sc = _cw["scenarios"][_selected_ward_key]
@@ -1884,9 +1901,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
     elif _mt and _mt["avg_so_far"] >= _mt["monthly_target_pct"]:
         # --- 全体主義チェック: ヘルパー病棟なら単体目標メッセージを全体主義メッセージに置換 ---
         _holistic_msg_shown = False
-        _holistic_ward_dfs2 = globals().get("_ward_raw_dfs", {})
-        if not _holistic_ward_dfs2 and st.session_state.get("sim_ward_raw_dfs"):
-            _holistic_ward_dfs2 = st.session_state.sim_ward_raw_dfs
+        _holistic_ward_dfs2 = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs2:
             _cw_msg = _calc_cross_ward_target(_holistic_ward_dfs2, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
             if _cw_msg and _cw_msg["overall_achievable"] and _cw_msg["helped_ward"] and _cw_msg["helper_ward"] == _selected_ward_key:
@@ -1907,9 +1922,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             )
 
     # --- 全体主義メッセージ（追加表示: 困難側・ヘルパー側それぞれ） ---
-    _holistic_ward_dfs3 = globals().get("_ward_raw_dfs", {})
-    if not _holistic_ward_dfs3 and st.session_state.get("sim_ward_raw_dfs"):
-        _holistic_ward_dfs3 = st.session_state.sim_ward_raw_dfs
+    _holistic_ward_dfs3 = _get_holistic_ward_dfs()
     if _holistic_ward_dfs3 and _mt and _selected_ward_key in ("5F", "6F"):
         _cw2 = _calc_cross_ward_target(_holistic_ward_dfs3, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
         if _cw2 and _cw2["overall_achievable"]:
@@ -3241,12 +3254,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
         # --- 全体主義計算（先に実行して、目標線の描画方法を決定）---
         _is_holistic_helper = False  # この病棟がヘルパー（助ける側）か
         _holistic_req = None  # 全体達成に必要な稼働率
-        # 病棟別データソース: 実績モード → _ward_raw_dfs, シミュレーション → sim_ward_raw_dfs
-        _holistic_ward_dfs = {}
-        if "_ward_raw_dfs" in dir() and locals().get("_ward_data_available", False):
-            _holistic_ward_dfs = _ward_raw_dfs
-        elif st.session_state.get("sim_ward_raw_dfs"):
-            _holistic_ward_dfs = st.session_state.sim_ward_raw_dfs
+        _holistic_ward_dfs = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs:
             _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds)
             if _cw_chart and _cw_chart["overall_achievable"]:
