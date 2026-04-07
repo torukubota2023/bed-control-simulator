@@ -1887,18 +1887,36 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
             f"残り{_mt['days_remaining']}日も **{_mt['required_occ']:.1f}%以上** を維持すれば目標達成"
         )
-    # --- 全体主義メッセージ（レンジ内でも月平均困難時）---
-    if _mt and _mt["difficulty"] in ("hard", "impossible") and globals().get("_ward_data_available", False):
+    # --- 全体主義メッセージ ---
+    if globals().get("_ward_data_available", False) and _mt:
         _cw2 = _calc_cross_ward_target(globals().get("_ward_raw_dfs", {}), target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
-        if _cw2 and _cw2["overall_achievable"] and _cw2["helped_ward"] == _selected_ward_key:
-            _hw2 = _cw2["helper_ward"]
-            _rec2 = _cw2["scenarios"][_selected_ward_key]["recommended"]
-            st.info(
-                f"🤝 **全体主義での目標達成が可能**\n\n"
-                f"{_selected_ward_key}単体は困難でも、{_hw2}の補完で全体{_cw2['target_pct']:.0f}%達成が可能です。\n\n"
-                f"**推奨:** {_selected_ward_key}が {_rec2['helped_pct']:.1f}% 維持 → "
-                f"{_hw2}は {_rec2['helper_required']:.1f}% 以上で達成（余裕 {_rec2['margin']:.1f}pt）"
-            )
+        if _cw2 and _cw2["overall_achievable"]:
+            if _cw2["helped_ward"] == _selected_ward_key and _mt["difficulty"] in ("hard", "impossible"):
+                # 助けられる側: 「全体では達成可能」
+                _hw2 = _cw2["helper_ward"]
+                _rec2 = _cw2["scenarios"][_selected_ward_key]["recommended"]
+                st.info(
+                    f"🤝 **全体主義での目標達成が可能**\n\n"
+                    f"{_selected_ward_key}単体は困難でも、{_hw2}の補完で全体{_cw2['target_pct']:.0f}%達成が可能です。\n\n"
+                    f"**推奨:** {_selected_ward_key}が {_rec2['helped_pct']:.1f}% 維持 → "
+                    f"{_hw2}は {_rec2['helper_required']:.1f}% 以上で達成（余裕 {_rec2['margin']:.1f}pt）"
+                )
+            elif _cw2["helper_ward"] == _selected_ward_key and _cw2["helped_ward"]:
+                # 助ける側: 「相手病棟のために高めの稼働率を維持してほしい」
+                _helped2 = _cw2["helped_ward"]
+                _rec_helper = _cw2["scenarios"][_helped2]["recommended"]
+                _helper_need = _rec_helper["helper_required"]
+                _solo_req = _mt["required_occ"] if _mt["required_occ"] > 0 else _mt["avg_so_far"]
+                if _helper_need > _solo_req:
+                    st.info(
+                        f"🤝 **全体主義: {_helped2}を助けるために**\n\n"
+                        f"{_selected_ward_key}単体では **{_solo_req:.1f}%以上** で目標達成ですが、"
+                        f"{_helped2}が単体で月平均{_cw2['target_pct']:.0f}%達成が困難なため、"
+                        f"全体目標達成には **{_helper_need:.1f}%以上** の維持が推奨されます。\n\n"
+                        f"- {_helped2}の現状: 月平均 {_cw2['wards'][_helped2]['avg']:.1f}%（単体必要: {_cw2['wards'][_helped2]['required_solo']:.1f}%）\n"
+                        f"- {_selected_ward_key}の直近: {_cw2['wards'][_selected_ward_key]['last_occ']:.1f}% → 余裕 **{_cw2['wards'][_selected_ward_key]['last_occ'] - _helper_need:.1f}ポイント**\n\n"
+                        f"**助け合いで、全体{_cw2['target_pct']:.0f}%を達成しましょう。**"
+                    )
 
 
 # ---------------------------------------------------------------------------
