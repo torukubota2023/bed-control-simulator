@@ -1596,6 +1596,123 @@ def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
 
 
 # ---------------------------------------------------------------------------
+# 全体主義ベッドコントロール — 病棟間補完計算
+# ---------------------------------------------------------------------------
+def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, ward_beds_fn):
+    """
+    全体主義計算: 一方の病棟が単体で月平均目標未達でも、
+    他病棟の補完で全体94床として目標達成できるかを計算する。
+    """
+    try:
+        wards = ["5F", "6F"]
+        ward_info = {}
+
+        for w in wards:
+            raw_df = ward_raw_dfs.get(w)
+            if raw_df is None or not isinstance(raw_df, pd.DataFrame) or len(raw_df) == 0:
+                return None
+            _occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
+            _occ = raw_df[_occ_col].dropna().values.copy()
+            if len(_occ) == 0:
+                return None
+            if _occ.mean() < 1.5:
+                _occ = _occ * 100
+            beds = ward_beds_fn(w)
+            avg = float(_occ.mean())
+            days_elapsed = len(_occ)
+            last_occ = float(_occ[-1])
+
+            _D = total_days_in_month
+            for _dc in ["date", "日付"]:
+                if _dc in raw_df.columns:
+                    try:
+                        _last_date = pd.to_datetime(raw_df[_dc].iloc[-1])
+                        _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
+                        break
+                    except Exception:
+                        pass
+
+            days_remaining = max(0, _D - days_elapsed)
+            bd_done = beds * days_elapsed * (avg / 100)
+
+            if days_remaining > 0:
+                required_solo = (target_lower * 100 * _D - avg * days_elapsed) / days_remaining
+            else:
+                required_solo = 0
+
+            ward_info[w] = {
+                "beds": beds, "avg": round(avg, 1), "last_occ": round(last_occ, 1),
+                "days_elapsed": days_elapsed, "days_remaining": days_remaining,
+                "total_days": _D, "bd_done": bd_done,
+                "required_solo": round(required_solo, 1),
+                "solo_difficulty": "impossible" if required_solo > 100 else "hard" if required_solo > 95 else "moderate" if required_solo > 90 else "easy",
+            }
+
+        total_beds = sum(ward_info[w]["beds"] for w in wards)
+        days_elapsed = ward_info[wards[0]]["days_elapsed"]
+        days_remaining = ward_info[wards[0]]["days_remaining"]
+        total_days = ward_info[wards[0]]["total_days"]
+
+        if days_remaining <= 0:
+            return None
+
+        total_bd_done = sum(ward_info[w]["bd_done"] for w in wards)
+        total_bd_required = total_beds * total_days * (target_lower * 100) / 100
+        bd_remaining_needed = total_bd_required - total_bd_done
+        overall_required = bd_remaining_needed / (total_beds * days_remaining) * 100
+
+        scenarios = {}
+        for w_help, w_helped in [("6F", "5F"), ("5F", "6F")]:
+            helper_cap = ward_info[w_help]["beds"] * days_remaining
+            helped_cap = ward_info[w_helped]["beds"] * days_remaining
+
+            helped_scenarios = []
+            for pct in [85, 86, 87, 88, 89, 90, 91, 91.5, 92, 93, 94, 95]:
+                helped_bd = helped_cap * (pct / 100)
+                helper_required = (bd_remaining_needed - helped_bd) / helper_cap * 100
+                helped_scenarios.append({
+                    "helped_pct": pct,
+                    "helper_required": round(helper_required, 1),
+                    "feasible": helper_required <= 100,
+                })
+
+            helped_last = ward_info[w_helped]["last_occ"]
+            helper_required_realistic = (bd_remaining_needed - helped_cap * (helped_last / 100)) / helper_cap * 100
+
+            scenarios[w_helped] = {
+                "helper_ward": w_help, "helped_ward": w_helped,
+                "scenarios": helped_scenarios,
+                "recommended": {
+                    "helped_pct": helped_last,
+                    "helper_required": round(helper_required_realistic, 1),
+                    "helper_last_occ": ward_info[w_help]["last_occ"],
+                    "margin": round(ward_info[w_help]["last_occ"] - helper_required_realistic, 1),
+                    "feasible": helper_required_realistic <= 100,
+                },
+            }
+
+        helper_ward = None
+        helped_ward = None
+        for w in wards:
+            if ward_info[w]["solo_difficulty"] in ("hard", "impossible"):
+                helped_ward = w
+                helper_ward = [x for x in wards if x != w][0]
+                break
+
+        return {
+            "overall_avg": round(total_bd_done / (total_beds * days_elapsed) * 100, 1),
+            "overall_required": round(overall_required, 1),
+            "overall_achievable": overall_required <= 100,
+            "days_elapsed": days_elapsed, "days_remaining": days_remaining,
+            "total_days": total_days, "target_pct": target_lower * 100,
+            "wards": ward_info, "scenarios": scenarios,
+            "helper_ward": helper_ward, "helped_ward": helped_ward,
+        }
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # 稼働率アラート付きKPI表示ヘルパー
 # ---------------------------------------------------------------------------
 def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
@@ -1694,6 +1811,34 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
                     f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成"
                 )
+            # --- 全体主義メッセージ（単体困難時に表示）---
+            if _mt["difficulty"] in ("hard", "impossible") and _ward_data_available:
+                _cw = _calc_cross_ward_target(_ward_raw_dfs, target_lower, _calendar_month_days, get_ward_beds)
+                if _cw and _cw["overall_achievable"] and _cw["helped_ward"] == _selected_ward_key:
+                    _hw = _cw["helper_ward"]
+                    _sc = _cw["scenarios"][_selected_ward_key]
+                    _rec = _sc["recommended"]
+                    _lines = [
+                        f"🤝 **全体主義での目標達成**\n\n"
+                        f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
+                        f"**全体（94床）では達成可能**です。\n\n"
+                        f"**■ 推奨シナリオ（残り{_cw['days_remaining']}日）**\n"
+                        f"- {_selected_ward_key}が直近 **{_rec['helped_pct']:.1f}%** を維持 → "
+                        f"{_hw}は **{_rec['helper_required']:.1f}%以上** で全体達成 ✅\n"
+                        f"- {_hw}の直近稼働率: {_rec['helper_last_occ']:.1f}% → 余裕 **{_rec['margin']:.1f}ポイント**\n\n"
+                    ]
+                    # シナリオ表
+                    _tbl = f"**■ {_selected_ward_key}の想定別 → {_hw}に必要な最低稼働率**\n\n"
+                    _tbl += f"| {_selected_ward_key}想定 | {_hw}必要最低 | 達成可否 |\n|---|---|---|\n"
+                    for _s in _sc["scenarios"]:
+                        if _s["feasible"]:
+                            _mark = "✅" if _s["helper_required"] <= _rec["helper_last_occ"] else "⚠️"
+                        else:
+                            _mark = "❌"
+                        _bold = "**" if abs(_s["helped_pct"] - _rec["helped_pct"]) < 0.1 else ""
+                        _tbl += f"| {_bold}{_s['helped_pct']:.1f}%{_bold} | {_bold}{_s['helper_required']:.1f}%{_bold} | {_mark} |\n"
+                    _lines.append(_tbl)
+                    st.info("".join(_lines))
         return  # トレンドチェック不要
 
     # トレンド予測（稼働率が低下傾向か？）
@@ -1742,6 +1887,18 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
             f"残り{_mt['days_remaining']}日も **{_mt['required_occ']:.1f}%以上** を維持すれば目標達成"
         )
+    # --- 全体主義メッセージ（レンジ内でも月平均困難時）---
+    if _mt and _mt["difficulty"] in ("hard", "impossible") and _ward_data_available:
+        _cw2 = _calc_cross_ward_target(_ward_raw_dfs, target_lower, _calendar_month_days, get_ward_beds)
+        if _cw2 and _cw2["overall_achievable"] and _cw2["helped_ward"] == _selected_ward_key:
+            _hw2 = _cw2["helper_ward"]
+            _rec2 = _cw2["scenarios"][_selected_ward_key]["recommended"]
+            st.info(
+                f"🤝 **全体主義での目標達成が可能**\n\n"
+                f"{_selected_ward_key}単体は困難でも、{_hw2}の補完で全体{_cw2['target_pct']:.0f}%達成が可能です。\n\n"
+                f"**推奨:** {_selected_ward_key}が {_rec2['helped_pct']:.1f}% 維持 → "
+                f"{_hw2}は {_rec2['helper_required']:.1f}% 以上で達成（余裕 {_rec2['margin']:.1f}pt）"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -3081,6 +3238,24 @@ with tabs[_tab_idx["📊 日次推移"]]:
             ha="right", va="bottom",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
         )
+
+        # --- 全体主義目標ライン（病棟別表示時のみ）---
+        if _selected_ward_key in ("5F", "6F") and _ward_data_available:
+            _cw_chart = _calc_cross_ward_target(_ward_raw_dfs, target_lower, _calendar_month_days, get_ward_beds)
+            if _cw_chart and _cw_chart["overall_achievable"] and _cw_chart["helped_ward"] == _selected_ward_key:
+                _cross_req = _cw_chart["scenarios"][_selected_ward_key]["recommended"]["helped_pct"]
+                _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+                _cross_y = [_occ_pct_values[-1], _cross_req, _cross_req]
+                ax.plot(_cross_x, _cross_y,
+                        linestyle=":", linewidth=2, color="#3498DB",
+                        marker="", zorder=4, alpha=0.8)
+                ax.annotate(
+                    f'全体達成に必要\n{_cross_req:.1f}%',
+                    xy=(_chart_end_day - 2, _cross_req),
+                    fontsize=9, fontweight="bold", color="#3498DB",
+                    ha="right", va="top",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#3498DB", alpha=0.85),
+                )
 
         # X軸の範囲を月末まで拡張
         ax.set_xlim(1, _chart_end_day + 0.5)
