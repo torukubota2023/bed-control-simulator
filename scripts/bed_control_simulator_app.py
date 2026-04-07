@@ -1172,106 +1172,107 @@ if "sim_preloaded" not in st.session_state and not _is_actual_data_mode and _DAT
 if run_button:
     with st.spinner("シミュレーション実行中..."):
         try:
-            strategy_en = STRATEGY_MAP[strategy]
             params = _build_cli_params(params_dict)
 
-            # --- 病棟別シミュレーション（各47床）---
-            # 5F: 外科・整形系（短めの在院日数、入院数やや少なめ）
-            # 6F: 内科・ペイン系（長めの在院日数、入院数多め）
-            # 教育シナリオ:
-            # 5F: 初期85%→avg~83% = 稼働率低下傾向（課題：入院を増やすこと）
-            #   adm=33, los=14 → 入院不足で稼働率低下、全体主義で6Fに支えてもらう
-            # 6F: 初期93%→avg~92% = 安定高稼働（ヘルパー病棟として余力あり）
-            #   adm=70, los=19 → 高めだが満床ではない、5Fを支える余裕がある
-            # 全体: avg~87-88% = 目標90%に対して2-3pt不足の緊迫感ある設定
-            _ward_param_adj = {
-                "5F": {
-                    "avg_length_of_stay": max(10, params.get("avg_length_of_stay", 19) - 5),
-                    "monthly_admissions": 33,
-                    "admission_variation_coeff": 1.0,
-                    "initial_occupancy": 0.85,
-                    "random_seed": (params.get("random_seed") or 42) + 1,
-                },
-                "6F": {
-                    "avg_length_of_stay": min(19, params.get("avg_length_of_stay", 19)),
-                    "monthly_admissions": 70,
-                    "admission_variation_coeff": 1.2,
-                    "initial_occupancy": 0.93,
-                    "target_occupancy_upper": 0.96,
-                    "admission_suppression_threshold": 0.98,
-                    "random_seed": (params.get("random_seed") or 42) + 2,
-                },
-            }
-            _sim_ward_dfs = {}
-            _sim_ward_raw_dfs = {}
-            _sim_ward_summaries = {}
-            for _sw in ["5F", "6F"]:
-                _sw_params = params.copy()
-                _sw_params["num_beds"] = get_ward_beds(_sw)
-                _sw_params.update(_ward_param_adj[_sw])
-                _sw_df = simulate_bed_control(_sw_params, strategy_en)
-                _sw_summary = summarize_results(_sw_df)
-                _sw_df_ja = _rename_df(_sw_df)
-                _sw_summary_ja = _convert_summary(_sw_summary, _sw_params)
-                _sw_summary_ja = _enrich_summary(_sw_summary_ja, _sw_df_ja)
-                _sim_ward_dfs[_sw] = _sw_df_ja
-                _sim_ward_raw_dfs[_sw] = _sw_df
-                _sim_ward_summaries[_sw] = _sw_summary_ja
-            st.session_state.sim_ward_dfs = _sim_ward_dfs
-            st.session_state.sim_ward_raw_dfs = _sim_ward_raw_dfs
-            st.session_state.sim_ward_summaries = _sim_ward_summaries
+            # --- 教育用CSVデータからロード（デモCSVと同一データを使用） ---
+            _sim_csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
+            _sim_csv_loaded = False
+            if os.path.exists(_sim_csv_path) and _DATA_MANAGER_AVAILABLE:
+                _sim_csv_df = pd.read_csv(_sim_csv_path)
+                _sim_csv_df["date"] = pd.to_datetime(_sim_csv_df["date"])
+                if "ward" in _sim_csv_df.columns and _sim_csv_df["ward"].isin(["5F", "6F"]).any():
+                    _sim_data_all = aggregate_wards(_sim_csv_df)
+                    _sim_raw_df = convert_actual_to_display(_sim_data_all, params)
+                    _sim_display_df = _rename_df(_sim_raw_df)
+                    _sim_summary = {
+                        "月次診療報酬": int(_sim_raw_df["daily_revenue"].sum()),
+                        "月次コスト": int(_sim_raw_df["daily_cost"].sum()),
+                        "月次運営貢献額": int(_sim_raw_df["daily_profit"].sum()),
+                        "平均稼働率": round(float(_sim_raw_df["occupancy_rate"].mean()) * 100, 1),
+                        "月間入院数": int(_sim_raw_df["new_admissions"].sum()),
+                        "月間退院数": int(_sim_raw_df["discharges"].sum()),
+                        "目標レンジ内日数": int(
+                            ((_sim_raw_df["occupancy_rate"] >= target_lower)
+                             & (_sim_raw_df["occupancy_rate"] <= target_upper)).sum()
+                        ),
+                        "目標レンジ内率": round(
+                            float(
+                                ((_sim_raw_df["occupancy_rate"] >= target_lower)
+                                 & (_sim_raw_df["occupancy_rate"] <= target_upper)).mean()
+                            ) * 100, 1
+                        ),
+                        "A群平均構成比": round(float(_sim_raw_df["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_sim_raw_df["phase_a_ratio"].mean()) else 0.0,
+                        "B群平均構成比": round(float(_sim_raw_df["phase_b_ratio"].mean()) * 100, 1) if pd.notna(_sim_raw_df["phase_b_ratio"].mean()) else 0.0,
+                        "C群平均構成比": round(float(_sim_raw_df["phase_c_ratio"].mean()) * 100, 1) if pd.notna(_sim_raw_df["phase_c_ratio"].mean()) else 0.0,
+                        "平均在院日数": 0,
+                        "フラグ集計": {},
+                    }
+                    _total_patient_days = float(_sim_raw_df["total_patients"].sum())
+                    _total_new_admissions = float(_sim_raw_df["new_admissions"].sum())
+                    _total_discharges = float(_sim_raw_df["discharges"].sum())
+                    _los_denominator = (_total_new_admissions + _total_discharges) / 2
+                    if _los_denominator > 0 and _total_patient_days > 0:
+                        _sim_summary["平均在院日数"] = round(_total_patient_days / _los_denominator, 1)
+                    _sim_summary = _enrich_summary(_sim_summary, _sim_display_df)
 
-            # --- 全体 = 5F + 6F を日次で合算 ---
-            _raw_5f = _sim_ward_raw_dfs["5F"].copy()
-            _raw_6f = _sim_ward_raw_dfs["6F"].copy()
-            _total_beds = get_ward_beds("5F") + get_ward_beds("6F")
+                    # 病棟別データ
+                    _sim_ward_dfs = {}
+                    _sim_ward_raw_dfs = {}
+                    _sim_ward_summaries = {}
+                    for _sw in ["5F", "6F"]:
+                        _sw_data = _sim_csv_df[_sim_csv_df["ward"] == _sw].copy()
+                        if len(_sw_data) > 0:
+                            _sw_params = params.copy()
+                            _sw_params["num_beds"] = get_ward_beds(_sw)
+                            _sw_raw = convert_actual_to_display(_sw_data, _sw_params)
+                            _sw_disp = _rename_df(_sw_raw)
+                            _sw_summary = {
+                                "月次診療報酬": int(_sw_raw["daily_revenue"].sum()),
+                                "月次コスト": int(_sw_raw["daily_cost"].sum()),
+                                "月次運営貢献額": int(_sw_raw["daily_profit"].sum()),
+                                "平均稼働率": round(float(_sw_raw["occupancy_rate"].mean()) * 100, 1),
+                                "月間入院数": int(_sw_raw["new_admissions"].sum()),
+                                "月間退院数": int(_sw_raw["discharges"].sum()),
+                                "目標レンジ内日数": int(
+                                    ((_sw_raw["occupancy_rate"] >= target_lower)
+                                     & (_sw_raw["occupancy_rate"] <= target_upper)).sum()
+                                ),
+                                "目標レンジ内率": round(
+                                    float(
+                                        ((_sw_raw["occupancy_rate"] >= target_lower)
+                                         & (_sw_raw["occupancy_rate"] <= target_upper)).mean()
+                                    ) * 100, 1
+                                ),
+                                "A群平均構成比": round(float(_sw_raw["phase_a_ratio"].mean()) * 100, 1) if pd.notna(_sw_raw["phase_a_ratio"].mean()) else 0.0,
+                                "B群平均構成比": round(float(_sw_raw["phase_b_ratio"].mean()) * 100, 1) if pd.notna(_sw_raw["phase_b_ratio"].mean()) else 0.0,
+                                "C群平均構成比": round(float(_sw_raw["phase_c_ratio"].mean()) * 100, 1) if pd.notna(_sw_raw["phase_c_ratio"].mean()) else 0.0,
+                                "平均在院日数": 0,
+                                "フラグ集計": {},
+                            }
+                            _sw_total_patient_days = float(_sw_raw["total_patients"].sum())
+                            _sw_total_new_admissions = float(_sw_raw["new_admissions"].sum())
+                            _sw_total_discharges = float(_sw_raw["discharges"].sum())
+                            _sw_los_denominator = (_sw_total_new_admissions + _sw_total_discharges) / 2
+                            if _sw_los_denominator > 0 and _sw_total_patient_days > 0:
+                                _sw_summary["平均在院日数"] = round(_sw_total_patient_days / _sw_los_denominator, 1)
+                            _sw_summary = _enrich_summary(_sw_summary, _sw_disp)
+                            _sim_ward_dfs[_sw] = _sw_disp
+                            _sim_ward_raw_dfs[_sw] = _sw_raw
+                            _sim_ward_summaries[_sw] = _sw_summary
 
-            # 加算系カラム（日次で合計）
-            _sum_cols = ["total_patients", "new_admissions", "discharges",
-                         "phase_a_count", "phase_b_count", "phase_c_count",
-                         "daily_revenue", "daily_cost", "daily_profit",
-                         "empty_beds", "excess_demand", "opportunity_loss",
-                         "recommended_discharges", "allowable_holds"]
+                    st.session_state.sim_ward_dfs = _sim_ward_dfs
+                    st.session_state.sim_ward_raw_dfs = _sim_ward_raw_dfs
+                    st.session_state.sim_ward_summaries = _sim_ward_summaries
+                    st.session_state.sim_df = _sim_display_df
+                    st.session_state.sim_summary = _sim_summary
+                    st.session_state.sim_df_raw = _sim_raw_df
+                    st.session_state.sim_params = params
+                    st.session_state.comparison = None
+                    _sim_csv_loaded = True
 
-            df = _raw_5f[["date", "day"]].copy()
-            for _col in _sum_cols:
-                if _col in _raw_5f.columns and _col in _raw_6f.columns:
-                    df[_col] = _raw_5f[_col].values + _raw_6f[_col].values
-
-            # 稼働率は再計算（合計患者数 / 合計病床数）
-            df["occupancy_rate"] = (df["total_patients"] / _total_beds).round(4)
-
-            # フェーズ比率は再計算
-            _total_phase = df["phase_a_count"] + df["phase_b_count"] + df["phase_c_count"]
-            _total_phase_safe = _total_phase.replace(0, 1)
-            df["phase_a_ratio"] = (df["phase_a_count"] / _total_phase_safe).round(4)
-            df["phase_b_ratio"] = (df["phase_b_count"] / _total_phase_safe).round(4)
-            df["phase_c_ratio"] = (df["phase_c_count"] / _total_phase_safe).round(4)
-
-            # フラグは合算後の値で再判定
-            df["flag_low_occupancy"] = df["occupancy_rate"] < params.get("target_occupancy_lower", 0.90)
-            df["flag_high_occupancy"] = df["occupancy_rate"] > params.get("target_occupancy_upper", 0.95)
-            df["flag_excess_a"] = df["phase_a_ratio"] > 0.25
-            df["flag_shortage_b"] = df["phase_b_ratio"] < 0.30
-            df["flag_stagnant_c"] = df["phase_c_ratio"] > 0.40
-
-            cli_summary = summarize_results(df)
-            df_ja = _rename_df(df)
-            summary_ja = _convert_summary(cli_summary, params)
-            summary_ja = _enrich_summary(summary_ja, df_ja)
-
-            st.session_state.sim_df = df_ja
-            st.session_state.sim_summary = summary_ja
-            st.session_state.sim_df_raw = df
-            st.session_state.sim_params = params
-
-            if compare_all:
-                # hashable化してキャッシュ用
-                params_hashable = tuple(sorted(params_dict.items()))
-                comparison = run_comparison(params_hashable, params_dict)
-                st.session_state.comparison = comparison
-            else:
-                st.session_state.comparison = None
+            if not _sim_csv_loaded:
+                st.error("教育用CSVデータが見つかりません。data/sample_actual_data_ward_202604.csv を確認してください。")
+                st.stop()
 
         except Exception as e:
             st.error(f"シミュレーションエラー: {e}")
