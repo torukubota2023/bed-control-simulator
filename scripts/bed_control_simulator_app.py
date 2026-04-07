@@ -1733,6 +1733,7 @@ def _get_holistic_ward_dfs():
 # ---------------------------------------------------------------------------
 def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
     """病棟KPIを表示し、稼働率低下時はアラートを表示する"""
+    st.session_state["_holistic_table_content"] = None
     try:
         _occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
         _tp_col = "total_patients" if "total_patients" in raw_df.columns else "在院患者数"
@@ -1855,7 +1856,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                         _bold = "**" if abs(_s["helped_pct"] - _rec["helped_pct"]) < 0.1 else ""
                         _tbl += f"| {_bold}{_s['helped_pct']:.1f}%{_bold} | {_bold}{_s['helper_required']:.1f}%{_bold} | {_mark} |\n"
                     _lines.append(_tbl)
-                    st.info("".join(_lines))
+                    st.session_state["_holistic_table_content"] = ("info", "".join(_lines))
         return  # トレンドチェック不要
 
     # トレンド予測（稼働率が低下傾向か？）
@@ -1899,7 +1900,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成可能"
             )
     elif _mt and _mt["avg_so_far"] >= _mt["monthly_target_pct"]:
-        # --- 全体主義チェック: ヘルパー病棟なら単体目標メッセージを全体主義メッセージに置換 ---
+        # --- 全体主義チェック: ヘルパー病棟なら単体目標メッセージを全体主義に置換+多段階テーブル ---
         _holistic_msg_shown = False
         _holistic_ward_dfs2 = _get_holistic_ward_dfs()
         if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs2:
@@ -1913,6 +1914,29 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
                     f"残り{_mt['days_remaining']}日は **{_helper_need_msg:.1f}%以上** を維持して{_helped_msg}を支えましょう"
                 )
+                # ヘルパー病棟視点の多段階テーブル: 「自分がこの稼働率なら、相手はこれだけで済む」
+                _sc_helper = _cw_msg["scenarios"][_helped_msg]
+                _h_lines = [
+                    f"🤝 **{_selected_ward_key}が{_helped_msg}を支える — 全体主義ベッドコントロール**\n\n"
+                    f"{_helped_msg}は単体での月平均{_cw_msg['target_pct']:.0f}%達成が困難"
+                    f"（必要: {_cw_msg['wards'][_helped_msg]['required_solo']:.1f}%）。"
+                    f"**{_selected_ward_key}が高めの稼働率を維持**することで、全体目標を達成できます。\n\n"
+                    f"**■ 推奨（残り{_cw_msg['days_remaining']}日）**\n"
+                    f"- {_helped_msg}が現状 **{_rec_msg['helped_pct']:.1f}%** を維持 → "
+                    f"{_selected_ward_key}は **{_helper_need_msg:.1f}%以上** で全体達成\n"
+                    f"- {_selected_ward_key}の直近: {_rec_msg['helper_last_occ']:.1f}% → 余裕 **{_rec_msg['margin']:.1f}ポイント**\n\n"
+                ]
+                _h_tbl = f"**■ {_helped_msg}の想定別 → {_selected_ward_key}に必要な最低稼働率**\n\n"
+                _h_tbl += f"| {_helped_msg}想定 | {_selected_ward_key}必要最低 | 達成可否 |\n|---|---|---|\n"
+                for _hs in _sc_helper["scenarios"]:
+                    if _hs["feasible"]:
+                        _h_mark = "✅" if _hs["helper_required"] <= _rec_msg["helper_last_occ"] else "⚠️"
+                    else:
+                        _h_mark = "❌"
+                    _h_bold = "**" if abs(_hs["helped_pct"] - _rec_msg["helped_pct"]) < 0.1 else ""
+                    _h_tbl += f"| {_h_bold}{_hs['helped_pct']:.1f}%{_h_bold} | {_h_bold}{_hs['helper_required']:.1f}%{_h_bold} | {_h_mark} |\n"
+                _h_lines.append(_h_tbl)
+                st.session_state["_holistic_table_content"] = ("info", "".join(_h_lines))
                 _holistic_msg_shown = True
         if not _holistic_msg_shown:
             st.success(
@@ -1921,21 +1945,33 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 f"残り{_mt['days_remaining']}日も **{_mt['required_occ']:.1f}%以上** を維持すれば目標達成"
             )
 
-    # --- 全体主義メッセージ（追加表示: 困難側・ヘルパー側それぞれ） ---
+    # --- 全体主義メッセージ（追加表示: 困難側のみ — ヘルパー側は上で表示済み） ---
     _holistic_ward_dfs3 = _get_holistic_ward_dfs()
     if _holistic_ward_dfs3 and _mt and _selected_ward_key in ("5F", "6F"):
         _cw2 = _calc_cross_ward_target(_holistic_ward_dfs3, target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
         if _cw2 and _cw2["overall_achievable"]:
             if _cw2["helped_ward"] == _selected_ward_key and _mt["difficulty"] in ("hard", "impossible"):
-                # 困難側: 「全体では達成可能」
+                # 困難側: テーブル付き全体主義メッセージ（_render_ward_kpi_with_alert内と同様）
                 _hw2 = _cw2["helper_ward"]
-                _rec2 = _cw2["scenarios"][_selected_ward_key]["recommended"]
-                st.info(
+                _sc2 = _cw2["scenarios"][_selected_ward_key]
+                _rec2 = _sc2["recommended"]
+                _lines2 = [
                     f"🤝 **全体主義での目標達成が可能**\n\n"
                     f"{_selected_ward_key}単体は困難でも、{_hw2}の補完で全体{_cw2['target_pct']:.0f}%達成が可能です。\n\n"
                     f"**推奨:** {_selected_ward_key}が {_rec2['helped_pct']:.1f}% 維持 → "
-                    f"{_hw2}は {_rec2['helper_required']:.1f}% 以上で達成（余裕 {_rec2['margin']:.1f}pt）"
-                )
+                    f"{_hw2}は {_rec2['helper_required']:.1f}% 以上で達成（余裕 {_rec2['margin']:.1f}pt）\n\n"
+                ]
+                _tbl2 = f"**■ {_selected_ward_key}の想定別 → {_hw2}に必要な最低稼働率**\n\n"
+                _tbl2 += f"| {_selected_ward_key}想定 | {_hw2}必要最低 | 達成可否 |\n|---|---|---|\n"
+                for _s2 in _sc2["scenarios"]:
+                    if _s2["feasible"]:
+                        _m2 = "✅" if _s2["helper_required"] <= _rec2["helper_last_occ"] else "⚠️"
+                    else:
+                        _m2 = "❌"
+                    _b2 = "**" if abs(_s2["helped_pct"] - _rec2["helped_pct"]) < 0.1 else ""
+                    _tbl2 += f"| {_b2}{_s2['helped_pct']:.1f}%{_b2} | {_b2}{_s2['helper_required']:.1f}%{_b2} | {_m2} |\n"
+                _lines2.append(_tbl2)
+                st.session_state["_holistic_table_content"] = ("info", "".join(_lines2))
 
 
 # ---------------------------------------------------------------------------
@@ -3313,6 +3349,19 @@ with tabs[_tab_idx["📊 日次推移"]]:
 
     st.pyplot(fig)
     plt.close(fig)
+
+    # --- 全体主義テーブル（グラフ下に表示） ---
+    _htc = st.session_state.get("_holistic_table_content")
+    if _htc:
+        _htc_type, _htc_body = _htc
+        if _htc_type == "info":
+            st.info(_htc_body)
+        elif _htc_type == "success":
+            st.success(_htc_body)
+        elif _htc_type == "warning":
+            st.warning(_htc_body)
+        elif _htc_type == "error":
+            st.error(_htc_body)
 
     # 病棟別稼働率は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
