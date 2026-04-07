@@ -1812,8 +1812,8 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** をキープすれば達成"
                 )
             # --- 全体主義メッセージ（単体困難時に表示）---
-            if _mt["difficulty"] in ("hard", "impossible") and _ward_data_available:
-                _cw = _calc_cross_ward_target(_ward_raw_dfs, target_lower, _calendar_month_days, get_ward_beds)
+            if _mt["difficulty"] in ("hard", "impossible") and globals().get("_ward_data_available", False):
+                _cw = _calc_cross_ward_target(globals().get("_ward_raw_dfs", {}), target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
                 if _cw and _cw["overall_achievable"] and _cw["helped_ward"] == _selected_ward_key:
                     _hw = _cw["helper_ward"]
                     _sc = _cw["scenarios"][_selected_ward_key]
@@ -1888,8 +1888,8 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
             f"残り{_mt['days_remaining']}日も **{_mt['required_occ']:.1f}%以上** を維持すれば目標達成"
         )
     # --- 全体主義メッセージ（レンジ内でも月平均困難時）---
-    if _mt and _mt["difficulty"] in ("hard", "impossible") and _ward_data_available:
-        _cw2 = _calc_cross_ward_target(_ward_raw_dfs, target_lower, _calendar_month_days, get_ward_beds)
+    if _mt and _mt["difficulty"] in ("hard", "impossible") and globals().get("_ward_data_available", False):
+        _cw2 = _calc_cross_ward_target(globals().get("_ward_raw_dfs", {}), target_lower, globals().get("_calendar_month_days", 30), get_ward_beds)
         if _cw2 and _cw2["overall_achievable"] and _cw2["helped_ward"] == _selected_ward_key:
             _hw2 = _cw2["helper_ward"]
             _rec2 = _cw2["scenarios"][_selected_ward_key]["recommended"]
@@ -3240,8 +3240,8 @@ with tabs[_tab_idx["📊 日次推移"]]:
         )
 
         # --- 全体主義目標ライン（病棟別表示時のみ）---
-        if _selected_ward_key in ("5F", "6F") and _ward_data_available:
-            _cw_chart = _calc_cross_ward_target(_ward_raw_dfs, target_lower, _calendar_month_days, get_ward_beds)
+        if _selected_ward_key in ("5F", "6F") and locals().get("_ward_data_available", False):
+            _cw_chart = _calc_cross_ward_target(_ward_raw_dfs if "_ward_raw_dfs" in dir() else {}, target_lower, _calendar_month_days, get_ward_beds)
             if _cw_chart and _cw_chart["overall_achievable"] and _cw_chart["helped_ward"] == _selected_ward_key:
                 _cross_req = _cw_chart["scenarios"][_selected_ward_key]["recommended"]["helped_pct"]
                 _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
