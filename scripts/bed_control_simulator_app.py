@@ -3291,20 +3291,8 @@ with tabs[_tab_idx["📊 日次推移"]]:
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
             )
 
-            # 困難側病棟: 全体主義目標も青い点線で追加表示
-            if _holistic_req is not None and _holistic_req < _required_occ_pct and _holistic_req <= 100:
-                _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-                _cross_y = [_occ_pct_values[-1], _holistic_req, _holistic_req]
-                ax.plot(_cross_x, _cross_y,
-                        linestyle=":", linewidth=2, color="#3498DB",
-                        marker="", zorder=4, alpha=0.8)
-                ax.annotate(
-                    f'全体達成に必要\n{_holistic_req:.1f}%',
-                    xy=(_chart_end_day - 2, _holistic_req),
-                    fontsize=9, fontweight="bold", color="#3498DB",
-                    ha="right", va="top",
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#3498DB", alpha=0.85),
-                )
+            # 困難側病棟には青い全体主義ラインを出さない
+            # （現状維持で全体達成可能という情報はアクションにつながらないため）
 
         # X軸の範囲を月末まで拡張
         ax.set_xlim(1, _chart_end_day + 0.5)
