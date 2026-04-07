@@ -3235,8 +3235,14 @@ with tabs[_tab_idx["📊 日次推移"]]:
         # --- 全体主義計算（先に実行して、目標線の描画方法を決定）---
         _is_holistic_helper = False  # この病棟がヘルパー（助ける側）か
         _holistic_req = None  # 全体達成に必要な稼働率
-        if _selected_ward_key in ("5F", "6F") and locals().get("_ward_data_available", False):
-            _cw_chart = _calc_cross_ward_target(_ward_raw_dfs if "_ward_raw_dfs" in dir() else {}, target_lower, _calendar_month_days, get_ward_beds)
+        # 病棟別データソース: 実績モード → _ward_raw_dfs, シミュレーション → sim_ward_raw_dfs
+        _holistic_ward_dfs = {}
+        if "_ward_raw_dfs" in dir() and locals().get("_ward_data_available", False):
+            _holistic_ward_dfs = _ward_raw_dfs
+        elif st.session_state.get("sim_ward_raw_dfs"):
+            _holistic_ward_dfs = st.session_state.sim_ward_raw_dfs
+        if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs:
+            _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds)
             if _cw_chart and _cw_chart["overall_achievable"]:
                 _other_ward = "6F" if _selected_ward_key == "5F" else "5F"
                 if _other_ward in _cw_chart.get("scenarios", {}):
