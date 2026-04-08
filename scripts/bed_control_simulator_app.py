@@ -1048,14 +1048,20 @@ if not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
     _preload_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
     if os.path.exists(_preload_csv):
         try:
-            _pre_df = pd.read_csv(_preload_csv)
-            _pre_df["date"] = pd.to_datetime(_pre_df["date"])
+            _pre_df_full = pd.read_csv(_preload_csv)
+            _pre_df_full["date"] = pd.to_datetime(_pre_df_full["date"])
+            # 現在月のみに絞る（過去90日rolling LOS用データを除外）
+            _pre_last = _pre_df_full["date"].iloc[-1]
+            _pre_mask = (_pre_df_full["date"].dt.year == _pre_last.year) & (_pre_df_full["date"].dt.month == _pre_last.month)
+            _pre_df = _pre_df_full[_pre_mask].reset_index(drop=True)
 
             # 実データから全体データの作成（実データモードと同じロジック）
             if "ward" in _pre_df.columns and _pre_df["ward"].isin(["5F", "6F"]).any():
                 _pre_data_all = aggregate_wards(_pre_df)
+                _pre_data_all_full = aggregate_wards(_pre_df_full)
             else:
                 _pre_data_all = _pre_df
+                _pre_data_all_full = _pre_df_full
 
             # デフォルトパラメータで変換用パラメータ辞書を構築
             _pre_params_dict = {
@@ -1075,6 +1081,8 @@ if not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             # 全体データの変換
             _pre_raw_df = convert_actual_to_display(_pre_data_all, _pre_params)
             _pre_display_df = _rename_df(_pre_raw_df)
+            # rolling LOS用の全データも変換
+            _pre_raw_df_full = convert_actual_to_display(_pre_data_all_full, _pre_params)
 
             # 全体サマリーの生成（実データモードと同じロジック）
             _pre_summary = {
@@ -1114,13 +1122,17 @@ if not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             _pre_ward_raw_dfs = {}
             _pre_ward_summaries = {}
 
+            _pre_ward_raw_dfs_full = {}
             for _w in ["5F", "6F"]:
                 _w_data = _pre_df[_pre_df["ward"] == _w].copy()
+                _w_data_full = _pre_df_full[_pre_df_full["ward"] == _w].copy()
                 if len(_w_data) > 0:
                     _w_params = _pre_params.copy()
                     _w_params["num_beds"] = get_ward_beds(_w)
                     _w_raw = convert_actual_to_display(_w_data, _w_params)
                     _w_disp = _rename_df(_w_raw)
+                    if len(_w_data_full) > 0:
+                        _pre_ward_raw_dfs_full[_w] = convert_actual_to_display(_w_data_full, _w_params)
                     _w_summary = {
                         "月次診療報酬": int(_w_raw["daily_revenue"].sum()),
                         "月次コスト": int(_w_raw["daily_cost"].sum()),
@@ -1160,9 +1172,11 @@ if not _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
             # session_stateに格納
             st.session_state.sim_ward_dfs = _pre_ward_dfs
             st.session_state.sim_ward_raw_dfs = _pre_ward_raw_dfs
+            st.session_state.sim_ward_raw_dfs_full = _pre_ward_raw_dfs_full
             st.session_state.sim_ward_summaries = _pre_ward_summaries
             st.session_state.sim_df = _pre_display_df
             st.session_state.sim_df_raw = _pre_raw_df
+            st.session_state.sim_df_raw_full = _pre_raw_df_full
             st.session_state.sim_summary = _pre_summary
             st.session_state.sim_params = _pre_params
             st.session_state.sim_preloaded = True
@@ -1181,11 +1195,17 @@ if run_button:
             _sim_csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sample_actual_data_ward_202604.csv")
             _sim_csv_loaded = False
             if os.path.exists(_sim_csv_path) and _DATA_MANAGER_AVAILABLE:
-                _sim_csv_df = pd.read_csv(_sim_csv_path)
-                _sim_csv_df["date"] = pd.to_datetime(_sim_csv_df["date"])
+                _sim_csv_df_full = pd.read_csv(_sim_csv_path)
+                _sim_csv_df_full["date"] = pd.to_datetime(_sim_csv_df_full["date"])
+                # 現在月のみに絞る（過去90日rolling LOS用データを除外）
+                _sim_last = _sim_csv_df_full["date"].iloc[-1]
+                _sim_mask = (_sim_csv_df_full["date"].dt.year == _sim_last.year) & (_sim_csv_df_full["date"].dt.month == _sim_last.month)
+                _sim_csv_df = _sim_csv_df_full[_sim_mask].reset_index(drop=True)
                 if "ward" in _sim_csv_df.columns and _sim_csv_df["ward"].isin(["5F", "6F"]).any():
                     _sim_data_all = aggregate_wards(_sim_csv_df)
+                    _sim_data_all_full = aggregate_wards(_sim_csv_df_full)
                     _sim_raw_df = convert_actual_to_display(_sim_data_all, params)
+                    _sim_raw_df_full = convert_actual_to_display(_sim_data_all_full, params)
                     _sim_display_df = _rename_df(_sim_raw_df)
                     _sim_summary = {
                         "月次診療報酬": int(_sim_raw_df["daily_revenue"].sum()),
@@ -1221,14 +1241,18 @@ if run_button:
                     # 病棟別データ
                     _sim_ward_dfs = {}
                     _sim_ward_raw_dfs = {}
+                    _sim_ward_raw_dfs_full = {}
                     _sim_ward_summaries = {}
                     for _sw in ["5F", "6F"]:
                         _sw_data = _sim_csv_df[_sim_csv_df["ward"] == _sw].copy()
+                        _sw_data_full = _sim_csv_df_full[_sim_csv_df_full["ward"] == _sw].copy()
                         if len(_sw_data) > 0:
                             _sw_params = params.copy()
                             _sw_params["num_beds"] = get_ward_beds(_sw)
                             _sw_raw = convert_actual_to_display(_sw_data, _sw_params)
                             _sw_disp = _rename_df(_sw_raw)
+                            if len(_sw_data_full) > 0:
+                                _sim_ward_raw_dfs_full[_sw] = convert_actual_to_display(_sw_data_full, _sw_params)
                             _sw_summary = {
                                 "月次診療報酬": int(_sw_raw["daily_revenue"].sum()),
                                 "月次コスト": int(_sw_raw["daily_cost"].sum()),
@@ -1265,10 +1289,12 @@ if run_button:
 
                     st.session_state.sim_ward_dfs = _sim_ward_dfs
                     st.session_state.sim_ward_raw_dfs = _sim_ward_raw_dfs
+                    st.session_state.sim_ward_raw_dfs_full = _sim_ward_raw_dfs_full
                     st.session_state.sim_ward_summaries = _sim_ward_summaries
                     st.session_state.sim_df = _sim_display_df
                     st.session_state.sim_summary = _sim_summary
                     st.session_state.sim_df_raw = _sim_raw_df
+                    st.session_state.sim_df_raw_full = _sim_raw_df_full
                     st.session_state.sim_params = params
                     st.session_state.comparison = None
                     _sim_csv_loaded = True
@@ -1446,9 +1472,16 @@ _simulation_available = st.session_state.sim_df is not None
 if _simulation_available and not _actual_data_available:
     if _selected_ward_key in ("5F", "6F") and st.session_state.get("sim_ward_raw_dfs", {}).get(_selected_ward_key) is not None:
         _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
+        _active_raw_df_full = st.session_state.get("sim_ward_raw_dfs_full", {}).get(_selected_ward_key, _active_raw_df)
         _view_beds = get_ward_beds(_selected_ward_key) if _DATA_MANAGER_AVAILABLE else 47
     elif st.session_state.sim_df_raw is not None:
         _active_raw_df = st.session_state.sim_df_raw
+        _active_raw_df_full = st.session_state.get("sim_df_raw_full", _active_raw_df)
+
+# _active_raw_df_full のフォールバック初期化
+# （実データモードでは既に設定済み、シミュレーションモードでは _active_raw_df と同じ）
+if '_active_raw_df_full' not in locals() or _active_raw_df_full is None:
+    _active_raw_df_full = _active_raw_df if '_active_raw_df' in locals() else pd.DataFrame()
 
 # ---------------------------------------------------------------------------
 # ヘルパー: 金額フォーマット
@@ -3265,6 +3298,7 @@ else:
         df = st.session_state.sim_ward_dfs[_selected_ward_key]
         summary = st.session_state.sim_ward_summaries[_selected_ward_key]
         _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
+        _active_raw_df_full = st.session_state.get("sim_ward_raw_dfs_full", {}).get(_selected_ward_key, _active_raw_df)
         _active_cli_params = st.session_state.sim_params.copy()
         _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
         _bed_ratio_sim = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
@@ -3276,6 +3310,7 @@ else:
         df = st.session_state.sim_df
         summary = st.session_state.sim_summary
         _active_raw_df = st.session_state.sim_df_raw
+        _active_raw_df_full = st.session_state.get("sim_df_raw_full", _active_raw_df)
         _active_cli_params = st.session_state.sim_params.copy()
         # Ward selected but ward data not available - need to re-run simulation
         if _selected_ward_key in ("5F", "6F"):
