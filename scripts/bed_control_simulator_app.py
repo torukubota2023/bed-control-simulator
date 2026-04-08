@@ -3766,6 +3766,150 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     else:
         st.error(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）で大幅に不足しています。退院・入院バランスの見直しが急務です。")
 
+    # --- What-if シミュレーション（経営会議提案用）---
+    st.markdown("---")
+    with st.expander("🔬 What-if シミュレーション — 入院数・稼働率を変えたら", expanded=False):
+        st.caption(
+            "経営会議で「もし月間入院数を○人にしたら」「目標稼働率を○%にしたら」という議論をする際、"
+            "理論的なフェーズ構成と運営貢献額の変化を即座に試算できます。"
+        )
+
+        _whatif_col_left, _whatif_col_right = st.columns([1, 2])
+
+        with _whatif_col_left:
+            st.markdown("**📊 シナリオ設定**")
+            _whatif_admissions = st.slider(
+                "月間入院数",
+                min_value=120,
+                max_value=180,
+                value=int(_monthly_adm_input),
+                step=5,
+                key=f"whatif_phase_adm_{_selected_ward_key}",
+                help="月間の入院数を120〜180人の範囲で変更できます",
+            )
+            _whatif_occ_pct = st.slider(
+                "目標稼働率 (%)",
+                min_value=85,
+                max_value=100,
+                value=int(_target_occ_mid * 100),
+                step=1,
+                key=f"whatif_phase_occ_{_selected_ward_key}",
+                help="目標稼働率を85〜100%の範囲で変更できます",
+            )
+            _whatif_occ = _whatif_occ_pct / 100
+
+            st.markdown("")
+            st.caption(f"現在のサイドバー設定: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%")
+
+        with _whatif_col_right:
+            # 選択値で理論値を計算
+            _whatif_result = calculate_ideal_phase_ratios(
+                num_beds=_view_beds,
+                monthly_admissions=_whatif_admissions,
+                target_occupancy=_whatif_occ,
+                days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+            )
+
+            # 上部: 主要メトリクス
+            _m1, _m2, _m3 = st.columns(3)
+            _m1.metric("平均在院日数", f"{_whatif_result['target_los']:.1f}日")
+            _m2.metric("目標在院患者数", f"{_whatif_result['target_patients']:.0f}人")
+            _m3.metric("1日次運営貢献額", f"{_whatif_result['daily_contribution']/10000:.0f}万円")
+
+            # 施設基準との比較
+            if _whatif_result['target_los'] > 21:
+                st.error(
+                    f"🔴 **施設基準リスク**: 平均在院日数 {_whatif_result['target_los']:.1f}日 > 21日 "
+                    f"(2025年度上限)。このシナリオは地域包括医療病棟入院料1の算定基準を満たせません。"
+                )
+            elif _whatif_result['target_los'] > 20:
+                st.warning(
+                    f"🟡 **2026年度注意**: 平均在院日数 {_whatif_result['target_los']:.1f}日 は "
+                    f"2026年度上限20日を超過。85歳以上20%超なら+1日緩和で21日以内。"
+                )
+            elif not _whatif_result['feasible']:
+                st.warning(f"⚠️ {_whatif_result['notes']}")
+            else:
+                st.success(
+                    f"✅ 平均在院日数 {_whatif_result['target_los']:.1f}日は施設基準内（上限21日）"
+                )
+
+            # フェーズ別人数と比率の棒グラフ
+            fig_wi, ax_wi = plt.subplots(figsize=(8, 3.5))
+            _wi_labels = ["A群\n(1-5日)", "B群\n(6-14日)", "C群\n(15日-)"]
+            _wi_counts = [
+                _whatif_result['a_count'],
+                _whatif_result['b_count'],
+                _whatif_result['c_count'],
+            ]
+            _wi_pcts = [
+                _whatif_result['a_pct'],
+                _whatif_result['b_pct'],
+                _whatif_result['c_pct'],
+            ]
+            _wi_colors_list = [COLOR_A, COLOR_B, COLOR_C]
+            _wi_bars = ax_wi.bar(_wi_labels, _wi_counts, color=_wi_colors_list, alpha=0.85)
+            for _bar, _count, _pct in zip(_wi_bars, _wi_counts, _wi_pcts):
+                _h = _bar.get_height()
+                ax_wi.text(
+                    _bar.get_x() + _bar.get_width() / 2,
+                    _h + max(_wi_counts) * 0.02,
+                    f"{_count:.1f}人\n({_pct:.1f}%)",
+                    ha="center", fontsize=10, fontweight="bold",
+                )
+            ax_wi.set_ylabel("患者数（人）")
+            ax_wi.set_title(
+                f"月{_whatif_admissions}人入院 × 目標稼働率{_whatif_occ_pct}% → 理論構成",
+                fontsize=11,
+            )
+            ax_wi.set_ylim(0, max(_wi_counts) * 1.25)
+            ax_wi.grid(True, alpha=0.3, axis="y")
+            st.pyplot(fig_wi)
+            plt.close(fig_wi)
+
+        # 現在値との差分を1行サマリーで表示
+        _delta_adm = _whatif_admissions - int(_monthly_adm_input)
+        _delta_occ = _whatif_occ_pct - (_target_occ_mid * 100)
+        _current_result = calculate_ideal_phase_ratios(
+            num_beds=_view_beds,
+            monthly_admissions=int(_monthly_adm_input),
+            target_occupancy=_target_occ_mid,
+            days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+        )
+        _delta_contrib = (_whatif_result['daily_contribution'] - _current_result['daily_contribution'])
+        _delta_contrib_monthly = _delta_contrib * 30
+        _delta_contrib_yearly = _delta_contrib * 365
+
+        if abs(_delta_adm) > 0 or abs(_delta_occ) > 0.1:
+            _delta_label = []
+            if _delta_adm != 0:
+                _delta_label.append(f"入院 **{_delta_adm:+d}人/月**")
+            if abs(_delta_occ) > 0.1:
+                _delta_label.append(f"稼働率 **{_delta_occ:+.1f}%**")
+            _delta_text = " / ".join(_delta_label)
+
+            if _delta_contrib > 0:
+                st.info(
+                    f"💰 **現状との比較**: {_delta_text}\n\n"
+                    f"→ 日次運営貢献額 **+{_delta_contrib/10000:.1f}万円/日** "
+                    f"（月間 **+{_delta_contrib_monthly/10000:.0f}万円** / "
+                    f"年間 **+{_delta_contrib_yearly/10000:,.0f}万円**）"
+                )
+            elif _delta_contrib < 0:
+                st.warning(
+                    f"💰 **現状との比較**: {_delta_text}\n\n"
+                    f"→ 日次運営貢献額 **{_delta_contrib/10000:.1f}万円/日** "
+                    f"（月間 **{_delta_contrib_monthly/10000:.0f}万円** / "
+                    f"年間 **{_delta_contrib_yearly/10000:,.0f}万円**）"
+                )
+
+        # 経営会議提案用の注記
+        st.caption(
+            "💡 **経営会議での使い方**: スライダーで「実現可能な目標」を探り、"
+            "その場合のフェーズ構成・運営貢献額・施設基準リスクを同時に確認できます。"
+            "入院数を増やす施策（外来強化・連携室拡充）の定量的な期待値算出に活用できます。"
+        )
+
     # 病棟別フェーズ構成は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
