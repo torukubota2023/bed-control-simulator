@@ -60,17 +60,18 @@ def _trim_to_limit(text: str, limit: int = MAX_CHARS) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_summary_message(
-    target_date: date,
-    total_beds: int,
-    ward_data: dict,
-    admissions: int,
-    discharges: int,
-    avg_los: float | None = None,
-    notes: str | None = None,
-    rolling_los: float | None = None,
-    rolling_los_limit: int | None = None,
-    rolling_days: int | None = None,
-) -> str:
+    target_date,
+    total_beds,
+    ward_data,
+    admissions,
+    discharges,
+    avg_los=None,
+    notes=None,
+    rolling_los=None,
+    rolling_los_limit=None,
+    rolling_days=None,
+    ward_rolling_los=None,
+):
     """
     全体サマリーメッセージ（全員向け）を生成する。
 
@@ -93,11 +94,14 @@ def generate_summary_message(
     notes : str, optional
         追加コメント（状況・対応方針など）
     rolling_los : float, optional
-        過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準判定用）
+        [後方互換] 全体の3ヶ月rolling LOS（ward_rolling_los を優先推奨）
     rolling_los_limit : int, optional
         施設基準の上限日数（例: 21日、20日）
     rolling_days : int, optional
         rolling計算に使った実際の日数（90日に満たない場合もあり）
+    ward_rolling_los : dict, optional
+        病棟別の3ヶ月rolling LOS（2026年改定対応・施設基準判定は各病棟ごと）
+        例: {"5F": {"los": 18.5, "days": 90}, "6F": {"los": 19.2, "days": 85}}
 
     Returns
     -------
@@ -139,8 +143,34 @@ def generate_summary_message(
     if avg_los is not None:
         lines.append(f"平均在院日数:{avg_los:.1f}日")
 
-    # 過去3ヶ月rolling 平均在院日数（施設基準判定用・2026年改定対応）
-    if rolling_los is not None:
+    # 過去3ヶ月rolling 平均在院日数（病棟別・施設基準判定用・2026年改定対応）
+    # ⚠️ 施設基準は各病棟ごとに判定するため、病棟別に表示する
+    if ward_rolling_los:
+        _rolling_parts = []
+        for _wname in sorted(ward_rolling_los.keys()):
+            _wdata = ward_rolling_los[_wname]
+            _wlos = _wdata.get("los") if isinstance(_wdata, dict) else None
+            _wdays = _wdata.get("days") if isinstance(_wdata, dict) else None
+            if _wlos is None:
+                continue
+            if rolling_los_limit is not None:
+                if _wlos <= rolling_los_limit:
+                    _status = "✅"
+                elif _wlos <= rolling_los_limit + 0.5:
+                    _status = "⚠"
+                else:
+                    _status = "🔴"
+                _rolling_parts.append(f"{_wname}:{_wlos:.1f}日{_status}")
+            else:
+                _rolling_parts.append(f"{_wname}:{_wlos:.1f}日")
+        if _rolling_parts:
+            if rolling_los_limit is not None:
+                lines.append(f"3M平均在院(基準{rolling_los_limit}日):")
+            else:
+                lines.append(f"3M平均在院:")
+            lines.append(" / ".join(_rolling_parts))
+    elif rolling_los is not None:
+        # 後方互換: 全体の rolling_los が渡された場合
         if rolling_los_limit is not None:
             if rolling_los <= rolling_los_limit:
                 _status = "✅"
@@ -172,12 +202,12 @@ def generate_summary_message(
 # ---------------------------------------------------------------------------
 
 def generate_doctor_message(
-    target_date: date,
-    doctor_name: str,
-    patients_over_threshold: list[dict],
-    ward_occupancy: dict | None = None,
-    threshold_days: int = 21,
-) -> str:
+    target_date,
+    doctor_name,
+    patients_over_threshold,
+    ward_occupancy=None,
+    threshold_days=21,
+):
     """
     医師別の退院調整依頼メッセージを生成する。
 
@@ -265,10 +295,10 @@ def generate_doctor_message(
 # ---------------------------------------------------------------------------
 
 def render_hope_tab(
-    df: "pd.DataFrame | None" = None,
-    ward_df: "pd.DataFrame | None" = None,
-    doctor_patients: "dict | None" = None,
-) -> None:
+    df=None,
+    ward_df=None,
+    doctor_patients=None,
+):
     """
     HOPE送信用サマリータブのUI描画関数。
 
@@ -338,29 +368,33 @@ def render_hope_tab(
             key="hope_avg_los",
         )
 
-    # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応） ---
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        rolling_los_input = st.number_input(
-            "3ヶ月平均在院日数（施設基準判定）",
+    # --- 過去3ヶ月rolling 平均在院日数（病棟別・2026年改定対応） ---
+    # ⚠️ 施設基準は各病棟ごとに判定するため、病棟別の rolling LOS を入力する
+    st.markdown("**📏 3ヶ月rolling 平均在院日数（各病棟ごと・施設基準判定）**")
+    st.caption("⚠️ 地域包括医療病棟の施設基準は、病院全体ではなく各病棟それぞれが満たす必要があります")
+    col_rw1, col_rw2, col_rlimit = st.columns(3)
+    with col_rw1:
+        rolling_5f_input = st.number_input(
+            "5F 3ヶ月平均在院日数",
+            min_value=0.0, max_value=60.0, value=18.5,
+            step=0.1, format="%.1f",
+            key="hope_rolling_5f",
+            help="5F病棟の過去3ヶ月rolling平均在院日数。意思決定ダッシュボードの値と合わせてください。",
+        )
+    with col_rw2:
+        rolling_6f_input = st.number_input(
+            "6F 3ヶ月平均在院日数",
             min_value=0.0, max_value=60.0, value=19.2,
             step=0.1, format="%.1f",
-            key="hope_rolling_los",
-            help="過去3ヶ月（90日）のrolling平均在院日数。意思決定ダッシュボードの値と合わせてください。",
+            key="hope_rolling_6f",
+            help="6F病棟の過去3ヶ月rolling平均在院日数。",
         )
-    with col_r2:
+    with col_rlimit:
         rolling_limit_input = st.number_input(
             "施設基準上限（日）",
             min_value=15, max_value=25, value=21,
             key="hope_rolling_limit",
             help="2025年度: 21日、2026年度: 20日（85歳以上緩和時 21日）",
-        )
-    with col_r3:
-        rolling_days_input = st.number_input(
-            "計算日数（90日未満ならデータ不足）",
-            min_value=1, max_value=90, value=90,
-            key="hope_rolling_days",
-            help="90日分揃っていない場合は実際の日数を入力",
         )
 
     # 追加コメント入力
@@ -378,6 +412,13 @@ def render_hope_tab(
     }
     total_beds = 94
 
+    # 病棟別 rolling LOS を構築
+    ward_rolling_los = {}
+    if rolling_5f_input > 0:
+        ward_rolling_los["5F"] = {"los": rolling_5f_input, "days": 90}
+    if rolling_6f_input > 0:
+        ward_rolling_los["6F"] = {"los": rolling_6f_input, "days": 90}
+
     # メッセージ生成
     summary_msg = generate_summary_message(
         target_date=target_date,
@@ -387,9 +428,8 @@ def render_hope_tab(
         discharges=discharges,
         avg_los=avg_los,
         notes=notes if notes and notes.strip() else None,
-        rolling_los=rolling_los_input if rolling_los_input > 0 else None,
+        ward_rolling_los=ward_rolling_los if ward_rolling_los else None,
         rolling_los_limit=rolling_limit_input,
-        rolling_days=rolling_days_input,
     )
 
     # プレビュー表示

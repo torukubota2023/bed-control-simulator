@@ -2148,44 +2148,73 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                 else:
                     st.caption(f"⚠️ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成に{_mt_brief['required_occ']:.0f}%必要（厳しい）")
 
-        # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準判定）---
-        if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-            try:
-                _rolling = calculate_rolling_los(_active_raw_df, window_days=90)
-            except Exception:
-                _rolling = None
-            if _rolling and _rolling.get("rolling_los") is not None:
-                _rolling_los_val = _rolling["rolling_los"]
-                _rolling_actual_days = _rolling["actual_days"]
-                _rolling_is_partial = _rolling["is_partial"]
-                _rolling_diff = _rolling_los_val - _max_avg_los
-                if _rolling_los_val <= _max_avg_los:
-                    _rolling_icon = "✅"
-                    _rolling_status = f"基準内（上限{_max_avg_los}日）"
-                    _rolling_color = "#27AE60"
-                elif _rolling_los_val <= _max_avg_los + 0.5:
-                    _rolling_icon = "⚠️"
-                    _rolling_status = f"基準ぎりぎり（+{_rolling_diff:.1f}日超過）"
-                    _rolling_color = "#F39C12"
-                else:
-                    _rolling_icon = "🔴"
-                    _rolling_status = f"基準超過（+{_rolling_diff:.1f}日）"
-                    _rolling_color = "#C0392B"
+        # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準は各病棟ごとに判定）---
+        # ⚠️ 重要: 地域包括医療病棟の平均在院日数基準は、病院全体ではなく
+        # 各病棟それぞれが満たす必要がある。したがって5F/6F個別に rolling LOS を表示する。
+        if _DATA_MANAGER_AVAILABLE:
+            _ward_rolling_results = {}
+            _ward_dfs_for_rolling = globals().get("_ward_raw_dfs", {})
+            for _w in ["5F", "6F"]:
+                _wdf = _ward_dfs_for_rolling.get(_w) if _ward_dfs_for_rolling else None
+                if _wdf is None or not isinstance(_wdf, pd.DataFrame) or len(_wdf) == 0:
+                    # フォールバック: 選択中の病棟と一致すれば _active_raw_df を使う
+                    if _selected_ward_key == _w and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+                        _wdf = _active_raw_df
+                    else:
+                        continue
+                try:
+                    _ward_rolling_results[_w] = calculate_rolling_los(_wdf, window_days=90)
+                except Exception:
+                    pass
 
-                _rolling_days_caption = (
-                    f"過去{_rolling_actual_days}日分で計算（データ不足・90日に満たない）"
-                    if _rolling_is_partial
-                    else f"過去{_rolling_actual_days}日分で計算"
-                )
+            if _ward_rolling_results:
                 st.markdown(
-                    f"<div style='padding:8px 12px;background:#F8F9FA;border-left:4px solid {_rolling_color};border-radius:4px;margin-top:4px;'>"
-                    f"<strong>📏 平均在院日数（過去3ヶ月rolling・施設基準判定用）:</strong> "
-                    f"{_rolling_icon} <strong style='color:{_rolling_color};font-size:1.1em;'>{_rolling_los_val}日</strong> "
-                    f"/ 上限 {_max_avg_los}日 — {_rolling_status} "
-                    f"<span style='color:#888;font-size:0.85em;'>（{_rolling_days_caption}）</span>"
-                    f"</div>",
+                    "<div style='padding:8px 12px;background:#F8F9FA;border-left:4px solid #3498DB;"
+                    "border-radius:4px;margin-top:4px;'>"
+                    "<strong>📏 平均在院日数（過去3ヶ月rolling・施設基準判定用 — 各病棟ごと）</strong>"
+                    "<br/><span style='color:#666;font-size:0.85em;'>"
+                    "※ 地域包括医療病棟の施設基準は<strong>各病棟それぞれ</strong>が満たす必要があります"
+                    "</span>",
                     unsafe_allow_html=True,
                 )
+                _rolling_ward_cols = st.columns(len(_ward_rolling_results))
+                for _idx, (_w, _rolling) in enumerate(_ward_rolling_results.items()):
+                    with _rolling_ward_cols[_idx]:
+                        if _rolling is None or _rolling.get("rolling_los") is None:
+                            st.markdown(
+                                f"<div style='padding:6px;'><strong>{_w}</strong>: データなし</div>",
+                                unsafe_allow_html=True,
+                            )
+                            continue
+                        _r_los = _rolling["rolling_los"]
+                        _r_days = _rolling["actual_days"]
+                        _r_partial = _rolling["is_partial"]
+                        _r_diff = _r_los - _max_avg_los
+                        if _r_los <= _max_avg_los:
+                            _r_icon = "✅"
+                            _r_status = f"基準内"
+                            _r_color = "#27AE60"
+                        elif _r_los <= _max_avg_los + 0.5:
+                            _r_icon = "⚠️"
+                            _r_status = f"ぎりぎり(+{_r_diff:.1f}日)"
+                            _r_color = "#F39C12"
+                        else:
+                            _r_icon = "🔴"
+                            _r_status = f"超過(+{_r_diff:.1f}日)"
+                            _r_color = "#C0392B"
+                        _r_days_txt = (
+                            f"過去{_r_days}日(不足)" if _r_partial else f"過去{_r_days}日"
+                        )
+                        st.markdown(
+                            f"<div style='padding:6px 10px;background:white;border-left:3px solid {_r_color};border-radius:3px;'>"
+                            f"<strong>{_w}</strong>: {_r_icon} "
+                            f"<strong style='color:{_r_color};font-size:1.1em;'>{_r_los}日</strong> "
+                            f"/ 上限{_max_avg_los}日 — {_r_status}"
+                            f"<br/><span style='color:#888;font-size:0.8em;'>{_r_days_txt}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -4091,10 +4120,12 @@ with tabs[_tab_idx["💰 運営分析"]]:
     c6.metric("月間退院数", f"{summary['月間退院数']}人")
     c7.metric("目標レンジ内日数", f"{summary['目標レンジ内日数']}/{days_in_month}日")
     c8.metric("目標レンジ内率", f"{summary['目標レンジ内率']}%")
-    _current_avg_los = summary["平均在院日数"]  # 今月集計値
+    _current_avg_los = summary["平均在院日数"]  # 今月集計値（選択中ビューの値）
     _is_ward_view = _selected_ward_key in ("5F", "6F")
 
-    # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準判定用）---
+    # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準は各病棟ごとに判定）---
+    # ⚠️ 重要: 地域包括医療病棟の施設基準は各病棟ごとに満たす必要がある。
+    # 全病棟・5F・6F それぞれを個別に計算して判定する。
     _rolling_ds = None
     _rolling_los_ds = None
     _rolling_days_ds = 0
@@ -4109,83 +4140,129 @@ with tabs[_tab_idx["💰 運営分析"]]:
         except Exception:
             _rolling_ds = None
 
-    # 施設基準判定は rolling 値を優先。rolling が未計算なら月次集計値にフォールバック
+    # 各病棟ごとの rolling を計算
+    _ward_rolling_ds = {}
+    if _DATA_MANAGER_AVAILABLE:
+        _ward_dfs_ds = globals().get("_ward_raw_dfs", {})
+        for _w in ["5F", "6F"]:
+            _wdf_ds = _ward_dfs_ds.get(_w) if _ward_dfs_ds else None
+            if _wdf_ds is None and _selected_ward_key == _w and isinstance(_active_raw_df, pd.DataFrame):
+                _wdf_ds = _active_raw_df
+            if _wdf_ds is not None and isinstance(_wdf_ds, pd.DataFrame) and len(_wdf_ds) > 0:
+                try:
+                    _ward_rolling_ds[_w] = calculate_rolling_los(_wdf_ds, window_days=90)
+                except Exception:
+                    pass
+
+    # 施設基準判定: rolling 値を優先、未計算なら月次集計値にフォールバック
     _judge_los = _rolling_los_ds if _rolling_los_ds is not None else _current_avg_los
     _los_over = _judge_los - _max_avg_los
 
-    # delta 表示: rolling がある場合は「3ヶ月rolling: X.X日」を併記
     if _rolling_los_ds is not None:
         _delta_label = f"3ヶ月平均: {_rolling_los_ds}日（{_rolling_days_ds}日分）"
     else:
         _delta_label = None
 
-    if _los_over > 0 and not _is_ward_view:
-        c9.metric(
-            "平均在院日数（今月集計）",
-            f"{_current_avg_los}日",
-            delta=_delta_label if _delta_label else f"基準超過 +{_los_over:.1f}日",
-            delta_color="inverse" if _delta_label is None else "off",
-            help="施設基準判定は3ヶ月rolling平均で行います。厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)",
-        )
-    elif _los_over > 0 and _is_ward_view:
-        c9.metric(
-            "平均在院日数（今月集計）ⓘ",
-            f"{_current_avg_los}日",
-            delta=_delta_label,
-            delta_color="off",
-            help="病棟単体の参考値です。算定基準は病院全体で判定されます。",
-        )
-    elif _los_over <= 0:
-        c9.metric(
-            "平均在院日数（今月集計）",
-            f"{_current_avg_los}日",
-            delta=_delta_label if _delta_label else f"基準内（余裕 {-_los_over:.1f}日）",
-            delta_color="off" if _delta_label else "normal",
-            help="施設基準判定は3ヶ月rolling平均で行います。厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)",
-        )
+    c9.metric(
+        "平均在院日数（今月集計）",
+        f"{_current_avg_los}日",
+        delta=_delta_label if _delta_label else (f"基準超過 +{_los_over:.1f}日" if _los_over > 0 else f"基準内（余裕 {-_los_over:.1f}日）"),
+        delta_color="off" if _delta_label else ("inverse" if _los_over > 0 else "normal"),
+        help="施設基準判定は3ヶ月rolling平均で行います。厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)",
+    )
 
-    if not _is_ward_view:
-        _caption_lines = [
-            f"※ 今月集計は厚生労働省「病院報告」の公式定義に準拠",
-            f"算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）",
-        ]
-        if _rolling_los_ds is not None:
-            _partial_tag = f"（データ不足・{_rolling_days_ds}日分で計算）" if _rolling_is_partial_ds else f"（過去{_rolling_days_ds}日分）"
-            _caption_lines.append(f"**3ヶ月rolling（施設基準判定）: {_rolling_los_ds}日** {_partial_tag}")
-        st.caption("　|　".join(_caption_lines))
-    else:
-        st.caption(f"※ 平均在院日数は病棟単体の参考値です。算定基準（{_max_avg_los}日以内）は**病院全体**で判定されます。")
+    _caption_lines = [
+        f"※ 今月集計は厚生労働省「病院報告」の公式定義に準拠",
+        f"算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）",
+    ]
+    st.caption("　|　".join(_caption_lines))
 
-    # --- 平均在院日数アラート（rolling ベース判定）---
-    if _los_over > 0 and not _is_ward_view:
-        # C群患者数を取得
+    # --- 各病棟の施設基準判定を常時表示（病棟別個別判定）---
+    if _ward_rolling_ds:
+        st.markdown(
+            "**📏 各病棟の施設基準判定（3ヶ月rolling・各病棟ごと）**  \n"
+            "<span style='color:#666;font-size:0.85em;'>"
+            "⚠️ 地域包括医療病棟の平均在院日数基準は、病院全体ではなく"
+            "<strong>各病棟それぞれ</strong>が満たす必要があります"
+            "</span>",
+            unsafe_allow_html=True,
+        )
+        _ward_judge_cols = st.columns(len(_ward_rolling_ds))
+        _any_ward_over = False
+        _ward_over_details = []
+        for _idx, (_w, _wres) in enumerate(_ward_rolling_ds.items()):
+            with _ward_judge_cols[_idx]:
+                if _wres is None or _wres.get("rolling_los") is None:
+                    st.markdown(f"**{_w}**: データなし")
+                    continue
+                _wlos = _wres["rolling_los"]
+                _wdays = _wres["actual_days"]
+                _wpartial = _wres["is_partial"]
+                _wdiff = _wlos - _max_avg_los
+                if _wlos <= _max_avg_los:
+                    _wicon = "✅"
+                    _wstatus = "基準内"
+                    _wcolor = "#27AE60"
+                elif _wlos <= _max_avg_los + 0.5:
+                    _wicon = "⚠️"
+                    _wstatus = f"ぎりぎり(+{_wdiff:.1f}日)"
+                    _wcolor = "#F39C12"
+                    _any_ward_over = True
+                    _ward_over_details.append((_w, _wlos, _wdiff))
+                else:
+                    _wicon = "🔴"
+                    _wstatus = f"超過(+{_wdiff:.1f}日)"
+                    _wcolor = "#C0392B"
+                    _any_ward_over = True
+                    _ward_over_details.append((_w, _wlos, _wdiff))
+                _wdays_txt = f"過去{_wdays}日(不足)" if _wpartial else f"過去{_wdays}日"
+                st.markdown(
+                    f"<div style='padding:8px 12px;background:#F8F9FA;border-left:4px solid {_wcolor};border-radius:4px;'>"
+                    f"<strong>{_w}病棟</strong>: {_wicon} "
+                    f"<strong style='color:{_wcolor};font-size:1.15em;'>{_wlos}日</strong> "
+                    f"/ 上限 {_max_avg_los}日<br/>{_wstatus}"
+                    f"<br/><span style='color:#888;font-size:0.8em;'>{_wdays_txt}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # --- 平均在院日数アラート（病棟別判定に変更）---
+    # いずれかの病棟が基準超過している場合にアラート表示
+    if _ward_rolling_ds and _ward_over_details:
+        # C群患者数を取得（選択病棟の値）
         _c_count = 0
         if "C群患者数" in df.columns:
             _c_count = int(df["C群患者数"].iloc[-1]) if len(df) > 0 else 0
         elif "phase_c_count" in df.columns:
             _c_count = int(df["phase_c_count"].iloc[-1]) if len(df) > 0 else 0
 
-        _judge_label = f"3ヶ月rolling {_judge_los}日（過去{_rolling_days_ds}日分）" if _rolling_los_ds is not None else f"今月集計 {_current_avg_los}日"
+        _over_descriptions = []
+        for _w, _wlos, _wdiff in _ward_over_details:
+            _over_descriptions.append(f"**{_w}: {_wlos}日（+{_wdiff:.1f}日超過）**")
+        _over_text = "、".join(_over_descriptions)
+
+        _critical = any(_wdiff > 0.5 for _w, _wlos, _wdiff in _ward_over_details)
         _los_alert_lines = [
-            f"🚨 **平均在院日数 {_judge_label} — 算定基準（{_max_avg_los}日以内）を超過しています**\n\n",
-            f"地域包括医療病棟の施設基準を満たさなくなるリスクがあります。",
-            f" 現在 **+{_los_over:.1f}日超過** — 早急にC群（15日目以降）患者の退院調整が必要です。\n\n",
-            "**対策（C群患者からの退院促進）:**\n",
-            "- C群（在院15日以上）患者のリストアップ → 退院可能な患者から優先的に退院調整\n",
+            f"🚨 **病棟施設基準超過** — {_over_text}\n\n",
+            f"地域包括医療病棟の施設基準（各病棟ごとに平均在院日数{_max_avg_los}日以内）を満たさなくなるリスクがあります。",
+            f" 該当病棟で早急にC群（15日目以降）患者の退院調整が必要です。\n\n",
+            "**対策（該当病棟のC群患者からの退院促進）:**\n",
+            "- 超過している病棟のC群（在院15日以上）患者をリストアップ\n",
             "- 転院先・在宅復帰先の早期確保（連携室への依頼）\n",
             "- 退院前カンファレンスの前倒し実施\n",
-            "- 新規入院の受入れ（分母を増やす）による平均在院日数の引き下げ\n",
+            "- 該当病棟への新規入院受入れ（分母を増やす）による平均在院日数の引き下げ\n",
         ]
-        if _rolling_los_ds is not None:
-            _los_alert_lines.append(f"\n参考: 今月単月集計は {_current_avg_los}日")
-        if _c_count > 0:
-            _los_alert_lines.append(f"\n現在のC群患者数: **{_c_count}名** — この中から退院調整対象を選定してください")
-        st.error("".join(_los_alert_lines))
-    elif _los_over >= -1:
-        _judge_label2 = f"3ヶ月rolling {_judge_los}日" if _rolling_los_ds is not None else f"今月集計 {_current_avg_los}日"
-        st.warning(
-            f"⚠️ **平均在院日数 {_judge_label2} — 算定基準（{_max_avg_los}日以内）まで余裕 {-_los_over:.1f}日**\n\n"
-            "基準超過が近づいています。C群患者の退院タイミングに注意してください。"
+        if _c_count > 0 and _is_ward_view:
+            _los_alert_lines.append(f"\n現在の{_selected_ward_key}のC群患者数: **{_c_count}名**")
+        if _critical:
+            st.error("".join(_los_alert_lines))
+        else:
+            st.warning("".join(_los_alert_lines))
+    elif _rolling_los_ds is not None and _los_over > -1 and _los_over < 0:
+        # 選択病棟・全体が基準ぎりぎり（余裕1日未満）
+        st.info(
+            f"ℹ️ **余裕は{-_los_over:.1f}日** — {_selected_ward_key} の3ヶ月rolling は {_rolling_los_ds}日 "
+            f"で基準内ですが、基準超過が近づいています。C群患者の退院タイミングに注意してください。"
         )
 
     # --- 日次診療報酬・コスト・運営貢献額（プリセット連動で再計算）---
@@ -4404,12 +4481,14 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
                 "在院継続で運営貢献額28,900円/日を確保。"
             )
 
-    # --- 平均在院日数 算定基準クリア計画（全体表示時のみ — 算定基準は病院全体で判定） ---
+    # --- 平均在院日数 算定基準クリア計画（各病棟ごとに判定） ---
+    # ⚠️ 施設基準は各病棟ごとに満たす必要があるため、病棟選択時のみ表示。
+    # 「全体」選択時は、どの病棟でクリア計画が必要かを病棟別判定セクションで確認する。
     _alert_current_los = summary["平均在院日数"]
     _alert_los_over = _alert_current_los - _max_avg_los
-    if _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key == "全体":
+    if _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key in ("5F", "6F"):
         st.markdown("---")
-        st.subheader(f"🚨 平均在院日数 {_max_avg_los}日以内クリア計画")
+        st.subheader(f"🚨 {_selected_ward_key}病棟 平均在院日数 {_max_avg_los}日以内クリア計画")
 
         # --- 計算に必要なデータを取得 ---
         _alert_days_elapsed = days_in_month
@@ -4496,16 +4575,6 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         st.caption(
             f"※ 計算前提: 残り{_alert_days_left}日間の入院{_alert_adm_remaining}名・退院{_alert_dis_remaining_base}名（現ペース）"
             f"＋C群追加退院による在院患者延日数の減少（退院1名あたり平均{_avg_save_days:.0f}日分）"
-        )
-
-    # 病棟単体表示で在院日数超過の場合は参考メッセージのみ
-    elif _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key in ("5F", "6F"):
-        st.markdown("---")
-        st.info(
-            f"ℹ️ **{_selected_ward_key}の平均在院日数: {_alert_current_los:.1f}日**（参考値）\n\n"
-            f"算定基準（{_max_avg_los}日以内）は**病院全体**で判定されます。"
-            f"病棟単体の在院日数が長くても、全体で基準内であれば問題ありません。\n\n"
-            f"クリア計画は「全体（94床）」表示に切り替えてご確認ください。"
         )
 
     # --- 今日のアクションリスト ---
