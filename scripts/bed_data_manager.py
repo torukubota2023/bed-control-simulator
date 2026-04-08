@@ -550,7 +550,7 @@ def predict_monthly_kpi(
 # ---------------------------------------------------------------------------
 # 過去3ヶ月rolling 平均在院日数（2026年改定対応）
 # ---------------------------------------------------------------------------
-def calculate_rolling_los(df: pd.DataFrame, window_days: int = 90) -> dict | None:
+def calculate_rolling_los(df, window_days=90):
     """
     過去window_days日間の厚労省公式rolling平均在院日数を計算する。
 
