@@ -3813,9 +3813,11 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
         st.pyplot(fig)
         plt.close(fig)
 
-    # --- 理想構成比との比較（Little法則ベースの理論値）---
+    # --- 理論上限との比較（Little法則ベース）---
+    # ⚠️ これは「全患者が14日以上在院する」前提の上限値であり、
+    #    実際には早期退院があるため B 実績 < 上限、C 実績 > 上限 となる傾向がある
     st.markdown("---")
-    st.subheader("📐 理想構成比との比較（理論値ベース）")
+    st.subheader("📐 理論上限との比較（Little法則ベース）")
 
     # サイドバーの現在設定から理論値を動的計算
     # ⚠️ 病棟別表示時は、月間入院数も病床比率で按分する必要がある
@@ -3850,20 +3852,22 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     else:
         _adm_explain = f"月間入院数 **{_monthly_adm_input}人**"
     st.info(
-        f"📊 **理論値の前提条件**: "
+        f"📊 **理論上限の前提条件**: "
         f"{_adm_explain} × "
         f"目標稼働率 **{_target_occ_mid*100:.1f}%**（{target_lower*100:.0f}〜{target_upper*100:.0f}%の中央値） × "
         f"病床数 **{_view_beds}床** "
         f"→ 理論的平均在院日数 **{_ideal_result['target_los']:.1f}日**  \n"
         f"A群 (1-5日): **{_ideal_result['a_count']:.1f}人** / "
         f"B群 (6-14日): **{_ideal_result['b_count']:.1f}人** / "
-        f"C群 (15日-): **{_ideal_result['c_count']:.1f}人**"
+        f"C群 (15日-): **{_ideal_result['c_count']:.1f}人**  \n"
+        f"⚠️ **これは「全員が14日以上在院する」前提の上限値です。** "
+        f"実際には短期退院があるため、B群は上限より少なく・C群は上限より多くなるのが普通です。"
     )
     if not _ideal_result["feasible"]:
         st.warning(f"⚠️ {_ideal_result['notes']}")
 
     # 根拠の詳細説明
-    with st.expander("🔎 この理論値はどう計算しているか（Little法則）"):
+    with st.expander("🔎 この理論上限はどう計算しているか（Little法則）"):
         st.markdown(f"""
 **計算ステップ**
 
@@ -3875,19 +3879,21 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
    - 平均在院日数 = 在院患者数 ÷ 1日あたり入院数
    - {_ideal_result['target_patients']:.1f}人 ÷ {_ideal_result['daily_admissions']:.2f}人/日 = **{_ideal_result['target_los']:.1f}日**
 
-3. **決定論的フローモデルで各フェーズの人数を算出**
-   - 全患者が順にA群→B群→C群と流れる前提
-   - A群人数 = 1日の入院数 × 5日間 = {_ideal_result['daily_admissions']:.2f} × 5 = **{_ideal_result['a_count']:.1f}人**
-   - B群人数 = 1日の入院数 × 9日間 = {_ideal_result['daily_admissions']:.2f} × 9 = **{_ideal_result['b_count']:.1f}人**
-   - C群人数 = 1日の入院数 × (平均在院日数 - 14日) = {_ideal_result['daily_admissions']:.2f} × {max(0, _ideal_result['target_los']-14):.2f} = **{_ideal_result['c_count']:.1f}人**
+3. **「全員が14日以上在院する」前提で各フェーズの上限人数を算出**
+   - この前提なら、全患者が A群→B群→C群 と順に流れます
+   - A群上限 = 1日の入院数 × 5日間 = {_ideal_result['daily_admissions']:.2f} × 5 = **{_ideal_result['a_count']:.1f}人**
+   - B群上限 = 1日の入院数 × 9日間 = {_ideal_result['daily_admissions']:.2f} × 9 = **{_ideal_result['b_count']:.1f}人**
+   - C群上限 = 1日の入院数 × (平均在院日数 - 14日) = {_ideal_result['daily_admissions']:.2f} × {max(0, _ideal_result['target_los']-14):.2f} = **{_ideal_result['c_count']:.1f}人**
 
 4. **構成比に変換**
    - A群: {_ideal_result['a_pct']:.1f}% / B群: {_ideal_result['b_pct']:.1f}% / C群: {_ideal_result['c_pct']:.1f}%
 
-**重要な洞察**
-- A群とB群の人数は **入院数だけで決まる** （在院日数に無関係）
-- C群の人数は **「稼働率 - A群 - B群」の差分** として決まる
-- 月間入院数を変えると、A・B群の絶対数が変わり、比率もすべて変動する
+**⚠️ 実際との差の読み方**
+現実には、入院後14日を待たずに退院する患者さんがいます。その患者さんは B群にたどり着かない分だけ、**B群は上限より少なく**、代わりに長期在院の高齢フレイル例などが **C群を上限より押し上げる** 傾向があります。
+
+- B群が上限より低い = 早期退院が多い（必ずしも悪いことではない）
+- C群が上限より高い = 長期在院層が厚い（退院調整の余地を見る指標）
+- 合計人数（在院患者数）は Little 法則により保存されます
 
 **根拠**: [Little法則](https://en.wikipedia.org/wiki/Little%27s_law) — 待ち行列理論の基本法則
 `平均患者数 = 入院率 × 平均在院日数`
@@ -3898,11 +3904,11 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     _x_pos = np.arange(len(_phase_labels))
     _bar_w = 0.35
     _bars_ideal = ax.bar(_x_pos - _bar_w/2, [_ideal[k] for k in _phase_labels], _bar_w,
-                          label="理論値（Little法則）", color=["#F5B7B1", "#ABEBC6", "#AED6F1"], edgecolor="gray", linewidth=0.5)
+                          label="理論上限（全員14日以上在院の仮定）", color=["#F5B7B1", "#ABEBC6", "#AED6F1"], edgecolor="gray", linewidth=0.5)
     _bars_actual = ax.bar(_x_pos + _bar_w/2, [_actual_phase[k] for k in _phase_labels], _bar_w,
                            label="実績", color=[COLOR_A, COLOR_B, COLOR_C], alpha=0.85)
     ax.set_ylabel("構成比 (%)")
-    ax.set_title(f"理論値 vs 実績（月{_monthly_adm_input}人入院・稼働率{_target_occ_mid*100:.1f}%前提）")
+    ax.set_title(f"理論上限 vs 実績（月{_monthly_adm_input}人入院・稼働率{_target_occ_mid*100:.1f}%前提）")
     ax.set_xticks(_x_pos)
     ax.set_xticklabels(_phase_labels)
     ax.legend()
@@ -3917,14 +3923,18 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     st.pyplot(fig)
     plt.close(fig)
 
-    # 乖離の一文解説（理論値ベース）
+    # 乖離の一文解説（上限との差を「早期退院の多さ」「長期在院層の厚み」として読み替える）
     _b_diff = _actual_phase["B群"] - _ideal["B群"]
-    if _b_diff >= -2:
-        st.success(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）で良好な状態です。")
-    elif _b_diff > -5:
-        st.warning(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）でやや不足です。")
-    else:
-        st.error(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）で大幅に不足しています。退院・入院バランスの見直しが急務です。")
+    _c_diff = _actual_phase["C群"] - _ideal["C群"]
+    st.info(
+        f"**実績と上限の差の読み方**  \n"
+        f"- B群: 上限 {_ideal['B群']:.1f}% に対して実績 {_actual_phase['B群']:.1f}%（{_b_diff:+.1f}%）"
+        f" → 差がマイナスに大きいほど、入院後14日以内に退院する患者さんの割合が高いことを意味します  \n"
+        f"- C群: 上限 {_ideal['C群']:.1f}% に対して実績 {_actual_phase['C群']:.1f}%（{_c_diff:+.1f}%）"
+        f" → 差がプラスに大きいほど、15日以上の長期在院層が厚いことを意味します（退院調整の余地を見る指標）"
+    )
+    if _c_diff > 8:
+        st.warning(f"⚠️ C群が上限より {_c_diff:+.1f}% と大きく上回っています。長期在院層の退院調整を検討する価値があります。")
 
     # --- What-if シミュレーション（経営会議提案用）---
     st.markdown("---")
