@@ -1942,29 +1942,47 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 if _cw and _cw["overall_achievable"]:
                     _ee = _cw["equal_effort"]
                     _delta = _cw["delta"]
-                    _lines = [
-                        f"🤝 **全体主義での目標達成 — 均等努力方式**\n\n"
-                        f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
-                        f"**両病棟が均等に+{_delta:.1f}pt上昇**すれば全体達成可能です。\n\n"
-                        f"**■ 均等努力目標（残り{_cw['days_remaining']}日）**\n"
-                    ]
-                    for w in ["5F", "6F"]:
-                        _wi = _cw["wards"][w]
-                        _ei = _ee[w]
-                        _cap_note = "" if _ei["within_cap"] else f" ⚠️上限{_cw['helper_cap_pct']:.0f}%超"
-                        _lines.append(f"- {w}: 現在平均 {_wi['avg']:.1f}% → 目標 **{_ei['target']:.1f}%**（+{_delta:.1f}pt）{_cap_note}\n")
-                    _lines.append("\n")
-                    # 多段階シナリオ表
-                    _tbl = "**■ 上昇幅別シナリオ**\n\n"
-                    _tbl += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
-                    for _es in _cw["effort_scenarios"]:
-                        _mark = "✅" if _es["achieves_target"] and _es["feasible"] else "⚠️" if _es["achieves_target"] else "❌"
-                        if not _es["within_cap"]:
-                            _mark = "🔶" if _es["achieves_target"] else "❌"
-                        _bold = "**" if abs(_es["delta"] - _delta) < 0.1 else ""
-                        _tbl += f"| {_bold}+{_es['delta']:.1f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
-                    _lines.append(_tbl)
-                    st.session_state["_holistic_table_content"] = ("info", "".join(_lines))
+                    if _delta > 0:
+                        # Δ > 0: 両病棟とも追加努力が必要なケース
+                        _lines = [
+                            f"🤝 **全体主義での目標達成 — 均等努力方式**\n\n"
+                            f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
+                            f"**両病棟が均等に+{_delta:.1f}pt上昇**すれば全体達成可能です。\n\n"
+                            f"**■ 均等努力目標（残り{_cw['days_remaining']}日）**\n"
+                        ]
+                        for w in ["5F", "6F"]:
+                            _wi = _cw["wards"][w]
+                            _ei = _ee[w]
+                            _cap_note = "" if _ei["within_cap"] else f" ⚠️上限{_cw['helper_cap_pct']:.0f}%超"
+                            _lines.append(f"- {w}: 現在平均 {_wi['avg']:.1f}% → 目標 **{_ei['target']:.1f}%**（+{_delta:.1f}pt）{_cap_note}\n")
+                        _lines.append("\n")
+                        # 多段階シナリオ表
+                        _tbl = "**■ 上昇幅別シナリオ**\n\n"
+                        _tbl += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
+                        for _es in _cw["effort_scenarios"]:
+                            _mark = "✅" if _es["achieves_target"] and _es["feasible"] else "⚠️" if _es["achieves_target"] else "❌"
+                            if not _es["within_cap"]:
+                                _mark = "🔶" if _es["achieves_target"] else "❌"
+                            _bold = "**" if abs(_es["delta"] - _delta) < 0.1 else ""
+                            _tbl += f"| {_bold}+{_es['delta']:.1f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
+                        _lines.append(_tbl)
+                        st.session_state["_holistic_table_content"] = ("info", "".join(_lines))
+                    else:
+                        # Δ ≤ 0: 全体ペースは既に目標達成済 — 追加努力不要
+                        _other_w = "6F" if _selected_ward_key == "5F" else "5F"
+                        _wi_self = _cw["wards"][_selected_ward_key]
+                        _wi_other = _cw["wards"][_other_w]
+                        _overall_now = (_wi_self["avg"] * _wi_self["beds"] + _wi_other["avg"] * _wi_other["beds"]) / (_wi_self["beds"] + _wi_other["beds"])
+                        _lines = [
+                            f"🤝 **全体主義では既に目標達成ペース — 追加努力不要**\n\n"
+                            f"{_selected_ward_key}単体では{_cw['target_pct']:.0f}%達成は困難ですが、"
+                            f"**{_other_w}が{_wi_other['avg']:.1f}%で高稼働のため、全体（94床）では現在 {_overall_now:.1f}% で既に目標をクリア**しています。\n\n"
+                            f"- {_selected_ward_key}: 現在平均 {_wi_self['avg']:.1f}%\n"
+                            f"- {_other_w}: 現在平均 {_wi_other['avg']:.1f}%\n"
+                            f"- 全体加重平均: **{_overall_now:.1f}%** （目標{_cw['target_pct']:.0f}%クリア）\n\n"
+                            f"⚠️ ただし**施設基準は各病棟ごと**の判定のため、{_selected_ward_key}単体で基準を満たす必要がある場合は別途{_selected_ward_key}の単体目標（{_mt['required_occ']:.1f}%）を目指してください。\n"
+                        ]
+                        st.session_state["_holistic_table_content"] = ("success", "".join(_lines))
         return  # トレンドチェック不要
 
     # トレンド予測（稼働率が低下傾向か？）
@@ -3499,11 +3517,15 @@ with tabs[_tab_idx["📊 日次推移"]]:
                     )
                     if _cw_chart and _cw_chart.get("equal_effort"):
                         _ee_self_chart = _cw_chart["equal_effort"][_selected_ward_key]
-                        _ee_target = _ee_self_chart["target"]
-                        _has_equal_effort = True
                         _delta_chart = _cw_chart.get("delta", 0)
-                        if not _ee_self_chart["within_cap"]:
-                            _ee_over_cap = True
+                        # Δ > 0 の場合のみ「均等努力目標」を描画する。
+                        # Δ ≤ 0 は「全体ペースが既に目標達成済 = 追加努力不要」を意味するため、
+                        # 現状より低い数値を「目標」として表示すると誤解を招く。
+                        if _delta_chart > 0:
+                            _ee_target = _ee_self_chart["target"]
+                            _has_equal_effort = True
+                            if not _ee_self_chart["within_cap"]:
+                                _ee_over_cap = True
                 except Exception:
                     pass
 
