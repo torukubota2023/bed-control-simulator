@@ -557,6 +557,9 @@ def calculate_ideal_phase_ratios(
     days_per_month=30,
     phase_a_days=5,
     phase_b_end=14,
+    phase_a_contrib=24000,
+    phase_b_contrib=30000,
+    phase_c_contrib=28900,
 ):
     """
     Little法則に基づくフェーズ構成の **理論上限** を計算する。
@@ -640,11 +643,10 @@ def calculate_ideal_phase_ratios(
     else:
         a_pct = b_pct = c_pct = 0
 
-    # 日次運営貢献額（デフォルトコスト前提）
-    # A群: 36,000-12,000 = 24,000円/日
-    # B群: 36,000-6,000 = 30,000円/日
-    # C群: 33,400-4,500 = 28,900円/日
-    daily_contribution = a_count * 24000 + b_count * 30000 + c_count * 28900
+    # 日次運営貢献額（呼び出し元から診療報酬プリセットの値を受け取る）
+    # デフォルトは 2024年度相当（A=24,000 / B=30,000 / C=28,900 円/日）
+    # 2026年度プリセット等ではここに改定後の1日次貢献額が渡される
+    daily_contribution = a_count * phase_a_contrib + b_count * phase_b_contrib + c_count * phase_c_contrib
 
     # 物理的に達成可能か判定
     feasible = True

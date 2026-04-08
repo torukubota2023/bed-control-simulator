@@ -3834,6 +3834,9 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
         monthly_admissions=_monthly_adm_input,
         target_occupancy=_target_occ_mid,
         days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+        phase_a_contrib=phase_a_rev - phase_a_cost,
+        phase_b_contrib=phase_b_rev - phase_b_cost,
+        phase_c_contrib=phase_c_rev - phase_c_cost,
     )
     _ideal = {
         "A群": _ideal_result["a_pct"],
@@ -3983,12 +3986,15 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
             st.caption(f"現在のサイドバー設定: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%")
 
         with _whatif_col_right:
-            # 選択値で理論値を計算
+            # 選択値で理論値を計算（プリセットの診療報酬を反映）
             _whatif_result = calculate_ideal_phase_ratios(
                 num_beds=_view_beds,
                 monthly_admissions=_whatif_admissions,
                 target_occupancy=_whatif_occ,
                 days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+                phase_a_contrib=phase_a_rev - phase_a_cost,
+                phase_b_contrib=phase_b_rev - phase_b_cost,
+                phase_c_contrib=phase_c_rev - phase_c_cost,
             )
 
             # 上部: 主要メトリクス
@@ -4056,6 +4062,9 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
             monthly_admissions=int(_monthly_adm_input),
             target_occupancy=_target_occ_mid,
             days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+            phase_a_contrib=phase_a_rev - phase_a_cost,
+            phase_b_contrib=phase_b_rev - phase_b_cost,
+            phase_c_contrib=phase_c_rev - phase_c_cost,
         )
         _delta_contrib = (_whatif_result['daily_contribution'] - _current_result['daily_contribution'])
         _delta_contrib_monthly = _delta_contrib * 30

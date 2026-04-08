@@ -32,6 +32,11 @@ EXPECTED = {
     "equal_effort_delta_pt": (3.0, 7.0),  # positive, meaningful
     "rolling_los_5f_range": (15.0, 21.0),  # within facility criterion 21 days
     "rolling_los_6f_range": (17.0, 23.5),  # drifting above 21日 criterion (demo story)
+    # --- 診療報酬プリセットの反映チェック（What-if シミュレーションで使用） ---
+    # 2024年度 vs 2026年度 で 日次貢献額が増加するか（同一入院数・稼働率で）
+    "preset_contrib_2024_manyen_per_day": (240.0, 250.0),
+    "preset_contrib_2026_manyen_per_day": (260.0, 272.0),
+    "preset_contrib_delta_yearly_manyen": (7000.0, 8500.0),  # 改定効果のみ +7,200万円/年 と概ね一致
 }
 
 errors = []
@@ -110,6 +115,32 @@ try:
                 warnings_list.append(f"⚠️  rolling_los for {w} returned None")
     except ImportError as e:
         warnings_list.append(f"⚠️  bed_data_manager import failed: {e}")
+
+    # --- 5b. Fee preset reflection in calculate_ideal_phase_ratios ---
+    try:
+        from bed_data_manager import calculate_ideal_phase_ratios
+        r2024 = calculate_ideal_phase_ratios(
+            num_beds=94, monthly_admissions=150, target_occupancy=0.93, days_per_month=30,
+            phase_a_contrib=36000-12000, phase_b_contrib=36000-6000, phase_c_contrib=33400-4500,
+        )
+        r2026 = calculate_ideal_phase_ratios(
+            num_beds=94, monthly_admissions=150, target_occupancy=0.93, days_per_month=30,
+            phase_a_contrib=38500-12000, phase_b_contrib=38500-6000, phase_c_contrib=35500-4500,
+        )
+        contrib_2024 = r2024["daily_contribution"] / 10000
+        contrib_2026 = r2026["daily_contribution"] / 10000
+        delta_yearly = (r2026["daily_contribution"] - r2024["daily_contribution"]) * 365 / 10000
+        check("preset_contrib_2024_manyen_per_day", contrib_2024, EXPECTED["preset_contrib_2024_manyen_per_day"])
+        check("preset_contrib_2026_manyen_per_day", contrib_2026, EXPECTED["preset_contrib_2026_manyen_per_day"])
+        check("preset_contrib_delta_yearly_manyen", delta_yearly, EXPECTED["preset_contrib_delta_yearly_manyen"])
+        # Critical: 2026 must produce a strictly larger daily contribution than 2024
+        if contrib_2026 <= contrib_2024:
+            errors.append(
+                f"❌ CRITICAL: 2026 preset ({contrib_2026:.1f}万円) did not exceed 2024 ({contrib_2024:.1f}万円) — "
+                f"診療報酬プリセットがcalculate_ideal_phase_ratiosに反映されていない可能性"
+            )
+    except Exception as e:
+        errors.append(f"❌ preset reflection check crashed: {e}")
 
     # --- 6. App imports cleanly (syntax + top-level execution) ---
     try:
