@@ -1975,12 +1975,12 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                         _overall_now = (_wi_self["avg"] * _wi_self["beds"] + _wi_other["avg"] * _wi_other["beds"]) / (_wi_self["beds"] + _wi_other["beds"])
                         _lines = [
                             f"🤝 **全体主義では既に目標達成ペース — 追加努力不要**\n\n"
-                            f"{_selected_ward_key}単体では{_cw['target_pct']:.0f}%達成は困難ですが、"
+                            f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
                             f"**{_other_w}が{_wi_other['avg']:.1f}%で高稼働のため、全体（94床）では現在 {_overall_now:.1f}% で既に目標をクリア**しています。\n\n"
                             f"- {_selected_ward_key}: 現在平均 {_wi_self['avg']:.1f}%\n"
                             f"- {_other_w}: 現在平均 {_wi_other['avg']:.1f}%\n"
-                            f"- 全体加重平均: **{_overall_now:.1f}%** （目標{_cw['target_pct']:.0f}%クリア）\n\n"
-                            f"⚠️ ただし**施設基準は各病棟ごと**の判定のため、{_selected_ward_key}単体で基準を満たす必要がある場合は別途{_selected_ward_key}の単体目標（{_mt['required_occ']:.1f}%）を目指してください。\n"
+                            f"- 全体加重平均: **{_overall_now:.1f}%** （経営目標{_cw['target_pct']:.0f}%クリア）\n\n"
+                            f"💡 稼働率は経営目標（運営貢献額確保）のため。施設基準（地域包括医療病棟）の要件は**平均在院日数**のみで、稼働率要件はありません。\n"
                         ]
                         st.session_state["_holistic_table_content"] = ("success", "".join(_lines))
         return  # トレンドチェック不要

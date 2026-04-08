@@ -73,5 +73,19 @@ if [ $ERRORS -gt 0 ]; then
     exit 1
 fi
 
+# 4. Regression smoke test — bed_control_simulator_app.py の主要計算が期待値内か
+# bed_control_simulator_app.py または bed_data_manager.py または CSV が変更された時のみ実行
+SMOKE_TARGETS=$(echo "$FILES" | grep -E '(bed_control_simulator_app\.py|bed_data_manager\.py|sample_actual_data_ward_202604\.csv)' || true)
+if [ -n "$SMOKE_TARGETS" ] || [ $# -gt 0 ]; then
+    echo ""
+    echo "🧪 リグレッションスモークテスト実行中..."
+    REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+    if ! python3 "$REPO_ROOT/scripts/hooks/smoke_test.py"; then
+        echo "🚫 スモークテストが失敗しました。主要計算が期待値から外れています。"
+        echo "   意図的な変更の場合、scripts/hooks/smoke_test.py の EXPECTED を更新してください。"
+        exit 1
+    fi
+fi
+
 echo "✅ QA事前チェック完了"
 exit 0
