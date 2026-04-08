@@ -78,6 +78,7 @@ try:
         delete_record,
         calculate_daily_metrics,
         calculate_rolling_los,
+        calculate_ideal_phase_ratios,
         predict_occupancy_from_history,
         predict_monthly_kpi,
         generate_weekly_summary,
@@ -3663,25 +3664,85 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
         st.pyplot(fig)
         plt.close(fig)
 
-    # --- 理想構成比との比較 ---
+    # --- 理想構成比との比較（Little法則ベースの理論値）---
     st.markdown("---")
-    st.subheader("📐 理想構成比との比較")
-    _ideal = {"A群": 15, "B群": 45, "C群": 40}
+    st.subheader("📐 理想構成比との比較（理論値ベース）")
+
+    # サイドバーの現在設定から理論値を動的計算
+    _target_occ_mid = (target_lower + target_upper) / 2  # 90-95%範囲の中央値
+    _monthly_adm_input = params_dict.get("monthly_admissions", 150)
+    _ideal_result = calculate_ideal_phase_ratios(
+        num_beds=_view_beds,
+        monthly_admissions=_monthly_adm_input,
+        target_occupancy=_target_occ_mid,
+        days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+    )
+    _ideal = {
+        "A群": _ideal_result["a_pct"],
+        "B群": _ideal_result["b_pct"],
+        "C群": _ideal_result["c_pct"],
+    }
     _actual_phase = {
         "A群": summary["A群平均構成比"],
         "B群": summary["B群平均構成比"],
         "C群": summary["C群平均構成比"],
     }
+
+    # 理論値の導出条件を表示
+    st.info(
+        f"📊 **理論値の前提条件**: "
+        f"月間入院数 **{_monthly_adm_input}人** × "
+        f"目標稼働率 **{_target_occ_mid*100:.1f}%**（{target_lower*100:.0f}〜{target_upper*100:.0f}%の中央値） × "
+        f"病床数 **{_view_beds}床** "
+        f"→ 理論的平均在院日数 **{_ideal_result['target_los']:.1f}日**  \n"
+        f"A群 (1-5日): **{_ideal_result['a_count']:.1f}人** / "
+        f"B群 (6-14日): **{_ideal_result['b_count']:.1f}人** / "
+        f"C群 (15日-): **{_ideal_result['c_count']:.1f}人**"
+    )
+    if not _ideal_result["feasible"]:
+        st.warning(f"⚠️ {_ideal_result['notes']}")
+
+    # 根拠の詳細説明
+    with st.expander("🔎 この理論値はどう計算しているか（Little法則）"):
+        st.markdown(f"""
+**計算ステップ**
+
+1. **目標稼働率から必要な在院患者数を算出**
+   - 目標在院患者数 = 病床数 × 目標稼働率
+   - {_view_beds}床 × {_target_occ_mid*100:.1f}% = **{_ideal_result['target_patients']:.1f}人**
+
+2. **Little法則で平均在院日数を逆算**
+   - 平均在院日数 = 在院患者数 ÷ 1日あたり入院数
+   - {_ideal_result['target_patients']:.1f}人 ÷ {_ideal_result['daily_admissions']:.2f}人/日 = **{_ideal_result['target_los']:.1f}日**
+
+3. **決定論的フローモデルで各フェーズの人数を算出**
+   - 全患者が順にA群→B群→C群と流れる前提
+   - A群人数 = 1日の入院数 × 5日間 = {_ideal_result['daily_admissions']:.2f} × 5 = **{_ideal_result['a_count']:.1f}人**
+   - B群人数 = 1日の入院数 × 9日間 = {_ideal_result['daily_admissions']:.2f} × 9 = **{_ideal_result['b_count']:.1f}人**
+   - C群人数 = 1日の入院数 × (平均在院日数 - 14日) = {_ideal_result['daily_admissions']:.2f} × {max(0, _ideal_result['target_los']-14):.2f} = **{_ideal_result['c_count']:.1f}人**
+
+4. **構成比に変換**
+   - A群: {_ideal_result['a_pct']:.1f}% / B群: {_ideal_result['b_pct']:.1f}% / C群: {_ideal_result['c_pct']:.1f}%
+
+**重要な洞察**
+- A群とB群の人数は **入院数だけで決まる** （在院日数に無関係）
+- C群の人数は **「稼働率 - A群 - B群」の差分** として決まる
+- 月間入院数を変えると、A・B群の絶対数が変わり、比率もすべて変動する
+
+**根拠**: [Little法則](https://en.wikipedia.org/wiki/Little%27s_law) — 待ち行列理論の基本法則
+`平均患者数 = 入院率 × 平均在院日数`
+""")
+
     fig, ax = plt.subplots(figsize=(8, 4))
     _phase_labels = list(_ideal.keys())
     _x_pos = np.arange(len(_phase_labels))
     _bar_w = 0.35
     _bars_ideal = ax.bar(_x_pos - _bar_w/2, [_ideal[k] for k in _phase_labels], _bar_w,
-                          label="理想", color=["#F5B7B1", "#ABEBC6", "#AED6F1"], edgecolor="gray", linewidth=0.5)
+                          label="理論値（Little法則）", color=["#F5B7B1", "#ABEBC6", "#AED6F1"], edgecolor="gray", linewidth=0.5)
     _bars_actual = ax.bar(_x_pos + _bar_w/2, [_actual_phase[k] for k in _phase_labels], _bar_w,
                            label="実績", color=[COLOR_A, COLOR_B, COLOR_C], alpha=0.85)
     ax.set_ylabel("構成比 (%)")
-    ax.set_title("理想 vs 実績 フェーズ構成比")
+    ax.set_title(f"理論値 vs 実績（月{_monthly_adm_input}人入院・稼働率{_target_occ_mid*100:.1f}%前提）")
     ax.set_xticks(_x_pos)
     ax.set_xticklabels(_phase_labels)
     ax.legend()
@@ -3689,21 +3750,21 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     # 値ラベル
     for _bar in _bars_ideal:
         _h = _bar.get_height()
-        ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.0f}%", ha="center", fontsize=9, color="gray")
+        ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.1f}%", ha="center", fontsize=9, color="gray")
     for _bar in _bars_actual:
         _h = _bar.get_height()
         ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.1f}%", ha="center", fontsize=9)
     st.pyplot(fig)
     plt.close(fig)
 
-    # 乖離の一文解説
+    # 乖離の一文解説（理論値ベース）
     _b_diff = _actual_phase["B群"] - _ideal["B群"]
-    if _b_diff >= 0:
-        st.success(f"B群（安定貢献層）は理想比率を **+{_b_diff:.1f}%** 上回っています。良好な状態です。")
+    if _b_diff >= -2:
+        st.success(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）で良好な状態です。")
     elif _b_diff > -5:
-        st.warning(f"B群（安定貢献層）は理想比率を **{_b_diff:.1f}%** 下回っています。やや注意が必要です。")
+        st.warning(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）でやや不足です。")
     else:
-        st.error(f"B群（安定貢献層）は理想比率を **{_b_diff:.1f}%** 下回っています。退院・入院バランスの見直しが急務です。")
+        st.error(f"B群（安定貢献層）は理論値 {_ideal['B群']:.1f}% に対して {_actual_phase['B群']:.1f}% （{_b_diff:+.1f}%）で大幅に不足しています。退院・入院バランスの見直しが急務です。")
 
     # 病棟別フェーズ構成は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 

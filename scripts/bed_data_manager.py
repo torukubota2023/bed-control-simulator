@@ -548,6 +548,131 @@ def predict_monthly_kpi(
 
 
 # ---------------------------------------------------------------------------
+# 理論的フェーズ構成比（Little法則 + 決定論的フローモデル）
+# ---------------------------------------------------------------------------
+def calculate_ideal_phase_ratios(
+    num_beds=94,
+    monthly_admissions=150,
+    target_occupancy=0.925,
+    days_per_month=30,
+    phase_a_days=5,
+    phase_b_end=14,
+):
+    """
+    Little法則に基づく理論的な理想フェーズ構成比を計算する。
+
+    前提となる理論モデル（決定論的フロー）:
+    1. 月間入院数 × 目標稼働率 から Little法則で平均在院日数 L を逆算
+       L = (target_occupancy × num_beds × days_per_month) / monthly_admissions
+    2. 全患者が L 日入院し、1日目から順にフェーズを流れる
+       - A群: 入院1-5日目（phase_a_days=5日間）
+       - B群: 入院6-14日目（9日間）
+       - C群: 入院15日目以降（L-14日間）
+    3. 定常状態でのLittle法則より、各フェーズの患者数は入院率×日数で決まる:
+       - A群人数 = 入院率/日 × 5
+       - B群人数 = 入院率/日 × 9  （L ≥ 14 の場合）
+       - C群人数 = 入院率/日 × (L - 14)
+    4. 月150人入院・稼働率92.5%の場合、L=17.4日となり、
+       A:28.8% / B:51.8% / C:19.5% が理論的理想比率となる。
+
+    Args:
+        num_beds: 総病床数
+        monthly_admissions: 月間入院数
+        target_occupancy: 目標稼働率（0-1, 例: 0.925）
+        days_per_month: 月の日数（デフォルト30）
+        phase_a_days: A群境界（1〜phase_a_days日目, デフォルト5）
+        phase_b_end: B群終端（phase_a_days+1〜phase_b_end日目, デフォルト14）
+
+    Returns:
+        dict: {
+            "target_los": 目標平均在院日数(日),
+            "target_patients": 目標在院患者数,
+            "daily_admissions": 1日あたり入院数,
+            "a_count": A群人数,
+            "b_count": B群人数,
+            "c_count": C群人数,
+            "total_count": 総患者数,
+            "a_pct": A群構成比(%),
+            "b_pct": B群構成比(%),
+            "c_pct": C群構成比(%),
+            "daily_contribution": 日次運営貢献額(円, デフォルトコスト前提),
+            "feasible": 理論値が物理的に達成可能か,
+            "notes": 注記メッセージ,
+        }
+    """
+    # 1日あたり入院数
+    daily_admissions = monthly_admissions / days_per_month
+    # 目標在院患者数
+    target_patients = target_occupancy * num_beds
+    # 平均在院日数を Little法則で逆算
+    if daily_admissions <= 0:
+        target_los = 0
+    else:
+        target_los = target_patients / daily_admissions
+
+    # 決定論的フローモデルで各フェーズの患者数を算出
+    # A群: 入院1-phase_a_days日目
+    a_duration = min(phase_a_days, target_los)
+    a_count = daily_admissions * a_duration
+
+    # B群: phase_a_days+1 〜 phase_b_end 日目
+    b_duration = max(0, min(phase_b_end, target_los) - phase_a_days)
+    b_count = daily_admissions * b_duration
+
+    # C群: phase_b_end+1 日目以降
+    c_duration = max(0, target_los - phase_b_end)
+    c_count = daily_admissions * c_duration
+
+    total_count = a_count + b_count + c_count
+
+    if total_count > 0:
+        a_pct = a_count / total_count * 100
+        b_pct = b_count / total_count * 100
+        c_pct = c_count / total_count * 100
+    else:
+        a_pct = b_pct = c_pct = 0
+
+    # 日次運営貢献額（デフォルトコスト前提）
+    # A群: 36,000-12,000 = 24,000円/日
+    # B群: 36,000-6,000 = 30,000円/日
+    # C群: 33,400-4,500 = 28,900円/日
+    daily_contribution = a_count * 24000 + b_count * 30000 + c_count * 28900
+
+    # 物理的に達成可能か判定
+    feasible = True
+    notes = ""
+    if target_los < phase_b_end:
+        feasible = False
+        notes = (
+            f"目標在院日数{target_los:.1f}日 < {phase_b_end}日のため、"
+            f"C群は存在しません（全員がB群までで退院）。"
+            f"入院数を減らすか、目標稼働率を上げる必要があります。"
+        )
+    elif target_los > 60:
+        feasible = False
+        notes = (
+            f"目標在院日数{target_los:.1f}日 が長すぎます。"
+            f"入院数を増やすか、目標稼働率を下げる必要があります。"
+        )
+
+    return {
+        "target_los": round(target_los, 2),
+        "target_patients": round(target_patients, 1),
+        "daily_admissions": round(daily_admissions, 2),
+        "a_count": round(a_count, 1),
+        "b_count": round(b_count, 1),
+        "c_count": round(c_count, 1),
+        "total_count": round(total_count, 1),
+        "a_pct": round(a_pct, 1),
+        "b_pct": round(b_pct, 1),
+        "c_pct": round(c_pct, 1),
+        "daily_contribution": int(daily_contribution),
+        "feasible": feasible,
+        "notes": notes,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 過去3ヶ月rolling 平均在院日数（2026年改定対応）
 # ---------------------------------------------------------------------------
 def calculate_rolling_los(df, window_days=90):
