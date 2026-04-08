@@ -1526,7 +1526,25 @@ def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
     """
     try:
         _occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
-        _occ_values = raw_df[_occ_col].dropna().values.copy()
+
+        # 現在月のデータのみにフィルタリング（rolling LOS計算用の過去90日データを除外）
+        # raw_dfには過去3ヶ月分のデータが含まれる場合があるため、最新日付と同じ年月のみに絞る
+        _current_month_df = raw_df
+        _D = total_days_in_month
+        for _dc in ["date", "日付"]:
+            if _dc in raw_df.columns:
+                try:
+                    _dates = pd.to_datetime(raw_df[_dc])
+                    _last_date = _dates.iloc[-1]
+                    _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
+                    # 最新日と同じ年月の行のみ抽出
+                    _same_month_mask = (_dates.dt.year == _last_date.year) & (_dates.dt.month == _last_date.month)
+                    _current_month_df = raw_df[_same_month_mask]
+                    break
+                except Exception:
+                    pass
+
+        _occ_values = _current_month_df[_occ_col].dropna().values.copy()
         if len(_occ_values) == 0:
             return None
 
@@ -1536,17 +1554,6 @@ def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
 
         _avg_so_far = float(_occ_values.mean())
         _days_elapsed = len(_occ_values)
-
-        # 月の総日数を決定（データの日付から、またはパラメータから）
-        _D = total_days_in_month
-        for _dc in ["date", "日付"]:
-            if _dc in raw_df.columns:
-                try:
-                    _last_date = pd.to_datetime(raw_df[_dc].iloc[-1])
-                    _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
-                    break
-                except Exception:
-                    pass
 
         _days_remaining = max(0, _D - _days_elapsed)
         _target_pct = target_lower * 100  # 例: 90.0
@@ -1621,7 +1628,23 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
             if raw_df is None or not isinstance(raw_df, pd.DataFrame) or len(raw_df) == 0:
                 return None
             _occ_col = "occupancy_rate" if "occupancy_rate" in raw_df.columns else "稼働率"
-            _occ = raw_df[_occ_col].dropna().values.copy()
+
+            # 現在月のデータのみに絞る（rolling LOS用の過去90日データを除外）
+            _current_month_df = raw_df
+            _D = total_days_in_month
+            for _dc in ["date", "日付"]:
+                if _dc in raw_df.columns:
+                    try:
+                        _dates = pd.to_datetime(raw_df[_dc])
+                        _last_date = _dates.iloc[-1]
+                        _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
+                        _same_month_mask = (_dates.dt.year == _last_date.year) & (_dates.dt.month == _last_date.month)
+                        _current_month_df = raw_df[_same_month_mask]
+                        break
+                    except Exception:
+                        pass
+
+            _occ = _current_month_df[_occ_col].dropna().values.copy()
             if len(_occ) == 0:
                 return None
             if _occ.mean() < 1.5:
@@ -1630,16 +1653,6 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
             avg = float(_occ.mean())
             days_elapsed = len(_occ)
             last_occ = float(_occ[-1])
-
-            _D = total_days_in_month
-            for _dc in ["date", "日付"]:
-                if _dc in raw_df.columns:
-                    try:
-                        _last_date = pd.to_datetime(raw_df[_dc].iloc[-1])
-                        _D = calendar.monthrange(_last_date.year, _last_date.month)[1]
-                        break
-                    except Exception:
-                        pass
 
             days_remaining = max(0, _D - days_elapsed)
             bd_done = beds * days_elapsed * (avg / 100)
