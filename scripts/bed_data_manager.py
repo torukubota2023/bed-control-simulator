@@ -153,7 +153,7 @@ def create_empty_dataframe() -> pd.DataFrame:
     return df
 
 
-def validate_record(record: dict, existing_df: pd.DataFrame | None = None) -> tuple[bool, str]:
+def validate_record(record, existing_df=None):
     """
     入力値のバリデーション。
 
@@ -434,10 +434,10 @@ def predict_occupancy_from_history(
 
 
 def predict_monthly_kpi(
-    df: pd.DataFrame,
-    num_beds: int = 94,
-    revenue_params: dict | None = None,
-) -> dict:
+    df,
+    num_beds=94,
+    revenue_params=None,
+):
     """
     過去データから今月の着地予想を算出。
 
@@ -1239,7 +1239,7 @@ def _generate_los_distribution(max_days: int, rng) -> list:
     return [w / total for w in weights]
 
 
-def generate_sample_data(num_days: int = 30, num_beds: int | None = None, seed: int = 42, ward: str = "all") -> pd.DataFrame:
+def generate_sample_data(num_days=30, num_beds=None, seed=42, ward="all"):
     """
     デモ用サンプルデータを生成（個人情報なし、集計値のみ）。
 
@@ -1638,9 +1638,9 @@ def get_monthly_summary_by_doctor(
 
 
 def get_discharge_weekday_distribution(
-    df: pd.DataFrame,
-    doctor_name: str | None = None,
-) -> dict:
+    df,
+    doctor_name=None,
+):
     """
     退院の曜日別分布を返す。
 
