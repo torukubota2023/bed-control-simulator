@@ -4481,101 +4481,139 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
                 "在院継続で運営貢献額28,900円/日を確保。"
             )
 
-    # --- 平均在院日数 算定基準クリア計画（各病棟ごとに判定） ---
-    # ⚠️ 施設基準は各病棟ごとに満たす必要があるため、病棟選択時のみ表示。
-    # 「全体」選択時は、どの病棟でクリア計画が必要かを病棟別判定セクションで確認する。
-    _alert_current_los = summary["平均在院日数"]
-    _alert_los_over = _alert_current_los - _max_avg_los
-    if _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key in ("5F", "6F"):
-        st.markdown("---")
-        st.subheader(f"🚨 {_selected_ward_key}病棟 平均在院日数 {_max_avg_los}日以内クリア計画")
+    # --- 平均在院日数 算定基準クリア計画（病棟別に判定・各病棟個別表示） ---
+    # ⚠️ 施設基準は各病棟ごとに満たす必要があるため、超過している病棟ごとに
+    # クリア計画を表示する。「全体」表示時でも病棟別に表示する。
 
-        # --- 計算に必要なデータを取得 ---
-        _alert_days_elapsed = days_in_month
-        _alert_days_left = _calendar_month_days - _alert_days_elapsed
-        _alert_total_adm = summary["月間入院数"]
-        _alert_total_dis = summary["月間退院数"]
+    def _render_clearance_plan(ward_label, ward_df, ward_summary, max_avg_los):
+        """指定病棟のクリア計画を計算・表示する。基準超過時のみ表示。"""
+        try:
+            ward_los = ward_summary.get("平均在院日数", 0)
+            los_over = ward_los - max_avg_los
+            if los_over <= 0:
+                return False  # 表示なし
 
-        # 在院患者延日数を逆算: avg_los = patient_days / ((adm + dis) / 2)
-        _alert_half_turnover = (_alert_total_adm + _alert_total_dis) / 2
-        _alert_patient_days_past = _alert_current_los * _alert_half_turnover
+            if not (_calendar_month_days > days_in_month):
+                return False
 
-        # 直近の在院患者数・C群数
-        _alert_last_patients = int(df["在院患者数"].iloc[-1]) if "在院患者数" in df.columns else int(df["total_patients"].iloc[-1]) if "total_patients" in df.columns else _view_beds
-        _alert_last_c = int(df["C群_患者数"].iloc[-1]) if "C群_患者数" in df.columns else 0
+            days_elapsed_local = days_in_month
+            days_left = _calendar_month_days - days_elapsed_local
+            total_adm = ward_summary.get("月間入院数", 0)
+            total_dis = ward_summary.get("月間退院数", 0)
 
-        # 残り期間の予測（現在のペースが続く場合）
-        _alert_daily_adm = _alert_total_adm / max(_alert_days_elapsed, 1)
-        _alert_daily_dis_base = _alert_total_dis / max(_alert_days_elapsed, 1)
-        _alert_adm_remaining = round(_alert_daily_adm * _alert_days_left)
-        _alert_dis_remaining_base = round(_alert_daily_dis_base * _alert_days_left)
+            half_turnover = (total_adm + total_dis) / 2
+            patient_days_past = ward_los * half_turnover
 
-        # 介入なし（現ペース継続）の月末予測
-        _alert_pd_remaining_base = _alert_last_patients * _alert_days_left  # 簡易推計
-        _alert_pd_month_base = _alert_patient_days_past + _alert_pd_remaining_base
-        _alert_adm_month = _alert_total_adm + _alert_adm_remaining
-        _alert_dis_month_base = _alert_total_dis + _alert_dis_remaining_base
-        _alert_ht_month_base = (_alert_adm_month + _alert_dis_month_base) / 2
-        _alert_los_month_base = _alert_pd_month_base / max(_alert_ht_month_base, 1)
+            # 直近の在院患者数・C群数
+            tp_col = "在院患者数" if "在院患者数" in ward_df.columns else ("total_patients" if "total_patients" in ward_df.columns else None)
+            c_col = "C群_患者数" if "C群_患者数" in ward_df.columns else ("phase_c_count" if "phase_c_count" in ward_df.columns else None)
+            ward_beds_local = get_ward_beds(ward_label) if ward_label in ("5F", "6F") else _TOTAL_BEDS_METRIC
+            last_patients = int(ward_df[tp_col].iloc[-1]) if tp_col else ward_beds_local
+            last_c = int(ward_df[c_col].iloc[-1]) if c_col else 0
 
-        # C群追加退院 n人の場合の計算（退院が早いほど効果大→平均で残りの半分と仮定）
-        _avg_save_days = _alert_days_left * 0.6  # 退院が早いほど効果大、平均6割の日数を節約
-        _alert_n_needed = 0
-        for _n in range(1, _alert_last_c + 20):
-            _pd_saved = _n * _avg_save_days
-            _new_pd = _alert_pd_month_base - _pd_saved
-            _new_dis = _alert_dis_month_base + _n
-            _new_ht = (_alert_adm_month + _new_dis) / 2
-            _new_los = _new_pd / max(_new_ht, 1)
-            if _new_los <= _max_avg_los:
-                _alert_n_needed = _n
-                break
-        else:
-            _alert_n_needed = _n  # 最大値
+            daily_adm = total_adm / max(days_elapsed_local, 1)
+            daily_dis = total_dis / max(days_elapsed_local, 1)
+            adm_remaining = round(daily_adm * days_left)
+            dis_remaining_base = round(daily_dis * days_left)
 
-        # 結果表示
-        st.error(
-            f"**現状**: 平均在院日数 **{_alert_current_los}日**（基準 {_max_avg_los}日以内を **+{_alert_los_over:.1f}日超過**）\n\n"
-            f"**月末予測（このままの場合）**: 約 **{_alert_los_month_base:.1f}日** — {'基準超過が継続' if _alert_los_month_base > _max_avg_los else '自然に基準内に収まる見込み'}\n\n"
-            f"**必要な対策**: 残り **{_alert_days_left}日** でC群（在院15日以上）患者を "
-            f"**追加{_alert_n_needed}名** 退院させれば基準クリア見込み"
-        )
+            pd_remaining_base = last_patients * days_left
+            pd_month_base = patient_days_past + pd_remaining_base
+            adm_month = total_adm + adm_remaining
+            dis_month_base = total_dis + dis_remaining_base
+            ht_month_base = (adm_month + dis_month_base) / 2
+            los_month_base = pd_month_base / max(ht_month_base, 1)
 
-        # 具体的なアクションテーブル
-        _plan_col1, _plan_col2 = st.columns(2)
-        with _plan_col1:
-            st.markdown("**退院計画シミュレーション**")
-            _plan_rows = []
-            for _pn in range(0, min(_alert_n_needed + 3, _alert_last_c + 1)):
-                _pn_pd = _alert_pd_month_base - _pn * _avg_save_days
-                _pn_dis = _alert_dis_month_base + _pn
-                _pn_ht = (_alert_adm_month + _pn_dis) / 2
-                _pn_los = _pn_pd / max(_pn_ht, 1)
-                _pn_status = "✅ クリア" if _pn_los <= _max_avg_los else "❌ 超過"
-                _plan_rows.append({
-                    "C群追加退院数": f"{_pn}名",
-                    "予測平均在院日数": f"{_pn_los:.1f}日",
-                    "判定": _pn_status,
-                })
-            st.dataframe(pd.DataFrame(_plan_rows), hide_index=True, use_container_width=True)
+            avg_save_days = days_left * 0.6
+            n_needed = 0
+            for n in range(1, last_c + 20):
+                pd_saved = n * avg_save_days
+                new_pd = pd_month_base - pd_saved
+                new_dis = dis_month_base + n
+                new_ht = (adm_month + new_dis) / 2
+                new_los = new_pd / max(new_ht, 1)
+                if new_los <= max_avg_los:
+                    n_needed = n
+                    break
+            else:
+                n_needed = n
 
-        with _plan_col2:
-            st.markdown("**退院候補の優先順位**")
-            st.markdown(
-                "1. **在院日数が最も長いC群患者**から順に退院調整\n"
-                "2. 退院先の確保状況を連携室に確認\n"
-                "3. 退院前カンファレンスを今週中に実施\n\n"
-                f"現在のC群患者: **{_alert_last_c}名**\n\n"
-                f"このうち **{_alert_n_needed}名** の退院で基準クリア\n\n"
-                "**同時に新規入院の受入れ**（分母増加）も有効:\n"
-                f"- 現在の入院ペース: 約{_alert_daily_adm:.1f}名/日\n"
-                f"- 入院を増やすほど平均在院日数は下がる"
+            st.markdown("---")
+            st.subheader(f"🚨 {ward_label}病棟 平均在院日数 {max_avg_los}日以内クリア計画")
+            st.error(
+                f"**現状**: 平均在院日数 **{ward_los}日**（基準 {max_avg_los}日以内を **+{los_over:.1f}日超過**）\n\n"
+                f"**月末予測（このままの場合）**: 約 **{los_month_base:.1f}日** — "
+                f"{'基準超過が継続' if los_month_base > max_avg_los else '自然に基準内に収まる見込み'}\n\n"
+                f"**必要な対策**: 残り **{days_left}日** でC群（在院15日以上）患者を "
+                f"**追加{n_needed}名** 退院させれば基準クリア見込み"
             )
 
-        st.caption(
-            f"※ 計算前提: 残り{_alert_days_left}日間の入院{_alert_adm_remaining}名・退院{_alert_dis_remaining_base}名（現ペース）"
-            f"＋C群追加退院による在院患者延日数の減少（退院1名あたり平均{_avg_save_days:.0f}日分）"
-        )
+            plan_col1, plan_col2 = st.columns(2)
+            with plan_col1:
+                st.markdown("**退院計画シミュレーション**")
+                plan_rows = []
+                for pn in range(0, min(n_needed + 3, last_c + 1)):
+                    pn_pd = pd_month_base - pn * avg_save_days
+                    pn_dis = dis_month_base + pn
+                    pn_ht = (adm_month + pn_dis) / 2
+                    pn_los = pn_pd / max(pn_ht, 1)
+                    pn_status = "✅ クリア" if pn_los <= max_avg_los else "❌ 超過"
+                    plan_rows.append({
+                        "C群追加退院数": f"{pn}名",
+                        "予測平均在院日数": f"{pn_los:.1f}日",
+                        "判定": pn_status,
+                    })
+                st.dataframe(pd.DataFrame(plan_rows), hide_index=True, use_container_width=True)
+
+            with plan_col2:
+                st.markdown("**退院候補の優先順位**")
+                st.markdown(
+                    "1. **在院日数が最も長いC群患者**から順に退院調整\n"
+                    "2. 退院先の確保状況を連携室に確認\n"
+                    "3. 退院前カンファレンスを今週中に実施\n\n"
+                    f"現在の{ward_label}のC群患者: **{last_c}名**\n\n"
+                    f"このうち **{n_needed}名** の退院で基準クリア\n\n"
+                    "**同時に新規入院の受入れ**（分母増加）も有効:\n"
+                    f"- 現在の入院ペース: 約{daily_adm:.1f}名/日\n"
+                    f"- 入院を増やすほど平均在院日数は下がる"
+                )
+
+            st.caption(
+                f"※ 計算前提: 残り{days_left}日間の入院{adm_remaining}名・退院{dis_remaining_base}名（現ペース）"
+                f"＋C群追加退院による在院患者延日数の減少（退院1名あたり平均{avg_save_days:.0f}日分）"
+            )
+            return True
+        except Exception:
+            return False
+
+    # 「全体」モード時: 各病棟のクリア計画を順次チェック・表示
+    # 「病棟」モード時: その病棟のクリア計画のみ表示
+    if _selected_ward_key == "全体":
+        # 全体モードでも各病棟のサマリーから個別判定する
+        if globals().get("_ward_data_available", False):
+            _ward_dfs_plan = globals().get("_ward_raw_dfs", {})
+            _ward_displays_plan = globals().get("_ward_display_dfs", {})
+            for _w_label in ["5F", "6F"]:
+                _w_raw_df_plan = _ward_dfs_plan.get(_w_label) if _ward_dfs_plan else None
+                _w_disp_df_plan = _ward_displays_plan.get(_w_label) if _ward_displays_plan else None
+                if _w_raw_df_plan is None or len(_w_raw_df_plan) == 0:
+                    continue
+                # 病棟別サマリーを再計算（厚労省公式）
+                _w_pd = float(_w_raw_df_plan["total_patients"].sum())
+                _w_adm = float(_w_raw_df_plan["new_admissions"].sum())
+                _w_dis_n = float(_w_raw_df_plan["discharges"].sum())
+                _w_los_denom = (_w_adm + _w_dis_n) / 2
+                _w_los = round(_w_pd / _w_los_denom, 1) if _w_los_denom > 0 else 0
+                _w_summary_plan = {
+                    "平均在院日数": _w_los,
+                    "月間入院数": int(_w_adm),
+                    "月間退院数": int(_w_dis_n),
+                }
+                # 表示用 DataFrame: 在院患者数・C群_患者数 のフォールバック対応
+                _w_render_df = _w_disp_df_plan if _w_disp_df_plan is not None and len(_w_disp_df_plan) > 0 else _w_raw_df_plan
+                _render_clearance_plan(_w_label, _w_render_df, _w_summary_plan, _max_avg_los)
+    else:
+        # 病棟モード: その病棟のみ
+        _render_clearance_plan(_selected_ward_key, df, summary, _max_avg_los)
 
     # --- 今日のアクションリスト ---
     st.markdown("---")
@@ -4602,11 +4640,35 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
         _remaining_days = _calc_remaining_days(_active_raw_df)
         _action_items.append(f"🔴 空床{_last_empty}床（未活用病床コスト 約{_last_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
         _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で運営貢献額確保し稼働率維持を優先")
-    # 平均在院日数超過時のアクション（全体表示時のみ — _alert_n_needed は全体ブロックで定義）
-    if _alert_los_over > 0 and _calendar_month_days > days_in_month and _selected_ward_key == "全体":
-        _action_items.append(
-            f"🚨 **平均在院日数{_alert_current_los}日（基準{_max_avg_los}日超過）** → C群から{_alert_n_needed}名の退院調整を今週中に実施"
-        )
+    # 平均在院日数超過時のアクション（病棟別判定 — クリア計画は上のセクションに表示済み）
+    # 各病棟ごとに判定し、超過していれば該当病棟のアクションを追加
+    _alert_action_added = False
+    if _calendar_month_days > days_in_month:
+        # 選択ビューの平均在院日数で判定
+        _view_avg_los = summary.get("平均在院日数", 0)
+        _view_los_over = _view_avg_los - _max_avg_los
+        if _view_los_over > 0 and _selected_ward_key in ("5F", "6F"):
+            _action_items.append(
+                f"🚨 **{_selected_ward_key}病棟 平均在院日数{_view_avg_los}日（基準{_max_avg_los}日超過）** → C群退院調整を今週中に実施（クリア計画参照）"
+            )
+            _alert_action_added = True
+        elif _selected_ward_key == "全体" and globals().get("_ward_data_available", False):
+            # 全体モード: 各病棟を個別判定
+            _ward_dfs_act = globals().get("_ward_raw_dfs", {})
+            for _w_act in ["5F", "6F"]:
+                _w_df_act = _ward_dfs_act.get(_w_act) if _ward_dfs_act else None
+                if _w_df_act is None or len(_w_df_act) == 0:
+                    continue
+                _w_pd_a = float(_w_df_act["total_patients"].sum())
+                _w_adm_a = float(_w_df_act["new_admissions"].sum())
+                _w_dis_a = float(_w_df_act["discharges"].sum())
+                _w_denom_a = (_w_adm_a + _w_dis_a) / 2
+                _w_los_a = round(_w_pd_a / _w_denom_a, 1) if _w_denom_a > 0 else 0
+                if _w_los_a > _max_avg_los:
+                    _action_items.append(
+                        f"🚨 **{_w_act}病棟 平均在院日数{_w_los_a}日（基準{_max_avg_los}日超過）** → C群退院調整を今週中に実施（クリア計画参照）"
+                    )
+                    _alert_action_added = True
     if "稼働率超過" in _last_flags:
         _action_items.append(f"退院調整を優先（在院{_last_patients}名、稼働率{_last_occ:.1f}%）")
     if "A群過多" in _last_flags:
