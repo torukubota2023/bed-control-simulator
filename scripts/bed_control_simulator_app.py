@@ -3962,28 +3962,48 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
                 _wi_max = 180
                 _wi_step = 5
                 _wi_help = "全体の月間入院数を120〜180人の範囲で変更できます"
+            # Session state を明示的に初期化する（`value=` と `key=` の併用による
+            # 状態不整合を避けるため）
+            _key_adm = f"whatif_phase_adm_{_selected_ward_key}"
+            _key_occ = f"whatif_phase_occ_{_selected_ward_key}"
+            _default_adm = int(max(_wi_min, min(_wi_max, _monthly_adm_input)))
+            _default_occ = int(round(_target_occ_mid * 100))
+            if _key_adm not in st.session_state:
+                st.session_state[_key_adm] = _default_adm
+            if _key_occ not in st.session_state:
+                st.session_state[_key_occ] = _default_occ
+            # スライダー値がプリセット/病棟切替で min/max レンジ外になった場合のクランプ
+            if st.session_state[_key_adm] < _wi_min or st.session_state[_key_adm] > _wi_max:
+                st.session_state[_key_adm] = _default_adm
+            if st.session_state[_key_occ] < 85 or st.session_state[_key_occ] > 100:
+                st.session_state[_key_occ] = _default_occ
+
             _whatif_admissions = st.slider(
                 "月間入院数",
                 min_value=_wi_min,
                 max_value=_wi_max,
-                value=int(max(_wi_min, min(_wi_max, _monthly_adm_input))),
                 step=_wi_step,
-                key=f"whatif_phase_adm_{_selected_ward_key}",
+                key=_key_adm,
                 help=_wi_help,
             )
             _whatif_occ_pct = st.slider(
                 "目標稼働率 (%)",
                 min_value=85,
                 max_value=100,
-                value=int(_target_occ_mid * 100),
                 step=1,
-                key=f"whatif_phase_occ_{_selected_ward_key}",
+                key=_key_occ,
                 help="目標稼働率を85〜100%の範囲で変更できます",
             )
+            # 念のため session_state から直接読む（戻り値とずれていた場合の防御）
+            _whatif_admissions = int(st.session_state[_key_adm])
+            _whatif_occ_pct = int(st.session_state[_key_occ])
             _whatif_occ = _whatif_occ_pct / 100
 
             st.markdown("")
-            st.caption(f"現在のサイドバー設定: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%")
+            st.caption(
+                f"現在のサイドバー設定（ベースライン）: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%  \n"
+                f"↑ このスライダーの値: **月{_whatif_admissions}人 / {_whatif_occ_pct}%**（右側の計算に使用中）"
+            )
 
         with _whatif_col_right:
             # 選択値で理論値を計算（プリセットの診療報酬を反映）
