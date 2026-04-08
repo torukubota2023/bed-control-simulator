@@ -1303,7 +1303,10 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
         # パラメータ辞書を構築（CLI版互換 + 実データ変換用）
         # _build_cli_params を使って完全なパラメータセットを取得
         _actual_params = _build_cli_params(params_dict)
-        _actual_raw_df = convert_actual_to_display(_source_data_all, _actual_params)
+        # _full: 過去90日rolling LOS用の全データ
+        _actual_raw_df_full = convert_actual_to_display(_source_data_all, _actual_params)
+        # 現在月のみにフィルタ（チャート・サマリー用）
+        _actual_raw_df = _filter_current_month(_actual_raw_df_full)
         _actual_display_df = _rename_df(_actual_raw_df)
 
         # サマリー生成（実データ用）
@@ -1353,27 +1356,37 @@ if _is_actual_data_mode and _DATA_MANAGER_AVAILABLE:
         _ward_data_available = ("ward" in _source_data.columns
                                 and _source_data["ward"].isin(["5F", "6F"]).any())
         if _ward_data_available:
-            _ward_raw_dfs = {}
+            _ward_raw_dfs_full = {}  # rolling LOS用の全データ
+            _ward_raw_dfs = {}       # 現在月のみ（チャート・サマリー用）
             _ward_display_dfs = {}
             for _w in ["5F", "6F"]:
                 _w_data = _source_data[_source_data["ward"] == _w].copy()
                 if len(_w_data) > 0:
                     _w_params = _actual_params.copy()
                     _w_params["num_beds"] = get_ward_beds(_w)
-                    _ward_raw_dfs[_w] = convert_actual_to_display(_w_data, _w_params)
+                    _w_full = convert_actual_to_display(_w_data, _w_params)
+                    _ward_raw_dfs_full[_w] = _w_full
+                    _ward_raw_dfs[_w] = _filter_current_month(_w_full)
                     _ward_display_dfs[_w] = _rename_df(_ward_raw_dfs[_w])
         else:
             _ward_data_available = False
+            _ward_raw_dfs_full = {}
             _ward_raw_dfs = {}
             _ward_display_dfs = {}
 
         # 全体主義計算用にセッションステートへ保存（全タブから参照可能に）
         st.session_state.ward_raw_dfs = _ward_raw_dfs if _ward_data_available else {}
+        st.session_state.ward_raw_dfs_full = _ward_raw_dfs_full if _ward_data_available else {}
+        st.session_state.actual_df_raw_full = _actual_raw_df_full
+
+        # _active_raw_df_full のデフォルト（全体選択時は全体の full データ）
+        _active_raw_df_full = _actual_raw_df_full
 
         # --- Ward selector データバインディング ---
         if _selected_ward_key in ("5F", "6F") and _ward_data_available and _selected_ward_key in _ward_raw_dfs:
             _view_beds = get_ward_beds(_selected_ward_key)
             _active_raw_df = _ward_raw_dfs[_selected_ward_key]
+            _active_raw_df_full = _ward_raw_dfs_full.get(_selected_ward_key, _active_raw_df)
             _active_display_df = _ward_display_dfs[_selected_ward_key]
             # Override the main df and raw_df used by all tabs
             st.session_state.actual_df = _active_display_df
@@ -1504,6 +1517,25 @@ def _calc_remaining_days(raw_df):
         return max(0, _days_in_month - _last_date.day)
     except Exception:
         return calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day
+
+
+def _filter_current_month(df_in):
+    """
+    最新日付と同じ年月の行のみに絞り込む。rolling LOS用の過去90日データを除外するために使う。
+    日付カラムがなければそのまま返す。
+    """
+    if not isinstance(df_in, pd.DataFrame) or len(df_in) == 0:
+        return df_in
+    for _dc in ("date", "日付"):
+        if _dc in df_in.columns:
+            try:
+                _dates = pd.to_datetime(df_in[_dc])
+                _last = _dates.iloc[-1]
+                _mask = (_dates.dt.year == _last.year) & (_dates.dt.month == _last.month)
+                return df_in[_mask].reset_index(drop=True)
+            except Exception:
+                return df_in
+    return df_in
 
 
 def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
@@ -2166,13 +2198,16 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
         # 各病棟それぞれが満たす必要がある。したがって5F/6F個別に rolling LOS を表示する。
         if _DATA_MANAGER_AVAILABLE:
             _ward_rolling_results = {}
-            _ward_dfs_for_rolling = globals().get("_ward_raw_dfs", {})
+            _ward_dfs_for_rolling = (
+                globals().get("_ward_raw_dfs_full", {})
+                or st.session_state.get("ward_raw_dfs_full", {})
+            )
             for _w in ["5F", "6F"]:
                 _wdf = _ward_dfs_for_rolling.get(_w) if _ward_dfs_for_rolling else None
                 if _wdf is None or not isinstance(_wdf, pd.DataFrame) or len(_wdf) == 0:
-                    # フォールバック: 選択中の病棟と一致すれば _active_raw_df を使う
-                    if _selected_ward_key == _w and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                        _wdf = _active_raw_df
+                    # フォールバック: 選択中の病棟と一致すれば _active_raw_df_full を使う
+                    if _selected_ward_key == _w and isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0:
+                        _wdf = _active_raw_df_full
                     else:
                         continue
                 try:
@@ -3261,6 +3296,8 @@ if '_calendar_month_days' not in locals():
 # ---------------------------------------------------------------------------
 if '_active_raw_df' not in locals():
     _active_raw_df = pd.DataFrame()
+if '_active_raw_df_full' not in locals():
+    _active_raw_df_full = _active_raw_df
 if '_active_display_df' not in locals():
     _active_display_df = pd.DataFrame()
 if '_active_cli_params' not in locals():
@@ -4178,9 +4215,9 @@ with tabs[_tab_idx["💰 運営分析"]]:
     _rolling_los_ds = None
     _rolling_days_ds = 0
     _rolling_is_partial_ds = False
-    if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+    if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0:
         try:
-            _rolling_ds = calculate_rolling_los(_active_raw_df, window_days=90)
+            _rolling_ds = calculate_rolling_los(_active_raw_df_full, window_days=90)
             if _rolling_ds:
                 _rolling_los_ds = _rolling_ds.get("rolling_los")
                 _rolling_days_ds = _rolling_ds.get("actual_days", 0)
@@ -4191,11 +4228,14 @@ with tabs[_tab_idx["💰 運営分析"]]:
     # 各病棟ごとの rolling を計算
     _ward_rolling_ds = {}
     if _DATA_MANAGER_AVAILABLE:
-        _ward_dfs_ds = globals().get("_ward_raw_dfs", {})
+        _ward_dfs_ds = (
+            globals().get("_ward_raw_dfs_full", {})
+            or st.session_state.get("ward_raw_dfs_full", {})
+        )
         for _w in ["5F", "6F"]:
             _wdf_ds = _ward_dfs_ds.get(_w) if _ward_dfs_ds else None
-            if _wdf_ds is None and _selected_ward_key == _w and isinstance(_active_raw_df, pd.DataFrame):
-                _wdf_ds = _active_raw_df
+            if _wdf_ds is None and _selected_ward_key == _w and isinstance(_active_raw_df_full, pd.DataFrame):
+                _wdf_ds = _active_raw_df_full
             if _wdf_ds is not None and isinstance(_wdf_ds, pd.DataFrame) and len(_wdf_ds) > 0:
                 try:
                     _ward_rolling_ds[_w] = calculate_rolling_los(_wdf_ds, window_days=90)
