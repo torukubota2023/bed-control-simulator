@@ -67,6 +67,9 @@ def generate_summary_message(
     discharges: int,
     avg_los: float | None = None,
     notes: str | None = None,
+    rolling_los: float | None = None,
+    rolling_los_limit: int | None = None,
+    rolling_days: int | None = None,
 ) -> str:
     """
     全体サマリーメッセージ（全員向け）を生成する。
@@ -86,9 +89,15 @@ def generate_summary_message(
     discharges : int
         当日退院数
     avg_los : float, optional
-        平均在院日数
+        平均在院日数（今月集計）
     notes : str, optional
         追加コメント（状況・対応方針など）
+    rolling_los : float, optional
+        過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準判定用）
+    rolling_los_limit : int, optional
+        施設基準の上限日数（例: 21日、20日）
+    rolling_days : int, optional
+        rolling計算に使った実際の日数（90日に満たない場合もあり）
 
     Returns
     -------
@@ -126,9 +135,23 @@ def generate_summary_message(
     # 入退院サマリー
     lines.append(f"本日 入院{admissions} 退院{discharges} 純増{net_sign}{net_change}")
 
-    # 平均在院日数
+    # 平均在院日数（今月集計）
     if avg_los is not None:
         lines.append(f"平均在院日数:{avg_los:.1f}日")
+
+    # 過去3ヶ月rolling 平均在院日数（施設基準判定用・2026年改定対応）
+    if rolling_los is not None:
+        if rolling_los_limit is not None:
+            if rolling_los <= rolling_los_limit:
+                _status = "✅"
+            elif rolling_los <= rolling_los_limit + 0.5:
+                _status = "⚠"
+            else:
+                _status = "🔴"
+            _suffix = f"（{rolling_days}日分）" if rolling_days is not None and rolling_days < 90 else ""
+            lines.append(f"3M平均在院:{rolling_los:.1f}日/{rolling_los_limit}日{_status}{_suffix}")
+        else:
+            lines.append(f"3M平均在院:{rolling_los:.1f}日")
 
     # 追加コメント
     if notes and notes.strip():
@@ -310,9 +333,34 @@ def render_hope_tab(
         )
     with col5:
         avg_los = st.number_input(
-            "平均在院日数", min_value=0.0, max_value=60.0, value=17.8,
+            "平均在院日数（今月集計）", min_value=0.0, max_value=60.0, value=17.8,
             step=0.1, format="%.1f",
             key="hope_avg_los",
+        )
+
+    # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応） ---
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+        rolling_los_input = st.number_input(
+            "3ヶ月平均在院日数（施設基準判定）",
+            min_value=0.0, max_value=60.0, value=19.2,
+            step=0.1, format="%.1f",
+            key="hope_rolling_los",
+            help="過去3ヶ月（90日）のrolling平均在院日数。意思決定ダッシュボードの値と合わせてください。",
+        )
+    with col_r2:
+        rolling_limit_input = st.number_input(
+            "施設基準上限（日）",
+            min_value=15, max_value=25, value=21,
+            key="hope_rolling_limit",
+            help="2025年度: 21日、2026年度: 20日（85歳以上緩和時 21日）",
+        )
+    with col_r3:
+        rolling_days_input = st.number_input(
+            "計算日数（90日未満ならデータ不足）",
+            min_value=1, max_value=90, value=90,
+            key="hope_rolling_days",
+            help="90日分揃っていない場合は実際の日数を入力",
         )
 
     # 追加コメント入力
@@ -339,6 +387,9 @@ def render_hope_tab(
         discharges=discharges,
         avg_los=avg_los,
         notes=notes if notes and notes.strip() else None,
+        rolling_los=rolling_los_input if rolling_los_input > 0 else None,
+        rolling_los_limit=rolling_limit_input,
+        rolling_days=rolling_days_input,
     )
 
     # プレビュー表示

@@ -18,8 +18,8 @@ const {
 } = require("docx");
 
 // ─── Config ───
-const INPUT = "/Users/torukubota/ai-management/docs/admin/BedControl_Manual_v3.md";
-const OUTPUT = "/Users/torukubota/ai-management/docs/admin/BedControl_Manual_v3.docx";
+const INPUT = "/Users/kubotatoru/ai-management/docs/admin/BedControl_Manual_v3.md";
+const OUTPUT = "/Users/kubotatoru/ai-management/docs/admin/BedControl_Manual_v3.docx";
 
 const FONT_BODY = "Hiragino Sans W3";
 const FONT_HEADING = "Hiragino Sans W6";

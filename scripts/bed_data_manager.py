@@ -548,6 +548,89 @@ def predict_monthly_kpi(
 
 
 # ---------------------------------------------------------------------------
+# 過去3ヶ月rolling 平均在院日数（2026年改定対応）
+# ---------------------------------------------------------------------------
+def calculate_rolling_los(df: pd.DataFrame, window_days: int = 90) -> dict | None:
+    """
+    過去window_days日間の厚労省公式rolling平均在院日数を計算する。
+
+    計算式（厚労省 病院報告の定義）:
+        平均在院日数 = 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)
+
+    データが window_days 日に満たない場合は、揃っている日数で計算する。
+    2026年度改定対応: 地域包括医療病棟入院料1の施設基準判定は
+    過去3ヶ月rolling平均で行われる。
+
+    Args:
+        df: 日次データ（date, total_patients, new_admissions, discharges列必須）
+            全体 or 病棟フィルタ済みのものを渡す
+        window_days: rolling window 日数（デフォルト90日=3ヶ月）
+
+    Returns:
+        dict or None: {
+            "rolling_los": float or None,      # rolling平均在院日数（日）
+            "actual_days": int,                # 実際に使った日数
+            "total_patient_days": float,       # 在院患者延日数
+            "total_admissions": float,         # 期間内新入院数
+            "total_discharges": float,         # 期間内退院数
+            "is_partial": bool,                # window_daysに満たないか
+            "end_date": Timestamp or None,     # 計算対象期間の最終日
+            "start_date": Timestamp or None,   # 計算対象期間の開始日
+        }
+    """
+    if df is None or len(df) == 0:
+        return None
+
+    df_sorted = df.copy()
+    # date列の検出（date または 日付）
+    date_col = None
+    for _c in ["date", "日付"]:
+        if _c in df_sorted.columns:
+            date_col = _c
+            break
+    if date_col is None:
+        return None
+
+    df_sorted[date_col] = pd.to_datetime(df_sorted[date_col])
+    df_sorted = df_sorted.sort_values(date_col).reset_index(drop=True)
+
+    # 最新のwindow_days日分を取得
+    window_df = df_sorted.tail(window_days)
+    actual_days = len(window_df)
+
+    # 列名の検出（英語/日本語両対応）
+    tp_col = "total_patients" if "total_patients" in window_df.columns else "在院患者数"
+    adm_col = "new_admissions" if "new_admissions" in window_df.columns else "新規入院"
+    dis_col = "discharges" if "discharges" in window_df.columns else "退院"
+
+    if tp_col not in window_df.columns or adm_col not in window_df.columns or dis_col not in window_df.columns:
+        return None
+
+    total_patient_days = float(window_df[tp_col].sum())
+    total_admissions = float(window_df[adm_col].sum())
+    total_discharges = float(window_df[dis_col].sum())
+
+    denominator = (total_admissions + total_discharges) / 2
+
+    result = {
+        "actual_days": actual_days,
+        "total_patient_days": total_patient_days,
+        "total_admissions": total_admissions,
+        "total_discharges": total_discharges,
+        "is_partial": actual_days < window_days,
+        "end_date": window_df[date_col].iloc[-1] if actual_days > 0 else None,
+        "start_date": window_df[date_col].iloc[0] if actual_days > 0 else None,
+    }
+
+    if denominator <= 0 or total_patient_days <= 0:
+        result["rolling_los"] = None
+    else:
+        result["rolling_los"] = round(total_patient_days / denominator, 1)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 週次サマリー
 # ---------------------------------------------------------------------------
 def generate_weekly_summary(df: pd.DataFrame, num_beds: int = 94) -> list[dict]:
