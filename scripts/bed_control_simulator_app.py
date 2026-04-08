@@ -3395,67 +3395,80 @@ with tabs[_tab_idx["📊 日次推移"]]:
         _required_occ_pct = _mt_chart["required_occ"]
         _occ_pct_values = (df["稼働率"] * 100).tolist()
 
-        # --- 全体主義計算（均等努力方式 — 目標線の描画方法を決定）---
+        # --- 全体主義計算（均等努力方式）---
+        # 病棟別表示時に、単体目標線に加えて均等努力目標線も表示する
         _has_equal_effort = False
-        _ee_target = None  # この病棟の均等努力目標
+        _ee_target = None
         _ee_over_cap = False
-        _holistic_ward_dfs = _get_holistic_ward_dfs()
-        if _selected_ward_key in ("5F", "6F") and _holistic_ward_dfs:
-            _cw_chart = _calc_cross_ward_target(_holistic_ward_dfs, target_lower, _calendar_month_days, get_ward_beds, helper_cap * 100)
-            if _cw_chart and _cw_chart["overall_achievable"] and _cw_chart.get("equal_effort"):
-                _ee_self_chart = _cw_chart["equal_effort"][_selected_ward_key]
-                _ee_target = _ee_self_chart["target"]
-                _has_equal_effort = True
-                if not _ee_self_chart["within_cap"]:
-                    _ee_over_cap = True
+        _delta_chart = 0
+        if _selected_ward_key in ("5F", "6F"):
+            # _get_holistic_ward_dfs() がうまく動かない場合の3段階フォールバック
+            _holistic_ward_dfs = _get_holistic_ward_dfs()
+            if not _holistic_ward_dfs:
+                _holistic_ward_dfs = globals().get("_ward_raw_dfs", {})
+            if _holistic_ward_dfs and "5F" in _holistic_ward_dfs and "6F" in _holistic_ward_dfs:
+                try:
+                    _cw_chart = _calc_cross_ward_target(
+                        _holistic_ward_dfs, target_lower, _calendar_month_days,
+                        get_ward_beds, helper_cap * 100,
+                    )
+                    if _cw_chart and _cw_chart.get("equal_effort"):
+                        _ee_self_chart = _cw_chart["equal_effort"][_selected_ward_key]
+                        _ee_target = _ee_self_chart["target"]
+                        _has_equal_effort = True
+                        _delta_chart = _cw_chart.get("delta", 0)
+                        if not _ee_self_chart["within_cap"]:
+                            _ee_over_cap = True
+                except Exception:
+                    pass
 
-        # --- 目標ライン描画 ---
-        if _has_equal_effort and _ee_target is not None:
-            # 均等努力目標（青い線）を表示
-            _display_req = min(_ee_target, helper_cap * 100) if _ee_over_cap else _ee_target
-            _cross_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-            _cross_y = [_occ_pct_values[-1], _display_req, _display_req]
-            _line_color = "#E67E22" if _ee_over_cap else "#3498DB"
-            ax.plot(_cross_x, _cross_y,
-                    linestyle=":", linewidth=2.5, color=_line_color,
-                    marker="", zorder=5, alpha=0.9)
-            _delta_chart = _cw_chart["delta"]
-            if _ee_over_cap:
-                _cross_label = f'上限{helper_cap * 100:.0f}%'
-            else:
-                _cross_label = f'均等努力目標\n{_display_req:.1f}%（+{_delta_chart:.1f}pt）'
-            ax.annotate(
-                _cross_label,
-                xy=(_chart_end_day - 2, _display_req),
-                fontsize=10, fontweight="bold", color=_line_color,
-                ha="right", va="bottom",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_line_color, alpha=0.9),
-            )
+        # --- 目標ライン描画（単体目標を常時表示、均等努力目標を併記）---
+        # 1. 単体目標線（赤/オレンジ/緑の破線）を必ず表示
+        _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+        _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
+
+        if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
+            _target_color = "#1E8449"
+            _target_label = f'単体目標 維持\n{_required_occ_pct:.1f}%以上'
         else:
-            # 通常表示: 単体目標線を表示
-            _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-            _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
+            _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
+            _target_label = f'単体目標 必要\n{_required_occ_pct:.1f}%'
 
-            if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
-                _target_color = "#1E8449"
-                _target_label = f'現ペース維持で達成\n{_required_occ_pct:.1f}%以上'
+        ax.plot(_target_x, _target_y,
+                linestyle="--", linewidth=2.5, color=_target_color,
+                marker="", zorder=5, label=f"単体目標 {_required_occ_pct:.1f}%")
+        ax.annotate(
+            _target_label,
+            xy=(_chart_end_day - 2, _required_occ_pct),
+            fontsize=9, fontweight="bold", color=_target_color,
+            ha="right", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
+        )
+
+        # 2. 均等努力目標線（青い点線）— 全体主義での目標達成ライン
+        if _has_equal_effort and _ee_target is not None:
+            _ee_display = min(_ee_target, helper_cap * 100) if _ee_over_cap else _ee_target
+            _ee_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+            _ee_y = [_occ_pct_values[-1], _ee_display, _ee_display]
+            _ee_line_color = "#E67E22" if _ee_over_cap else "#3498DB"
+            ax.plot(_ee_x, _ee_y,
+                    linestyle=":", linewidth=2.5, color=_ee_line_color,
+                    marker="", zorder=4, alpha=0.85,
+                    label=f"均等努力 {_ee_display:.1f}%")
+            if _ee_over_cap:
+                _ee_label = f'均等努力(上限到達)\n{helper_cap*100:.0f}%'
             else:
-                _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
-                _target_label = f'目標達成に必要\n{_required_occ_pct:.1f}%'
-
-            ax.plot(_target_x, _target_y,
-                    linestyle="--", linewidth=2.5, color=_target_color,
-                    marker="", zorder=5)
+                _delta_sign = "+" if _delta_chart >= 0 else ""
+                _ee_label = f'均等努力目標\n{_ee_display:.1f}%（{_delta_sign}{_delta_chart:.1f}pt）'
+            # ラベル位置: 単体目標と被らないよう、下側に配置
+            _label_va = "top" if _ee_display < _required_occ_pct else "bottom"
             ax.annotate(
-                _target_label,
-                xy=(_chart_end_day - 2, _required_occ_pct),
-                fontsize=10, fontweight="bold", color=_target_color,
-                ha="right", va="bottom",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
+                _ee_label,
+                xy=(_chart_end_day - 6, _ee_display),
+                fontsize=9, fontweight="bold", color=_ee_line_color,
+                ha="right", va=_label_va,
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_ee_line_color, alpha=0.9),
             )
-
-            # 困難側病棟には青い全体主義ラインを出さない
-            # （現状維持で全体達成可能という情報はアクションにつながらないため）
 
         # X軸の範囲を月末まで拡張
         ax.set_xlim(1, _chart_end_day + 0.5)
@@ -3698,8 +3711,15 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     st.subheader("📐 理想構成比との比較（理論値ベース）")
 
     # サイドバーの現在設定から理論値を動的計算
+    # ⚠️ 病棟別表示時は、月間入院数も病床比率で按分する必要がある
+    # （全体150人 × 47床/94床 = 75人/月 が病棟あたりの想定入院数）
     _target_occ_mid = (target_lower + target_upper) / 2  # 90-95%範囲の中央値
-    _monthly_adm_input = params_dict.get("monthly_admissions", 150)
+    _monthly_adm_full = params_dict.get("monthly_admissions", 150)
+    if _selected_ward_key in ("5F", "6F"):
+        _bed_ratio_phase = _view_beds / _TOTAL_BEDS_METRIC if _TOTAL_BEDS_METRIC > 0 else 0.5
+        _monthly_adm_input = int(round(_monthly_adm_full * _bed_ratio_phase))
+    else:
+        _monthly_adm_input = _monthly_adm_full
     _ideal_result = calculate_ideal_phase_ratios(
         num_beds=_view_beds,
         monthly_admissions=_monthly_adm_input,
@@ -3718,9 +3738,13 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
     }
 
     # 理論値の導出条件を表示
+    if _selected_ward_key in ("5F", "6F"):
+        _adm_explain = f"月間入院数 **{_monthly_adm_input}人**（全体{_monthly_adm_full}人 × {_view_beds}/{_TOTAL_BEDS_METRIC}床比按分）"
+    else:
+        _adm_explain = f"月間入院数 **{_monthly_adm_input}人**"
     st.info(
         f"📊 **理論値の前提条件**: "
-        f"月間入院数 **{_monthly_adm_input}人** × "
+        f"{_adm_explain} × "
         f"目標稼働率 **{_target_occ_mid*100:.1f}%**（{target_lower*100:.0f}〜{target_upper*100:.0f}%の中央値） × "
         f"病床数 **{_view_beds}床** "
         f"→ 理論的平均在院日数 **{_ideal_result['target_los']:.1f}日**  \n"
@@ -3807,14 +3831,25 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
 
         with _whatif_col_left:
             st.markdown("**📊 シナリオ設定**")
+            # 病棟別表示時はスライダー範囲も病床比率で按分
+            if _selected_ward_key in ("5F", "6F"):
+                _wi_min = 60
+                _wi_max = 90
+                _wi_step = 5
+                _wi_help = f"{_selected_ward_key}病棟の月間入院数を60〜90人の範囲で変更できます"
+            else:
+                _wi_min = 120
+                _wi_max = 180
+                _wi_step = 5
+                _wi_help = "全体の月間入院数を120〜180人の範囲で変更できます"
             _whatif_admissions = st.slider(
                 "月間入院数",
-                min_value=120,
-                max_value=180,
-                value=int(_monthly_adm_input),
-                step=5,
+                min_value=_wi_min,
+                max_value=_wi_max,
+                value=int(max(_wi_min, min(_wi_max, _monthly_adm_input))),
+                step=_wi_step,
                 key=f"whatif_phase_adm_{_selected_ward_key}",
-                help="月間の入院数を120〜180人の範囲で変更できます",
+                help=_wi_help,
             )
             _whatif_occ_pct = st.slider(
                 "目標稼働率 (%)",
