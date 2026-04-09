@@ -5415,6 +5415,22 @@ if "\U0001f52e What-if分析" in _tab_idx:
 
                     st.markdown("---")
 
+                    # プリセットの pending 適用（ウィジェット作成前に行う必要がある）
+                    # Streamlit の制約: ウィジェットキーに紐づく session_state は
+                    # ウィジェット作成後に書き込めないため、pending フラグ方式で対応
+                    if "_wi_pending_preset" in st.session_state:
+                        _pvals_pending = st.session_state.pop("_wi_pending_preset")
+                        st.session_state["wi_mixed_da"] = min(_pvals_pending[0], _wi_cur_a)
+                        st.session_state["wi_mixed_db"] = min(_pvals_pending[1], _wi_cur_b)
+                        st.session_state["wi_mixed_dc"] = min(_pvals_pending[2], _wi_cur_c)
+                        _remaining_pp = _wi_cur_total - (
+                            min(_pvals_pending[0], _wi_cur_a)
+                            + min(_pvals_pending[1], _wi_cur_b)
+                            + min(_pvals_pending[2], _wi_cur_c)
+                        )
+                        _avail_pp = max(0, _cli_params["num_beds"] - max(_remaining_pp, 0))
+                        st.session_state["wi_mixed_new"] = min(_pvals_pending[3], _avail_pp)
+
                     # 退院予定と新規入院を横並びで入力
                     _col_discharge, _col_admission = st.columns([3, 2])
 
@@ -5459,16 +5475,9 @@ if "\U0001f52e What-if分析" in _tab_idx:
                     for _pi, (_pname, _pvals) in enumerate(_presets.items()):
                         with _preset_cols[_pi]:
                             if st.button(_pname, key=f"preset_{_pi}", width="stretch"):
-                                st.session_state["wi_mixed_da"] = min(_pvals[0], _wi_cur_a)
-                                st.session_state["wi_mixed_db"] = min(_pvals[1], _wi_cur_b)
-                                st.session_state["wi_mixed_dc"] = min(_pvals[2], _wi_cur_c)
-                                _remaining_p = _wi_cur_total - (
-                                    min(_pvals[0], _wi_cur_a)
-                                    + min(_pvals[1], _wi_cur_b)
-                                    + min(_pvals[2], _wi_cur_c)
-                                )
-                                _avail_p = max(0, _cli_params["num_beds"] - max(_remaining_p, 0))
-                                st.session_state["wi_mixed_new"] = min(_pvals[3], _avail_p)
+                                # pending フラグで保存 → 次回 rerun 時に
+                                # ウィジェット作成前に適用される
+                                st.session_state["_wi_pending_preset"] = _pvals
                                 st.rerun()
 
                     st.markdown("---")
