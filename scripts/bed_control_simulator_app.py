@@ -3530,20 +3530,24 @@ with tabs[_tab_idx["📊 日次推移"]]:
                     pass
 
         # --- 目標ライン描画（単体目標を常時表示、均等努力目標を併記）---
-        # 1. 単体目標線（赤/オレンジ/緑の破線）を必ず表示
+        # 1. 目標線（赤/オレンジ/緑の破線）を必ず表示
+        # 表示病棟に応じてラベル文言を切り替え
+        # - 「全体」選択時: 全体目標（94床ベース）
+        # - 「5F」「6F」選択時: 単体目標（各病棟ベース）
+        _label_scope = "全体目標" if _selected_ward_key == "全体" else "単体目標"
         _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
         _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
 
         if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
             _target_color = "#1E8449"
-            _target_label = f'単体目標 維持\n{_required_occ_pct:.1f}%以上'
+            _target_label = f'{_label_scope} 維持\n{_required_occ_pct:.1f}%以上'
         else:
             _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
-            _target_label = f'単体目標 必要\n{_required_occ_pct:.1f}%'
+            _target_label = f'{_label_scope} 必要\n{_required_occ_pct:.1f}%'
 
         ax.plot(_target_x, _target_y,
                 linestyle="--", linewidth=2.5, color=_target_color,
-                marker="", zorder=5, label=f"単体目標 {_required_occ_pct:.1f}%")
+                marker="", zorder=5, label=f"{_label_scope} {_required_occ_pct:.1f}%")
         ax.annotate(
             _target_label,
             xy=(_chart_end_day - 2, _required_occ_pct),
