@@ -1776,9 +1776,10 @@ def _calc_cross_ward_target(ward_raw_dfs, target_lower, total_days_in_month, war
             }
 
         # 多段階シナリオ（均等努力の上昇幅別）
+        # 1.0pt 刻み、範囲 -2.0 ~ +10.0pt（必ず達成シナリオを含む）
         _effort_scenarios = []
-        for d in [x * 0.5 for x in range(-2, 9)]:  # -1.0 ~ +4.0
-            _row = {"delta": round(d, 1)}
+        for d in range(-2, 11):  # -2, -1, 0, 1, ..., 10 (1.0pt 刻み)
+            _row = {"delta": float(d)}
             _all_feasible = True
             _all_within_cap = True
             for w in wards:
@@ -1833,6 +1834,43 @@ def _get_holistic_ward_dfs():
     if dfs and "5F" in dfs and "6F" in dfs:
         return dfs
     return {}
+
+
+def _filter_effort_scenarios_for_display(scenarios, fail_count=3, achieve_count=2):
+    """
+    均等努力方式の上昇幅別シナリオ表示用に、遷移点周辺の5行を抜粋する。
+
+    ルール:
+    - 未達成(❌)の末尾 fail_count 行 = 最も達成に近い未達成シナリオ
+    - 達成可(✅⚠️🔶)の先頭 achieve_count 行 = 最も小さい努力で達成するシナリオ
+    - 全て未達成 → 最後の 5 行（最も達成に近い順）
+    - 全て達成 → 最初の 5 行（最も小さい努力順）
+
+    Args:
+        scenarios: list of dict, _calc_cross_ward_target の effort_scenarios
+        fail_count: 未達成行を何行表示するか
+        achieve_count: 達成行を何行表示するか
+
+    Returns:
+        list of dict: 抜粋後のシナリオ（最大 fail_count + achieve_count 行）
+    """
+    if not scenarios:
+        return []
+    max_rows = fail_count + achieve_count
+    not_achieved = [s for s in scenarios if not s.get("achieves_target", False)]
+    achieved = [s for s in scenarios if s.get("achieves_target", False)]
+
+    if not achieved:
+        # 全て未達成 → 最後の max_rows 行（最も達成に近い順）
+        return scenarios[-max_rows:]
+    if not not_achieved:
+        # 全て達成 → 最初の max_rows 行
+        return scenarios[:max_rows]
+
+    # 通常: 遷移点周辺 — 未達成の末尾 + 達成の先頭
+    tail_fail = not_achieved[-fail_count:]
+    head_achieve = achieved[:achieve_count]
+    return tail_fail + head_achieve
 
 
 # ---------------------------------------------------------------------------
@@ -1956,15 +1994,16 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                             _cap_note = "" if _ei["within_cap"] else f" ⚠️上限{_cw['helper_cap_pct']:.0f}%超"
                             _lines.append(f"- {w}: 現在平均 {_wi['avg']:.1f}% → 目標 **{_ei['target']:.1f}%**（+{_delta:.1f}pt）{_cap_note}\n")
                         _lines.append("\n")
-                        # 多段階シナリオ表
-                        _tbl = "**■ 上昇幅別シナリオ**\n\n"
+                        # 多段階シナリオ表（遷移点周辺5行に絞って表示）
+                        _tbl = "**■ 上昇幅別シナリオ（遷移点周辺）**\n\n"
                         _tbl += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
-                        for _es in _cw["effort_scenarios"]:
+                        _display_scenarios = _filter_effort_scenarios_for_display(_cw["effort_scenarios"])
+                        for _es in _display_scenarios:
                             _mark = "✅" if _es["achieves_target"] and _es["feasible"] else "⚠️" if _es["achieves_target"] else "❌"
                             if not _es["within_cap"]:
                                 _mark = "🔶" if _es["achieves_target"] else "❌"
-                            _bold = "**" if abs(_es["delta"] - _delta) < 0.1 else ""
-                            _tbl += f"| {_bold}+{_es['delta']:.1f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
+                            _bold = "**" if abs(_es["delta"] - _delta) < 0.5 else ""
+                            _tbl += f"| {_bold}{_es['delta']:+.0f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
                         _lines.append(_tbl)
                         st.session_state["_holistic_table_content"] = ("info", "".join(_lines))
                     else:
@@ -2062,14 +2101,15 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     _cap_note = "" if _ei["within_cap"] else f" ⚠️上限{_cw_msg['helper_cap_pct']:.0f}%超"
                     _h_lines.append(f"- {w}: 現在平均 {_wi['avg']:.1f}% → 目標 **{_ei['target']:.1f}%**（+{_delta_msg:.1f}pt）{_cap_note}\n")
                 _h_lines.append("\n")
-                _h_tbl = "**■ 上昇幅別シナリオ**\n\n"
+                _h_tbl = "**■ 上昇幅別シナリオ（遷移点周辺）**\n\n"
                 _h_tbl += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
-                for _es in _cw_msg["effort_scenarios"]:
+                _display_h = _filter_effort_scenarios_for_display(_cw_msg["effort_scenarios"])
+                for _es in _display_h:
                     _mark = "✅" if _es["achieves_target"] and _es["feasible"] else "⚠️" if _es["achieves_target"] else "❌"
                     if not _es["within_cap"]:
                         _mark = "🔶" if _es["achieves_target"] else "❌"
-                    _bold = "**" if abs(_es["delta"] - _delta_msg) < 0.1 else ""
-                    _h_tbl += f"| {_bold}+{_es['delta']:.1f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
+                    _bold = "**" if abs(_es["delta"] - _delta_msg) < 0.5 else ""
+                    _h_tbl += f"| {_bold}{_es['delta']:+.0f}pt{_bold} | {_bold}{_es['5F']:.1f}%{_bold} | {_bold}{_es['6F']:.1f}%{_bold} | {_bold}{_es['overall']:.1f}%{_bold} | {_mark} |\n"
                 _h_lines.append(_h_tbl)
                 st.session_state["_holistic_table_content"] = ("info", "".join(_h_lines))
                 _holistic_msg_shown = True
@@ -2097,14 +2137,15 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     _ei2 = _ee2[w]
                     _lines2.append(f"- {w}: 現在平均 {_wi2['avg']:.1f}% → 目標 **{_ei2['target']:.1f}%**（+{_delta2:.1f}pt）\n")
                 _lines2.append("\n")
-                _tbl2 = "**■ 上昇幅別シナリオ**\n\n"
+                _tbl2 = "**■ 上昇幅別シナリオ（遷移点周辺）**\n\n"
                 _tbl2 += "| 上昇幅 | 5F目標 | 6F目標 | 全体 | 達成 |\n|---|---|---|---|---|\n"
-                for _es2 in _cw2["effort_scenarios"]:
+                _display_2 = _filter_effort_scenarios_for_display(_cw2["effort_scenarios"])
+                for _es2 in _display_2:
                     _m2 = "✅" if _es2["achieves_target"] and _es2["feasible"] else "⚠️" if _es2["achieves_target"] else "❌"
                     if not _es2["within_cap"]:
                         _m2 = "🔶" if _es2["achieves_target"] else "❌"
-                    _b2 = "**" if abs(_es2["delta"] - _delta2) < 0.1 else ""
-                    _tbl2 += f"| {_b2}+{_es2['delta']:.1f}pt{_b2} | {_b2}{_es2['5F']:.1f}%{_b2} | {_b2}{_es2['6F']:.1f}%{_b2} | {_b2}{_es2['overall']:.1f}%{_b2} | {_m2} |\n"
+                    _b2 = "**" if abs(_es2["delta"] - _delta2) < 0.5 else ""
+                    _tbl2 += f"| {_b2}{_es2['delta']:+.0f}pt{_b2} | {_b2}{_es2['5F']:.1f}%{_b2} | {_b2}{_es2['6F']:.1f}%{_b2} | {_b2}{_es2['overall']:.1f}%{_b2} | {_m2} |\n"
                 _lines2.append(_tbl2)
                 st.session_state["_holistic_table_content"] = ("info", "".join(_lines2))
 
