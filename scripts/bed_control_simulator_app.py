@@ -4507,14 +4507,6 @@ with tabs[_tab_idx["💰 運営分析"]]:
                 linestyle="--", linewidth=2.5, color=COLOR_PROFIT, alpha=0.6,
                 label=f"現ペース予測 → 月末 約{_projected_end:,.0f}万円")
         ax.scatter([_end_day], [_projected_end], s=80, color=COLOR_PROFIT, zorder=5)
-        ax.annotate(
-            f"実績ペース予測\n{_projected_end:,.0f}万円",
-            xy=(_end_day, _projected_end),
-            xytext=(-10, 10), textcoords="offset points",
-            fontsize=9, fontweight="bold", color=COLOR_PROFIT,
-            ha="right", va="bottom",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=COLOR_PROFIT, alpha=0.9),
-        )
         _projection_text.append(f"現ペース予測 **{_projected_end:,.0f}万円**")
 
         # ② 目標稼働率レンジでの月末見込み（90%/95%）
@@ -4552,13 +4544,49 @@ with tabs[_tab_idx["💰 運営分析"]]:
 
             # 目標下限の月末値をマーク
             ax.scatter([_end_day], [_target_lo_end], s=60, color="#E67E22", zorder=5, marker="s")
+
+            # --- ラベル配置: 値の大小順に上下を決める ---
+            # 高い値のラベルを上に、低い値のラベルを下に配置する
+            if _target_lo_end >= _projected_end:
+                # 目標下限 > 実績予測 → 目標下限を上、実績予測を下
+                _upper_xy = (_end_day, _target_lo_end)
+                _upper_text = f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円"
+                _upper_color = "#D35400"
+                _upper_edge = "#E67E22"
+                _lower_xy = (_end_day, _projected_end)
+                _lower_text = f"実績ペース予測\n{_projected_end:,.0f}万円"
+                _lower_color = COLOR_PROFIT
+                _lower_edge = COLOR_PROFIT
+                _upper_fontsize = 8
+                _lower_fontsize = 9
+            else:
+                # 実績予測 > 目標下限 → 実績予測を上、目標下限を下
+                _upper_xy = (_end_day, _projected_end)
+                _upper_text = f"実績ペース予測\n{_projected_end:,.0f}万円"
+                _upper_color = COLOR_PROFIT
+                _upper_edge = COLOR_PROFIT
+                _lower_xy = (_end_day, _target_lo_end)
+                _lower_text = f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円"
+                _lower_color = "#D35400"
+                _lower_edge = "#E67E22"
+                _upper_fontsize = 9
+                _lower_fontsize = 8
+
             ax.annotate(
-                f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円",
-                xy=(_end_day, _target_lo_end),
-                xytext=(-10, -20), textcoords="offset points",
-                fontsize=8, fontweight="bold", color="#D35400",
+                _upper_text,
+                xy=_upper_xy,
+                xytext=(-10, 12), textcoords="offset points",
+                fontsize=_upper_fontsize, fontweight="bold", color=_upper_color,
+                ha="right", va="bottom",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_upper_edge, alpha=0.9),
+            )
+            ax.annotate(
+                _lower_text,
+                xy=_lower_xy,
+                xytext=(-10, -12), textcoords="offset points",
+                fontsize=_lower_fontsize, fontweight="bold", color=_lower_color,
                 ha="right", va="top",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#E67E22", alpha=0.9),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_lower_edge, alpha=0.9),
             )
 
             # 差額の計算
@@ -4567,6 +4595,16 @@ with tabs[_tab_idx["💰 運営分析"]]:
             _projection_text.append(
                 f"目標下限({target_lower*100:.0f}%)比 **{_gap_to_target_lo:+,.0f}万円** / "
                 f"目標上限({target_upper*100:.0f}%)比 **{_gap_to_target_hi:+,.0f}万円**"
+            )
+        else:
+            # 目標レンジが計算できない場合: 実績予測ラベルのみ表示
+            ax.annotate(
+                f"実績ペース予測\n{_projected_end:,.0f}万円",
+                xy=(_end_day, _projected_end),
+                xytext=(-10, 12), textcoords="offset points",
+                fontsize=9, fontweight="bold", color=COLOR_PROFIT,
+                ha="right", va="bottom",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=COLOR_PROFIT, alpha=0.9),
             )
 
     ax.axhline(y=0, color="black", linewidth=0.5)
