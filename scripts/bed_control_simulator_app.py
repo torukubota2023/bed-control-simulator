@@ -724,8 +724,8 @@ _view_beds = total_beds
 
 target_lower = st.sidebar.slider("目標稼働率下限", 0.80, 1.00, 0.90, step=0.01, format="%.2f")
 target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
-helper_cap = st.sidebar.slider("ヘルパー病棟 上限稼働率", 0.90, 1.00, 0.96, step=0.01, format="%.2f",
-                                help="全体主義ベッドコントロールで、ヘルパー病棟に求める稼働率の上限。無理のない範囲を設定してください。")
+helper_cap = st.sidebar.slider("助ける側の上限", 0.90, 1.00, 0.96, step=0.01, format="%.2f",
+                                help="助け合いで目標達成する際、助ける側の病棟に求める稼働率の上限。無理のない範囲を設定してください。")
 
 # 目標上限 < 下限のバリデーション
 if target_upper < target_lower:
@@ -1983,10 +1983,10 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     if _delta > 0:
                         # Δ > 0: 両病棟とも追加努力が必要なケース
                         _lines = [
-                            f"🤝 **全体主義での目標達成 — 均等努力方式**\n\n"
+                            f"🤝 **助け合いで目標達成 — 助け合い方式**\n\n"
                             f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
                             f"**両病棟が均等に+{_delta:.1f}pt上昇**すれば全体達成可能です。\n\n"
-                            f"**■ 均等努力目標（残り{_cw['days_remaining']}日）**\n"
+                            f"**■ 助け合い目標（残り{_cw['days_remaining']}日）**\n"
                         ]
                         for w in ["5F", "6F"]:
                             _wi = _cw["wards"][w]
@@ -2013,7 +2013,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                         _wi_other = _cw["wards"][_other_w]
                         _overall_now = (_wi_self["avg"] * _wi_self["beds"] + _wi_other["avg"] * _wi_other["beds"]) / (_wi_self["beds"] + _wi_other["beds"])
                         _lines = [
-                            f"🤝 **全体主義では既に目標達成ペース — 追加努力不要**\n\n"
+                            f"🤝 **助け合いで既に目標達成ペース — 追加努力不要**\n\n"
                             f"{_selected_ward_key}単体での月平均{_cw['target_pct']:.0f}%達成は困難ですが、"
                             f"**{_other_w}が{_wi_other['avg']:.1f}%で高稼働のため、全体（94床）では現在 {_overall_now:.1f}% で既に目標をクリア**しています。\n\n"
                             f"- {_selected_ward_key}: 現在平均 {_wi_self['avg']:.1f}%\n"
@@ -2078,22 +2078,22 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 _ee_other = _ee_msg[_other_w]
                 if _ee_self["within_cap"] and _ee_other["within_cap"]:
                     st.success(
-                        f"🤝 **均等努力で全体目標達成ペース**: "
+                        f"🤝 **助け合いで全体目標達成ペース**: "
                         f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% — "
                         f"両病棟とも **+{_delta_msg:.1f}pt** ずつ上昇すれば全体{_cw_msg['target_pct']:.0f}%達成"
                         f"（{_selected_ward_key}→{_ee_self['target']:.1f}%, {_other_w}→{_ee_other['target']:.1f}%）"
                     )
                 else:
                     st.warning(
-                        f"🤝 **均等努力では上限超過あり**: "
+                        f"🤝 **助け合いでは上限超過あり**: "
                         f"両病棟+{_delta_msg:.1f}ptで全体達成ですが、一部が上限{_cw_msg['helper_cap_pct']:.0f}%を超えます。"
                         f"（{_selected_ward_key}→{_ee_self['target']:.1f}%, {_other_w}→{_ee_other['target']:.1f}%）"
                     )
-                # 均等努力の多段階テーブル
+                # 助け合い目標の多段階テーブル
                 _h_lines = [
-                    f"🤝 **均等努力 — 全体主義ベッドコントロール**\n\n"
+                    f"🤝 **助け合いで目標達成**\n\n"
                     f"両病棟が同じ上昇幅（Δ）で稼働率を上げ、全体{_cw_msg['target_pct']:.0f}%達成を目指します。\n\n"
-                    f"**■ 均等努力目標（残り{_cw_msg['days_remaining']}日）**\n"
+                    f"**■ 助け合い目標（残り{_cw_msg['days_remaining']}日）**\n"
                 ]
                 for w in ["5F", "6F"]:
                     _wi = _cw_msg["wards"][w]
@@ -2129,7 +2129,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                 _ee2 = _cw2["equal_effort"]
                 _delta2 = _cw2["delta"]
                 _lines2 = [
-                    f"🤝 **均等努力で全体目標達成が可能**\n\n"
+                    f"🤝 **助け合いで全体目標達成が可能**\n\n"
                     f"{_selected_ward_key}単体は困難でも、両病棟が均等に **+{_delta2:.1f}pt** 上昇すれば全体{_cw2['target_pct']:.0f}%達成可能。\n\n"
                 ]
                 for w in ["5F", "6F"]:
@@ -3606,12 +3606,12 @@ with tabs[_tab_idx["📊 日次推移"]]:
             ax.plot(_ee_x, _ee_y,
                     linestyle=":", linewidth=2.5, color=_ee_line_color,
                     marker="", zorder=4, alpha=0.85,
-                    label=f"均等努力 {_ee_display:.1f}%")
+                    label=f"助け合い {_ee_display:.1f}%")
             if _ee_over_cap:
-                _ee_label = f'均等努力(上限到達)\n{helper_cap*100:.0f}%'
+                _ee_label = f'助け合い(上限到達)\n{helper_cap*100:.0f}%'
             else:
                 _delta_sign = "+" if _delta_chart >= 0 else ""
-                _ee_label = f'均等努力目標\n{_ee_display:.1f}%（{_delta_sign}{_delta_chart:.1f}pt）'
+                _ee_label = f'助け合い目標\n{_ee_display:.1f}%（{_delta_sign}{_delta_chart:.1f}pt）'
             # ラベル位置: 単体目標と被らないよう、下側に配置
             _label_va = "top" if _ee_display < _required_occ_pct else "bottom"
             ax.annotate(
