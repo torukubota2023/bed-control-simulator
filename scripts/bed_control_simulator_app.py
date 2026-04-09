@@ -4474,26 +4474,114 @@ with tabs[_tab_idx["💰 運営分析"]]:
     st.pyplot(fig)
     plt.close(fig)
 
-    # --- 累積運営貢献額推移（プリセット連動）---
+    # --- 累積運営貢献額推移（月全体・予測線・目標ライン付き）---
     _cum_profit = _chart_profit.cumsum()
+    _cum_values = (_cum_profit / 10000).values  # 万円単位
+    _days_values = df["日"].values
+    _days_elapsed = len(_days_values)
+    _end_day = int(_calendar_month_days) if '_calendar_month_days' in dir() else int(days_in_month)
+
     fig, ax = plt.subplots(figsize=(12, 4))
+    # 実績の塗りつぶし
     ax.fill_between(
-        df["日"], _cum_profit / 10000, 0,
-        where=_cum_profit >= 0, color=COLOR_PROFIT, alpha=0.3,
+        _days_values, _cum_values, 0,
+        where=_cum_values >= 0, color=COLOR_PROFIT, alpha=0.3,
     )
     ax.fill_between(
-        df["日"], _cum_profit / 10000, 0,
-        where=_cum_profit < 0, color=COLOR_A, alpha=0.3,
+        _days_values, _cum_values, 0,
+        where=_cum_values < 0, color=COLOR_A, alpha=0.3,
     )
-    ax.plot(df["日"], _cum_profit / 10000, color=COLOR_PROFIT, linewidth=2)
+    # 実績ライン
+    ax.plot(_days_values, _cum_values, color=COLOR_PROFIT, linewidth=2.5, label="実績（累積）")
+
+    # --- 月末までの予測と目標ラインを描画 ---
+    _projection_text = []
+    if _days_elapsed >= 1 and _end_day > _days_elapsed:
+        # ① 現ペース維持の月末予測値
+        _current_pace_per_day = _cum_values[-1] / _days_elapsed  # 万円/日
+        _projected_end = _cum_values[-1] + _current_pace_per_day * (_end_day - _days_elapsed)
+
+        _proj_x = [_days_values[-1], _end_day]
+        _proj_y = [_cum_values[-1], _projected_end]
+        ax.plot(_proj_x, _proj_y,
+                linestyle="--", linewidth=2.5, color=COLOR_PROFIT, alpha=0.6,
+                label=f"現ペース予測 → 月末 約{_projected_end:,.0f}万円")
+        ax.scatter([_end_day], [_projected_end], s=80, color=COLOR_PROFIT, zorder=5)
+        ax.annotate(
+            f"実績ペース予測\n{_projected_end:,.0f}万円",
+            xy=(_end_day, _projected_end),
+            xytext=(-10, 10), textcoords="offset points",
+            fontsize=9, fontweight="bold", color=COLOR_PROFIT,
+            ha="right", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=COLOR_PROFIT, alpha=0.9),
+        )
+        _projection_text.append(f"現ペース予測 **{_projected_end:,.0f}万円**")
+
+        # ② 目標稼働率レンジでの月末見込み（90%/95%）
+        #    目標達成時の1日あたり平均運営貢献額 ≈ ベッド数 × 目標稼働率 × 平均運営貢献額/床日
+        #    ここでは、実績の「在院患者あたり運営貢献額」をそのまま使い、患者数を稼働率から逆算
+        try:
+            _avg_profit_per_patient = (
+                _chart_profit.sum() / df["在院患者数"].sum()
+                if df["在院患者数"].sum() > 0 else 0
+            )  # 円/人
+        except Exception:
+            _avg_profit_per_patient = 0
+
+        if _avg_profit_per_patient > 0:
+            # 目標下限（90%）で月全体を運用した場合
+            _target_lo_daily = _view_beds * target_lower * _avg_profit_per_patient / 10000  # 万円/日
+            _target_hi_daily = _view_beds * target_upper * _avg_profit_per_patient / 10000
+            _target_lo_end = _target_lo_daily * _end_day
+            _target_hi_end = _target_hi_daily * _end_day
+
+            # 目標レンジ帯（1日目から月末まで線形増加）
+            _target_x = [1, _end_day]
+            _target_lo_y = [_target_lo_daily, _target_lo_end]
+            _target_hi_y = [_target_hi_daily, _target_hi_end]
+
+            ax.fill_between(
+                _target_x, _target_lo_y, _target_hi_y,
+                color="#F39C12", alpha=0.15,
+                label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%稼働)",
+            )
+            ax.plot(_target_x, _target_lo_y,
+                    linestyle=":", linewidth=1.5, color="#F39C12", alpha=0.7)
+            ax.plot(_target_x, _target_hi_y,
+                    linestyle=":", linewidth=1.5, color="#F39C12", alpha=0.7)
+
+            # 目標下限の月末値をマーク
+            ax.scatter([_end_day], [_target_lo_end], s=60, color="#E67E22", zorder=5, marker="s")
+            ax.annotate(
+                f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円",
+                xy=(_end_day, _target_lo_end),
+                xytext=(-10, -20), textcoords="offset points",
+                fontsize=8, fontweight="bold", color="#D35400",
+                ha="right", va="top",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#E67E22", alpha=0.9),
+            )
+
+            # 差額の計算
+            _gap_to_target_lo = _projected_end - _target_lo_end
+            _gap_to_target_hi = _projected_end - _target_hi_end
+            _projection_text.append(
+                f"目標下限({target_lower*100:.0f}%)比 **{_gap_to_target_lo:+,.0f}万円** / "
+                f"目標上限({target_upper*100:.0f}%)比 **{_gap_to_target_hi:+,.0f}万円**"
+            )
+
     ax.axhline(y=0, color="black", linewidth=0.5)
     ax.set_xlabel("日")
     ax.set_ylabel("累積運営貢献額（万円）")
-    ax.set_title("累積運営貢献額推移")
-    ax.set_xlim(1, days_in_month)
+    ax.set_title("累積運営貢献額推移（月全体・予測線・目標レンジ付き）")
+    ax.set_xlim(1, _end_day + 0.5)
+    ax.legend(loc="upper left", fontsize=9)
     ax.grid(True, alpha=0.3)
     st.pyplot(fig)
     plt.close(fig)
+
+    # 予測値の要約キャプション
+    if _projection_text:
+        st.caption("📊 " + " ｜ ".join(_projection_text))
 
     # --- フェーズ別運営貢献額の内訳 ---
     st.markdown("---")
