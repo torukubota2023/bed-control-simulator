@@ -2662,153 +2662,163 @@ if _DATA_MANAGER_AVAILABLE:
                     abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
                     st.metric("合計", abc_total)
 
-            # --- 退院情報セクション（フォーム外: ラベル動的更新のため） ---
-            # 退院人数を変更した瞬間にスライダーのラベルが「退院X」⇔「(未使用)」と切り替わるよう
-            # フォーム外に配置する。フォーム内に置くと送信まで反映されないため。
-            st.markdown("**退院情報**")
-            st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
+            # --- データ入力エリア（フォーム不使用: ウィジェット操作のたびにリランさせる） ---
+            # フォームを使うと退院人数の変更がスライダーのラベルに即反映されないため、
+            # 通常ウィジェット + 追加ボタンで構成する。
 
             # 送信後リセット用フラグ: ウィジェット生成前に session_state を初期化する
-            if st.session_state.get("_dm_reset_discharge", False):
-                st.session_state.pop("dm_discharge_count", None)
+            if st.session_state.get("_dm_reset_inputs", False):
+                for _k in [
+                    "dm_discharge_count", "dm_total_patients", "dm_new_admissions",
+                    "dm_new_admissions_short3", "dm_notes",
+                ]:
+                    st.session_state.pop(_k, None)
                 for _i in range(8):
                     st.session_state.pop(f"dm_los_slot_{_i}", None)
-                st.session_state["_dm_reset_discharge"] = False
+                st.session_state["_dm_reset_inputs"] = False
 
+            form_col0, form_col1, form_col2 = st.columns(3)
+            with form_col0:
+                input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
+            with form_col1:
+                input_date = st.date_input("日付", value=pd.Timestamp.now().normalize(), key="dm_date")
+            with form_col2:
+                _ward_max_beds = 47
+                input_total = st.number_input(
+                    "在院患者総数", min_value=0, max_value=_ward_max_beds,
+                    value=40, step=1, key="dm_total_patients",
+                )
+
+            input_admissions = st.number_input(
+                "新規入院数", min_value=0, max_value=30, value=5, step=1,
+                key="dm_new_admissions",
+            )
+            input_admissions_short3 = st.number_input(
+                "うち短手3（内数）",
+                min_value=0,
+                max_value=int(input_admissions),
+                value=0,
+                step=1,
+                key="dm_new_admissions_short3",
+                help="短期滞在手術等基本料3（4泊5日以内、大腸ポリペクトミー・鼠径ヘルニア等）の新規入院数。新規入院数のうちの内数として入力してください。Phase 1: 記録のみで計算には反映されません。",
+            )
+
+            # --- 退院情報セクション ---
+            st.markdown("**退院情報**")
+            st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
             input_discharge_count = st.number_input(
                 "退院人数（退院なしは0）",
                 min_value=0, max_value=8, value=0, step=1,
                 key="dm_discharge_count",
-                help="本日の退院患者数を入力。下のスライダーで各患者の在院日数を設定してください"
+                help="本日の退院患者数を入力。下のスライダーで各患者の在院日数を設定してください",
             )
 
-            with st.form("dm_add_record_form", clear_on_submit=True):
-                form_col0, form_col1, form_col2 = st.columns(3)
-                with form_col0:
-                    input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
-                with form_col1:
-                    input_date = st.date_input("日付", value=pd.Timestamp.now().normalize())
-                with form_col2:
-                    _ward_max_beds = 47
-                    input_total = st.number_input("在院患者総数", min_value=0, max_value=_ward_max_beds, value=40, step=1)
-
-                input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
-                input_admissions_short3 = st.number_input(
-                    "うち短手3（内数）",
-                    min_value=0,
-                    max_value=int(input_admissions),
-                    value=0,
-                    step=1,
-                    help="短期滞在手術等基本料3（4泊5日以内、大腸ポリペクトミー・鼠径ヘルニア等）の新規入院数。新規入院数のうちの内数として入力してください。Phase 1: 記録のみで計算には反映されません。",
-                )
-
-                # 在院日数スライダー（8スロット常時描画 — フォーム内のためキー安定性が必要）
-                # 上限180日: 稀に発生する長期入院（90日超）にも対応
-                _los_options = list(range(1, 181))
-                if input_discharge_count > 0:
-                    st.markdown(f"**各退院患者の在院日数** — {input_discharge_count}名分のスライダーが有効です")
-                else:
-                    st.markdown("**各退院患者の在院日数** — まず上の「退院人数」を設定してください")
-                _los_all = []
-                for _slot_row in range(0, 8, 2):
-                    _slot_cols = st.columns(2)
-                    for _ci, _col in enumerate(_slot_cols):
-                        _si = _slot_row + _ci
-                        with _col:
-                            _is_active = _si < input_discharge_count
-                            _label = f"✏️ 退院{_si + 1}" if _is_active else f"（未使用）"
-                            _los_val = st.select_slider(
-                                _label,
-                                options=_los_options,
-                                value=10,
-                                key=f"dm_los_slot_{_si}",
-                            )
-                            _los_all.append(_los_val)
-
-                # 退院人数分だけ有効値として集計
-                auto_discharges = input_discharge_count
-                _los_active = _los_all[:auto_discharges]
-                _auto_da = sum(1 for x in _los_active if 1 <= x <= 5)
-                _auto_db = sum(1 for x in _los_active if 6 <= x <= 14)
-                _auto_dc = sum(1 for x in _los_active if x >= 15)
-                if auto_discharges > 0:
-                    _avg_los_display = sum(_los_active) / len(_los_active)
-                    _phase_badges = " ".join(
-                        f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _los_active
-                    )
-                    st.info(
-                        f"💡 退院 **{auto_discharges}名**: {_phase_badges}\n\n"
-                        f"A群:{_auto_da} B群:{_auto_db} C群:{_auto_dc}　"
-                        f"平均在院日数: **{_avg_los_display:.1f}日**"
-                    )
-                else:
-                    st.info("💡 退院なし（退院人数を増やすとスライダーが有効になります）")
-
-                input_notes = st.text_input("備考（任意）", value="")
-
-                submitted = st.form_submit_button("追加", type="primary", use_container_width=True)
-
-                if submitted:
-                    # 在院日数リストからA/B/C退院数を算出
-                    _active_los = [st.session_state.get(f"dm_los_slot_{i}", 10) for i in range(input_discharge_count)]
-                    _los_str = ",".join(str(v) for v in _active_los)
-                    _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
-                    import math
-                    _avg_los_val = _calc_avg_los if not math.isnan(_calc_avg_los) else pd.NA
-
-                    # A/B/C群を自動計算（日齢バケットモデル対応）
-                    _prev_buckets = st.session_state.get("day_buckets", None)
-
-                    new_abc, new_buckets = calculate_abc_groups(
-                        st.session_state.abc_state,
-                        input_admissions,
-                        input_discharge_a, input_discharge_b, input_discharge_c,
-                        prev_buckets=_prev_buckets,
-                    )
-                    new_a = new_abc["A"]
-                    new_b = new_abc["B"]
-                    new_c = new_abc["C"]
-
-                    new_record = {
-                        "date": pd.Timestamp(input_date),
-                        "ward": input_ward,
-                        "total_patients": int(input_total),
-                        "new_admissions": int(input_admissions),
-                        "new_admissions_short3": int(input_admissions_short3),
-                        "discharges": int(auto_discharges),
-                        "discharge_a": int(input_discharge_a),
-                        "discharge_b": int(input_discharge_b),
-                        "discharge_c": int(input_discharge_c),
-                        "discharge_los_list": _los_str,
-                        "phase_a_count": new_a,
-                        "phase_b_count": new_b,
-                        "phase_c_count": new_c,
-                        "avg_los": _avg_los_val,
-                        "notes": input_notes,
-                        "data_source": "manual",
-                    }
-                    is_valid, error_msg = validate_record(
-                        new_record, existing_df=st.session_state.daily_data
-                    )
-                    if is_valid:
-                        st.session_state.daily_data = add_record(
-                            st.session_state.daily_data, new_record
+            # 在院日数スライダー（8スロット常時描画）
+            # 上限180日: 稀に発生する長期入院（90日超）にも対応
+            _los_options = list(range(1, 181))
+            if input_discharge_count > 0:
+                st.markdown(f"**各退院患者の在院日数** — {int(input_discharge_count)}名分のスライダーが有効です")
+            else:
+                st.markdown("**各退院患者の在院日数** — まず上の「退院人数」を設定してください")
+            _los_all = []
+            for _slot_row in range(0, 8, 2):
+                _slot_cols = st.columns(2)
+                for _ci, _col in enumerate(_slot_cols):
+                    _si = _slot_row + _ci
+                    with _col:
+                        _is_active = _si < input_discharge_count
+                        _label = f"✏️ 退院{_si + 1}" if _is_active else f"（未使用）"
+                        _los_val = st.select_slider(
+                            _label,
+                            options=_los_options,
+                            value=10,
+                            key=f"dm_los_slot_{_si}",
                         )
-                        # ABC状態とバケットを更新
-                        st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
-                        if new_buckets is not None:
-                            st.session_state.day_buckets = new_buckets
-                        _phase_detail = " ".join(
-                            f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
-                        ) if _active_los else "なし"
-                        st.success(f"{input_date} のデータを追加しました。（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}）")
-                        _auto_save_to_db()
-                        # 退院人数（フォーム外）とスライダー（明示キー付き）は次回再描画時に
-                        # 初期化する。この時点ではウィジェット生成済みのため直接書き換えできない。
-                        st.session_state["_dm_reset_discharge"] = True
-                        st.rerun()
-                    else:
-                        st.error(f"入力エラー:\n{error_msg}")
+                        _los_all.append(_los_val)
+
+            # 退院人数分だけ有効値として集計
+            auto_discharges = int(input_discharge_count)
+            _los_active = _los_all[:auto_discharges]
+            _auto_da = sum(1 for x in _los_active if 1 <= x <= 5)
+            _auto_db = sum(1 for x in _los_active if 6 <= x <= 14)
+            _auto_dc = sum(1 for x in _los_active if x >= 15)
+            if auto_discharges > 0:
+                _avg_los_display = sum(_los_active) / len(_los_active)
+                _phase_badges = " ".join(
+                    f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _los_active
+                )
+                st.info(
+                    f"💡 退院 **{auto_discharges}名**: {_phase_badges}\n\n"
+                    f"A群:{_auto_da} B群:{_auto_db} C群:{_auto_dc}　"
+                    f"平均在院日数: **{_avg_los_display:.1f}日**"
+                )
+            else:
+                st.info("💡 退院なし（退院人数を増やすとスライダーが有効になります）")
+
+            input_notes = st.text_input("備考（任意）", value="", key="dm_notes")
+
+            submitted = st.button("追加", type="primary", use_container_width=True, key="dm_add_btn")
+
+            if submitted:
+                # 在院日数リストからA/B/C退院数を算出
+                _active_los = [st.session_state.get(f"dm_los_slot_{i}", 10) for i in range(int(input_discharge_count))]
+                _los_str = ",".join(str(v) for v in _active_los)
+                _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
+                import math
+                _avg_los_val = _calc_avg_los if not math.isnan(_calc_avg_los) else pd.NA
+
+                # A/B/C群を自動計算（日齢バケットモデル対応）
+                _prev_buckets = st.session_state.get("day_buckets", None)
+
+                new_abc, new_buckets = calculate_abc_groups(
+                    st.session_state.abc_state,
+                    int(input_admissions),
+                    input_discharge_a, input_discharge_b, input_discharge_c,
+                    prev_buckets=_prev_buckets,
+                )
+                new_a = new_abc["A"]
+                new_b = new_abc["B"]
+                new_c = new_abc["C"]
+
+                new_record = {
+                    "date": pd.Timestamp(input_date),
+                    "ward": input_ward,
+                    "total_patients": int(input_total),
+                    "new_admissions": int(input_admissions),
+                    "new_admissions_short3": int(input_admissions_short3),
+                    "discharges": int(auto_discharges),
+                    "discharge_a": int(input_discharge_a),
+                    "discharge_b": int(input_discharge_b),
+                    "discharge_c": int(input_discharge_c),
+                    "discharge_los_list": _los_str,
+                    "phase_a_count": new_a,
+                    "phase_b_count": new_b,
+                    "phase_c_count": new_c,
+                    "avg_los": _avg_los_val,
+                    "notes": input_notes,
+                    "data_source": "manual",
+                }
+                is_valid, error_msg = validate_record(
+                    new_record, existing_df=st.session_state.daily_data
+                )
+                if is_valid:
+                    st.session_state.daily_data = add_record(
+                        st.session_state.daily_data, new_record
+                    )
+                    # ABC状態とバケットを更新
+                    st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
+                    if new_buckets is not None:
+                        st.session_state.day_buckets = new_buckets
+                    _phase_detail = " ".join(
+                        f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
+                    ) if _active_los else "なし"
+                    st.success(f"{input_date} のデータを追加しました。（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}）")
+                    _auto_save_to_db()
+                    # 次回再描画時に全入力フィールドを初期化する
+                    st.session_state["_dm_reset_inputs"] = True
+                    st.rerun()
+                else:
+                    st.error(f"入力エラー:\n{error_msg}")
 
             st.markdown("---")
 
