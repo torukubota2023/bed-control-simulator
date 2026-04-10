@@ -7008,9 +7008,33 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
                     st.info("現在、日曜退院の調整候補はありません")
                 else:
                     _dm_cand_df = pd.DataFrame(_dm_candidates)
+
+                    # 調整方向カラムを生成
+                    _dm_weekday_names = {0: "月", 1: "火", 4: "金", 5: "土"}
+                    def _dm_format_direction(row):
+                        _orig_date = pd.to_datetime(row["date"])
+                        _orig_wd = _orig_date.dayofweek
+                        _wd_name = _dm_weekday_names.get(_orig_wd, "?")
+                        _days = row["additional_days"]
+                        if row["shift_type"] == "延ばす":
+                            return f"\U0001f7e2 {_wd_name}\u2192日（+{_days}日）"
+                        else:
+                            return f"\U0001f535 {_wd_name}\u2192日（{_days}日）"
+                    if "shift_type" in _dm_cand_df.columns:
+                        _dm_cand_df["direction_label"] = _dm_cand_df.apply(_dm_format_direction, axis=1)
+                    else:
+                        _dm_cand_df["direction_label"] = ""
+
+                    # LOS余裕を見やすくフォーマット
+                    if "los_margin" in _dm_cand_df.columns:
+                        _dm_cand_df["los_margin"] = _dm_cand_df["los_margin"].apply(
+                            lambda x: f"+{x:.1f}日" if x >= 0 else f"{x:.1f}日"
+                        )
+
                     _dm_display_cols = {
                         "ward": "病棟",
                         "date": "退院予定日",
+                        "direction_label": "調整方向",
                         "phase": "フェーズ",
                         "los_days": "在院日数",
                         "attending_doctor": "担当医",
@@ -7033,7 +7057,8 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
                     )
 
                 st.caption("働き世代のご家族にとって、日曜はお迎えしやすい日です。"
-                           "在院日数に余裕がある方は、家族に寄り添いながら週末の稼働率も改善できます。")
+                           "🟢延ばす＝週末稼働率UP、🔵早める＝在院日数短縮＋月曜入院枠確保。"
+                           "家族目線の退院調整が運営改善にもつながります。")
         except Exception as _dm_e2:
             st.warning(f"日曜退院候補リストの表示でエラーが発生しました: {_dm_e2}")
 

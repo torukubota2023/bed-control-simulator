@@ -1998,9 +1998,10 @@ def get_sunday_discharge_candidates(
     max_avg_los: float = 21.0,
 ) -> list[dict]:
     """
-    今週の退院予定者（金曜・土曜退院）のうち、日曜退院に調整可能な候補を抽出する。
+    退院予定者のうち、日曜退院に調整可能な候補を抽出する。
 
-    金曜に集中する退院を平準化し、日曜退院という選択肢を提案するための関数。
+    パターンA「延ばす」: 金曜・土曜退院 → 日曜退院（在院+1〜2日、週末稼働率UP）
+    パターンB「早める」: 月曜・火曜退院 → 前の日曜退院（在院-1〜2日、月曜入院枠確保）
 
     Args:
         detail_df: admission_details.csv の DataFrame
@@ -2015,7 +2016,7 @@ def get_sunday_discharge_candidates(
         list[dict]: 各候補の情報を含む辞書のリスト。キー:
             ward, date, phase, los_days, attending_doctor,
             sunday_date, additional_days, los_margin,
-            daily_contribution, recommendation
+            daily_contribution, recommendation, shift_type, benefit
     """
     if ward_beds is None:
         ward_beds = {"5F": 47, "6F": 47}
@@ -2026,15 +2027,16 @@ def get_sunday_discharge_candidates(
     df = detail_df.copy()
     df["date"] = pd.to_datetime(df["date"])
 
-    # 退院レコードのうち、曜日が金曜(4)または土曜(5)のものを抽出
+    # 退院レコードを抽出
     discharges = df[df["event_type"] == "discharge"].copy()
     if len(discharges) == 0:
         return []
 
-    discharges["weekday"] = discharges["date"].dt.dayofweek  # 0=月, 4=金, 5=土
-    fri_sat = discharges[discharges["weekday"].isin([4, 5])].copy()
+    discharges["weekday"] = discharges["date"].dt.dayofweek  # 0=月, 1=火, 4=金, 5=土
+    # パターンA: 金曜(4)・土曜(5)、パターンB: 月曜(0)・火曜(1)
+    target_discharges = discharges[discharges["weekday"].isin([0, 1, 4, 5])].copy()
 
-    if len(fri_sat) == 0:
+    if len(target_discharges) == 0:
         return []
 
     # 現在のrolling平均在院日数を取得
@@ -2058,39 +2060,57 @@ def get_sunday_discharge_candidates(
     denominator = (total_admissions + total_discharges) / 2.0 if (total_admissions + total_discharges) > 0 else 1.0
 
     candidates = []
-    for _, row in fri_sat.iterrows():
+    for _, row in target_discharges.iterrows():
         weekday = int(row["weekday"])
-        additional_days = 7 - weekday  # 金曜(4)→+2日(日曜=6), 土曜(5)→+1日
-        # 日曜の日付
         original_date = row["date"]
-        sunday_date = original_date + timedelta(days=additional_days)
+
+        if weekday in [4, 5]:
+            # パターンA「延ばす」: 金曜→日曜(+2日), 土曜→日曜(+1日)
+            additional_days = 7 - weekday  # 金(4)→+3ではなく6-4=2, 土(5)→1
+            sunday_date = original_date + timedelta(days=additional_days)
+            shift_type = "延ばす"
+            benefit = "週末稼働率UP"
+        else:
+            # パターンB「早める」: 月曜→前日曜(-1日), 火曜→前々日曜(-2日)
+            additional_days = -(weekday + 1)  # 月(0)→-1, 火(1)→-2
+            sunday_date = original_date + timedelta(days=additional_days)
+            shift_type = "早める"
+            benefit = "在院日数短縮＋月曜入院枠確保"
 
         los_days = int(row["los_days"]) if pd.notna(row.get("los_days")) else 0
         phase = str(row["phase"]) if pd.notna(row.get("phase")) else ""
 
         # los_margin: 追加日数がrolling LOSに与える影響を加味
-        # 1人がadditional_days日延びると、分子が+additional_days、分母は変わらない
+        # additional_daysが正なら延長、負なら短縮
         los_impact = additional_days / denominator if denominator > 0 else 0.0
         estimated_new_los = current_rolling_los + los_impact
         los_margin = round(max_avg_los - estimated_new_los, 1)
 
         # recommendation 判定
-        if phase == "C":
-            if los_margin > 0:
+        if shift_type == "早める":
+            # 早める場合は在院日数短縮なので基本的に推奨
+            if phase == "C":
                 recommendation = "◎"
-            elif los_margin >= -0.5:
-                recommendation = "△"
-            else:
-                recommendation = "✗"
-        elif phase == "B":
-            # B群は「△要検討」をベースとし、LOS上限超えなら✗
-            if los_margin < -0.5:
-                recommendation = "✗"
+            elif phase == "B":
+                recommendation = "◎"
             else:
                 recommendation = "△"
         else:
-            # A群やフェーズ不明
-            recommendation = "△"
+            # 延ばす場合は従来ロジック
+            if phase == "C":
+                if los_margin > 0:
+                    recommendation = "◎"
+                elif los_margin >= -0.5:
+                    recommendation = "△"
+                else:
+                    recommendation = "✗"
+            elif phase == "B":
+                if los_margin < -0.5:
+                    recommendation = "✗"
+                else:
+                    recommendation = "△"
+            else:
+                recommendation = "△"
 
         daily_contribution = _PHASE_DAILY_CONTRIBUTION.get(phase, 0)
 
@@ -2108,11 +2128,18 @@ def get_sunday_discharge_candidates(
             "los_margin": los_margin,
             "daily_contribution": daily_contribution,
             "recommendation": recommendation,
+            "shift_type": shift_type,
+            "benefit": benefit,
         })
 
-    # C群を優先、その次にlos_marginの大きい順にソート
+    # ソート: C群優先 → 同フェーズ内で「延ばす」先 → LOS余裕大きい順
     phase_priority = {"C": 0, "B": 1, "A": 2}
-    candidates.sort(key=lambda x: (phase_priority.get(x["phase"], 9), -x["los_margin"]))
+    shift_priority = {"延ばす": 0, "早める": 1}
+    candidates.sort(key=lambda x: (
+        phase_priority.get(x["phase"], 9),
+        shift_priority.get(x["shift_type"], 9),
+        -x["los_margin"],
+    ))
 
     return candidates
 
@@ -2182,11 +2209,14 @@ def simulate_discharge_shift(
         "weekend_avg_occ": occ_pct(weekend_patients),
     }
 
-    # シフト後: 金曜・土曜に+n_shifts人残る、日曜はプラマイゼロ
-    # （日曜に退院するので、日曜朝の在院数は元と同じ水準）
+    # シフト後の計算
+    # 「延ばす」パターン（金土→日曜）: 金・土・日すべてに+n_shifts人
+    #   退院日＝最終在院日なので、日曜も在院としてカウントされる
+    # 注: 「早める」パターンとの混在はsimulate関数では未分離のため、
+    #   ここでは従来の「延ばす」ベースで計算する
     after_fri = fri_patients + n_shifts
     after_sat = sat_patients + n_shifts
-    after_sun = sun_patients  # 日曜退院なので在院数は変わらない
+    after_sun = sun_patients + n_shifts  # 日曜も在院日（退院日＝最終在院日）
 
     # 平日平均の再計算（金曜に+n_shiftsの影響）
     after_weekday_patients = np.mean([
