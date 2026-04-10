@@ -775,6 +775,10 @@ _FEE_PRESETS = {
         "note": "初期加算1,500円/日・リハビリ出来高は各群の報酬に包含済み",
         "max_avg_los": 21,  # 地域包括医療病棟の算定基準: 平均在院日数上限
         "max_avg_los_relaxed": 21,  # 85歳以上20%以上の場合（+0日、同じ）
+        # 短手3 包括収入（1件あたり、円）— 当院ミックス (大腸ポリペク80% + 鼠径ヘル等20%)
+        # K721-1 12,580点 × 0.80 + K633-5 24,147点 × 0.20 ≈ 14,893点 ≈ ¥148,930
+        "short3_revenue_per_case": 148930,
+        "short3_cost_per_case": 25000,  # 材料・薬剤費の推定
     },
     "2026年度（令和8年度）": {
         "desc": "入院料1: イ3,367 / ロ3,267 / ハ3,117点（加重平均≈3,250点）＋ 初期加算 150点",
@@ -787,6 +791,11 @@ _FEE_PRESETS = {
         "note": "入院料1（急性期非併設）の加重平均。初期加算・リハビリ出来高は各群に包含済み",
         "max_avg_los": 20,  # 2026年改定で21→20日に短縮
         "max_avg_los_relaxed": 21,  # 85歳以上20%以上の場合（+1日緩和）
+        # 短手3 は 2026年改定で外来シフト促進のため引き下げ予想（中医協議論中）
+        # 保守的に -10% を仮定: 148,930 × 0.90 ≈ 134,037 円
+        # 出典: https://www.prrism.com/newscolumns/10560/ (2026年改定方向性)
+        "short3_revenue_per_case": 134040,
+        "short3_cost_per_case": 25000,  # コストは変わらない想定
     },
 }
 
@@ -840,6 +849,68 @@ with st.sidebar.expander("患者フェーズ別パラメータ"):
     st.markdown("**C群（退院準備期: 15日目〜）**")
     phase_c_rev = st.number_input("C群 日次診療報酬（円）", value=_fee_preset["c_rev"], step=1000, key="c_rev")
     phase_c_cost = st.number_input("C群 日次変動費（円）", value=_fee_preset["c_cost"], step=1000, key="c_cost")
+
+# --- 短手3（短期滞在手術等基本料3）パラメータ ---
+# Phase 3: 運営貢献額を通常分と短手3分で分離表示
+# 4種類 + その他 のタイプ別に点数管理。入力時に種類を選ぶ。
+
+# 短手3 種類の定義: ラベル → (収入円, コスト円, 説明)
+SHORT3_TYPE_POLYP_S = "大腸ポリペク（2cm未満）"
+SHORT3_TYPE_POLYP_L = "大腸ポリペク（2cm以上）"
+SHORT3_TYPE_INGUINAL = "鼠径ヘルニア手術"
+SHORT3_TYPE_PSG = "終夜睡眠ポリグラフィー (PSG)"
+SHORT3_TYPE_OTHER = "その他"
+SHORT3_TYPE_NONE = "該当なし"
+
+# 2026年改定予測: 全体的に -10% を仮定（中医協で議論中）
+_is_2026 = "2026" in _fee_preset_name
+_s3_mult = 0.90 if _is_2026 else 1.00
+
+# デフォルト単価（令和6年度ベース、点数 × 10 円）
+# 注: 短期滞在手術等基本料3 では麻酔（全身・脊椎・局所）の有無による点数分けはなく、
+#     手術料・検査料・麻酔料・薬剤料・材料料がすべて包括されている統一点数。
+# 出典: https://shirobon.net/medicalfee/latest/ika/r06_ika/r06i_ch1/r06i1_pa2/r06i12_sec4/r06i124_A400.html
+_SHORT3_DEFAULT_REVENUE = {
+    SHORT3_TYPE_POLYP_S:  int(125800 * _s3_mult),   # K721-1: 12,580点
+    SHORT3_TYPE_POLYP_L:  int(161530 * _s3_mult),   # K721-2: 16,153点
+    SHORT3_TYPE_INGUINAL: int(241470 * _s3_mult),   # K633-5: 24,147点（麻酔包括）
+    SHORT3_TYPE_PSG:      int(82210 * _s3_mult),    # D237-3 終夜睡眠ポリグラフィー3（院内・訪問実施）: 8,221点
+    SHORT3_TYPE_OTHER:    0,                        # その他: 稀なので収入無視
+}
+_SHORT3_DEFAULT_COST = {
+    SHORT3_TYPE_POLYP_S:  15000,   # 内視鏡・処置具
+    SHORT3_TYPE_POLYP_L:  20000,
+    SHORT3_TYPE_INGUINAL: 60000,   # 手術材料・メッシュ等
+    SHORT3_TYPE_PSG:      10000,   # 検査消耗品
+    SHORT3_TYPE_OTHER:    0,
+}
+
+with st.sidebar.expander("🏃 短手3（包括点数・種類別）パラメータ"):
+    st.caption(
+        "短期滞在手術等基本料3 は包括点数で算定されます。種類別に1件あたりの収入を設定できます。"
+        + ("（2026年改定で -10% を仮定）" if _is_2026 else "")
+    )
+    _short3_revenue_map = {}
+    _short3_cost_map = {}
+    for _t in [SHORT3_TYPE_POLYP_S, SHORT3_TYPE_POLYP_L, SHORT3_TYPE_INGUINAL, SHORT3_TYPE_PSG, SHORT3_TYPE_OTHER]:
+        _rev = st.number_input(
+            f"{_t} 収入（円/件）",
+            min_value=0, max_value=500000,
+            value=_SHORT3_DEFAULT_REVENUE[_t],
+            step=1000,
+            key=f"short3_rev_{_t}",
+        )
+        _cost = st.number_input(
+            f"{_t} コスト（円/件）",
+            min_value=0, max_value=200000,
+            value=_SHORT3_DEFAULT_COST[_t],
+            step=1000,
+            key=f"short3_cost_{_t}",
+        )
+        _short3_revenue_map[_t] = _rev
+        _short3_cost_map[_t] = _cost
+        if _rev > 0:
+            st.caption(f"　→ 運営貢献額: **¥{_rev - _cost:,}/件**")
 
 # --- 追加パラメータ ---
 with st.sidebar.expander("追加パラメータ"):
@@ -1312,6 +1383,41 @@ if run_button:
 # ---------------------------------------------------------------------------
 # 実データ用ヘルパー（モジュール先頭で定義: 下流で使う前に利用可能にする）
 # ---------------------------------------------------------------------------
+def _calc_short3_summary(df_in, revenue_per_case, cost_per_case):
+    """
+    短手3（短期滞在手術等基本料3）の件数・収入・コストを算出する。
+
+    Phase 3: 運営貢献額の分離表示用。
+    new_admissions_short3 列を合計して包括点数ベースで収入を計算する。
+
+    Args:
+        df_in: 日次データ DataFrame (new_admissions_short3 列を含む)
+        revenue_per_case: 短手3 1件あたりの包括収入（円）
+        cost_per_case: 短手3 1件あたりのコスト（円、材料・薬剤費等）
+
+    Returns:
+        dict: {
+            "cases": int,           # 期間内の短手3 件数
+            "revenue": int,         # 短手3 による総収入（円）
+            "cost": int,            # 短手3 による総コスト（円）
+            "contribution": int,    # 短手3 による運営貢献額（円）
+        }
+    """
+    if not isinstance(df_in, pd.DataFrame) or len(df_in) == 0:
+        return {"cases": 0, "revenue": 0, "cost": 0, "contribution": 0}
+    if "new_admissions_short3" not in df_in.columns:
+        return {"cases": 0, "revenue": 0, "cost": 0, "contribution": 0}
+    _cases = int(df_in["new_admissions_short3"].fillna(0).sum())
+    _revenue = _cases * int(revenue_per_case)
+    _cost = _cases * int(cost_per_case)
+    return {
+        "cases": _cases,
+        "revenue": _revenue,
+        "cost": _cost,
+        "contribution": _revenue - _cost,
+    }
+
+
 def _filter_current_month(df_in):
     """
     最新日付と同じ年月の行のみに絞り込む。rolling LOS用の過去90日データを除外するために使う。
@@ -2708,7 +2814,8 @@ if _DATA_MANAGER_AVAILABLE:
                     st.session_state.pop(f"dm_adm_route_{_i}", None)
                     st.session_state.pop(f"dm_adm_source_{_i}", None)
                     st.session_state.pop(f"dm_adm_attending_{_i}", None)
-                    st.session_state.pop(f"dm_adm_short3_{_i}", None)
+                    st.session_state.pop(f"dm_adm_short3_{_i}", None)  # 旧キー（後方互換）
+                    st.session_state.pop(f"dm_adm_short3_type_{_i}", None)
                 st.session_state["_dm_reset_inputs"] = False
 
             # 医師・経路マスター読込
@@ -2741,7 +2848,16 @@ if _DATA_MANAGER_AVAILABLE:
                 help="本日の新規入院数を入力。下に入院人数分のスロットが展開されます。",
             )
 
-            _adm_events = []  # [(route, source, attending, is_short3), ...]
+            _adm_events = []  # [(route, source, attending, short3_type), ...]
+            # 短手3 種類の選択肢（該当なしを先頭）
+            _short3_type_options = [
+                SHORT3_TYPE_NONE,
+                SHORT3_TYPE_POLYP_S,
+                SHORT3_TYPE_POLYP_L,
+                SHORT3_TYPE_INGUINAL,
+                SHORT3_TYPE_PSG,
+                SHORT3_TYPE_OTHER,
+            ]
             if input_admissions > 0:
                 st.caption(f"💡 {int(input_admissions)}名分の入院詳細を入力してください（経路・担当医は必須）")
             for _a_slot_row in range(0, 8, 2):
@@ -2768,15 +2884,18 @@ if _DATA_MANAGER_AVAILABLE:
                                 [""] + _doctor_names_ui,
                                 key=f"dm_adm_attending_{_asi}",
                             )
-                            _a_short3 = st.checkbox(
-                                "🏃 短手3（大腸ポリペクトミー等）",
-                                key=f"dm_adm_short3_{_asi}",
-                                help="短期滞在手術等基本料3（4泊5日以内）の算定対象患者。2026年改定で平均在院日数計算から除外されます。",
+                            _a_short3_type = st.selectbox(
+                                "🏃 短手3 種類",
+                                _short3_type_options,
+                                key=f"dm_adm_short3_type_{_asi}",
+                                help="短期滞在手術等基本料3（4泊5日以内）の算定対象。該当する場合は種類を選択。計算は種類別の包括点数で行われます。",
                             )
-                            _adm_events.append((_a_route, _a_source, _a_attending, _a_short3))
+                            _adm_events.append((_a_route, _a_source, _a_attending, _a_short3_type))
 
-            # 短手3 内数を集計
-            input_admissions_short3 = sum(1 for ev in _adm_events if ev[3])
+            # 短手3 内数を集計（「該当なし」以外を1件とカウント）
+            input_admissions_short3 = sum(
+                1 for ev in _adm_events if ev[3] and ev[3] != SHORT3_TYPE_NONE
+            )
 
             # --- 退院情報セクション ---
             st.markdown("**🚪 退院情報**")
@@ -2840,7 +2959,18 @@ if _DATA_MANAGER_AVAILABLE:
             # --- サマリー情報ボックス ---
             _summary_parts = []
             if input_admissions > 0:
-                _s3_txt = f"（うち短手3: {input_admissions_short3}名）" if input_admissions_short3 > 0 else ""
+                # 短手3 種類別の内訳と収入見込みを計算
+                _s3_revenue_total = 0
+                _s3_type_counts = {}
+                for (_r, _s, _att, _s3t) in _adm_events:
+                    if _s3t and _s3t != SHORT3_TYPE_NONE:
+                        _s3_type_counts[_s3t] = _s3_type_counts.get(_s3t, 0) + 1
+                        _s3_revenue_total += _short3_revenue_map.get(_s3t, 0)
+                if input_admissions_short3 > 0:
+                    _s3_breakdown = " / ".join(f"{_t}:{_c}" for _t, _c in _s3_type_counts.items())
+                    _s3_txt = f"（うち短手3: {input_admissions_short3}名 [{_s3_breakdown}] 包括収入見込 ¥{_s3_revenue_total:,}）"
+                else:
+                    _s3_txt = ""
                 _summary_parts.append(f"入院 **{int(input_admissions)}名**{_s3_txt}")
             if auto_discharges > 0:
                 _avg_los_display = sum(_los_active) / len(_los_active)
@@ -2932,12 +3062,15 @@ if _DATA_MANAGER_AVAILABLE:
                         try:
                             _details_df = st.session_state.admission_details
                             _date_str = str(input_date)
-                            # 入院イベント
-                            for (_r, _s, _att, _s3) in _adm_events:
+                            # 入院イベント（短手3 種類も記録 - Phase 3）
+                            for (_r, _s, _att, _s3t) in _adm_events:
                                 _source_name = _s if _s and _s != "（なし）" else ""
+                                # 短手3 種類: "該当なし" なら None として渡す
+                                _s3_type_to_store = _s3t if _s3t and _s3t != SHORT3_TYPE_NONE else None
                                 _details_df = add_admission_event(
                                     _details_df, _date_str, input_ward,
                                     _r, _source_name, _att,
+                                    short3_type=_s3_type_to_store,
                                 )
                                 _detail_written_count += 1
                             # 退院イベント
@@ -4465,6 +4598,108 @@ with tabs[_tab_idx["💰 運営分析"]]:
 </div>
 """, unsafe_allow_html=True)
     st.caption("💡 **診療報酬** = 入院料収入　|　**コスト** = 薬剤・検査等の変動費（固定費除く）　|　**運営貢献額** = 診療報酬 − コスト（粗利益）")
+
+    # =========================================================================
+    # 短手3 分離表示パネル（Phase 3）
+    # =========================================================================
+    # 通常入院 + 短手3 包括点数の運営貢献額を分離して見せる
+    # admission_details の short3_type 列を使って種類別に集計
+    _show_short3_panel = False
+    _short3_summary_month = {"total_cases": 0, "total_revenue": 0, "total_cost": 0, "by_type": {}}
+    if _DETAIL_DATA_AVAILABLE and isinstance(st.session_state.get("admission_details"), pd.DataFrame):
+        _ad_df = st.session_state.admission_details
+        if len(_ad_df) > 0 and "short3_type" in _ad_df.columns:
+            # 現在月でフィルタ
+            _ad_df = _ad_df.copy()
+            _ad_df["date"] = pd.to_datetime(_ad_df["date"])
+            if len(_ad_df) > 0:
+                _latest = _ad_df["date"].max()
+                _month_mask = (_ad_df["date"].dt.year == _latest.year) & (_ad_df["date"].dt.month == _latest.month)
+                _ad_month = _ad_df[_month_mask]
+                # 病棟でフィルタ（全体のときはフィルタしない）
+                if _selected_ward_key in ("5F", "6F"):
+                    _ad_month = _ad_month[_ad_month["ward"] == _selected_ward_key]
+                # 入院イベントかつ short3_type あり
+                _ad_s3 = _ad_month[
+                    (_ad_month["event_type"] == "admission")
+                    & _ad_month["short3_type"].notna()
+                    & (_ad_month["short3_type"] != "")
+                ]
+                if len(_ad_s3) > 0:
+                    _show_short3_panel = True
+                    for _s3t, _grp in _ad_s3.groupby("short3_type"):
+                        _cnt = len(_grp)
+                        _rev = _short3_revenue_map.get(_s3t, 0) * _cnt
+                        _cost = _short3_cost_map.get(_s3t, 0) * _cnt
+                        _short3_summary_month["by_type"][str(_s3t)] = {
+                            "cases": _cnt, "revenue": _rev, "cost": _cost,
+                            "contribution": _rev - _cost,
+                        }
+                        _short3_summary_month["total_cases"] += _cnt
+                        _short3_summary_month["total_revenue"] += _rev
+                        _short3_summary_month["total_cost"] += _cost
+
+    if _show_short3_panel:
+        _s3_total_contrib = _short3_summary_month["total_revenue"] - _short3_summary_month["total_cost"]
+        # 通常分の運営貢献額 (recalc profit は通常分として扱う)
+        _normal_contrib = _recalc_profit
+        _combined_contrib = _normal_contrib + _s3_total_contrib
+
+        st.markdown("### 🏃 短手3（包括点数）分離表示")
+        st.caption(
+            f"{_selected_ward_key} の今月の短期滞在手術等基本料3 算定分。包括点数ベースで別計算しています。"
+        )
+
+        _s3_cols = st.columns(3)
+        _s3_cols[0].metric(
+            "短手3 件数",
+            f"{_short3_summary_month['total_cases']}件",
+            help="当月の 短期滞在手術等基本料3 算定件数",
+        )
+        _s3_cols[1].metric(
+            "短手3 収入（包括）",
+            f"¥{_short3_summary_month['total_revenue']/10000:,.1f}万",
+            help="種類別の包括点数 × 件数の合計",
+        )
+        _s3_cols[2].metric(
+            "短手3 運営貢献額",
+            f"¥{_s3_total_contrib/10000:,.1f}万",
+            help="短手3 収入 − 短手3 コスト",
+        )
+
+        # 種類別内訳テーブル
+        _s3_rows = []
+        for _t, _d in _short3_summary_month["by_type"].items():
+            _s3_rows.append({
+                "種類": _t,
+                "件数": _d["cases"],
+                "収入/件": f"¥{_short3_revenue_map.get(_t, 0):,}",
+                "収入合計": f"¥{_d['revenue']:,}",
+                "貢献額/件": f"¥{_short3_revenue_map.get(_t, 0) - _short3_cost_map.get(_t, 0):,}",
+                "貢献額合計": f"¥{_d['contribution']:,}",
+            })
+        if _s3_rows:
+            st.dataframe(pd.DataFrame(_s3_rows), hide_index=True, use_container_width=True)
+
+        # 合算表示: 通常分 + 短手3分
+        st.markdown(
+            f"""
+<div style="background:#F0F9FF; padding:12px 16px; border-radius:8px; border-left:4px solid #0EA5E9; margin:8px 0;">
+<b>📊 月次運営貢献額（通常分 + 短手3 分）</b><br/>
+<table style="width:100%; border-collapse:collapse; margin-top:6px;">
+<tr><td style="padding:3px 6px; color:#555;">通常入院分（病棟稼働）</td>
+    <td style="text-align:right; padding:3px 6px;"><b>¥{_normal_contrib/10000:,.1f}万</b></td></tr>
+<tr><td style="padding:3px 6px; color:#555;">短手3 分（包括点数）</td>
+    <td style="text-align:right; padding:3px 6px;"><b>¥{_s3_total_contrib/10000:,.1f}万</b> ({_short3_summary_month['total_cases']}件)</td></tr>
+<tr style="border-top:1px solid #BAE6FD;">
+    <td style="padding:4px 6px;"><b>合計</b></td>
+    <td style="text-align:right; padding:4px 6px;"><b style="color:#0369A1;">¥{_combined_contrib/10000:,.1f}万</b></td></tr>
+</table>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        st.markdown("---")
 
     c5, c6, c7, c8, c9 = st.columns(5)
     c5.metric("月間入院数", f"{summary['月間入院数']}人")

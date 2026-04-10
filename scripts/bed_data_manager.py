@@ -1491,6 +1491,7 @@ ADMISSION_DETAIL_COLUMNS = [
     "attending_doctor",  # 入院担当医/主治医
     "los_days",          # 在院日数 — 退院のみ、入院時は空欄
     "phase",             # A/B/C — 退院のみ、los_daysから自動計算
+    "short3_type",       # 短手3 種類 — 入院のみ、"該当なし"/"大腸ポリペク..."等、Phase 3
 ]
 
 # 有効な入院経路
@@ -1525,17 +1526,19 @@ def create_empty_detail_dataframe() -> pd.DataFrame:
     df["attending_doctor"] = df["attending_doctor"].astype("string")
     df["los_days"] = df["los_days"].astype("Int64")
     df["phase"] = df["phase"].astype("string")
+    df["short3_type"] = df["short3_type"].astype("string")
     return df
 
 
 def add_admission_event(
-    df: pd.DataFrame,
-    date: str | datetime,
-    ward: str,
-    route: str,
-    source_doctor: str,
-    attending_doctor: str,
-) -> pd.DataFrame:
+    df,
+    date,
+    ward,
+    route,
+    source_doctor,
+    attending_doctor,
+    short3_type=None,
+):
     """
     入院イベントを追加する。
 
@@ -1546,6 +1549,7 @@ def add_admission_event(
         route: 入院経路（外来紹介/救急/連携室/ウォークイン）
         source_doctor: 入院創出医（空文字列可）
         attending_doctor: 入院担当医/主治医
+        short3_type: 短手3 の種類（"該当なし"/"大腸ポリペク..."等、Phase 3）
 
     Returns:
         レコード追加後のDataFrame
@@ -1561,6 +1565,7 @@ def add_admission_event(
         "attending_doctor": attending_doctor,
         "los_days": pd.NA,
         "phase": pd.NA,
+        "short3_type": short3_type if short3_type else pd.NA,
     }])
     # 型を合わせる
     new_row["id"] = new_row["id"].astype("string")
@@ -1571,6 +1576,12 @@ def add_admission_event(
     new_row["attending_doctor"] = new_row["attending_doctor"].astype("string")
     new_row["los_days"] = new_row["los_days"].astype("Int64")
     new_row["phase"] = new_row["phase"].astype("string")
+    new_row["short3_type"] = new_row["short3_type"].astype("string")
+
+    # 既存 df に short3_type 列がない場合は追加（後方互換）
+    if "short3_type" not in df.columns:
+        df = df.copy()
+        df["short3_type"] = pd.Series([pd.NA] * len(df), dtype="string")
 
     df = pd.concat([df, new_row], ignore_index=True)
     df["date"] = pd.to_datetime(df["date"])
@@ -1610,6 +1621,7 @@ def add_discharge_event(
         "attending_doctor": attending_doctor,
         "los_days": los_days,
         "phase": phase,
+        "short3_type": pd.NA,
     }])
     # 型を合わせる
     new_row["id"] = new_row["id"].astype("string")
@@ -1620,6 +1632,12 @@ def add_discharge_event(
     new_row["attending_doctor"] = new_row["attending_doctor"].astype("string")
     new_row["los_days"] = new_row["los_days"].astype("Int64")
     new_row["phase"] = new_row["phase"].astype("string")
+    new_row["short3_type"] = new_row["short3_type"].astype("string")
+
+    # 既存 df に short3_type 列がない場合は追加（後方互換）
+    if "short3_type" not in df.columns:
+        df = df.copy()
+        df["short3_type"] = pd.Series([pd.NA] * len(df), dtype="string")
 
     df = pd.concat([df, new_row], ignore_index=True)
     df["date"] = pd.to_datetime(df["date"])
