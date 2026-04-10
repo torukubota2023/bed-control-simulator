@@ -1046,7 +1046,8 @@ if "daily_data" not in st.session_state:
 # 入退院詳細データ（医師別）
 if "admission_details" not in st.session_state:
     if _DETAIL_DATA_AVAILABLE:
-        st.session_state.admission_details = load_details()
+        _detail_csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "admission_details.csv")
+        st.session_state.admission_details = load_details(_detail_csv_path)
     else:
         st.session_state.admission_details = pd.DataFrame()
 
