@@ -1308,6 +1308,30 @@ if run_button:
             st.stop()
 
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 実データ用ヘルパー（モジュール先頭で定義: 下流で使う前に利用可能にする）
+# ---------------------------------------------------------------------------
+def _filter_current_month(df_in):
+    """
+    最新日付と同じ年月の行のみに絞り込む。rolling LOS用の過去90日データを除外するために使う。
+    日付カラムがなければそのまま返す。
+    """
+    if not isinstance(df_in, pd.DataFrame) or len(df_in) == 0:
+        return df_in
+    for _dc in ("date", "日付"):
+        if _dc in df_in.columns:
+            try:
+                _dates = pd.to_datetime(df_in[_dc])
+                _last = _dates.iloc[-1]
+                _mask = (_dates.dt.year == _last.year) & (_dates.dt.month == _last.month)
+                return df_in[_mask].reset_index(drop=True)
+            except Exception:
+                return df_in
+    return df_in
+
+
+
 # 実データモード: 実績データからシミュレーション互換DataFrameを生成
 # ---------------------------------------------------------------------------
 _actual_data_available = False
@@ -1550,25 +1574,6 @@ def _calc_remaining_days(raw_df):
         return max(0, _days_in_month - _last_date.day)
     except Exception:
         return calendar.monthrange(date.today().year, date.today().month)[1] - date.today().day
-
-
-def _filter_current_month(df_in):
-    """
-    最新日付と同じ年月の行のみに絞り込む。rolling LOS用の過去90日データを除外するために使う。
-    日付カラムがなければそのまま返す。
-    """
-    if not isinstance(df_in, pd.DataFrame) or len(df_in) == 0:
-        return df_in
-    for _dc in ("date", "日付"):
-        if _dc in df_in.columns:
-            try:
-                _dates = pd.to_datetime(df_in[_dc])
-                _last = _dates.iloc[-1]
-                _mask = (_dates.dt.year == _last.year) & (_dates.dt.month == _last.month)
-                return df_in[_mask].reset_index(drop=True)
-            except Exception:
-                return df_in
-    return df_in
 
 
 def _calc_monthly_target(raw_df, target_lower, total_days_in_month, view_beds):
