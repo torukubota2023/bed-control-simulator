@@ -680,11 +680,15 @@ _OPERATING_PROFIT = 35500000  # 年間黒字額3,550万円
 _current_occ = None
 if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.session_state.daily_data) > 0:
     _dd_for_occ = st.session_state.daily_data
+    # 厚労省定義: 病床稼働率 = (在院患者数 + 退院患者数) / 病床数
+    _dis_fallback = _dd_for_occ["discharges"] if "discharges" in _dd_for_occ.columns else 0
     if "ward" in _dd_for_occ.columns:
-        # 病棟別データの場合、日付ごとにtotal_patientsを合算してから平均
-        _mean_total_patients = _dd_for_occ.groupby("date")["total_patients"].sum().mean()
+        # 病棟別データの場合、日付ごとに(total_patients + discharges)を合算してから平均
+        _dd_for_occ_tmp = _dd_for_occ.copy()
+        _dd_for_occ_tmp["_occ_numerator"] = _dd_for_occ_tmp["total_patients"] + (_dd_for_occ_tmp["discharges"] if "discharges" in _dd_for_occ_tmp.columns else 0)
+        _mean_total_patients = _dd_for_occ_tmp.groupby("date")["_occ_numerator"].sum().mean()
     else:
-        _mean_total_patients = _dd_for_occ["total_patients"].mean()
+        _mean_total_patients = (_dd_for_occ["total_patients"] + _dis_fallback).mean()
     _current_occ = _mean_total_patients / _TOTAL_BEDS_METRIC * 100
 
 st.sidebar.markdown("---")
@@ -1106,7 +1110,9 @@ if "demo_data" not in st.session_state:
             if "num_beds" not in _auto_demo.columns:
                 _auto_demo["num_beds"] = _auto_demo["ward"].map(lambda w: get_ward_beds(w))
             if "occupancy_rate" not in _auto_demo.columns:
-                _auto_demo["occupancy_rate"] = (_auto_demo["total_patients"] / _auto_demo["num_beds"] * 100).round(1)
+                # 厚労省定義: 病床稼働率 = (在院患者数 + 退院患者数) / 病床数
+                _auto_dis = _auto_demo["discharges"] if "discharges" in _auto_demo.columns else 0
+                _auto_demo["occupancy_rate"] = ((_auto_demo["total_patients"] + _auto_dis) / _auto_demo["num_beds"] * 100).round(1)
             st.session_state.demo_data = _auto_demo.sort_values(["date", "ward"]).reset_index(drop=True)
         except Exception:
             st.session_state.demo_data = pd.DataFrame()

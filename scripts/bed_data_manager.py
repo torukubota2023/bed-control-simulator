@@ -328,8 +328,9 @@ def calculate_daily_metrics(df: pd.DataFrame, num_beds: int = 94) -> pd.DataFram
     result["date"] = pd.to_datetime(result["date"])
     result = result.sort_values("date").reset_index(drop=True)
 
-    # 稼働率
-    result["occupancy_rate"] = result["total_patients"] / num_beds
+    # 厚労省定義: 病床稼働率 = (在院患者数 + 退院患者数) / 病床数
+    _dis = result["discharges"] if "discharges" in result.columns else 0
+    result["occupancy_rate"] = (result["total_patients"] + _dis) / num_beds
 
     # フェーズ構成比（ゼロ除算対応）
     # phase_a/b/c_count が NULL または合計0の行は目標比率(A:18% B:43% C:39%)で自動推定
@@ -447,6 +448,7 @@ def predict_occupancy_from_history(
         # 0〜num_beds にクリップ
         current_patients = max(0, min(num_beds, current_patients))
 
+        # NOTE: 予測モデルでは退院数の加算は行っていない（予測精度への影響は限定的）
         occupancy = current_patients / num_beds
 
         # 信頼度（データ量と予測距離で判定）
@@ -857,7 +859,9 @@ def generate_weekly_summary(df: pd.DataFrame, num_beds: int = 94) -> list[dict]:
     prev_occupancy = None
 
     for yw, group in work.groupby("year_week", sort=True):
-        avg_occ = float(group["total_patients"].mean()) / num_beds
+        # 厚労省定義: 病床稼働率 = (在院患者数 + 退院患者数) / 病床数
+        _dis_grp = group["discharges"] if "discharges" in group.columns else 0
+        avg_occ = float((group["total_patients"] + _dis_grp).mean()) / num_beds
         total_adm = int(group["new_admissions"].sum())
         total_dis = int(group["discharges"].sum())
 
@@ -1107,7 +1111,9 @@ def convert_actual_to_display(actual_df: pd.DataFrame, params: dict) -> pd.DataF
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(float)
 
-    df["occupancy_rate"] = df["total_patients"] / num_beds
+    # 厚労省定義: 病床稼働率 = (在院患者数 + 退院患者数) / 病床数
+    _dis_col = df["discharges"] if "discharges" in df.columns else 0
+    df["occupancy_rate"] = (df["total_patients"] + _dis_col) / num_beds
     tp_safe = df["total_patients"].clip(lower=1)
 
     # フェーズデータがない（全て0）場合、total_patientsからデフォルト比率で推定
@@ -2191,27 +2197,37 @@ def simulate_discharge_shift(
 
     # 曜日別平均在院患者数
     weekday_avg = df.groupby("weekday")[tp_col].mean()
+    # 厚労省定義: 病床稼働率 = (在院患者数 + 退院患者数) / 病床数
+    dis_col = "discharges" if "discharges" in df.columns else None
+    weekday_avg_dis = df.groupby("weekday")[dis_col].mean() if dis_col else pd.Series(dtype=float)
 
-    def occ_pct(patients):
-        return round(patients / beds_total * 100, 1) if beds_total > 0 else 0.0
+    def occ_pct(patients, discharges=0.0):
+        return round((patients + discharges) / beds_total * 100, 1) if beds_total > 0 else 0.0
 
     fri_patients = weekday_avg.get(4, 0.0)
     sat_patients = weekday_avg.get(5, 0.0)
     sun_patients = weekday_avg.get(6, 0.0)
 
+    # 曜日別平均退院数
+    fri_dis = weekday_avg_dis.get(4, 0.0) if len(weekday_avg_dis) > 0 else 0.0
+    sat_dis = weekday_avg_dis.get(5, 0.0) if len(weekday_avg_dis) > 0 else 0.0
+    sun_dis = weekday_avg_dis.get(6, 0.0) if len(weekday_avg_dis) > 0 else 0.0
+
     # 平日平均（月〜金: 0-4）、週末平均（土日: 5-6）
     weekday_patients = np.mean([weekday_avg.get(i, 0.0) for i in range(5)])
     weekend_patients = np.mean([weekday_avg.get(i, 0.0) for i in [5, 6]])
+    weekday_dis_avg = np.mean([weekday_avg_dis.get(i, 0.0) if len(weekday_avg_dis) > 0 else 0.0 for i in range(5)])
+    weekend_dis_avg = np.mean([weekday_avg_dis.get(i, 0.0) if len(weekday_avg_dis) > 0 else 0.0 for i in [5, 6]])
 
     # 全7曜日の稼働率（月=0 〜 日=6）
-    before_weekday_occ = {i: occ_pct(weekday_avg.get(i, 0.0)) for i in range(7)}
+    before_weekday_occ = {i: occ_pct(weekday_avg.get(i, 0.0), weekday_avg_dis.get(i, 0.0) if len(weekday_avg_dis) > 0 else 0.0) for i in range(7)}
 
     before = {
-        "fri_occ_pct": occ_pct(fri_patients),
-        "sat_occ_pct": occ_pct(sat_patients),
-        "sun_occ_pct": occ_pct(sun_patients),
-        "weekday_avg_occ": occ_pct(weekday_patients),
-        "weekend_avg_occ": occ_pct(weekend_patients),
+        "fri_occ_pct": occ_pct(fri_patients, fri_dis),
+        "sat_occ_pct": occ_pct(sat_patients, sat_dis),
+        "sun_occ_pct": occ_pct(sun_patients, sun_dis),
+        "weekday_avg_occ": occ_pct(weekday_patients, weekday_dis_avg),
+        "weekend_avg_occ": occ_pct(weekend_patients, weekend_dis_avg),
         "weekday_occ": before_weekday_occ,
     }
 
@@ -2231,6 +2247,16 @@ def simulate_discharge_shift(
     ])
     after_weekend_patients = np.mean([after_sat, after_sun])
 
+    # 退院シフト後の退院数: 金曜 -n_shifts, 日曜 +n_shifts（土曜は変化なし）
+    after_fri_dis = max(0.0, fri_dis - n_shifts)
+    after_sat_dis = sat_dis
+    after_sun_dis = sun_dis + n_shifts
+    after_weekday_dis_avg = np.mean([
+        (weekday_avg_dis.get(i, 0.0) if len(weekday_avg_dis) > 0 else 0.0) + (-n_shifts if i == 4 else 0)
+        for i in range(5)
+    ])
+    after_weekend_dis_avg = np.mean([after_sat_dis, after_sun_dis])
+
     # 調整後の全7曜日の稼働率
     # 金曜(4)・土曜(5)・日曜(6) に n_shifts 人が追加
     after_weekday_occ = {}
@@ -2238,14 +2264,19 @@ def simulate_discharge_shift(
         base = weekday_avg.get(i, 0.0)
         if i in (4, 5, 6):
             base += n_shifts
-        after_weekday_occ[i] = occ_pct(base)
+        dis_base = weekday_avg_dis.get(i, 0.0) if len(weekday_avg_dis) > 0 else 0.0
+        if i == 4:
+            dis_base = max(0.0, dis_base - n_shifts)
+        elif i == 6:
+            dis_base += n_shifts
+        after_weekday_occ[i] = occ_pct(base, dis_base)
 
     after = {
-        "fri_occ_pct": occ_pct(after_fri),
-        "sat_occ_pct": occ_pct(after_sat),
-        "sun_occ_pct": occ_pct(after_sun),
-        "weekday_avg_occ": occ_pct(after_weekday_patients),
-        "weekend_avg_occ": occ_pct(after_weekend_patients),
+        "fri_occ_pct": occ_pct(after_fri, after_fri_dis),
+        "sat_occ_pct": occ_pct(after_sat, after_sat_dis),
+        "sun_occ_pct": occ_pct(after_sun, after_sun_dis),
+        "weekday_avg_occ": occ_pct(after_weekday_patients, after_weekday_dis_avg),
+        "weekend_avg_occ": occ_pct(after_weekend_patients, after_weekend_dis_avg),
         "weekday_occ": after_weekday_occ,
     }
 
