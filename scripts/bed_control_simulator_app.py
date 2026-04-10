@@ -7004,6 +7004,48 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
                     _dm_detail_df, _dm_daily_df, ward_beds=_dm_ward_beds
                 )
 
+                # --- パターンB「早める」条件付き表示ロジック ---
+                # 現在の稼働率・LOSを計算
+                if "total_patients" in _dm_daily_df.columns:
+                    _dm_current_occ = _dm_daily_df["total_patients"].tail(7).mean() / 94 * 100
+                else:
+                    _dm_current_occ = 0.0
+                if "avg_los" in _dm_daily_df.columns:
+                    _dm_current_los = _dm_daily_df["avg_los"].tail(7).mean()
+                else:
+                    _dm_current_los = 0.0
+
+                _dm_target_occ_pct = target_lower * 100  # 目標稼働率（%）
+                _dm_los_threshold = _max_avg_los - 1.0   # 施設基準-1日（迫るライン）
+
+                _dm_show_pattern_b = (_dm_current_occ >= _dm_target_occ_pct) or (_dm_current_los >= _dm_los_threshold)
+
+                # パターンB非表示の場合はフィルタリング
+                if not _dm_show_pattern_b:
+                    _dm_candidates = [c for c in _dm_candidates if c.get("shift_type") != "早める"]
+
+                # --- ガイダンスメッセージ ---
+                if not _dm_show_pattern_b:
+                    st.info(
+                        "💡 **現在の状況では「早める」調整は推奨されません。**\n\n"
+                        f"稼働率 {_dm_current_occ:.1f}%（目標{_dm_target_occ_pct:.0f}%未満）・"
+                        f"平均在院日数 {_dm_current_los:.1f}日（基準{_max_avg_los}日まで余裕あり）のため、"
+                        "C群患者の在院継続で運営貢献額（28,900円/日）を確保する方が有利です。\n\n"
+                        "稼働率が目標に到達するか、在院日数が基準に迫った場合に「早める」候補が表示されます。"
+                    )
+                else:
+                    if _dm_current_los >= _dm_los_threshold:
+                        st.warning(
+                            f"⚠️ 平均在院日数 {_dm_current_los:.1f}日 — "
+                            f"施設基準{_max_avg_los}日に迫っています。"
+                            "在院日数短縮のため「早める」退院調整を検討してください。"
+                        )
+                    elif _dm_current_occ >= _dm_target_occ_pct:
+                        st.success(
+                            f"✅ 稼働率 {_dm_current_occ:.1f}% — 目標圏内です。"
+                            "月曜の新規入院枠確保のため「早める」退院調整も有効です。"
+                        )
+
                 if len(_dm_candidates) == 0:
                     st.info("現在、日曜退院の調整候補はありません")
                 else:
@@ -7108,20 +7150,45 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
                     f"+{_dm_impact['los_impact_days']:.2f}日",
                 )
 
-            # 曜日別稼働率の週間パターン（7日間折れ線グラフ）
+            # 曜日別稼働率の週間パターン（グループ棒グラフ）
             _dm_day_labels = ["月", "火", "水", "木", "金", "土", "日"]
             _dm_before_vals = [_dm_before["weekday_occ"].get(i, 0) for i in range(7)]
             _dm_after_vals = [_dm_after["weekday_occ"].get(i, 0) for i in range(7)]
 
             _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 4))
+            _dm_x = np.arange(len(_dm_day_labels))
+            _dm_width = 0.35
+
+            # 目標レンジ（棒の背面に描画）
             _dm_ax2.axhspan(90, 95, alpha=0.1, color='gold', label='目標レンジ (90-95%)')
-            _dm_ax2.plot(_dm_day_labels, _dm_before_vals, 'o-', color='#95a5a6', linewidth=2, markersize=8, label='現状')
+
+            # 棒グラフ描画
+            _dm_bars1 = _dm_ax2.bar(_dm_x - _dm_width / 2, _dm_before_vals, _dm_width, label='現状', color='#95a5a6', alpha=0.8)
             if _dm_n_shifts > 0:
-                _dm_ax2.plot(_dm_day_labels, _dm_after_vals, 'o-', color='#27ae60', linewidth=2, markersize=8, label='調整後')
+                _dm_bars2 = _dm_ax2.bar(_dm_x + _dm_width / 2, _dm_after_vals, _dm_width, label='調整後', color='#27ae60', alpha=0.8)
+
+            # 値ラベル（現状）
+            for _dm_bar in _dm_bars1:
+                _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
+                             f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#666')
+            # 値ラベル（調整後）
+            if _dm_n_shifts > 0:
+                for _dm_bar in _dm_bars2:
+                    _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
+                                 f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#27ae60')
+
+            _dm_ax2.set_xticks(_dm_x)
+            _dm_ax2.set_xticklabels(_dm_day_labels)
             _dm_ax2.set_ylabel("稼働率 (%)")
             _dm_ax2.set_title("曜日別稼働率の変化（週間パターン）")
             _dm_ax2.legend()
-            _dm_ax2.set_ylim(75, 100)
+
+            # Y軸範囲を自動調整（差が見えるように）
+            _dm_all_vals = _dm_before_vals + (_dm_after_vals if _dm_n_shifts > 0 else [])
+            _dm_y_min = max(0, min(_dm_all_vals) - 3)
+            _dm_y_max = min(100, max(_dm_all_vals) + 3)
+            _dm_ax2.set_ylim(_dm_y_min, _dm_y_max)
+
             _dm_ax2.grid(axis='y', alpha=0.3)
             _dm_fig2.tight_layout()
             st.pyplot(_dm_fig2)
