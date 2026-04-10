@@ -7108,29 +7108,24 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
                     f"+{_dm_impact['los_impact_days']:.2f}日",
                 )
 
+            # 曜日別稼働率の週間パターン（7日間折れ線グラフ）
+            _dm_day_labels = ["月", "火", "水", "木", "金", "土", "日"]
+            _dm_before_vals = [_dm_before["weekday_occ"].get(i, 0) for i in range(7)]
+            _dm_after_vals = [_dm_after["weekday_occ"].get(i, 0) for i in range(7)]
+
+            _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 4))
+            _dm_ax2.axhspan(90, 95, alpha=0.1, color='gold', label='目標レンジ (90-95%)')
+            _dm_ax2.plot(_dm_day_labels, _dm_before_vals, 'o-', color='#95a5a6', linewidth=2, markersize=8, label='現状')
             if _dm_n_shifts > 0:
-                # 金土日の稼働率 before/after 棒グラフ
-                _dm_weekend_labels = ["金曜", "土曜", "日曜"]
-                _dm_before_vals = [_dm_before["fri_occ_pct"], _dm_before["sat_occ_pct"], _dm_before["sun_occ_pct"]]
-                _dm_after_vals = [_dm_after["fri_occ_pct"], _dm_after["sat_occ_pct"], _dm_after["sun_occ_pct"]]
-
-                _dm_x = np.arange(len(_dm_weekend_labels))
-                _dm_width = 0.35
-
-                _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 4))
-                _dm_ax2.bar(_dm_x - _dm_width / 2, _dm_before_vals, _dm_width, label="現状", color="#95a5a6", edgecolor="white")
-                _dm_ax2.bar(_dm_x + _dm_width / 2, _dm_after_vals, _dm_width, label="調整後", color="#27ae60", edgecolor="white")
-                _dm_ax2.set_ylabel("稼働率 (%)")
-                _dm_ax2.set_title("週末稼働率の変化（金・土・日）")
-                _dm_ax2.set_xticks(_dm_x)
-                _dm_ax2.set_xticklabels(_dm_weekend_labels)
-                _dm_ax2.legend()
-                for idx_b, (bv, av) in enumerate(zip(_dm_before_vals, _dm_after_vals)):
-                    _dm_ax2.text(idx_b - _dm_width / 2, bv + 0.5, f"{bv:.1f}%", ha="center", fontsize=9)
-                    _dm_ax2.text(idx_b + _dm_width / 2, av + 0.5, f"{av:.1f}%", ha="center", fontsize=9)
-                _dm_fig2.tight_layout()
-                st.pyplot(_dm_fig2)
-                plt.close(_dm_fig2)
+                _dm_ax2.plot(_dm_day_labels, _dm_after_vals, 'o-', color='#27ae60', linewidth=2, markersize=8, label='調整後')
+            _dm_ax2.set_ylabel("稼働率 (%)")
+            _dm_ax2.set_title("曜日別稼働率の変化（週間パターン）")
+            _dm_ax2.legend()
+            _dm_ax2.set_ylim(75, 100)
+            _dm_ax2.grid(axis='y', alpha=0.3)
+            _dm_fig2.tight_layout()
+            st.pyplot(_dm_fig2)
+            plt.close(_dm_fig2)
 
             st.info("💡 これは病院の都合ではなく、ご家族の都合に寄り添った結果です。"
                     "家族目線の退院調整が、運営改善にもつながります。")

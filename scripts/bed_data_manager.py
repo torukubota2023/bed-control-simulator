@@ -2166,8 +2166,10 @@ def simulate_discharge_shift(
         dict: before / after / impact の3キーを持つ辞書
     """
     if daily_df is None or len(daily_df) == 0:
+        empty_weekday_occ = {i: 0.0 for i in range(7)}
         empty_day = {"fri_occ_pct": 0.0, "sat_occ_pct": 0.0, "sun_occ_pct": 0.0,
-                     "weekday_avg_occ": 0.0, "weekend_avg_occ": 0.0}
+                     "weekday_avg_occ": 0.0, "weekend_avg_occ": 0.0,
+                     "weekday_occ": dict(empty_weekday_occ)}
         return {
             "before": dict(empty_day),
             "after": dict(empty_day),
@@ -2201,12 +2203,16 @@ def simulate_discharge_shift(
     weekday_patients = np.mean([weekday_avg.get(i, 0.0) for i in range(5)])
     weekend_patients = np.mean([weekday_avg.get(i, 0.0) for i in [5, 6]])
 
+    # 全7曜日の稼働率（月=0 〜 日=6）
+    before_weekday_occ = {i: occ_pct(weekday_avg.get(i, 0.0)) for i in range(7)}
+
     before = {
         "fri_occ_pct": occ_pct(fri_patients),
         "sat_occ_pct": occ_pct(sat_patients),
         "sun_occ_pct": occ_pct(sun_patients),
         "weekday_avg_occ": occ_pct(weekday_patients),
         "weekend_avg_occ": occ_pct(weekend_patients),
+        "weekday_occ": before_weekday_occ,
     }
 
     # シフト後の計算
@@ -2225,12 +2231,22 @@ def simulate_discharge_shift(
     ])
     after_weekend_patients = np.mean([after_sat, after_sun])
 
+    # 調整後の全7曜日の稼働率
+    # 金曜(4)・土曜(5)・日曜(6) に n_shifts 人が追加
+    after_weekday_occ = {}
+    for i in range(7):
+        base = weekday_avg.get(i, 0.0)
+        if i in (4, 5, 6):
+            base += n_shifts
+        after_weekday_occ[i] = occ_pct(base)
+
     after = {
         "fri_occ_pct": occ_pct(after_fri),
         "sat_occ_pct": occ_pct(after_sat),
         "sun_occ_pct": occ_pct(after_sun),
         "weekday_avg_occ": occ_pct(after_weekday_patients),
         "weekend_avg_occ": occ_pct(after_weekend_patients),
+        "weekday_occ": after_weekday_occ,
     }
 
     # 影響度計算
