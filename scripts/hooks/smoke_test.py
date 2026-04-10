@@ -155,6 +155,80 @@ try:
     except py_compile.PyCompileError as e:
         errors.append(f"❌ app fails py_compile: {e}")
 
+    # === 7. SCENARIO CONSISTENCY CHECKS ===
+    # These values must match the demo scenario script exactly.
+    # If data changes cause these to drift, update BOTH data AND scenario.
+    SCENARIO_EXPECTED = {
+        "overall_occ_display": (88.5, 89.0),  # 全体稼働率 (scenario says 88.8%)
+        "occ_5f_display": (86.0, 87.0),        # 5F稼働率 (scenario says 86.5%)
+        "occ_6f_display": (90.5, 92.0),        # 6F稼働率 (scenario says 91.1%)
+        "los_6f_rolling_above_21": True,        # 6F rolling > 21日 (triggers alert)
+        "los_5f_rolling_below_21": True,        # 5F rolling < 21日 (within criteria)
+        "current_month_los_overall": (19.0, 22.0),  # 今月LOS全体 (realistic range)
+        "current_month_los_6f": (21.0, 24.0),  # 6F今月LOS > 21日
+        "current_month_los_5f": (16.0, 21.0),  # 5F今月LOS < 21日
+        "friday_discharge_pct": (25, 35),       # 金曜退院率 (scenario says 31%)
+    }
+
+    print("\n--- Scenario Consistency Checks ---")
+
+    # 7a. Display occupancy rates (same as core but with scenario-precise ranges)
+    check("scenario_overall_occ_display", overall_occ, SCENARIO_EXPECTED["overall_occ_display"])
+    check("scenario_occ_5f_display", occ_5f, SCENARIO_EXPECTED["occ_5f_display"])
+    check("scenario_occ_6f_display", occ_6f, SCENARIO_EXPECTED["occ_6f_display"])
+
+    # 7b. Rolling LOS scenario assertions (6F above 21, 5F below 21)
+    try:
+        from bed_data_manager import calculate_rolling_los as _calc_rlos
+        rolling_results = {}
+        for w in ["5F", "6F"]:
+            w_df = df[df["ward"] == w].copy()
+            r = _calc_rlos(w_df, window_days=90)
+            if r and r.get("rolling_los") is not None:
+                rolling_results[w] = r["rolling_los"]
+
+        if "6F" in rolling_results:
+            is_above = rolling_results["6F"] > 21.0
+            if is_above == SCENARIO_EXPECTED["los_6f_rolling_above_21"]:
+                print(f"✅ los_6f_rolling_above_21: {rolling_results['6F']:.1f} > 21 = {is_above}")
+            else:
+                errors.append(f"❌ los_6f_rolling_above_21: {rolling_results['6F']:.1f} > 21 = {is_above}, expected {SCENARIO_EXPECTED['los_6f_rolling_above_21']}")
+
+        if "5F" in rolling_results:
+            is_below = rolling_results["5F"] < 21.0
+            if is_below == SCENARIO_EXPECTED["los_5f_rolling_below_21"]:
+                print(f"✅ los_5f_rolling_below_21: {rolling_results['5F']:.1f} < 21 = {is_below}")
+            else:
+                errors.append(f"❌ los_5f_rolling_below_21: {rolling_results['5F']:.1f} < 21 = {is_below}, expected {SCENARIO_EXPECTED['los_5f_rolling_below_21']}")
+    except ImportError:
+        warnings_list.append("⚠️  scenario rolling LOS check skipped (import failed)")
+
+    # 7c. Current month average LOS (April data)
+    apr_los_rows_5f = apr_5f[apr_5f["avg_los"] > 0]
+    apr_los_rows_6f = apr_6f[apr_6f["avg_los"] > 0]
+    if len(apr_los_rows_5f) > 0 and len(apr_los_rows_6f) > 0:
+        los_5f_mean = apr_los_rows_5f["avg_los"].mean()
+        los_6f_mean = apr_los_rows_6f["avg_los"].mean()
+        los_overall_mean = pd.concat([apr_los_rows_5f["avg_los"], apr_los_rows_6f["avg_los"]]).mean()
+        check("scenario_current_month_los_overall", los_overall_mean, SCENARIO_EXPECTED["current_month_los_overall"])
+        check("scenario_current_month_los_6f", los_6f_mean, SCENARIO_EXPECTED["current_month_los_6f"])
+        check("scenario_current_month_los_5f", los_5f_mean, SCENARIO_EXPECTED["current_month_los_5f"])
+    else:
+        warnings_list.append("⚠️  scenario LOS check skipped (no avg_los data)")
+
+    # 7d. Friday discharge percentage
+    if "notes" in df.columns:
+        apr_all = df[df["date"].dt.month == 4]
+        apr_with_discharges = apr_all[apr_all["discharges"] > 0]
+        if len(apr_with_discharges) > 0:
+            friday_rows = apr_with_discharges[apr_with_discharges["date"].dt.dayofweek == 4]
+            total_discharges = apr_with_discharges["discharges"].sum()
+            friday_discharges = friday_rows["discharges"].sum()
+            friday_pct = friday_discharges / total_discharges * 100 if total_discharges > 0 else 0
+            check("scenario_friday_discharge_pct", friday_pct, SCENARIO_EXPECTED["friday_discharge_pct"])
+        else:
+            warnings_list.append("⚠️  scenario friday discharge check skipped (no discharge data)")
+
 except Exception as e:
     errors.append(f"❌ smoke test crashed: {e}")
     traceback.print_exc()
