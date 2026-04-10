@@ -1977,3 +1977,317 @@ def analyze_doctor_performance(
         "discharge_weekday_dist": weekday_dist,
         "occupancy_contribution_pct": round(occupancy_contribution, 2),
     }
+
+
+# ---------------------------------------------------------------------------
+# 退院マネジメント機能
+# ---------------------------------------------------------------------------
+
+# フェーズ別日次運営貢献額（円）
+_PHASE_DAILY_CONTRIBUTION = {
+    "A": 24000,
+    "B": 30000,
+    "C": 28900,
+}
+
+
+def get_sunday_discharge_candidates(
+    detail_df: pd.DataFrame,
+    daily_df: pd.DataFrame,
+    ward_beds: dict | None = None,
+    max_avg_los: float = 21.0,
+) -> list[dict]:
+    """
+    今週の退院予定者（金曜・土曜退院）のうち、日曜退院に調整可能な候補を抽出する。
+
+    金曜に集中する退院を平準化し、日曜退院という選択肢を提案するための関数。
+
+    Args:
+        detail_df: admission_details.csv の DataFrame
+            (columns: date, ward, event_type, los_days, phase, attending_doctor 等)
+        daily_df: 日次データの DataFrame
+            (columns: date, total_patients, new_admissions, discharges 等)
+        ward_beds: 病棟別ベッド数 dict (例: {"5F": 47, "6F": 47})。
+            None の場合はデフォルト値を使用。
+        max_avg_los: 施設基準の平均在院日数上限（デフォルト 21.0 日）
+
+    Returns:
+        list[dict]: 各候補の情報を含む辞書のリスト。キー:
+            ward, date, phase, los_days, attending_doctor,
+            sunday_date, additional_days, los_margin,
+            daily_contribution, recommendation
+    """
+    if ward_beds is None:
+        ward_beds = {"5F": 47, "6F": 47}
+
+    if detail_df is None or len(detail_df) == 0:
+        return []
+
+    df = detail_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    # 退院レコードのうち、曜日が金曜(4)または土曜(5)のものを抽出
+    discharges = df[df["event_type"] == "discharge"].copy()
+    if len(discharges) == 0:
+        return []
+
+    discharges["weekday"] = discharges["date"].dt.dayofweek  # 0=月, 4=金, 5=土
+    fri_sat = discharges[discharges["weekday"].isin([4, 5])].copy()
+
+    if len(fri_sat) == 0:
+        return []
+
+    # 現在のrolling平均在院日数を取得
+    rolling_result = calculate_rolling_los(daily_df)
+    current_rolling_los = (
+        rolling_result["rolling_los"]
+        if rolling_result is not None and rolling_result.get("rolling_los") is not None
+        else 0.0
+    )
+    # rolling計算に使われた分母情報（影響度推定用）
+    total_admissions = (
+        rolling_result["total_admissions"]
+        if rolling_result is not None
+        else 0.0
+    )
+    total_discharges = (
+        rolling_result["total_discharges"]
+        if rolling_result is not None
+        else 0.0
+    )
+    denominator = (total_admissions + total_discharges) / 2.0 if (total_admissions + total_discharges) > 0 else 1.0
+
+    candidates = []
+    for _, row in fri_sat.iterrows():
+        weekday = int(row["weekday"])
+        additional_days = 7 - weekday  # 金曜(4)→+2日(日曜=6), 土曜(5)→+1日
+        # 日曜の日付
+        original_date = row["date"]
+        sunday_date = original_date + timedelta(days=additional_days)
+
+        los_days = int(row["los_days"]) if pd.notna(row.get("los_days")) else 0
+        phase = str(row["phase"]) if pd.notna(row.get("phase")) else ""
+
+        # los_margin: 追加日数がrolling LOSに与える影響を加味
+        # 1人がadditional_days日延びると、分子が+additional_days、分母は変わらない
+        los_impact = additional_days / denominator if denominator > 0 else 0.0
+        estimated_new_los = current_rolling_los + los_impact
+        los_margin = round(max_avg_los - estimated_new_los, 1)
+
+        # recommendation 判定
+        if phase == "C":
+            if los_margin > 0:
+                recommendation = "◎"
+            elif los_margin >= -0.5:
+                recommendation = "△"
+            else:
+                recommendation = "✗"
+        elif phase == "B":
+            # B群は「△要検討」をベースとし、LOS上限超えなら✗
+            if los_margin < -0.5:
+                recommendation = "✗"
+            else:
+                recommendation = "△"
+        else:
+            # A群やフェーズ不明
+            recommendation = "△"
+
+        daily_contribution = _PHASE_DAILY_CONTRIBUTION.get(phase, 0)
+
+        ward = str(row["ward"]) if pd.notna(row.get("ward")) else ""
+        attending_doctor = str(row["attending_doctor"]) if pd.notna(row.get("attending_doctor")) else ""
+
+        candidates.append({
+            "ward": ward,
+            "date": original_date.strftime("%Y-%m-%d"),
+            "phase": phase,
+            "los_days": los_days,
+            "attending_doctor": attending_doctor,
+            "sunday_date": sunday_date.strftime("%Y-%m-%d"),
+            "additional_days": additional_days,
+            "los_margin": los_margin,
+            "daily_contribution": daily_contribution,
+            "recommendation": recommendation,
+        })
+
+    # C群を優先、その次にlos_marginの大きい順にソート
+    phase_priority = {"C": 0, "B": 1, "A": 2}
+    candidates.sort(key=lambda x: (phase_priority.get(x["phase"], 9), -x["los_margin"]))
+
+    return candidates
+
+
+def simulate_discharge_shift(
+    daily_df: pd.DataFrame,
+    detail_df: pd.DataFrame,
+    n_shifts: int,
+    beds_total: int = 94,
+) -> dict:
+    """
+    「金曜退院のN人を日曜に移したら」の What-if シミュレーション。
+
+    金曜退院をやめて日曜退院にすると、金曜・土曜に患者が残るため
+    週末稼働率が向上し、追加の運営貢献額が発生する。
+
+    Args:
+        daily_df: 日次データの DataFrame
+        detail_df: 入退院詳細の DataFrame
+        n_shifts: 日曜にシフトする人数
+        beds_total: 総病床数（デフォルト 94）
+
+    Returns:
+        dict: before / after / impact の3キーを持つ辞書
+    """
+    if daily_df is None or len(daily_df) == 0:
+        empty_day = {"fri_occ_pct": 0.0, "sat_occ_pct": 0.0, "sun_occ_pct": 0.0,
+                     "weekday_avg_occ": 0.0, "weekend_avg_occ": 0.0}
+        return {
+            "before": dict(empty_day),
+            "after": dict(empty_day),
+            "impact": {
+                "weekend_occ_change_pt": 0.0,
+                "additional_contribution_per_week": 0,
+                "additional_contribution_per_month": 0,
+                "los_impact_days": 0.0,
+                "weekly_influence_amount": 0,
+            },
+        }
+
+    df = daily_df.copy()
+    date_col = "date" if "date" in df.columns else "日付"
+    tp_col = "total_patients" if "total_patients" in df.columns else "在院患者数"
+
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["weekday"] = df[date_col].dt.dayofweek  # 0=月曜
+
+    # 曜日別平均在院患者数
+    weekday_avg = df.groupby("weekday")[tp_col].mean()
+
+    def occ_pct(patients):
+        return round(patients / beds_total * 100, 1) if beds_total > 0 else 0.0
+
+    fri_patients = weekday_avg.get(4, 0.0)
+    sat_patients = weekday_avg.get(5, 0.0)
+    sun_patients = weekday_avg.get(6, 0.0)
+
+    # 平日平均（月〜金: 0-4）、週末平均（土日: 5-6）
+    weekday_patients = np.mean([weekday_avg.get(i, 0.0) for i in range(5)])
+    weekend_patients = np.mean([weekday_avg.get(i, 0.0) for i in [5, 6]])
+
+    before = {
+        "fri_occ_pct": occ_pct(fri_patients),
+        "sat_occ_pct": occ_pct(sat_patients),
+        "sun_occ_pct": occ_pct(sun_patients),
+        "weekday_avg_occ": occ_pct(weekday_patients),
+        "weekend_avg_occ": occ_pct(weekend_patients),
+    }
+
+    # シフト後: 金曜・土曜に+n_shifts人残る、日曜はプラマイゼロ
+    # （日曜に退院するので、日曜朝の在院数は元と同じ水準）
+    after_fri = fri_patients + n_shifts
+    after_sat = sat_patients + n_shifts
+    after_sun = sun_patients  # 日曜退院なので在院数は変わらない
+
+    # 平日平均の再計算（金曜に+n_shiftsの影響）
+    after_weekday_patients = np.mean([
+        weekday_avg.get(i, 0.0) + (n_shifts if i == 4 else 0)
+        for i in range(5)
+    ])
+    after_weekend_patients = np.mean([after_sat, after_sun])
+
+    after = {
+        "fri_occ_pct": occ_pct(after_fri),
+        "sat_occ_pct": occ_pct(after_sat),
+        "sun_occ_pct": occ_pct(after_sun),
+        "weekday_avg_occ": occ_pct(after_weekday_patients),
+        "weekend_avg_occ": occ_pct(after_weekend_patients),
+    }
+
+    # 影響度計算
+    weekend_occ_change = after["weekend_avg_occ"] - before["weekend_avg_occ"]
+
+    # 追加運営貢献額: n_shifts人 × 追加2日（金土） × C群日次貢献額
+    c_daily = _PHASE_DAILY_CONTRIBUTION["C"]
+    additional_per_week = n_shifts * 2 * c_daily
+    additional_per_month = additional_per_week * 4
+
+    # 平均在院日数への影響
+    rolling_result = calculate_rolling_los(daily_df)
+    if rolling_result is not None:
+        total_adm = rolling_result.get("total_admissions", 0)
+        total_dis = rolling_result.get("total_discharges", 0)
+        denom = (total_adm + total_dis) / 2.0 if (total_adm + total_dis) > 0 else 1.0
+        # n_shifts人がそれぞれ2日延びる → 分子に+2*n_shifts
+        los_impact_days = round((2 * n_shifts) / denom, 2)
+    else:
+        los_impact_days = 0.0
+
+    # 週あたり空床影響額の削減（空床1床/日 ≒ 28,900円の機会損失）
+    weekly_influence = n_shifts * 2 * c_daily
+
+    impact = {
+        "weekend_occ_change_pt": round(weekend_occ_change, 1),
+        "additional_contribution_per_week": additional_per_week,
+        "additional_contribution_per_month": additional_per_month,
+        "los_impact_days": los_impact_days,
+        "weekly_influence_amount": weekly_influence,
+    }
+
+    return {
+        "before": before,
+        "after": after,
+        "impact": impact,
+    }
+
+
+def get_discharge_weekday_stats(detail_df: pd.DataFrame) -> dict:
+    """
+    退院曜日分布の統計情報を返す。
+
+    既存の get_discharge_weekday_distribution() を拡張し、
+    集中度指標や金曜比率などの追加統計を提供する。
+
+    Args:
+        detail_df: 入退院詳細の DataFrame
+
+    Returns:
+        dict: distribution, total, friday_count, friday_pct,
+              weekend_count, weekend_pct, concentration_index, labels
+    """
+    labels = ["月", "火", "水", "木", "金", "土", "日"]
+
+    if detail_df is None or len(detail_df) == 0:
+        return {
+            "distribution": {i: 0 for i in range(7)},
+            "total": 0,
+            "friday_count": 0,
+            "friday_pct": 0.0,
+            "weekend_count": 0,
+            "weekend_pct": 0.0,
+            "concentration_index": 0.0,
+            "labels": labels,
+        }
+
+    distribution = get_discharge_weekday_distribution(detail_df)
+    total = sum(distribution.values())
+
+    friday_count = distribution.get(4, 0)
+    friday_pct = round(friday_count / total * 100, 1) if total > 0 else 0.0
+
+    weekend_count = distribution.get(5, 0) + distribution.get(6, 0)
+    weekend_pct = round(weekend_count / total * 100, 1) if total > 0 else 0.0
+
+    # 集中度: 金曜の退院数 / (全体の退院数 / 7) = 金曜が均等分布の何倍か
+    avg_per_day = total / 7.0 if total > 0 else 1.0
+    concentration_index = round(friday_count / avg_per_day, 2) if avg_per_day > 0 else 0.0
+
+    return {
+        "distribution": distribution,
+        "total": total,
+        "friday_count": friday_count,
+        "friday_pct": friday_pct,
+        "weekend_count": weekend_count,
+        "weekend_pct": weekend_pct,
+        "concentration_index": concentration_index,
+        "labels": labels,
+    }
