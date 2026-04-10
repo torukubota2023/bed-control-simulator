@@ -5178,12 +5178,13 @@ with tabs[_tab_idx["💰 運営分析"]]:
                 "土日の退院（人/日）",
                 min_value=0,
                 max_value=4,
-                value=2,
+                value=1,
                 step=1,
+                help="土曜のみ2組・日曜0の場合は平均1を入力",
                 key="nc_weekend_dis_slider"
             )
             _nc_monthly_admits = _nc_wd_dis * 20 + _nc_we_dis * 10
-            st.caption(f"月間入院数: 平日{_nc_wd_dis}×20日 + 土日{_nc_we_dis}×10日 = {_nc_monthly_admits}人（当院の現状≒150人）")
+            st.caption(f"月間入院数: 平日{_nc_wd_dis}×20日 + 土日{_nc_we_dis}×10日 = {_nc_monthly_admits}人（当院の現状≒150人）\n※土曜2組・日曜0の場合、平均1人/日で入力")
 
         with _nc_cols[2]:
             # Calculate results
