@@ -5140,6 +5140,121 @@ with tabs[_tab_idx["💰 運営分析"]]:
 
     # 病棟別収支は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
+    # --- 🌙 夜勤安全ライン × 稼働率シミュレーション ---
+    with st.expander("🌙 夜勤安全ライン × 稼働率シミュレーション — 夜勤を守りながら稼働率を上げる", expanded=False):
+        st.markdown("""
+        **考え方:** 夜勤者が無理なく働ける在院数（夜勤安全ライン）を決めて、
+        日中の入退院ペアリングを最大化する。夜勤を楽にしながら稼働率を上げる——この2つは矛盾しません。
+        """)
+
+        _nc_cols = st.columns([1, 1, 2])
+
+        with _nc_cols[0]:
+            st.markdown("**🌙 夜勤の設定**")
+            _nc_nightly = st.slider(
+                "夜勤安全ライン（在院数）",
+                min_value=int(_view_beds * 0.70),
+                max_value=int(_view_beds * 0.98),
+                value=int(_view_beds * 0.87),
+                step=1,
+                help="夜勤者が無理なく対応できる在院患者数",
+                key="nc_nightly_slider"
+            )
+            _nc_empty_night = _view_beds - _nc_nightly
+            st.caption(f"夜間空床: {_nc_empty_night}床（急変時ベッド確保）")
+
+        with _nc_cols[1]:
+            st.markdown("**☀️ 日中の回転目標**")
+            _nc_wd_dis = st.slider(
+                "平日の退院目標（人/日）",
+                min_value=1,
+                max_value=12,
+                value=6,
+                step=1,
+                help="退院1人＋入院1人のペアリングが前提",
+                key="nc_weekday_dis_slider"
+            )
+            _nc_we_dis = st.slider(
+                "土日の退院（人/日）",
+                min_value=0,
+                max_value=4,
+                value=1,
+                step=1,
+                key="nc_weekend_dis_slider"
+            )
+
+        with _nc_cols[2]:
+            # Calculate results
+            _nc_wd_occ = (_nc_nightly + _nc_wd_dis) / _view_beds * 100
+            _nc_we_occ = (_nc_nightly + _nc_we_dis) / _view_beds * 100
+            _nc_monthly_occ = (_nc_wd_occ * 20 + _nc_we_occ * 10) / 30
+
+            # Current values for comparison
+            _nc_current_occ = _gauge_occ if '_gauge_occ' in dir() else 88.8
+            _nc_occ_improvement = _nc_monthly_occ - _nc_current_occ
+            _nc_annual_improvement = _nc_occ_improvement * float(st.session_state.get("annual_value_1pct", 1199))
+
+            # Bonus calculation
+            _nc_bonus_per_person = _nc_annual_improvement * 10000 * 0.58 / 290  # yen
+
+            st.markdown("**📊 シミュレーション結果**")
+
+            _rc1, _rc2 = st.columns(2)
+            with _rc1:
+                st.metric("平日稼働率", f"{_nc_wd_occ:.1f}%",
+                          delta=f"夜{_nc_nightly}人+退院{_nc_wd_dis}人")
+                st.metric("土日稼働率", f"{_nc_we_occ:.1f}%",
+                          delta=f"夜{_nc_nightly}人+退院{_nc_we_dis}人")
+            with _rc2:
+                st.metric("月平均稼働率", f"{_nc_monthly_occ:.1f}%",
+                          delta=f"{_nc_occ_improvement:+.1f}pt",
+                          delta_color="normal" if _nc_occ_improvement >= 0 else "inverse")
+                st.metric("年間改善額", f"{_nc_annual_improvement:+,.0f}万円",
+                          delta=f"一人あたり +{_nc_bonus_per_person:,.0f}円/年" if _nc_bonus_per_person > 0 else f"一人あたり {_nc_bonus_per_person:,.0f}円/年")
+
+            # Visual comparison
+            if _nc_occ_improvement > 0:
+                st.success(
+                    f"🌙 **夜勤在院{_nc_nightly}人**（現状より楽）で、"
+                    f"稼働率**{_nc_monthly_occ:.1f}%**（+{_nc_occ_improvement:.1f}pt）。\n\n"
+                    f"年間 **{_nc_annual_improvement:,.0f}万円** の改善。"
+                    f"職員一人あたり年間 **+{_nc_bonus_per_person:,.0f}円**（賞与約+{_nc_bonus_per_person/50000:.0f}%相当）。\n\n"
+                    f"**条件:** 平日の退院を{_nc_wd_dis}人/日に増やし、退院当日に入院を受ける（入退院ペアリング）。"
+                )
+            elif _nc_occ_improvement < -1:
+                st.warning(
+                    f"⚠️ この設定では稼働率が{_nc_occ_improvement:+.1f}pt低下します。"
+                    f"夜勤安全ラインを上げるか、日中退院を増やしてください。"
+                )
+            else:
+                st.info(f"ℹ️ 現状維持に近い設定です。日中退院を増やすとさらに改善します。")
+
+        # What-if table
+        st.markdown("---")
+        st.markdown(f"**📋 退院数による改善効果（夜勤在院{_nc_nightly}人固定）**")
+
+        _nc_table_data = []
+        for d in range(0, 11):
+            _d_occ = (_nc_nightly + d) / _view_beds * 100
+            _d_monthly = (_d_occ * 20 + _nc_we_occ * 10) / 30
+            _d_imp = (_d_monthly - _nc_current_occ) * float(st.session_state.get("annual_value_1pct", 1199))
+            _d_bonus = _d_imp * 10000 * 0.58 / 290
+            _nc_table_data.append({
+                "平日退院数": f"{d}人/日",
+                "平日稼働率": f"{_d_occ:.1f}%",
+                "月平均稼働率": f"{_d_monthly:.1f}%",
+                "年間改善額": f"{_d_imp:+,.0f}万円",
+                "一人あたり": f"{_d_bonus:+,.0f}円/年",
+            })
+
+        _nc_table_df = pd.DataFrame(_nc_table_data)
+        st.dataframe(_nc_table_df, use_container_width=True, hide_index=True)
+
+        st.caption(
+            "※ 前提: 退院した日に入院を受ける（入退院ペアリング）。"
+            "人件費率58%・職員290名で計算。稼働率1%の年間価値は左サイドバーの値を使用。"
+        )
+
 
 # ===== タブ4: 運営改善アラート =====
 with tabs[_tab_idx["🚨 運営改善アラート"]]:
