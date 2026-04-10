@@ -918,7 +918,7 @@ with st.sidebar.expander("追加パラメータ"):
     day1_bonus = st.number_input("初日加算（円）", value=_fee_preset["day1_bonus"], step=1000, key="day1_bonus_input")
     within_14_bonus = st.number_input("14日以内加算（円/日）", value=_fee_preset["within_14_bonus"], step=500, key="within_14_bonus_input")
     rehab_fee = st.number_input("リハビリ出来高（円/日）", value=_fee_preset["rehab_fee"], step=500, key="rehab_fee_input")
-    opportunity_cost = st.number_input("未活用病床コスト（円/空床/日）", value=25000, step=1000)
+    opportunity_cost = st.number_input("空床の影響額（円/空床/日）", value=25000, step=1000)
     discharge_threshold = st.slider("退院促進閾値", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
     suppression_threshold = st.slider("新規入院抑制閾値", 0.80, 1.00, 0.97, step=0.01, format="%.2f")
     random_seed = st.number_input("乱数シード", value=42, step=1)
@@ -2036,7 +2036,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
         _remaining_days = _calc_remaining_days(raw_df)
         st.error(
             f"🔴 **稼働率低下アラート**: 直近稼働率 {_sel_last_occ:.1f}% が目標下限 {target_lower*100:.0f}% を下回っています "
-            f"（空床 {_sel_empty}床 = 未活用病床コスト 約{_sel_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_sel_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
+            f"（空床 {_sel_empty}床 = 空床の影響額 約{_sel_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_sel_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
             "**対策:**\n"
             "- 🏥 予定入院の前倒しを外来担当医へ依頼\n"
             "- 📞 連携室へ依頼：紹介元クリニック・病院へ空床受入れ可能を発信\n"
@@ -2069,7 +2069,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                     f"⛔ **月平均{_mt['monthly_target_pct']:.0f}%達成は困難**: "
                     f"経過{_mt['days_elapsed']}日の平均 {_mt['avg_so_far']:.1f}% → "
                     f"残り{_mt['days_remaining']}日で **{_mt['required_occ']:.1f}%** が必要（100%超のため達成困難）\n\n"
-                    f"**月間未活用病床コスト見込み**: 約{int(_mt['gap_patients'] * 25000 * _mt['days_remaining'] // 10000)}万円"
+                    f"**月間 空床の影響額見込み**: 約{int(_mt['gap_patients'] * 25000 * _mt['days_remaining'] // 10000)}万円"
                 )
             elif _mt["difficulty"] == "hard":
                 st.warning(
@@ -2130,7 +2130,7 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
                             f"- {_selected_ward_key}: 現在平均 {_wi_self['avg']:.1f}%\n"
                             f"- {_other_w}: 現在平均 {_wi_other['avg']:.1f}%\n"
                             f"- 全体加重平均: **{_overall_now:.1f}%** （経営目標{_cw['target_pct']:.0f}%クリア）\n\n"
-                            f"💡 稼働率は経営目標（運営貢献額確保）のため。施設基準（地域包括医療病棟）の要件は**平均在院日数**のみで、稼働率要件はありません。\n"
+                            f"💡 稼働率は限られた病床で医療を届け続けるための目標です。施設基準（地域包括医療病棟）の要件は**平均在院日数**のみで、稼働率要件はありません。\n"
                         ]
                         st.session_state["_holistic_table_content"] = ("success", "".join(_lines))
         return  # トレンドチェック不要
@@ -2307,7 +2307,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             st.metric("在院患者数", f"{_brief_patients}名", delta=f"空床 {_brief_empty}床")
             if _brief_empty > (_view_beds * 0.10):
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0 if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
-                st.caption(f"⚠️ 空床{_brief_empty}床 = 未活用病床コスト 約{_brief_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円")
+                st.caption(f"⚠️ 空床{_brief_empty}床 = 空床の影響額 約{_brief_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円")
 
         # 病棟比較ミニバッジ
         with _brief_cols[2]:
@@ -3702,7 +3702,7 @@ with tabs[_tab_idx["📊 日次推移"]]:
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 未活用病床コスト 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
+                    f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
                     "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
@@ -4496,7 +4496,7 @@ with tabs[_tab_idx["💰 運営分析"]]:
 
     # 残日数メッセージ
     if _days_left > 0:
-        _remaining_msg = f"残り<b>{_days_left}日</b>で現ペース継続時の未活用病床コスト: <b>約{_remaining_cost // 10000:,.0f}万円</b>"
+        _remaining_msg = f"残り<b>{_days_left}日</b>で現ペース継続時の空床の影響額: <b>約{_remaining_cost // 10000:,.0f}万円</b>"
     else:
         _remaining_msg = "月末（実績確定）"
 
@@ -5129,7 +5129,7 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.error(
                     f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 未活用病床コスト 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
+                    f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
                     "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
                 )
         if _ward_data_available:
@@ -5182,7 +5182,7 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
     st.subheader("ベッドコントロール優先原則")
     st.info(
         "**📌 判断の優先順位（看護必要度基準を満たす前提で）**\n\n"
-        f"1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床は診療報酬収入ゼロ、1床/日≈{_daily_profit_per_bed/10000:.1f}万円の未活用病床コスト\n\n"
+        f"1️⃣ **稼働率レンジ（90-95%）を維持する** — 空床＝医療が届いていない病床、1床/日≈{_daily_profit_per_bed/10000:.1f}万円の影響額\n\n"
         f"2️⃣ **平均在院日数{_max_avg_los}日以内で戦略的在院調整を活用** — C群でも運営貢献額{phase_c_rev - phase_c_cost:,.0f}円/日を生む\n\n"
         "3️⃣ **運営貢献額を減らさない** — 退院させて空床を出すより、平均在院日数の最適化で稼働率を維持\n\n"
         "⚠️ 退院を急ぐべきは「満床で新規入院を断らざるを得ない場合」のみ"
@@ -5199,7 +5199,7 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
             "- ① 予定入院の前倒しを外来担当医へ依頼\n"
             "- ② 連携室へ依頼：紹介元クリニック・病院へ空床受入れ可能を発信\n"
             "- ③ 外来担当医に入院推奨閾値の引き下げを相談\n\n"
-            f"**注意:** C群患者は在院継続で運営貢献額確保。空床1床/日 ≈ {_daily_profit_per_bed/10000:.1f}万円の未活用病床コスト。"
+            f"**注意:** C群患者は在院継続で運営貢献額確保。空床1床/日 ≈ {_daily_profit_per_bed/10000:.1f}万円の影響額。"
             f"平均在院日数{_max_avg_los}日以内であれば戦略的在院調整で稼働率を維持する。"
         )
     elif avg_occ > target_upper * 100:
@@ -5382,7 +5382,7 @@ with tabs[_tab_idx["🚨 運営改善アラート"]]:
             _action_items.append(f"C群{_last_c}名は戦略的在院調整で稼働率維持（運営貢献額28,900円/日/名 × 空床よりプラス）")
     if "稼働率低下" in _last_flags:
         _remaining_days = _calc_remaining_days(_active_raw_df)
-        _action_items.append(f"🔴 空床{_last_empty}床（未活用病床コスト 約{_last_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
+        _action_items.append(f"🔴 空床{_last_empty}床（空床の影響額 約{_last_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
         _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で運営貢献額確保し稼働率維持を優先")
     # 平均在院日数超過時のアクション（病棟別判定 — クリア計画は上のセクションに表示済み）
     # 各病棟ごとに判定し、超過していれば該当病棟のアクションを追加
@@ -5724,7 +5724,7 @@ with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
                 "| 稼働率 | 平均在院日数を延ばすと | 平均在院日数を短くすると |\n"
                 "|:---:|:---|:---|\n"
                 "| **100%未満**（当院の通常） | ✅ 空床が埋まり運営貢献額が**増える** | ⚠️ 空床が増え運営貢献額が**減る** |\n"
-                "| **100%付近** | ❌ 入院を断るコストが発生し**マイナスに転じる** | 回転が速まり新規を受けやすくなる |\n\n"
+                "| **100%付近** | ❌ 入院を断ることになり**マイナスに転じる** | 回転が速まり新規を受けやすくなる |\n\n"
                 "**当院の実態（稼働率90%前後）では、平均在院日数を少し延ばすことで空床が減り、"
                 "運営貢献額が増える場合があります。** "
                 "ただし、平均在院日数の延長は医学的に適切な範囲内で判断してください。\n\n"
@@ -7160,7 +7160,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
                         <strong style="color: #1E293B; font-size: 16px;">⚠️ 稼働率ギャップ検出</strong><br>
                         <span style="color: #64748B;">直近7日間の平均稼働率: <strong>{_avg_occ_7d:.1f}%</strong>（目標{_target_occ_pct:.0f}%まであと<strong>{_gap:.1f}%</strong>）</span><br>
-                        <span style="color: #EF4444; font-weight: bold;">年間推定ロス: {_annual_loss/10000:.0f}万円</span>
+                        <span style="color: #EF4444; font-weight: bold;">年間推定 影響額: {_annual_loss/10000:.0f}万円相当</span>
                     </div>
                     """, unsafe_allow_html=True)
 
