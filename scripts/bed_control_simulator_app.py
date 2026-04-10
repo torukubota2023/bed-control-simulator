@@ -2290,7 +2290,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                 mode="gauge+number",
                 value=_gauge_occ,
                 number={"suffix": "%", "font": {"size": 28}},
-                title={"text": f"月平均稼働率（{_selected_ward_key}）", "font": {"size": 14}},
+                title={"text": f"月平均稼働率 — 今月の成績（{_selected_ward_key}）", "font": {"size": 13}},
                 gauge={
                     "axis": {"range": [75, 100], "tickwidth": 1},
                     "bar": {"color": "#1f77b4"},
@@ -2314,7 +2314,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             _brief_tp_col = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
             _brief_patients = int(_active_raw_df[_brief_tp_col].iloc[-1])
             _brief_empty = _view_beds - _brief_patients
-            st.metric("在院患者数", f"{_brief_patients}名", delta=f"空床 {_brief_empty}床")
+            st.metric("在院患者数（今の空き）", f"{_brief_patients}名", delta=f"空床 {_brief_empty}床")
             if _brief_empty > (_view_beds * 0.10):
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0 if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.caption(f"⚠️ 空床{_brief_empty}床 = 空床の影響額 約{_brief_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円")
@@ -2405,6 +2405,31 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     st.caption(f"📊 月平均 {_mt_brief['avg_so_far']:.1f}% — 残り{_mt_brief['days_remaining']}日で{_mt_brief['required_occ']:.0f}%必要")
                 else:
                     st.caption(f"⚠️ 月平均 {_mt_brief['avg_so_far']:.1f}% — 達成に{_mt_brief['required_occ']:.0f}%必要（厳しい）")
+
+        # --- 💡 空床数×稼働率 — 2つのものさしの組合せインサイト ---
+        # 空床数は「今の空き」、稼働率は「今月の成績」。組み合わせることで
+        # 「詰まっている」「回っている」「余裕あり」を1行で伝える。
+        _empty_few = _brief_empty < (_view_beds * 0.10)  # 空床 < 10% = 少ない
+        _occ_high = _gauge_occ >= (target_lower * 100)    # 稼働率 >= 目標 = 高い
+
+        if _empty_few and _occ_high:
+            _insight_msg = "🟢 **回転良好** — 空床が少なく稼働率も高い。ベッドがよく回っています"
+        elif not _empty_few and not _occ_high:
+            _insight_msg = "🔴 **入院増が必要** — 空床が多く稼働率も低い。入院受入れの強化を"
+        elif _empty_few and not _occ_high:
+            _insight_msg = "⚠️ **詰まりの兆候** — ベッドは埋まっているが回転していない。退院調整の確認を"
+        else:  # 空床多い + 稼働率高い
+            _insight_msg = "🟡 **受入余地あり** — 回転は良いが空床あり。新規入院で稼働率をさらに伸ばせます"
+
+        st.markdown(
+            f"<div style='padding:8px 12px;background:#F0F4F8;border-left:4px solid #5B9BD5;"
+            f"border-radius:4px;margin:8px 0;font-size:0.95em;'>"
+            f"💡 {_insight_msg}"
+            f"<br/><span style='color:#888;font-size:0.8em;'>"
+            f"空床数＝今すぐの受入判断 ｜ 稼働率＝今月の運営評価 — 2つは別のものさしです"
+            f"</span></div>",
+            unsafe_allow_html=True,
+        )
 
         # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準は各病棟ごとに判定）---
         # ⚠️ 重要: 地域包括医療病棟の平均在院日数基準は、病院全体ではなく
