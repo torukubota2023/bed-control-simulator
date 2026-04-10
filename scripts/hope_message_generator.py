@@ -145,30 +145,42 @@ def generate_summary_message(
 
     # 過去3ヶ月rolling 平均在院日数（病棟別・施設基準判定用・2026年改定対応）
     # ⚠️ 施設基準は各病棟ごとに判定するため、病棟別に表示する
+    # 2026年改定: 短手3算定患者は計算から除外（los_ex_short3 があればそちらで判定）
     if ward_rolling_los:
         _rolling_parts = []
+        _any_excluded = False  # 短手3 除外が実際に効いているか
         for _wname in sorted(ward_rolling_los.keys()):
             _wdata = ward_rolling_los[_wname]
             _wlos = _wdata.get("los") if isinstance(_wdata, dict) else None
+            _wlos_ex = _wdata.get("los_ex_short3") if isinstance(_wdata, dict) else None
             _wdays = _wdata.get("days") if isinstance(_wdata, dict) else None
             if _wlos is None:
                 continue
+            # 施設基準判定は除外後の値を優先
+            _wjudge = _wlos_ex if _wlos_ex is not None else _wlos
+            if _wlos_ex is not None and _wlos_ex != _wlos:
+                _any_excluded = True
             if rolling_los_limit is not None:
-                if _wlos <= rolling_los_limit:
+                if _wjudge <= rolling_los_limit:
                     _status = "✅"
-                elif _wlos <= rolling_los_limit + 0.5:
+                elif _wjudge <= rolling_los_limit + 0.5:
                     _status = "⚠"
                 else:
                     _status = "🔴"
-                _rolling_parts.append(f"{_wname}:{_wlos:.1f}日{_status}")
+                _rolling_parts.append(f"{_wname}:{_wjudge:.1f}日{_status}")
             else:
-                _rolling_parts.append(f"{_wname}:{_wlos:.1f}日")
+                _rolling_parts.append(f"{_wname}:{_wjudge:.1f}日")
         if _rolling_parts:
             if rolling_los_limit is not None:
-                lines.append(f"3M平均在院(基準{rolling_los_limit}日):")
+                _header = f"3M平均在院(基準{rolling_los_limit}日):"
+                if _any_excluded:
+                    _header = f"3M平均在院※(基準{rolling_los_limit}日):"
+                lines.append(_header)
             else:
-                lines.append(f"3M平均在院:")
+                lines.append(f"3M平均在院※:" if _any_excluded else f"3M平均在院:")
             lines.append(" / ".join(_rolling_parts))
+            if _any_excluded:
+                lines.append("※短手3除外後")
     elif rolling_los is not None:
         # 後方互換: 全体の rolling_los が渡された場合
         if rolling_los_limit is not None:
@@ -379,7 +391,7 @@ def render_hope_tab(
             min_value=0.0, max_value=60.0, value=18.5,
             step=0.1, format="%.1f",
             key="hope_rolling_5f",
-            help="5F病棟の過去3ヶ月rolling平均在院日数。意思決定ダッシュボードの値と合わせてください。",
+            help="5F病棟の過去3ヶ月rolling平均在院日数（通常値）。意思決定ダッシュボードの値と合わせてください。",
         )
     with col_rw2:
         rolling_6f_input = st.number_input(
@@ -387,7 +399,7 @@ def render_hope_tab(
             min_value=0.0, max_value=60.0, value=19.2,
             step=0.1, format="%.1f",
             key="hope_rolling_6f",
-            help="6F病棟の過去3ヶ月rolling平均在院日数。",
+            help="6F病棟の過去3ヶ月rolling平均在院日数（通常値）。",
         )
     with col_rlimit:
         rolling_limit_input = st.number_input(
@@ -396,6 +408,29 @@ def render_hope_tab(
             key="hope_rolling_limit",
             help="2025年度: 21日、2026年度: 20日（85歳以上緩和時 21日）",
         )
+
+    # 短手3除外後の値（2026年改定対応・オプション）
+    with st.expander("📝 短手3除外後の値を入力（2026年改定・施設基準判定用）", expanded=False):
+        st.caption(
+            "2026年改定では、施設基準判定の平均在院日数計算から短手3（大腸ポリペクトミー等）の算定患者を除外します。"
+            "意思決定ダッシュボードに表示される「除外後」の値をここに入力してください。"
+            "0 のままなら除外なしで通常値を使います。"
+        )
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            rolling_5f_ex_input = st.number_input(
+                "5F 3ヶ月平均在院日数（短手3除外後）",
+                min_value=0.0, max_value=60.0, value=0.0,
+                step=0.1, format="%.1f",
+                key="hope_rolling_5f_ex",
+            )
+        with col_ex2:
+            rolling_6f_ex_input = st.number_input(
+                "6F 3ヶ月平均在院日数（短手3除外後）",
+                min_value=0.0, max_value=60.0, value=0.0,
+                step=0.1, format="%.1f",
+                key="hope_rolling_6f_ex",
+            )
 
     # 追加コメント入力
     notes = st.text_area(
@@ -412,12 +447,18 @@ def render_hope_tab(
     }
     total_beds = 94
 
-    # 病棟別 rolling LOS を構築
+    # 病棟別 rolling LOS を構築（短手3除外後の値も含める）
     ward_rolling_los = {}
     if rolling_5f_input > 0:
-        ward_rolling_los["5F"] = {"los": rolling_5f_input, "days": 90}
+        _5f_entry = {"los": rolling_5f_input, "days": 90}
+        if rolling_5f_ex_input > 0:
+            _5f_entry["los_ex_short3"] = rolling_5f_ex_input
+        ward_rolling_los["5F"] = _5f_entry
     if rolling_6f_input > 0:
-        ward_rolling_los["6F"] = {"los": rolling_6f_input, "days": 90}
+        _6f_entry = {"los": rolling_6f_input, "days": 90}
+        if rolling_6f_ex_input > 0:
+            _6f_entry["los_ex_short3"] = rolling_6f_ex_input
+        ward_rolling_los["6F"] = _6f_entry
 
     # メッセージ生成
     summary_msg = generate_summary_message(

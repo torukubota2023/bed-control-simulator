@@ -19,6 +19,12 @@ import pandas as pd
 # データ構造定義
 # ---------------------------------------------------------------------------
 
+# 短期滞在手術等基本料3 の平均在院日数仮定値（日）
+# 当院の内訳: 大腸ポリペクトミー80%（1-2日）、鼠径ヘルニア（3-4日）、ポリソムノグラフィー（1日）
+# 2026年改定で施設基準判定の平均在院日数計算から除外する際に使用する
+# 出典: 研究ノート docs/admin/short3_integration_research.md
+SHORT3_AVG_LOS_DAYS = 2.0
+
 # 日齢バケット: 1日目〜14日目は個別、15日目以上はまとめる
 DAY_BUCKET_KEYS = [f"day_{i}" for i in range(1, 15)] + ["day_15plus"]
 # DAY_BUCKET_KEYS = ["day_1", "day_2", ..., "day_14", "day_15plus"]
@@ -724,21 +730,30 @@ def calculate_rolling_los(df, window_days=90):
     2026年度改定対応: 地域包括医療病棟入院料1の施設基準判定は
     過去3ヶ月rolling平均で行われる。
 
+    短手3（短期滞在手術等基本料3）除外後の値も同時に返す:
+        - 分子: 在院延日数 − (短手3新入院数 × SHORT3_AVG_LOS_DAYS)
+        - 分母: ((新入院数 − 短手3新入院数) + (退院数 − 短手3新入院数)) ÷ 2
+          ※ 短手3は4泊5日以内なので当月内に入退院が完結すると仮定
+        - new_admissions_short3 列がない or 全て0なら通常値と同じ
+
     Args:
-        df: 日次データ（date, total_patients, new_admissions, discharges列必須）
+        df: 日次データ（date, total_patients, new_admissions, discharges列必須
+            + new_admissions_short3列があれば除外計算も実施）
             全体 or 病棟フィルタ済みのものを渡す
         window_days: rolling window 日数（デフォルト90日=3ヶ月）
 
     Returns:
         dict or None: {
-            "rolling_los": float or None,      # rolling平均在院日数（日）
-            "actual_days": int,                # 実際に使った日数
-            "total_patient_days": float,       # 在院患者延日数
-            "total_admissions": float,         # 期間内新入院数
-            "total_discharges": float,         # 期間内退院数
-            "is_partial": bool,                # window_daysに満たないか
-            "end_date": Timestamp or None,     # 計算対象期間の最終日
-            "start_date": Timestamp or None,   # 計算対象期間の開始日
+            "rolling_los": float or None,           # rolling平均在院日数（日）
+            "rolling_los_ex_short3": float or None, # 短手3除外後のrolling平均在院日数
+            "actual_days": int,                     # 実際に使った日数
+            "total_patient_days": float,            # 在院患者延日数
+            "total_admissions": float,              # 期間内新入院数
+            "total_discharges": float,              # 期間内退院数
+            "total_short3": float,                  # 期間内短手3新入院数
+            "is_partial": bool,                     # window_daysに満たないか
+            "end_date": Timestamp or None,          # 計算対象期間の最終日
+            "start_date": Timestamp or None,        # 計算対象期間の開始日
         }
     """
     if df is None or len(df) == 0:
@@ -765,6 +780,7 @@ def calculate_rolling_los(df, window_days=90):
     tp_col = "total_patients" if "total_patients" in window_df.columns else "在院患者数"
     adm_col = "new_admissions" if "new_admissions" in window_df.columns else "新規入院"
     dis_col = "discharges" if "discharges" in window_df.columns else "退院"
+    s3_col = "new_admissions_short3" if "new_admissions_short3" in window_df.columns else None
 
     if tp_col not in window_df.columns or adm_col not in window_df.columns or dis_col not in window_df.columns:
         return None
@@ -772,6 +788,7 @@ def calculate_rolling_los(df, window_days=90):
     total_patient_days = float(window_df[tp_col].sum())
     total_admissions = float(window_df[adm_col].sum())
     total_discharges = float(window_df[dis_col].sum())
+    total_short3 = float(window_df[s3_col].fillna(0).sum()) if s3_col else 0.0
 
     denominator = (total_admissions + total_discharges) / 2
 
@@ -780,6 +797,7 @@ def calculate_rolling_los(df, window_days=90):
         "total_patient_days": total_patient_days,
         "total_admissions": total_admissions,
         "total_discharges": total_discharges,
+        "total_short3": total_short3,
         "is_partial": actual_days < window_days,
         "end_date": window_df[date_col].iloc[-1] if actual_days > 0 else None,
         "start_date": window_df[date_col].iloc[0] if actual_days > 0 else None,
@@ -789,6 +807,22 @@ def calculate_rolling_los(df, window_days=90):
         result["rolling_los"] = None
     else:
         result["rolling_los"] = round(total_patient_days / denominator, 1)
+
+    # 短手3 除外版（2026年改定: 施設基準判定では短手3算定患者を除外）
+    # 短手3 がゼロなら通常値と同じ
+    if total_short3 > 0:
+        adj_patient_days = total_patient_days - (total_short3 * SHORT3_AVG_LOS_DAYS)
+        # 当月内に入退院完結と仮定 → 新入院・退院の両方から短手3を引く
+        adj_admissions = total_admissions - total_short3
+        adj_discharges = total_discharges - total_short3
+        adj_denominator = (adj_admissions + adj_discharges) / 2
+        if adj_denominator > 0 and adj_patient_days > 0:
+            result["rolling_los_ex_short3"] = round(adj_patient_days / adj_denominator, 1)
+        else:
+            result["rolling_los_ex_short3"] = None
+    else:
+        # 短手3 がゼロ → 通常値と同じ
+        result["rolling_los_ex_short3"] = result["rolling_los"]
 
     return result
 

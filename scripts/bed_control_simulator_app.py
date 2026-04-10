@@ -2314,6 +2314,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     "<strong>📏 平均在院日数（過去3ヶ月rolling・施設基準判定用 — 各病棟ごと）</strong>"
                     "<br/><span style='color:#666;font-size:0.85em;'>"
                     "※ 地域包括医療病棟の施設基準は<strong>各病棟それぞれ</strong>が満たす必要があります"
+                    "<br/>※ 2026年改定対応: 短手3算定患者は計算から除外（除外前後を併記）"
                     "</span>",
                     unsafe_allow_html=True,
                 )
@@ -2327,14 +2328,18 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                             )
                             continue
                         _r_los = _rolling["rolling_los"]
+                        _r_los_ex = _rolling.get("rolling_los_ex_short3")
+                        _r_short3 = _rolling.get("total_short3", 0) or 0
                         _r_days = _rolling["actual_days"]
                         _r_partial = _rolling["is_partial"]
-                        _r_diff = _r_los - _max_avg_los
-                        if _r_los <= _max_avg_los:
+                        # 施設基準判定は「短手3除外後」の値で行う（2026年改定対応）
+                        _r_judge = _r_los_ex if _r_los_ex is not None else _r_los
+                        _r_diff = _r_judge - _max_avg_los
+                        if _r_judge <= _max_avg_los:
                             _r_icon = "✅"
                             _r_status = f"基準内"
                             _r_color = "#27AE60"
-                        elif _r_los <= _max_avg_los + 0.5:
+                        elif _r_judge <= _max_avg_los + 0.5:
                             _r_icon = "⚠️"
                             _r_status = f"ぎりぎり(+{_r_diff:.1f}日)"
                             _r_color = "#F39C12"
@@ -2345,11 +2350,22 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                         _r_days_txt = (
                             f"過去{_r_days}日(不足)" if _r_partial else f"過去{_r_days}日"
                         )
+                        # 短手3 除外後の併記（短手3 が1件以上あるときだけ明示的に表示）
+                        if _r_short3 > 0 and _r_los_ex is not None and _r_los_ex != _r_los:
+                            _ex_txt = (
+                                f"<br/><span style='color:#666;font-size:0.85em;'>"
+                                f"通常 {_r_los}日 → 短手3除外後 "
+                                f"<strong style='color:{_r_color};'>{_r_los_ex}日</strong>"
+                                f"（除外 {int(_r_short3)}件）</span>"
+                            )
+                        else:
+                            _ex_txt = ""
                         st.markdown(
                             f"<div style='padding:6px 10px;background:white;border-left:3px solid {_r_color};border-radius:3px;'>"
                             f"<strong>{_w}</strong>: {_r_icon} "
-                            f"<strong style='color:{_r_color};font-size:1.1em;'>{_r_los}日</strong> "
+                            f"<strong style='color:{_r_color};font-size:1.1em;'>{_r_judge}日</strong> "
                             f"/ 上限{_max_avg_los}日 — {_r_status}"
+                            f"{_ex_txt}"
                             f"<br/><span style='color:#888;font-size:0.8em;'>{_r_days_txt}</span>"
                             f"</div>",
                             unsafe_allow_html=True,
@@ -4441,8 +4457,10 @@ with tabs[_tab_idx["💰 運営分析"]]:
     # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準は各病棟ごとに判定）---
     # ⚠️ 重要: 地域包括医療病棟の施設基準は各病棟ごとに満たす必要がある。
     # 全病棟・5F・6F それぞれを個別に計算して判定する。
+    # 2026年改定: 短手3算定患者は平均在院日数計算から除外する
     _rolling_ds = None
     _rolling_los_ds = None
+    _rolling_los_ex_ds = None
     _rolling_days_ds = 0
     _rolling_is_partial_ds = False
     if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0:
@@ -4450,6 +4468,7 @@ with tabs[_tab_idx["💰 運営分析"]]:
             _rolling_ds = calculate_rolling_los(_active_raw_df_full, window_days=90)
             if _rolling_ds:
                 _rolling_los_ds = _rolling_ds.get("rolling_los")
+                _rolling_los_ex_ds = _rolling_ds.get("rolling_los_ex_short3")
                 _rolling_days_ds = _rolling_ds.get("actual_days", 0)
                 _rolling_is_partial_ds = _rolling_ds.get("is_partial", False)
         except Exception:
@@ -4472,12 +4491,18 @@ with tabs[_tab_idx["💰 運営分析"]]:
                 except Exception:
                     pass
 
-    # 施設基準判定: rolling 値を優先、未計算なら月次集計値にフォールバック
-    _judge_los = _rolling_los_ds if _rolling_los_ds is not None else _current_avg_los
+    # 施設基準判定: rolling (短手3除外後) 値を優先、未計算なら月次集計値にフォールバック
+    # 2026年改定で施設基準判定は短手3除外後の値を用いる
+    _judge_rolling = _rolling_los_ex_ds if _rolling_los_ex_ds is not None else _rolling_los_ds
+    _judge_los = _judge_rolling if _judge_rolling is not None else _current_avg_los
     _los_over = _judge_los - _max_avg_los
 
     if _rolling_los_ds is not None:
-        _delta_label = f"3ヶ月平均: {_rolling_los_ds}日（{_rolling_days_ds}日分）"
+        # 短手3 を除外した場合に値が変わるなら併記
+        if _rolling_los_ex_ds is not None and _rolling_los_ex_ds != _rolling_los_ds:
+            _delta_label = f"3ヶ月平均: {_rolling_los_ds}日→除外後{_rolling_los_ex_ds}日"
+        else:
+            _delta_label = f"3ヶ月平均: {_rolling_los_ds}日（{_rolling_days_ds}日分）"
     else:
         _delta_label = None
 
@@ -4514,31 +4539,46 @@ with tabs[_tab_idx["💰 運営分析"]]:
                     st.markdown(f"**{_w}**: データなし")
                     continue
                 _wlos = _wres["rolling_los"]
+                _wlos_ex = _wres.get("rolling_los_ex_short3")
+                _wshort3 = _wres.get("total_short3", 0) or 0
                 _wdays = _wres["actual_days"]
                 _wpartial = _wres["is_partial"]
-                _wdiff = _wlos - _max_avg_los
-                if _wlos <= _max_avg_los:
+                # 施設基準判定は「短手3除外後」値で行う（2026年改定対応）
+                _wjudge = _wlos_ex if _wlos_ex is not None else _wlos
+                _wdiff = _wjudge - _max_avg_los
+                if _wjudge <= _max_avg_los:
                     _wicon = "✅"
                     _wstatus = "基準内"
                     _wcolor = "#27AE60"
-                elif _wlos <= _max_avg_los + 0.5:
+                elif _wjudge <= _max_avg_los + 0.5:
                     _wicon = "⚠️"
                     _wstatus = f"ぎりぎり(+{_wdiff:.1f}日)"
                     _wcolor = "#F39C12"
                     _any_ward_over = True
-                    _ward_over_details.append((_w, _wlos, _wdiff))
+                    _ward_over_details.append((_w, _wjudge, _wdiff))
                 else:
                     _wicon = "🔴"
                     _wstatus = f"超過(+{_wdiff:.1f}日)"
                     _wcolor = "#C0392B"
                     _any_ward_over = True
-                    _ward_over_details.append((_w, _wlos, _wdiff))
+                    _ward_over_details.append((_w, _wjudge, _wdiff))
                 _wdays_txt = f"過去{_wdays}日(不足)" if _wpartial else f"過去{_wdays}日"
+                # 短手3 除外後の併記
+                if _wshort3 > 0 and _wlos_ex is not None and _wlos_ex != _wlos:
+                    _wex_txt = (
+                        f"<br/><span style='color:#666;font-size:0.85em;'>"
+                        f"通常 {_wlos}日 → 短手3除外後 "
+                        f"<strong style='color:{_wcolor};'>{_wlos_ex}日</strong>"
+                        f"（除外 {int(_wshort3)}件）</span>"
+                    )
+                else:
+                    _wex_txt = ""
                 st.markdown(
                     f"<div style='padding:8px 12px;background:#F8F9FA;border-left:4px solid {_wcolor};border-radius:4px;'>"
                     f"<strong>{_w}病棟</strong>: {_wicon} "
-                    f"<strong style='color:{_wcolor};font-size:1.15em;'>{_wlos}日</strong> "
+                    f"<strong style='color:{_wcolor};font-size:1.15em;'>{_wjudge}日</strong> "
                     f"/ 上限 {_max_avg_los}日<br/>{_wstatus}"
+                    f"{_wex_txt}"
                     f"<br/><span style='color:#888;font-size:0.8em;'>{_wdays_txt}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
@@ -4578,9 +4618,14 @@ with tabs[_tab_idx["💰 運営分析"]]:
             st.warning("".join(_los_alert_lines))
     elif _rolling_los_ds is not None and _los_over > -1 and _los_over < 0:
         # 選択病棟・全体が基準ぎりぎり（余裕1日未満）
+        # 施設基準判定は除外後の値を使う
+        _info_los = _judge_rolling if _judge_rolling is not None else _rolling_los_ds
+        _ex_note = ""
+        if _rolling_los_ex_ds is not None and _rolling_los_ex_ds != _rolling_los_ds:
+            _ex_note = f"（通常 {_rolling_los_ds}日 → 短手3除外後 {_rolling_los_ex_ds}日）"
         st.info(
-            f"ℹ️ **余裕は{-_los_over:.1f}日** — {_selected_ward_key} の3ヶ月rolling は {_rolling_los_ds}日 "
-            f"で基準内ですが、基準超過が近づいています。C群患者の退院タイミングに注意してください。"
+            f"ℹ️ **余裕は{-_los_over:.1f}日** — {_selected_ward_key} の3ヶ月rolling は {_info_los}日 "
+            f"{_ex_note}で基準内ですが、基準超過が近づいています。C群患者の退院タイミングに注意してください。"
         )
 
     # --- 日次診療報酬・コスト・運営貢献額（プリセット連動で再計算）---
