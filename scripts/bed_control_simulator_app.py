@@ -2675,7 +2675,9 @@ if _DATA_MANAGER_AVAILABLE:
                 ]:
                     st.session_state.pop(_k, None)
                 for _i in range(8):
-                    st.session_state.pop(f"dm_los_slot_{_i}", None)
+                    st.session_state.pop(f"dm_los_slot_slide_{_i}", None)
+                    st.session_state.pop(f"dm_los_slot_input_{_i}", None)
+                    st.session_state.pop(f"dm_los_manual_{_i}", None)
                 st.session_state["_dm_reset_inputs"] = False
 
             form_col0, form_col1, form_col2 = st.columns(3)
@@ -2715,10 +2717,11 @@ if _DATA_MANAGER_AVAILABLE:
             )
 
             # 在院日数スライダー（8スロット常時描画）
-            # 上限180日: 稀に発生する長期入院（90日超）にも対応
-            _los_options = list(range(1, 181))
+            # 通常はスライダー1-90日。90日超の稀なケースはチェックボックスで数値入力に切替
+            _los_options = list(range(1, 91))
             if input_discharge_count > 0:
                 st.markdown(f"**各退院患者の在院日数** — {int(input_discharge_count)}名分のスライダーが有効です")
+                st.caption("💡 90日を超える長期入院患者がいる場合は、各スロットの「📝 90日超」にチェックを入れてください")
             else:
                 st.markdown("**各退院患者の在院日数** — まず上の「退院人数」を設定してください")
             _los_all = []
@@ -2729,12 +2732,34 @@ if _DATA_MANAGER_AVAILABLE:
                     with _col:
                         _is_active = _si < input_discharge_count
                         _label = f"✏️ 退院{_si + 1}" if _is_active else f"（未使用）"
-                        _los_val = st.select_slider(
-                            _label,
-                            options=_los_options,
-                            value=10,
-                            key=f"dm_los_slot_{_si}",
-                        )
+                        _manual_key = f"dm_los_manual_{_si}"
+
+                        # 長期入院チェックボックス（有効スロットのみ表示）
+                        if _is_active:
+                            _is_manual = st.checkbox(
+                                "📝 90日超（数値入力）",
+                                key=_manual_key,
+                                help="91日以上の長期入院患者の場合にチェック。スライダーが数値入力に切り替わります。",
+                            )
+                        else:
+                            _is_manual = False
+
+                        if _is_manual and _is_active:
+                            _los_val = st.number_input(
+                                _label,
+                                min_value=1,
+                                max_value=365,
+                                value=91,
+                                step=1,
+                                key=f"dm_los_slot_input_{_si}",
+                            )
+                        else:
+                            _los_val = st.select_slider(
+                                _label,
+                                options=_los_options,
+                                value=10,
+                                key=f"dm_los_slot_slide_{_si}",
+                            )
                         _los_all.append(_los_val)
 
             # 退院人数分だけ有効値として集計
@@ -2761,8 +2786,14 @@ if _DATA_MANAGER_AVAILABLE:
             submitted = st.button("追加", type="primary", use_container_width=True, key="dm_add_btn")
 
             if submitted:
-                # 在院日数リストからA/B/C退院数を算出
-                _active_los = [st.session_state.get(f"dm_los_slot_{i}", 10) for i in range(int(input_discharge_count))]
+                # 在院日数リストからA/B/C退院数を算出（スライダー/数値入力のどちらか有効な方を読む）
+                _active_los = []
+                for _i in range(int(input_discharge_count)):
+                    if st.session_state.get(f"dm_los_manual_{_i}", False):
+                        _v = st.session_state.get(f"dm_los_slot_input_{_i}", 91)
+                    else:
+                        _v = st.session_state.get(f"dm_los_slot_slide_{_i}", 10)
+                    _active_los.append(int(_v))
                 _los_str = ",".join(str(v) for v in _active_los)
                 _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
                 import math
