@@ -2785,6 +2785,10 @@ if _DATA_MANAGER_AVAILABLE:
                         ) if _active_los else "なし"
                         st.success(f"{input_date} のデータを追加しました。（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}）")
                         _auto_save_to_db()
+                        # 明示キー付きスライダーは clear_on_submit でリセットされないため
+                        # 次回入力時に古い在院日数が残らないよう session_state を初期化する
+                        for _i in range(8):
+                            st.session_state.pop(f"dm_los_slot_{_i}", None)
                         st.rerun()
                     else:
                         st.error(f"入力エラー:\n{error_msg}")
