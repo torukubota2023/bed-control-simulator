@@ -284,10 +284,23 @@ def update_record(df: pd.DataFrame, date_str: str, updates: dict) -> pd.DataFram
     return df
 
 
-def delete_record(df: pd.DataFrame, date_str: str) -> pd.DataFrame:
-    """レコードを削除。"""
+def delete_record(df, date_str, ward=None):
+    """レコードを削除。
+
+    Args:
+        df: 日次データ DataFrame
+        date_str: 削除対象の日付（YYYY-MM-DD）
+        ward: 病棟指定（"5F" / "6F"）。None の場合は当該日付の全レコードを削除。
+
+    Returns:
+        削除後の DataFrame
+    """
     target_date = pd.to_datetime(date_str)
-    df = df[df["date"] != target_date].reset_index(drop=True)
+    if ward is None:
+        df = df[df["date"] != target_date].reset_index(drop=True)
+    else:
+        mask = ~((df["date"] == target_date) & (df["ward"].astype(str) == str(ward)))
+        df = df[mask].reset_index(drop=True)
     return df
 
 

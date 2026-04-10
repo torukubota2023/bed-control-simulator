@@ -2834,7 +2834,10 @@ if _DATA_MANAGER_AVAILABLE:
                 display_data["date_str"] = display_data["date"].dt.strftime("%Y-%m-%d")
 
                 # st.data_editor で編集可能テーブル（data_sourceカラムは非表示）
-                _display_cols = ["date_str", "total_patients", "new_admissions", "discharges",
+                # ward 列を先頭付近に表示して、同一日付の 5F/6F を区別しやすくする
+                _display_cols = ["date_str", "ward", "total_patients", "new_admissions",
+                                  "new_admissions_short3",
+                                  "discharges",
                                   "discharge_los_list",
                                   "discharge_a", "discharge_b", "discharge_c",
                                   "phase_a_count", "phase_b_count", "phase_c_count",
@@ -2843,8 +2846,10 @@ if _DATA_MANAGER_AVAILABLE:
                 edited_df = st.data_editor(
                     display_data[_display_cols_available].rename(columns={
                         "date_str": "日付",
+                        "ward": "病棟",
                         "total_patients": "在院患者数",
                         "new_admissions": "新規入院",
+                        "new_admissions_short3": "うち短手3",
                         "discharges": "退院（自動）",
                         "discharge_los_list": "退院LOS一覧",
                         "discharge_a": "A群退院",
@@ -2858,6 +2863,8 @@ if _DATA_MANAGER_AVAILABLE:
                     }),
                     column_config={
                         "日付": st.column_config.TextColumn(disabled=True),
+                        "病棟": st.column_config.TextColumn(disabled=True),
+                        "うち短手3": st.column_config.NumberColumn(help="短期滞在手術等基本料3の内数（Phase 1: 記録のみ）"),
                         "退院（自動）": st.column_config.NumberColumn(disabled=True),
                         "退院LOS一覧": st.column_config.TextColumn(disabled=True, help="退院患者の在院日数（カンマ区切り）"),
                         "A群退院": st.column_config.NumberColumn(disabled=True),
@@ -2981,15 +2988,25 @@ if _DATA_MANAGER_AVAILABLE:
                             st.error(f"保存エラー: {e}")
 
                 with edit_col2:
-                    # 削除用：日付を選択
-                    delete_dates = display_data["date_str"].tolist()
-                    if delete_dates:
-                        del_date = st.selectbox("削除する日付", delete_dates, key="dm_del_date")
-                        if st.button("選択した日付を削除", key="dm_delete_btn"):
+                    # 削除用：日付 + 病棟 を選択（同一日付の5F/6Fを区別するため）
+                    _del_options = [
+                        (f"{row['date_str']} ({row.get('ward', 'all')})",
+                         row['date_str'],
+                         row.get('ward', None))
+                        for _, row in display_data.iterrows()
+                    ]
+                    if _del_options:
+                        _del_labels = [opt[0] for opt in _del_options]
+                        del_label = st.selectbox("削除する日付・病棟", _del_labels, key="dm_del_date")
+                        if st.button("選択した行を削除", key="dm_delete_btn"):
+                            # 選択ラベルから date と ward を復元
+                            _idx = _del_labels.index(del_label)
+                            _del_date_str = _del_options[_idx][1]
+                            _del_ward = _del_options[_idx][2]
                             st.session_state.daily_data = delete_record(
-                                st.session_state.daily_data, del_date
+                                st.session_state.daily_data, _del_date_str, ward=_del_ward,
                             )
-                            st.success(f"{del_date} のデータを削除しました。")
+                            st.success(f"{del_label} のデータを削除しました。")
                             _auto_save_to_db()
                             st.rerun()
 
