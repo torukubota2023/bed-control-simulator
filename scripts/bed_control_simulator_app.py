@@ -2678,23 +2678,42 @@ if _DATA_MANAGER_AVAILABLE:
                     abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
                     st.metric("合計", abc_total)
 
-            # --- データ入力エリア（フォーム不使用: ウィジェット操作のたびにリランさせる） ---
-            # フォームを使うと退院人数の変更がスライダーのラベルに即反映されないため、
-            # 通常ウィジェット + 追加ボタンで構成する。
-            st.caption("🆕 入力UI v2 (リアルタイム更新版)")
+            # ============================================================
+            # 統合入力フォーム v3: 日次集計 + 医師別詳細 を1回で入力
+            # ============================================================
+            # 以前は「新しいデータを追加」と「入退院詳細（医師別）」が別々で
+            # 二度手間になっていたため、1つのフォームに統合。
+            # 送信時に daily_data と admission_details の両方に書き込む。
+            st.caption("🆕 入力UI v3 (統合版: 日次集計＋医師別詳細を1回で登録)")
 
-            # 送信後リセット用フラグ: ウィジェット生成前に session_state を初期化する
+            # 送信後リセット用フラグ: ウィジェット生成前に session_state を初期化
             if st.session_state.get("_dm_reset_inputs", False):
                 for _k in [
-                    "dm_discharge_count", "dm_total_patients", "dm_new_admissions",
-                    "dm_new_admissions_short3", "dm_notes",
+                    "dm_discharge_count", "dm_admission_count",
+                    "dm_total_patients", "dm_notes",
                 ]:
                     st.session_state.pop(_k, None)
                 for _i in range(8):
+                    # 退院スロット
                     st.session_state.pop(f"dm_los_slot_slide_{_i}", None)
                     st.session_state.pop(f"dm_los_slot_input_{_i}", None)
                     st.session_state.pop(f"dm_los_manual_{_i}", None)
+                    st.session_state.pop(f"dm_dis_attending_{_i}", None)
+                    # 入院スロット
+                    st.session_state.pop(f"dm_adm_route_{_i}", None)
+                    st.session_state.pop(f"dm_adm_source_{_i}", None)
+                    st.session_state.pop(f"dm_adm_attending_{_i}", None)
+                    st.session_state.pop(f"dm_adm_short3_{_i}", None)
                 st.session_state["_dm_reset_inputs"] = False
+
+            # 医師・経路マスター読込
+            _active_doctors_ui = dm_doctor.get_active_doctors() if _DOCTOR_MASTER_AVAILABLE else []
+            _doctor_names_ui = [d["name"] for d in _active_doctors_ui]
+            _routes_ui = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else ["外来紹介", "救急", "連携室", "ウォークイン"]
+            _source_options_ui = dm_doctor.get_admission_source_options() if _DOCTOR_MASTER_AVAILABLE else {}
+            _flat_source_list = ["（なし）"]
+            for _g_label, _names in _source_options_ui.items():
+                _flat_source_list.extend(_names)
 
             form_col0, form_col1, form_col2 = st.columns(3)
             with form_col0:
@@ -2708,75 +2727,103 @@ if _DATA_MANAGER_AVAILABLE:
                     value=40, step=1, key="dm_total_patients",
                 )
 
+            # --- 入院情報セクション ---
+            st.markdown("**🏥 入院情報**")
             input_admissions = st.number_input(
-                "新規入院数", min_value=0, max_value=30, value=5, step=1,
-                key="dm_new_admissions",
-            )
-            input_admissions_short3 = st.number_input(
-                "うち短手3（内数）",
-                min_value=0,
-                max_value=int(input_admissions),
-                value=0,
-                step=1,
-                key="dm_new_admissions_short3",
-                help="短期滞在手術等基本料3（4泊5日以内、大腸ポリペクトミー・鼠径ヘルニア等）の新規入院数。新規入院数のうちの内数として入力してください。Phase 1: 記録のみで計算には反映されません。",
+                "新規入院数（入院なしは0）",
+                min_value=0, max_value=8, value=0, step=1,
+                key="dm_admission_count",
+                help="本日の新規入院数を入力。下に入院人数分のスロットが展開されます。",
             )
 
+            _adm_events = []  # [(route, source, attending, is_short3), ...]
+            if input_admissions > 0:
+                st.caption(f"💡 {int(input_admissions)}名分の入院詳細を入力してください（経路・担当医は必須）")
+            for _a_slot_row in range(0, 8, 2):
+                _a_slot_cols = st.columns(2)
+                for _aci, _a_col in enumerate(_a_slot_cols):
+                    _asi = _a_slot_row + _aci
+                    if _asi >= input_admissions:
+                        continue
+                    with _a_col:
+                        with st.container(border=True):
+                            st.caption(f"✏️ 入院{_asi + 1}")
+                            _a_route = st.selectbox(
+                                "経路",
+                                _routes_ui,
+                                key=f"dm_adm_route_{_asi}",
+                            )
+                            _a_source = st.selectbox(
+                                "入院創出医（任意）",
+                                _flat_source_list,
+                                key=f"dm_adm_source_{_asi}",
+                            )
+                            _a_attending = st.selectbox(
+                                "入院担当医（必須）",
+                                [""] + _doctor_names_ui,
+                                key=f"dm_adm_attending_{_asi}",
+                            )
+                            _a_short3 = st.checkbox(
+                                "🏃 短手3（大腸ポリペクトミー等）",
+                                key=f"dm_adm_short3_{_asi}",
+                                help="短期滞在手術等基本料3（4泊5日以内）の算定対象患者。2026年改定で平均在院日数計算から除外されます。",
+                            )
+                            _adm_events.append((_a_route, _a_source, _a_attending, _a_short3))
+
+            # 短手3 内数を集計
+            input_admissions_short3 = sum(1 for ev in _adm_events if ev[3])
+
             # --- 退院情報セクション ---
-            st.markdown("**退院情報**")
+            st.markdown("**🚪 退院情報**")
             st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
             input_discharge_count = st.number_input(
                 "退院人数（退院なしは0）",
                 min_value=0, max_value=8, value=0, step=1,
                 key="dm_discharge_count",
-                help="本日の退院患者数を入力。下のスライダーで各患者の在院日数を設定してください",
+                help="本日の退院患者数を入力。下に退院人数分のスロットが展開されます。",
             )
 
-            # 在院日数スライダー（8スロット常時描画）
-            # 通常はスライダー1-90日。90日超の稀なケースはチェックボックスで数値入力に切替
+            # 在院日数スライダー（通常1-90日、90日超は数値入力）
             _los_options = list(range(1, 91))
             if input_discharge_count > 0:
-                st.markdown(f"**各退院患者の在院日数** — {int(input_discharge_count)}名分のスライダーが有効です")
-                st.caption("💡 90日を超える長期入院患者がいる場合は、各スロットの「📝 90日超」にチェックを入れてください")
-            else:
-                st.markdown("**各退院患者の在院日数** — まず上の「退院人数」を設定してください")
+                st.caption(f"💡 {int(input_discharge_count)}名分の退院詳細を入力してください（在院日数・担当医）")
             _los_all = []
+            _dis_attendings = []
             for _slot_row in range(0, 8, 2):
                 _slot_cols = st.columns(2)
                 for _ci, _col in enumerate(_slot_cols):
                     _si = _slot_row + _ci
+                    if _si >= input_discharge_count:
+                        continue
                     with _col:
-                        _is_active = _si < input_discharge_count
-                        _label = f"✏️ 退院{_si + 1}" if _is_active else f"（未使用）"
-                        _manual_key = f"dm_los_manual_{_si}"
-
-                        # 長期入院チェックボックス（有効スロットのみ表示）
-                        if _is_active:
+                        with st.container(border=True):
+                            st.caption(f"✏️ 退院{_si + 1}")
+                            _manual_key = f"dm_los_manual_{_si}"
                             _is_manual = st.checkbox(
                                 "📝 90日超（数値入力）",
                                 key=_manual_key,
-                                help="91日以上の長期入院患者の場合にチェック。スライダーが数値入力に切り替わります。",
+                                help="91日以上の長期入院患者の場合にチェック。",
                             )
-                        else:
-                            _is_manual = False
-
-                        if _is_manual and _is_active:
-                            _los_val = st.number_input(
-                                _label,
-                                min_value=1,
-                                max_value=365,
-                                value=91,
-                                step=1,
-                                key=f"dm_los_slot_input_{_si}",
+                            if _is_manual:
+                                _los_val = st.number_input(
+                                    "在院日数",
+                                    min_value=1, max_value=365, value=91, step=1,
+                                    key=f"dm_los_slot_input_{_si}",
+                                )
+                            else:
+                                _los_val = st.select_slider(
+                                    "在院日数",
+                                    options=_los_options,
+                                    value=10,
+                                    key=f"dm_los_slot_slide_{_si}",
+                                )
+                            _d_attending = st.selectbox(
+                                "担当医（必須）",
+                                [""] + _doctor_names_ui,
+                                key=f"dm_dis_attending_{_si}",
                             )
-                        else:
-                            _los_val = st.select_slider(
-                                _label,
-                                options=_los_options,
-                                value=10,
-                                key=f"dm_los_slot_slide_{_si}",
-                            )
-                        _los_all.append(_los_val)
+                            _los_all.append(_los_val)
+                            _dis_attendings.append(_d_attending)
 
             # 退院人数分だけ有効値として集計
             auto_discharges = int(input_discharge_count)
@@ -2784,32 +2831,47 @@ if _DATA_MANAGER_AVAILABLE:
             _auto_da = sum(1 for x in _los_active if 1 <= x <= 5)
             _auto_db = sum(1 for x in _los_active if 6 <= x <= 14)
             _auto_dc = sum(1 for x in _los_active if x >= 15)
+
+            # --- サマリー情報ボックス ---
+            _summary_parts = []
+            if input_admissions > 0:
+                _s3_txt = f"（うち短手3: {input_admissions_short3}名）" if input_admissions_short3 > 0 else ""
+                _summary_parts.append(f"入院 **{int(input_admissions)}名**{_s3_txt}")
             if auto_discharges > 0:
                 _avg_los_display = sum(_los_active) / len(_los_active)
                 _phase_badges = " ".join(
                     f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _los_active
                 )
-                st.info(
-                    f"💡 退院 **{auto_discharges}名**: {_phase_badges}\n\n"
-                    f"A群:{_auto_da} B群:{_auto_db} C群:{_auto_dc}　"
-                    f"平均在院日数: **{_avg_los_display:.1f}日**"
+                _summary_parts.append(
+                    f"退院 **{auto_discharges}名**: {_phase_badges}"
+                    f"（A:{_auto_da} B:{_auto_db} C:{_auto_dc}　平均LOS: **{_avg_los_display:.1f}日**）"
                 )
+            if _summary_parts:
+                st.info("💡 " + "\n\n".join(_summary_parts))
             else:
-                st.info("💡 退院なし（退院人数を増やすとスライダーが有効になります）")
+                st.info("💡 入院・退院なし（上で人数を設定するとスロットが展開されます）")
 
             input_notes = st.text_input("備考（任意）", value="", key="dm_notes")
 
-            submitted = st.button("追加", type="primary", use_container_width=True, key="dm_add_btn")
+            submitted = st.button("1日分を登録", type="primary", use_container_width=True, key="dm_add_btn")
 
             if submitted:
-                # 在院日数リストからA/B/C退院数を算出（スライダー/数値入力のどちらか有効な方を読む）
-                _active_los = []
-                for _i in range(int(input_discharge_count)):
-                    if st.session_state.get(f"dm_los_manual_{_i}", False):
-                        _v = st.session_state.get(f"dm_los_slot_input_{_i}", 91)
-                    else:
-                        _v = st.session_state.get(f"dm_los_slot_slide_{_i}", 10)
-                    _active_los.append(int(_v))
+                # --- バリデーション: 全入院・全退院の担当医が入力されているか ---
+                _validation_errors = []
+                for _a_i, (_r, _s, _att, _s3) in enumerate(_adm_events):
+                    if not _att:
+                        _validation_errors.append(f"入院{_a_i + 1}: 担当医を選択してください")
+                for _d_i, _d_att in enumerate(_dis_attendings):
+                    if not _d_att:
+                        _validation_errors.append(f"退院{_d_i + 1}: 担当医を選択してください")
+
+                if _validation_errors:
+                    for _err in _validation_errors:
+                        st.error(f"⚠️ {_err}")
+                    st.stop()
+
+                # 在院日数リストからA/B/C退院数を算出
+                _active_los = list(_los_active)
                 _los_str = ",".join(str(v) for v in _active_los)
                 _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
                 import math
@@ -2857,10 +2919,42 @@ if _DATA_MANAGER_AVAILABLE:
                     st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
                     if new_buckets is not None:
                         st.session_state.day_buckets = new_buckets
+
+                    # --- 詳細データ (admission_details) にも同時書き込み ---
+                    # 統合フォームの核心: daily_data と admission_details を1回の操作で書く
+                    _detail_written_count = 0
+                    if _DETAIL_DATA_AVAILABLE:
+                        try:
+                            _details_df = st.session_state.admission_details
+                            _date_str = str(input_date)
+                            # 入院イベント
+                            for (_r, _s, _att, _s3) in _adm_events:
+                                _source_name = _s if _s and _s != "（なし）" else ""
+                                _details_df = add_admission_event(
+                                    _details_df, _date_str, input_ward,
+                                    _r, _source_name, _att,
+                                )
+                                _detail_written_count += 1
+                            # 退院イベント
+                            for _los_v, _d_att in zip(_active_los, _dis_attendings):
+                                _details_df = add_discharge_event(
+                                    _details_df, _date_str, input_ward,
+                                    _d_att, int(_los_v),
+                                )
+                                _detail_written_count += 1
+                            st.session_state.admission_details = _details_df
+                            save_details(_details_df)
+                        except Exception as _detail_err:
+                            st.warning(f"⚠️ 詳細データの保存で警告: {_detail_err}")
+
                     _phase_detail = " ".join(
                         f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
                     ) if _active_los else "なし"
-                    st.success(f"{input_date} のデータを追加しました。（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}）")
+                    _detail_note = f" / 医師別詳細 {_detail_written_count}件記録" if _detail_written_count > 0 else ""
+                    st.success(
+                        f"✅ {input_date} ({input_ward}) の 1日分を登録しました。"
+                        f"（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}{_detail_note}）"
+                    )
                     _auto_save_to_db()
                     # 次回再描画時に全入力フィールドを初期化する
                     st.session_state["_dm_reset_inputs"] = True
@@ -3064,92 +3158,14 @@ if _DATA_MANAGER_AVAILABLE:
                     "「🎮 デモモード（サンプルデータ）」でお試しください。"
                 )
 
-        # === 入退院詳細入力 ===
+        # === 入退院詳細 表示のみ（入力は統合フォームに一本化） ===
+        # 旧「入退院詳細（医師別）」の入力セクションは統合フォームに移行済み。
+        # ここでは記録された直近のイベント一覧のみ表示する。
         if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE:
-            st.markdown("---")
-            st.markdown("#### 入退院詳細（医師別）")
-            st.caption("入院・退院ごとに経路と医師を記録します")
-
-            _detail_tab_adm, _detail_tab_dis = st.tabs(["🏥 入院記録", "🚪 退院記録"])
-
-            _active_doctors = dm_doctor.get_active_doctors() if _DOCTOR_MASTER_AVAILABLE else []
-            _doctor_names = [d["name"] for d in _active_doctors]
-            _routes = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else []
-            _source_options = dm_doctor.get_admission_source_options() if _DOCTOR_MASTER_AVAILABLE else {}
-
-            # Flatten source options for selectbox
-            _flat_sources = ["（なし）"]
-            for group_label, names in _source_options.items():
-                _flat_sources.append(f"--- {group_label} ---")
-                _flat_sources.extend(names)
-            _selectable_sources = [s for s in _flat_sources if not s.startswith("---")]
-
-            with _detail_tab_adm:
-                with st.form("admission_detail_form"):
-                    st.markdown("##### 入院を記録")
-                    _adm_col1, _adm_col2 = st.columns(2)
-                    with _adm_col1:
-                        _adm_date = st.date_input("入院日", value=date.today(), key="adm_detail_date")
-                        _adm_ward = st.selectbox("病棟", ["5F", "6F"], key="adm_detail_ward")
-                    with _adm_col2:
-                        _adm_route = st.selectbox("入院経路", _routes, key="adm_detail_route")
-
-                    _adm_col3, _adm_col4 = st.columns(2)
-                    with _adm_col3:
-                        _adm_source = st.selectbox("入院創出医（入院を生んだ医師）", _selectable_sources, key="adm_detail_source")
-                    with _adm_col4:
-                        _adm_attending = st.selectbox("入院担当医（主治医）", [""] + _doctor_names, key="adm_detail_attending")
-
-                    _adm_submit = st.form_submit_button("入院を記録", type="primary")
-                    if _adm_submit:
-                        if not _adm_attending:
-                            st.error("入院担当医を選択してください")
-                        else:
-                            _source_name = _adm_source if _adm_source != "（なし）" else ""
-                            st.session_state.admission_details = add_admission_event(
-                                st.session_state.admission_details,
-                                str(_adm_date), _adm_ward, _adm_route,
-                                _source_name, _adm_attending
-                            )
-                            save_details(st.session_state.admission_details)
-                            st.success(f"✅ 入院記録を追加しました（{_adm_attending}先生, {_adm_route}）")
-                            st.rerun()
-
-            with _detail_tab_dis:
-                with st.form("discharge_detail_form"):
-                    st.markdown("##### 退院を記録")
-                    _dis_col1, _dis_col2 = st.columns(2)
-                    with _dis_col1:
-                        _dis_date = st.date_input("退院日", value=date.today(), key="dis_detail_date")
-                        _dis_ward = st.selectbox("病棟", ["5F", "6F"], key="dis_detail_ward")
-                    with _dis_col2:
-                        _dis_attending = st.selectbox("担当医（主治医）", [""] + _doctor_names, key="dis_detail_attending")
-                        _dis_los = st.number_input("在院日数", min_value=1, max_value=365, value=14, key="dis_detail_los")
-
-                    # Show auto-calculated phase
-                    if _dis_los <= 5:
-                        st.info(f"フェーズ: **A群**（急性期 1-5日）| 在院{_dis_los}日")
-                    elif _dis_los <= 14:
-                        st.info(f"フェーズ: **B群**（回復期 6-14日）| 在院{_dis_los}日")
-                    else:
-                        st.info(f"フェーズ: **C群**（退院準備期 15日以上）| 在院{_dis_los}日")
-
-                    _dis_submit = st.form_submit_button("退院を記録", type="primary")
-                    if _dis_submit:
-                        if not _dis_attending:
-                            st.error("担当医を選択してください")
-                        else:
-                            st.session_state.admission_details = add_discharge_event(
-                                st.session_state.admission_details,
-                                str(_dis_date), _dis_ward, _dis_attending, _dis_los
-                            )
-                            save_details(st.session_state.admission_details)
-                            st.success(f"✅ 退院記録を追加しました（{_dis_attending}先生, 在院{_dis_los}日）")
-                            st.rerun()
-
-            # Show recent records
             if len(st.session_state.admission_details) > 0:
-                st.markdown("##### 直近の記録")
+                st.markdown("---")
+                st.markdown("#### 入退院詳細（医師別）— 直近の記録")
+                st.caption("入力は上の「新しいデータを追加」フォームで行います。医師別情報は1回の登録でまとめて記録されます。")
                 _recent = st.session_state.admission_details.sort_values("date", ascending=False).head(20).copy()
                 _display_cols = {
                     "date": "日付", "ward": "病棟", "event_type": "種別",
@@ -3164,7 +3180,6 @@ if _DATA_MANAGER_AVAILABLE:
                     _recent_display["種別"] = _recent_display["種別"].map({"admission": "入院", "discharge": "退院"})
                 st.dataframe(_recent_display, use_container_width=True, hide_index=True)
 
-    # ----- タブ: 🔮 実績分析・予測 -----
     with tabs[_dm_tab_analysis_idx]:
         st.subheader("🔮 実績分析・予測")
 
