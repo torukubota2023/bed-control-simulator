@@ -2673,6 +2673,14 @@ if _DATA_MANAGER_AVAILABLE:
                     input_total = st.number_input("在院患者総数", min_value=0, max_value=_ward_max_beds, value=40, step=1)
 
                 input_admissions = st.number_input("新規入院数", min_value=0, max_value=30, value=5, step=1)
+                input_admissions_short3 = st.number_input(
+                    "うち短手3（内数）",
+                    min_value=0,
+                    max_value=int(input_admissions),
+                    value=0,
+                    step=1,
+                    help="短期滞在手術等基本料3（4泊5日以内、大腸ポリペクトミー・鼠径ヘルニア等）の新規入院数。新規入院数のうちの内数として入力してください。Phase 1: 記録のみで計算には反映されません。",
+                )
 
                 # --- 退院患者の在院日数入力（個別精度） ---
                 st.markdown("**退院情報**")
@@ -2748,6 +2756,7 @@ if _DATA_MANAGER_AVAILABLE:
                         "ward": input_ward,
                         "total_patients": int(input_total),
                         "new_admissions": int(input_admissions),
+                        "new_admissions_short3": int(input_admissions_short3),
                         "discharges": int(auto_discharges),
                         "discharge_a": int(input_discharge_a),
                         "discharge_b": int(input_discharge_b),

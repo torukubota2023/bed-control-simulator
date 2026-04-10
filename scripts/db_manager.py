@@ -65,6 +65,7 @@ def init_tables(conn):
                 ward TEXT DEFAULT 'all',
                 total_patients INTEGER,
                 new_admissions INTEGER,
+                new_admissions_short3 INTEGER DEFAULT 0,
                 discharges INTEGER,
                 discharge_a INTEGER DEFAULT 0,
                 discharge_b INTEGER DEFAULT 0,
@@ -85,6 +86,9 @@ def init_tables(conn):
         _existing_cols = {row[1] for row in cursor.fetchall()}
         if "discharge_los_list" not in _existing_cols:
             cursor.execute("ALTER TABLE daily_records ADD COLUMN discharge_los_list TEXT DEFAULT ''")
+        # Migration: new_admissions_short3 カラムを追加（既存DBの後方互換性）
+        if "new_admissions_short3" not in _existing_cols:
+            cursor.execute("ALTER TABLE daily_records ADD COLUMN new_admissions_short3 INTEGER DEFAULT 0")
 
         # abc_state テーブル
         cursor.execute("""
@@ -143,16 +147,18 @@ def save_daily_records(df, db_path=None):
         for _, row in df_copy.iterrows():
             cursor.execute("""
                 REPLACE INTO daily_records
-                (date, ward, total_patients, new_admissions, discharges,
+                (date, ward, total_patients, new_admissions, new_admissions_short3,
+                 discharges,
                  discharge_a, discharge_b, discharge_c, discharge_los_list,
                  phase_a_count, phase_b_count, phase_c_count,
                  avg_los, notes, data_source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row.get('date', ''),
                 row.get('ward', 'all'),
                 int(row['total_patients']) if pd.notna(row.get('total_patients')) else None,
                 int(row['new_admissions']) if pd.notna(row.get('new_admissions')) else None,
+                int(row['new_admissions_short3']) if pd.notna(row.get('new_admissions_short3')) else 0,
                 int(row['discharges']) if pd.notna(row.get('discharges')) else None,
                 int(row['discharge_a']) if pd.notna(row.get('discharge_a')) else 0,
                 int(row['discharge_b']) if pd.notna(row.get('discharge_b')) else 0,
@@ -214,7 +220,8 @@ def _create_empty_daily_records():
         pd.DataFrame: 空のデータフレーム
     """
     columns = [
-        'date', 'ward', 'total_patients', 'new_admissions', 'discharges',
+        'date', 'ward', 'total_patients', 'new_admissions', 'new_admissions_short3',
+        'discharges',
         'discharge_a', 'discharge_b', 'discharge_c', 'discharge_los_list',
         'phase_a_count', 'phase_b_count', 'phase_c_count',
         'avg_los', 'notes', 'data_source'

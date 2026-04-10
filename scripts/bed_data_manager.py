@@ -27,6 +27,7 @@ DAILY_RECORD_COLUMNS = [
     "ward",              # 病棟 ("5F", "6F", "all")
     "total_patients",    # 在院患者数
     "new_admissions",    # 新規入院数
+    "new_admissions_short3",  # うち短期滞在手術等基本料3 算定（内数, 内訳記録のみ Phase 1）
     "discharges",        # 退院数
     "discharge_a",       # A群相当退院数（1-5日目退院）
     "discharge_b",       # B群相当退院数（6-14日目退院）
@@ -143,7 +144,8 @@ def create_empty_dataframe() -> pd.DataFrame:
     # 型を明示的に設定
     df["date"] = pd.to_datetime(df["date"])
     df["ward"] = df["ward"].astype("string")
-    for col in ["total_patients", "new_admissions", "discharges",
+    for col in ["total_patients", "new_admissions", "new_admissions_short3",
+                 "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         df[col] = df[col].astype("Int64")  # nullable int
@@ -192,6 +194,15 @@ def validate_record(record, existing_df=None):
         elif val < 0:
             errors.append(f"{label}は0以上で入力してください。")
 
+    # 短手3（内数）チェック: 0以上、かつ新規入院数以下
+    s3 = record.get("new_admissions_short3", 0) or 0
+    if isinstance(s3, (int, np.integer)):
+        if s3 < 0:
+            errors.append("短手3（内数）は0以上で入力してください。")
+        adm_val = record.get("new_admissions", 0) or 0
+        if isinstance(adm_val, (int, np.integer)) and s3 > adm_val:
+            errors.append("短手3（内数）は新規入院数以下で入力してください。")
+
     # 退院内訳チェック
     da = record.get("discharge_a", 0) or 0
     db = record.get("discharge_b", 0) or 0
@@ -233,6 +244,9 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
             record_copy[col] = 0
     if "discharge_los_list" not in record_copy or record_copy["discharge_los_list"] is None:
         record_copy["discharge_los_list"] = ""
+    # 短手3（内数）デフォルト 0
+    if "new_admissions_short3" not in record_copy or record_copy["new_admissions_short3"] is None:
+        record_copy["new_admissions_short3"] = 0
     # phase_a/b/c_count はオプション（自動計算される場合がある）
     for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:
         if col not in record_copy:
@@ -241,7 +255,8 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
         record_copy["avg_los"] = pd.NA
     new_row = pd.DataFrame([record_copy])
     # カラム型を合わせる
-    for col in ["total_patients", "new_admissions", "discharges",
+    for col in ["total_patients", "new_admissions", "new_admissions_short3",
+                 "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         if col in new_row.columns:
@@ -874,6 +889,10 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
         if col not in raw.columns:
             raw[col] = 0
 
+    # 短手3（内数）がない旧CSVは0で埋める（後方互換性）
+    if "new_admissions_short3" not in raw.columns:
+        raw["new_admissions_short3"] = 0
+
     # discharge_los_list がない場合は空文字で埋める（後方互換性）
     if "discharge_los_list" not in raw.columns:
         raw["discharge_los_list"] = ""
@@ -884,7 +903,8 @@ def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
         if col not in raw.columns:
             raw[col] = pd.NA
 
-    for col in ["total_patients", "new_admissions", "discharges",
+    for col in ["total_patients", "new_admissions", "new_admissions_short3",
+                 "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         if col in raw.columns:
@@ -1298,6 +1318,14 @@ def generate_sample_data(num_days=30, num_beds=None, seed=42, ward="all"):
             admission_mean = 5.0
         new_admissions = int(rng.poisson(admission_mean))
 
+        # 短手3（内数）: 新規入院数の0〜30%程度をランダムに設定（Phase 1: 記録のみ）
+        # 当院実績: 月20-25件（≒新規入院の15%前後）を反映
+        if new_admissions > 0:
+            short3_ratio = rng.uniform(0.0, 0.30)
+            new_admissions_short3 = int(round(new_admissions * short3_ratio))
+        else:
+            new_admissions_short3 = 0
+
         # 退院数（退院は在院患者数に比例、週末はやや少ない）
         discharge_rate = 0.055 if dow < 5 else 0.035
         expected_discharges = current_patients * discharge_rate
@@ -1371,6 +1399,7 @@ def generate_sample_data(num_days=30, num_beds=None, seed=42, ward="all"):
             "ward": ward,
             "total_patients": current_patients,
             "new_admissions": new_admissions,
+            "new_admissions_short3": new_admissions_short3,
             "discharges": discharges,
             "discharge_a": discharge_a,
             "discharge_b": discharge_b,
@@ -1386,7 +1415,8 @@ def generate_sample_data(num_days=30, num_beds=None, seed=42, ward="all"):
     df["ward"] = df["ward"].astype("string")
     # バケット履歴をDataFrameの属性として保持（session_state管理用）
     df.attrs["bucket_history"] = bucket_history
-    for col in ["total_patients", "new_admissions", "discharges",
+    for col in ["total_patients", "new_admissions", "new_admissions_short3",
+                 "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         df[col] = df[col].astype("Int64")
