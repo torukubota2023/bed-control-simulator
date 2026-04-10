@@ -2665,6 +2665,7 @@ if _DATA_MANAGER_AVAILABLE:
             # --- データ入力エリア（フォーム不使用: ウィジェット操作のたびにリランさせる） ---
             # フォームを使うと退院人数の変更がスライダーのラベルに即反映されないため、
             # 通常ウィジェット + 追加ボタンで構成する。
+            st.caption("🆕 入力UI v2 (リアルタイム更新版)")
 
             # 送信後リセット用フラグ: ウィジェット生成前に session_state を初期化する
             if st.session_state.get("_dm_reset_inputs", False):
