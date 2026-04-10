@@ -2691,7 +2691,8 @@ if _DATA_MANAGER_AVAILABLE:
                 )
 
                 # 在院日数スライダー（8スロット常時描画 — フォーム内のためキー安定性が必要）
-                _los_options = list(range(1, 61))
+                # 上限180日: 稀に発生する長期入院（90日超）にも対応
+                _los_options = list(range(1, 181))
                 st.markdown("**各退院患者の在院日数**（退院人数分だけスライダーを設定してください）")
                 _los_all = []
                 for _slot_row in range(0, 8, 2):
