@@ -577,20 +577,24 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- パスワード認証 ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+# --- パスワード認証（データ入力・エクスポート時のみ） ---
+if "data_authenticated" not in st.session_state:
+    st.session_state.data_authenticated = False
 
-if not st.session_state.authenticated:
-    st.title("🔐 病棟稼働率シミュレーター")
-    _pw = st.text_input("パスワードを入力してください", type="password")
-    if st.button("ログイン"):
+
+def _require_data_auth(section_label: str = "この機能") -> bool:
+    """データ入力・エクスポート時のパスワード認証ガード。認証済みならTrueを返す。"""
+    if st.session_state.data_authenticated:
+        return True
+    st.info(f"🔐 {section_label}を利用するにはパスワードが必要です（データ改ざん防止）")
+    _pw = st.text_input("パスワード", type="password", key=f"pw_{section_label}")
+    if st.button("認証", key=f"auth_{section_label}"):
         if _pw == "1234":
-            st.session_state.authenticated = True
+            st.session_state.data_authenticated = True
             st.rerun()
         else:
             st.error("パスワードが違います")
-    st.stop()
+    return False
 
 if not _CORE_AVAILABLE:
     st.error(f"⚠️ コアモジュールのインポートに失敗しました\n\n{_CORE_ERROR}")
@@ -804,7 +808,20 @@ if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.sessi
         _mean_total_patients = (_dd_for_occ["total_patients"] + _dis_fallback).mean()
     _current_occ = _mean_total_patients / _TOTAL_BEDS_METRIC * 100
 
+# ---------------------------------------------------------------------------
+# サイドバー: メニュー選択（データソースの上に配置）
+# ---------------------------------------------------------------------------
+_section_names = ["📊 ダッシュボード", "🎯 意思決定支援"]
+if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
+    _section_names.append("🛡️ 制度管理")
+if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE:
+    _section_names.append("📋 データ管理")
+if _HOPE_AVAILABLE:
+    _section_names.append("📨 HOPE連携")
+
+_selected_section = st.sidebar.radio("メニュー", _section_names, label_visibility="collapsed")
 st.sidebar.markdown("---")
+
 _sidebar_annual_value_placeholder = st.sidebar.empty()  # プリセット確定後に更新
 _sidebar_occ_placeholder = st.sidebar.empty()  # target_lower 確定後に表示
 st.sidebar.markdown("---")
@@ -2596,20 +2613,8 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
 
 
 # ---------------------------------------------------------------------------
-# サイドバーセクション選択 + タブ構成
+# セクション別タブ構成（_selected_section はサイドバー上部で定義済み）
 # ---------------------------------------------------------------------------
-st.sidebar.markdown("---")
-_section_names = ["\U0001f4ca ダッシュボード", "\U0001f3af 意思決定支援"]
-if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
-    _section_names.append("\U0001f6e1\ufe0f 制度管理")
-if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE:
-    _section_names.append("\U0001f4cb データ管理")
-if _HOPE_AVAILABLE:
-    _section_names.append("\U0001f4e8 HOPE連携")
-
-_selected_section = st.sidebar.radio("メニュー", _section_names, label_visibility="collapsed")
-
-# --- セクション別タブ構成 ---
 if _selected_section == "\U0001f4ca ダッシュボード":
     tab_names = ["\U0001f4ca 日次推移", "\U0001f504 フェーズ構成", "\U0001f4b0 運営分析", "\U0001f4c8 トレンド分析"]
 elif _selected_section == "\U0001f3af 意思決定支援":
@@ -2681,6 +2686,8 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
     # ----- タブ: 📋 日次データ入力 -----
     with tabs[_dm_tab_daily_idx]:
         st.subheader("📋 日次データ入力")
+        if not _require_data_auth("データ入力"):
+            st.stop()
 
         # --- モード切替 ---
         st.radio(
@@ -8885,6 +8892,8 @@ if "📥 データエクスポート" in _tab_idx:
     with tabs[_tab_idx["📥 データエクスポート"]]:
         st.header("📥 データエクスポート")
         st.caption("入力済みデータをCSV形式でダウンロードできます。Excel等で解析にご利用ください。")
+        if not _require_data_auth("データエクスポート"):
+            st.stop()
 
         col1, col2 = st.columns(2)
 
