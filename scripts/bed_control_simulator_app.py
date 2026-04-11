@@ -3706,11 +3706,10 @@ if _is_actual_data_mode:
     # 実績データモード
     if not _actual_data_available:
         if _needs_sim_data:
-            with tabs[0]:
-                st.info(
-                    "実績データがありません。「📋 日次データ入力」タブでデータを入力するか、"
-                    "デモデータを生成してください。"
-                )
+            _no_data_msg = "実績データがありません。「📋 日次データ入力」タブでデータを入力するか、デモデータを生成してください。"
+            for _t in tabs:
+                with _t:
+                    st.info(_no_data_msg)
         # データ不要セクション or データ未入力 → ダミー値で続行（st.stop()を使わず他タブへの影響を防ぐ）
         df = pd.DataFrame()
         summary = {}
@@ -3741,8 +3740,10 @@ else:
     # シミュレーションモード
     if not _simulation_available:
         if _needs_sim_data:
-            with tabs[0]:
-                st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
+            _no_data_msg = "サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。"
+            for _t in tabs:
+                with _t:
+                    st.info(_no_data_msg)
         # データ不要セクション or シミュレーション未実行 → ダミー値で続行（st.stop()を使わず他タブへの影響を防ぐ）
         df = pd.DataFrame()
         summary = {}
@@ -3817,35 +3818,47 @@ if _active_cli_params:
             _active_cli_params["monthly_admissions"] * _bed_ratio_sync
         )
 
+# ---------------------------------------------------------------------------
+# セクション共通ヘッダー（タブの外に1回だけ表示）
+# ---------------------------------------------------------------------------
+if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+    # 病棟選択キャプション
+    if _selected_ward_key != "全体":
+        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    # 病棟KPIアラート
+    if _selected_ward_key != "全体":
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+    # 全体稼働率低下アラート（実績データモード）
+    if _is_actual_data_mode:
+        if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
+            _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
+            _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
+            _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
+            if _total_last_occ < target_lower * 100:
+                _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
+                _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
+                _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
+                st.error(
+                    f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
+                    f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
+                    "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
+                )
+        # 比較ストリップ
+        if _ward_data_available:
+            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
+
+# 意思決定支援セクション: 機能チェックをタブの外に表示
+if _selected_section == "🎯 意思決定支援" and not _DECISION_SUPPORT_AVAILABLE:
+    st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
+    if "_DECISION_SUPPORT_ERROR" in dir():
+        st.code(_DECISION_SUPPORT_ERROR)
+
 # ===== タブ1: 日次推移 =====
-if "📊 日次推移" in _tab_idx:
+if "📊 日次推移" in _tab_idx and _data_ready:
     with tabs[_tab_idx["📊 日次推移"]]:
         st.subheader("日次推移")
-        if _selected_ward_key != "全体":
-            st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
-        if not _is_actual_data_mode and _selected_ward_key != "全体":
-            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-        if _is_actual_data_mode:
-            if _selected_ward_key != "全体":
-                if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                    _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-            if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
-                _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
-                _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
-                _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
-                if _total_last_occ < target_lower * 100:
-                    _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
-                    _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
-                    _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
-                    st.error(
-                        f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                        f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
-                        "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
-                    )
-            if _ward_data_available:
-                _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
         if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_daily"])
@@ -4120,20 +4133,9 @@ if "📊 日次推移" in _tab_idx:
 
 
 # ===== タブ2: フェーズ構成 =====
-if "🔄 フェーズ構成" in _tab_idx:
+if "🔄 フェーズ構成" in _tab_idx and _data_ready:
     with tabs[_tab_idx["🔄 フェーズ構成"]]:
         st.subheader("フェーズ構成")
-        if _selected_ward_key != "全体":
-            st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
-        if not _is_actual_data_mode and _selected_ward_key != "全体":
-            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-        if _is_actual_data_mode:
-            if _selected_ward_key != "全体":
-                if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                    _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-            if _ward_data_available:
-                _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
 
         # --- A/B/C群の定義パネル（常時表示、折りたたみではない） ---
         _col_a, _col_b, _col_c = st.columns(3)
@@ -4528,20 +4530,9 @@ if "🔄 フェーズ構成" in _tab_idx:
 
 
 # ===== タブ3: 運営分析 =====
-if "💰 運営分析" in _tab_idx:
+if "💰 運営分析" in _tab_idx and _data_ready:
     with tabs[_tab_idx["💰 運営分析"]]:
         st.subheader("運営分析")
-        if _selected_ward_key != "全体":
-            st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
-        if not _is_actual_data_mode and _selected_ward_key != "全体":
-            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-        if _is_actual_data_mode:
-            if _selected_ward_key != "全体":
-                if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                    _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-            if _ward_data_available:
-                _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
         if _HELP_AVAILABLE and "tab_finance" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_finance"])
@@ -5318,34 +5309,9 @@ if "💰 運営分析" in _tab_idx:
 
 
 # ===== タブ4: 運営改善アラート =====
-if "🚨 運営改善アラート" in _tab_idx:
+if "🚨 運営改善アラート" in _tab_idx and _data_ready:
     with tabs[_tab_idx["🚨 運営改善アラート"]]:
         st.subheader("運営改善アラート")
-        if _selected_ward_key != "全体":
-            st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
-        if not _is_actual_data_mode and _selected_ward_key != "全体":
-            if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-        if _is_actual_data_mode:
-            if _selected_ward_key != "全体":
-                if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                    _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-            if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-                _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
-                _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
-                _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
-                _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
-                if _total_last_occ < target_lower * 100:
-                    _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
-                    _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
-                    _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
-                    st.error(
-                        f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                        f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
-                        "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
-                    )
-            if _ward_data_available:
-                _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
         if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_flags"])
@@ -5643,9 +5609,7 @@ if "🚨 運営改善アラート" in _tab_idx:
 if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
     with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
         if not _DECISION_SUPPORT_AVAILABLE:
-            st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
-            if "_DECISION_SUPPORT_ERROR" in dir():
-                st.code(_DECISION_SUPPORT_ERROR)
+            pass  # エラーメッセージはタブ外のセクションヘッダーで表示済み
         else:
             st.subheader("\U0001f3af 意思決定ダッシュボード")
             if _HELP_AVAILABLE and "tab_decision" in HELP_TEXTS:
@@ -6059,9 +6023,7 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
 if "\U0001f52e What-if分析" in _tab_idx:
     with tabs[_tab_idx["\U0001f52e What-if分析"]]:
         if not _DECISION_SUPPORT_AVAILABLE:
-            st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
-            if "_DECISION_SUPPORT_ERROR" in dir():
-                st.code(_DECISION_SUPPORT_ERROR)
+            pass  # エラーメッセージはタブ外のセクションヘッダーで表示済み
         else:
             st.subheader("\U0001f52e What-if分析")
             st.caption("過去の任意の日に戻って「もしこうしていたら？」を試せます。")
@@ -6530,9 +6492,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
 if "\U0001f4c8 トレンド分析" in _tab_idx:
     with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
         if not _DECISION_SUPPORT_AVAILABLE:
-            st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
-            if "_DECISION_SUPPORT_ERROR" in dir():
-                st.code(_DECISION_SUPPORT_ERROR)
+            pass  # エラーメッセージはタブ外のセクションヘッダーで表示済み
         else:
             st.subheader("\U0001f4c8 トレンド分析")
             if _HELP_AVAILABLE and "tab_trends" in HELP_TEXTS:
