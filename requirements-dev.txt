@@ -1,2 +1,8 @@
-pytest>=7.0
-ruff>=0.4
+pandas
+numpy
+pytest
+streamlit
+plotly
+matplotlib
+ruff
+jpholiday

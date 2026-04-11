@@ -83,11 +83,11 @@ tests/
   test_bed_data_manager.py       # データ管理のテスト（18件）
   test_db_manager.py             # SQLite永続化のテスト（8件）
   test_metrics.py                # 空床マネジメント指標のテスト（21件）
-  test_guardrail_engine.py       # 制度ガードレールのテスト（10件）
-  test_demand_wave.py            # 需要波のテスト（8件）
+  test_guardrail_engine.py       # 制度ガードレールのテスト（11件）
+  test_demand_wave.py            # 需要波のテスト（11件）
   test_c_group_control.py        # C群コントロールのテスト（10件）
-  test_emergency_ratio.py        # 救急搬送後患者割合のテスト（15件）
-  （全90件）
+  test_emergency_ratio.py        # 救急搬送後患者割合のテスト（21件）
+  （テスト総数は pytest 実行結果を参照 — 現在100件）
 pyproject.toml                   # ruff 設定
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）
