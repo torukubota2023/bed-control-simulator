@@ -2381,7 +2381,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             else:
                 _action_icon = "🟢"
                 _action_title = "目標レンジ内 — 維持継続"
-                _action_detail = "明日以降の入退院バランス確認"
+                _action_detail = "明日以降の入退院セット調整を確認"
 
             # 月平均達成見通し
             _brief_month_days = 31
