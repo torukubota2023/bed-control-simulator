@@ -131,10 +131,13 @@ def save_daily_records(df, db_path=None):
     Args:
         df (pd.DataFrame): 日次記録データフレーム
         db_path (str, optional): データベースファイルパス
+
+    Returns:
+        bool: 保存成功ならTrue、失敗ならFalse
     """
     conn = get_connection(db_path)
     if conn is None:
-        return
+        return False
 
     try:
         # date列を文字列形式に変換
@@ -142,18 +145,10 @@ def save_daily_records(df, db_path=None):
         if 'date' in df_copy.columns:
             df_copy['date'] = pd.to_datetime(df_copy['date']).dt.strftime('%Y-%m-%d')
 
-        # 行ごとにREPLACE INTOで保存（テーブルスキーマを保持）
-        cursor = conn.cursor()
+        # 全行をタプルのリストに変換
+        rows = []
         for _, row in df_copy.iterrows():
-            cursor.execute("""
-                REPLACE INTO daily_records
-                (date, ward, total_patients, new_admissions, new_admissions_short3,
-                 discharges,
-                 discharge_a, discharge_b, discharge_c, discharge_los_list,
-                 phase_a_count, phase_b_count, phase_c_count,
-                 avg_los, notes, data_source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            rows.append((
                 row.get('date', ''),
                 row.get('ward', 'all'),
                 int(row['total_patients']) if pd.notna(row.get('total_patients')) else None,
@@ -171,11 +166,28 @@ def save_daily_records(df, db_path=None):
                 str(row.get('notes', '')) if pd.notna(row.get('notes')) else '',
                 str(row.get('data_source', 'manual')) if pd.notna(row.get('data_source')) else 'manual',
             ))
+
+        # 明示的トランザクション制御でバッチINSERT
+        sql = """
+            REPLACE INTO daily_records
+            (date, ward, total_patients, new_admissions, new_admissions_short3,
+             discharges,
+             discharge_a, discharge_b, discharge_c, discharge_los_list,
+             phase_a_count, phase_b_count, phase_c_count,
+             avg_los, notes, data_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        conn.execute("BEGIN")
+        cursor = conn.cursor()
+        cursor.executemany(sql, rows)
         conn.commit()
-        print(f"日次記録を保存しました: {len(df_copy)}件")
+        print(f"日次記録を保存しました: {len(rows)}件")
+        return True
 
     except Exception as e:
+        conn.rollback()
         print(f"日次記録保存エラー: {e}")
+        return False
     finally:
         conn.close()
 
@@ -236,15 +248,19 @@ def save_abc_state(abc_state, db_path=None):
     Args:
         abc_state (dict): ABC状態 {"A": x, "B": y, "C": z}
         db_path (str, optional): データベースファイルパス
+
+    Returns:
+        bool: 保存成功ならTrue、失敗ならFalse
     """
     conn = get_connection(db_path)
     if conn is None:
-        return
+        return False
 
     try:
         cursor = conn.cursor()
         current_time = datetime.now().isoformat()
 
+        conn.execute("BEGIN")
         cursor.execute("""
             REPLACE INTO abc_state (key, a_count, b_count, c_count, updated_at)
             VALUES (?, ?, ?, ?, ?)
@@ -258,9 +274,12 @@ def save_abc_state(abc_state, db_path=None):
 
         conn.commit()
         print("ABC状態を保存しました")
+        return True
 
     except Exception as e:
+        conn.rollback()
         print(f"ABC状態保存エラー: {e}")
+        return False
     finally:
         conn.close()
 
@@ -306,16 +325,20 @@ def save_day_buckets(day_buckets, db_path=None):
     Args:
         day_buckets: 日齢バケットデータ
         db_path (str, optional): データベースファイルパス
+
+    Returns:
+        bool: 保存成功ならTrue、失敗ならFalse
     """
     conn = get_connection(db_path)
     if conn is None:
-        return
+        return False
 
     try:
         cursor = conn.cursor()
         current_time = datetime.now().isoformat()
         bucket_json = json.dumps(day_buckets, ensure_ascii=False, indent=2)
 
+        conn.execute("BEGIN")
         cursor.execute("""
             REPLACE INTO day_buckets (key, bucket_json, updated_at)
             VALUES (?, ?, ?)
@@ -323,9 +346,12 @@ def save_day_buckets(day_buckets, db_path=None):
 
         conn.commit()
         print("日齢バケットを保存しました")
+        return True
 
     except Exception as e:
+        conn.rollback()
         print(f"日齢バケット保存エラー: {e}")
+        return False
     finally:
         conn.close()
 

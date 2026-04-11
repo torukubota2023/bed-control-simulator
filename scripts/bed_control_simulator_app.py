@@ -116,7 +116,8 @@ try:
     )
     _DB_AVAILABLE = True
 except Exception as _db_err:
-    pass
+    import traceback as _db_tb
+    _DB_ERROR = f"{_db_err}\n{_db_tb.format_exc()}"
 
 # ベッドマップUI（初期セットアップ用）
 _BED_MAP_AVAILABLE = False
@@ -133,15 +134,17 @@ try:
     import doctor_master as dm_doctor
     _DOCTOR_MASTER_AVAILABLE = True
 except Exception as _doc_err:
-    pass
+    import traceback as _doc_tb
+    _DOCTOR_MASTER_ERROR = f"{_doc_err}\n{_doc_tb.format_exc()}"
 
 # HOPE送信用サマリー生成モジュール
 _HOPE_AVAILABLE = False
 try:
     from hope_message_generator import render_hope_tab as _render_hope_tab
     _HOPE_AVAILABLE = True
-except Exception:
-    pass
+except Exception as _hope_err:
+    import traceback as _hope_tb
+    _HOPE_ERROR = f"{_hope_err}\n{_hope_tb.format_exc()}"
 
 # 入退院詳細データ
 try:
@@ -161,7 +164,9 @@ try:
         simulate_discharge_shift,
     )
     _DETAIL_DATA_AVAILABLE = True
-except Exception:
+except Exception as _detail_err:
+    import traceback as _detail_tb
+    _DETAIL_DATA_ERROR = f"{_detail_err}\n{_detail_tb.format_exc()}"
     _DETAIL_DATA_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
@@ -506,6 +511,18 @@ if not _CORE_AVAILABLE:
 if not _DATA_MANAGER_AVAILABLE:
     _dm_error_msg = _DATA_MANAGER_ERROR if "_DATA_MANAGER_ERROR" in dir() else "bed_data_manager モジュールが見つかりません"
     st.sidebar.warning(f"⚠️ 日次データ管理モジュールのインポートに失敗しました\n\n{_dm_error_msg}")
+
+if not _DB_AVAILABLE and "_DB_ERROR" in dir():
+    st.sidebar.warning(f"⚠️ SQLite永続化モジュールのインポートに失敗しました\n\n{_DB_ERROR}")
+
+if not _DOCTOR_MASTER_AVAILABLE and "_DOCTOR_MASTER_ERROR" in dir():
+    st.sidebar.warning(f"⚠️ 医師マスター管理モジュールのインポートに失敗しました\n\n{_DOCTOR_MASTER_ERROR}")
+
+if not _HOPE_AVAILABLE and "_HOPE_ERROR" in dir():
+    st.sidebar.warning(f"⚠️ HOPE送信サマリーモジュールのインポートに失敗しました\n\n{_HOPE_ERROR}")
+
+if not _DETAIL_DATA_AVAILABLE and "_DETAIL_DATA_ERROR" in dir():
+    st.sidebar.warning(f"⚠️ 入退院詳細データモジュールのインポートに失敗しました\n\n{_DETAIL_DATA_ERROR}")
 
 st.title("🏥 ベッドコントロールシミュレーター")
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
@@ -3536,7 +3553,7 @@ if _DATA_MANAGER_AVAILABLE:
                     st.metric("推定平均在院日数", f"{_monthly_kpi['推定平均在院日数']}日",
                              help="厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)")
 
-                st.caption(f"残り{_monthly_kpi['残り日数']}日 | 予測入院数: {_monthly_kpi['今月入院数_予測']}名")
+                st.caption(f"残り{_monthly_kpi['残り日数']}日 | 受入見込み数: {_monthly_kpi['今月入院数_予測']}名")
                 st.caption("※ 平均在院日数は厚生労働省「病院報告」の公式定義に準拠")
 
             st.markdown("---")
@@ -6621,6 +6638,7 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
 
         # ---- 予測エンジンによる7日間予測 ----
         st.markdown("#### 🔮 今後7日間の入退院予測")
+        st.caption("※ この機能は入院を正確に予測するものではありません。退院タイミングを整えて、予測しにくい救急入院を受けやすくするための参考値です。")
 
         _pred_df = _predict_admission_discharge(_dt_plot, num_beds=_view_beds, horizon=7)
         _dow_names_jp = ["月", "火", "水", "木", "金", "土", "日"]
@@ -6630,8 +6648,8 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
         _pred_display["日付"] = _pred_display["date"].apply(
             lambda d: f"{d.month}/{d.day}({_dow_names_jp[d.weekday()]})")
         _pred_display["種別"] = _pred_display["day_type"]
-        _pred_display["予測入院"] = _pred_display["pred_admissions"]
-        _pred_display["予測退院"] = _pred_display["pred_discharges"]
+        _pred_display["受入見込み"] = _pred_display["pred_admissions"]
+        _pred_display["退院見込み"] = _pred_display["pred_discharges"]
         _pred_display["純増減"] = _pred_display["pred_net"]
         _pred_display["予測患者数"] = _pred_display["pred_patients"].astype(int)
         _pred_display["予測稼働率"] = (_pred_display["pred_occupancy"] * 100).round(1).astype(str) + "%"
@@ -6639,7 +6657,7 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
             lambda c: f"{'🟢' if c >= 60 else '🟡' if c >= 30 else '🔴'} {c}%")
 
         st.dataframe(
-            _pred_display[["日付", "種別", "予測入院", "予測退院", "純増減",
+            _pred_display[["日付", "種別", "受入見込み", "退院見込み", "純増減",
                            "予測患者数", "予測稼働率", "信頼度"]],
             use_container_width=True, hide_index=True)
 
@@ -6658,9 +6676,9 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
         # 左: 入退院予測の棒グラフ
         _bar_w = 0.35
         _ax_eb1.bar([x - _bar_w/2 for x in _pred_x], _pred_df["pred_admissions"],
-                    _bar_w, color=_adm_colors, edgecolor="#1565C0", alpha=0.85, label="予測入院")
+                    _bar_w, color=_adm_colors, edgecolor="#1565C0", alpha=0.85, label="受入見込み")
         _ax_eb1.bar([x + _bar_w/2 for x in _pred_x], _pred_df["pred_discharges"],
-                    _bar_w, color=_dis_colors, edgecolor="#C62828", alpha=0.85, label="予測退院")
+                    _bar_w, color=_dis_colors, edgecolor="#C62828", alpha=0.85, label="退院見込み")
         # 誤差範囲（±1σ）
         _ax_eb1.errorbar([x - _bar_w/2 for x in _pred_x], _pred_df["pred_admissions"],
                          yerr=_pred_df["std_admissions"], fmt="none", ecolor="#1565C0", capsize=3, alpha=0.5)
@@ -7444,7 +7462,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
         # =====================================================================
         # 📊 空床マネジメント指標（週末空床コスト）
-        # 入退院セット調整の核心: 退院タイミングを整えて空床時間を最小化する
+        # 空床マネジメントの核心: 退院タイミングを整えて空床時間を最小化する
         # 当院は土曜入院も1-2件程度のため、土日2日間を「谷」として計算
         # =====================================================================
         if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
@@ -7496,11 +7514,11 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
             if _weekend_empty > 2:  # 空床が目立つ場合にのみ表示
                 _hints_found = True
-                with st.expander("📊 週末空床コスト（入退院セット調整の指標）", expanded=True):
+                with st.expander("📊 週末空床コスト（空床マネジメントの指標）", expanded=True):
                     st.markdown(f"""
                     <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
                         <strong style="color: #1E293B; font-size: 16px;">📊 空床マネジメント指標</strong><br>
-                        <span style="color: #475569;">入退院セット調整 = 退院タイミングを整えて、空いた床を遊ばせない</span><br>
+                        <span style="color: #475569;">空床マネジメント = 退院タイミングを整えて、空いた床を遊ばせない</span><br>
                         <span style="color: #64748B; font-size: 0.85em;">※ 当院は救急・予定外入院が8割。「誰が入るか」ではなく「空床時間」を減らすのが本質</span>
                     </div>
                     """, unsafe_allow_html=True)

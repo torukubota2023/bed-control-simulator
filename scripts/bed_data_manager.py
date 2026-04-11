@@ -278,12 +278,25 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
     return df
 
 
-def update_record(df: pd.DataFrame, date_str: str, updates: dict) -> pd.DataFrame:
-    """既存レコードを修正。"""
+def update_record(df: pd.DataFrame, date_str: str, updates: dict, ward: str = None) -> pd.DataFrame:
+    """既存レコードを修正。
+
+    Args:
+        df: 日次データ DataFrame
+        date_str: 対象日付（YYYY-MM-DD）
+        updates: 更新する列名と値の辞書
+        ward: 病棟指定（"5F" / "6F"）。None の場合は日付のみでフィルタ（後方互換）。
+
+    Returns:
+        更新後の DataFrame
+    """
     target_date = pd.to_datetime(date_str)
     mask = df["date"] == target_date
+    if ward is not None:
+        mask = mask & (df["ward"].astype(str) == str(ward))
     if mask.sum() == 0:
-        raise ValueError(f"日付 {date_str} のレコードが見つかりません。")
+        ward_msg = f"（病棟: {ward}）" if ward else ""
+        raise ValueError(f"日付 {date_str}{ward_msg} のレコードが見つかりません。")
     for key, value in updates.items():
         if key in df.columns and key != "date":
             df.loc[mask, key] = value
@@ -902,7 +915,7 @@ def export_to_csv(df: pd.DataFrame) -> str:
         work["date"] = pd.to_datetime(work["date"]).dt.strftime("%Y-%m-%d")
     buf = io.StringIO()
     work.to_csv(buf, index=False, encoding="utf-8")
-    return buf.getvalue()
+    return '\ufeff' + buf.getvalue()
 
 
 def import_from_csv(csv_content: str) -> tuple[pd.DataFrame, str]:
