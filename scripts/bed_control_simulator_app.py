@@ -7529,16 +7529,28 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         help=f"金曜退院 平均{_fri_dis:.1f}人 → 月曜入院 平均{_mon_adm:.1f}人",
                     )
 
-                    # What-If: 金曜退院を何件木曜に前倒しするか
-                    st.markdown("##### 🔧 What-If: 退院前倒しシミュレーション")
-                    _bm_shift = st.slider(
-                        "金曜退院のうち木曜に前倒しする人数",
-                        min_value=0, max_value=max(1, int(_fri_dis)),
-                        value=min(3, max(1, int(_fri_dis // 2))),
-                        step=1,
-                        key="_hint_weekend_shift",
-                    )
-                    _bm_new_weekend_empty = max(0, _weekend_empty - _bm_shift)
+                    # What-If: 退院前倒し × 充填確率
+                    st.markdown("##### 🔧 What-If: 退院前倒し × 空床充填シミュレーション")
+                    st.caption("退院を前倒ししただけでは空床は減りません。空いた床に新規入院が入って初めて効果が出ます。")
+                    _bm_sl1, _bm_sl2 = st.columns(2)
+                    with _bm_sl1:
+                        _bm_shift = st.slider(
+                            "金曜退院のうち木曜に前倒しする人数",
+                            min_value=0, max_value=max(1, int(_fri_dis)),
+                            value=min(3, max(1, int(_fri_dis // 2))),
+                            step=1,
+                            key="_hint_weekend_shift",
+                        )
+                    with _bm_sl2:
+                        _bm_fill_rate = st.slider(
+                            "前倒しで空いた床に入院が入る確率",
+                            min_value=0, max_value=100, value=50, step=10,
+                            key="_hint_fill_rate",
+                            help="木曜に退院→同日に新規入院が入る見込み。連携室の調整力次第。",
+                        )
+                    # 実際に週末空床が減るのは「前倒し人数 × 充填確率」
+                    _bm_effective_fill = _bm_shift * (_bm_fill_rate / 100)
+                    _bm_new_weekend_empty = max(0, _weekend_empty - _bm_effective_fill)
                     _bm_new_cost_weekly = _bm_new_weekend_empty * 2 * _UNIT_PRICE_PER_DAY
                     _bm_saving_weekly = _weekend_cost_per_week - _bm_new_cost_weekly
                     _bm_saving_annual = _bm_saving_weekly * 4 * 12
@@ -7551,15 +7563,15 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         st.metric("改善前 週末コスト", f"¥{_weekend_cost_per_week/10000:.0f}万/週")
                     with _bm_r2:
                         st.metric("改善後 土日空床", f"{_bm_new_weekend_empty:.1f}床/日",
-                                  delta=f"-{_bm_shift}床")
+                                  delta=f"-{_bm_effective_fill:.1f}床")
                         st.metric("改善後 週末コスト", f"¥{_bm_new_cost_weekly/10000:.0f}万/週",
                                   delta=f"年間 {_bm_saving_annual/10000:.0f}万円 改善")
 
                     st.info(
-                        f"💡 金曜退院のうち **{_bm_shift}人を木曜に前倒し** すると → "
-                        f"土日空床が **{_weekend_empty:.0f}床 → {_bm_new_weekend_empty:.0f}床** に減り、"
-                        f"年間 **約{_bm_saving_annual/10000:.0f}万円** の改善。"
-                        f"入院患者を予測する必要はありません。退院のタイミングを1日前倒しするだけです。"
+                        f"💡 金曜退院 **{_bm_shift}人を木曜に前倒し** × 充填確率 **{_bm_fill_rate}%** → "
+                        f"実効 **{_bm_effective_fill:.1f}床** が金曜に埋まり、"
+                        f"土日空床 **{_weekend_empty:.0f}床 → {_bm_new_weekend_empty:.1f}床** に改善。"
+                        f"年間 **約{_bm_saving_annual/10000:.0f}万円** の効果。"
                     )
 
         # =====================================================================
