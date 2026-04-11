@@ -8305,6 +8305,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     key="er_display_mode",
                 )
 
+                _er_use_short3_excl = _er_display_mode == "院内運用用のみ（短手3除外）"
+
                 # =========================================
                 # セクション1: 5F / 6F 別の今月カード
                 # =========================================
@@ -8371,7 +8373,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 for _er_ward, _proj_col in [("5F", _proj_col_5f), ("6F", _proj_col_6f)]:
                     with _proj_col:
                         st.markdown(f"#### {_er_ward}")
-                        _er_proj = project_month_end(_gr_detail_df, _er_ward, _er_ym, _er_today)
+                        _er_proj = project_month_end(_gr_detail_df, _er_ward, _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
 
                         st.caption(
                             f"経過日数: {_er_proj['current']['elapsed_days']}日 / "
@@ -8417,7 +8419,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     with _need_col:
                         st.markdown(f"#### {_er_ward}")
                         _er_need = calculate_additional_needed(
-                            _gr_detail_df, _er_ward, _er_ym, _er_today
+                            _gr_detail_df, _er_ward, _er_ym, _er_today,
+                            exclude_short3=_er_use_short3_excl,
                         )
 
                         if _er_need["additional_needed"] <= 0:
@@ -8462,12 +8465,12 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # =========================================
                 # セクション4: 危険域アラート
                 # =========================================
-                _er_ratio_5f = calculate_emergency_ratio(_gr_detail_df, "5F", _er_ym, target_date=_er_today)
-                _er_ratio_6f = calculate_emergency_ratio(_gr_detail_df, "6F", _er_ym, target_date=_er_today)
-                _er_proj_5f = project_month_end(_gr_detail_df, "5F", _er_ym, _er_today)
-                _er_proj_6f = project_month_end(_gr_detail_df, "6F", _er_ym, _er_today)
-                _er_need_5f = calculate_additional_needed(_gr_detail_df, "5F", _er_ym, _er_today)
-                _er_need_6f = calculate_additional_needed(_gr_detail_df, "6F", _er_ym, _er_today)
+                _er_ratio_5f = calculate_emergency_ratio(_gr_detail_df, "5F", _er_ym, exclude_short3=_er_use_short3_excl, target_date=_er_today)
+                _er_ratio_6f = calculate_emergency_ratio(_gr_detail_df, "6F", _er_ym, exclude_short3=_er_use_short3_excl, target_date=_er_today)
+                _er_proj_5f = project_month_end(_gr_detail_df, "5F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
+                _er_proj_6f = project_month_end(_gr_detail_df, "6F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
+                _er_need_5f = calculate_additional_needed(_gr_detail_df, "5F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
+                _er_need_6f = calculate_additional_needed(_gr_detail_df, "6F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
 
                 _er_alerts = generate_emergency_alerts(
                     _er_ratio_5f, _er_ratio_6f,

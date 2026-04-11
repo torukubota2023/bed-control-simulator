@@ -231,6 +231,7 @@ def project_month_end(
     ward: Optional[str] = None,
     year_month: Optional[str] = None,
     target_date: Optional[date] = None,
+    exclude_short3: bool = False,
 ) -> Dict[str, Any]:
     """月末時点の救急搬送後患者割合を3シナリオで予測する。
 
@@ -248,6 +249,9 @@ def project_month_end(
 
     # 現在までの入院
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
+    # 短手3除外
+    if exclude_short3 and not adm_df.empty and "short3_type" in adm_df.columns:
+        adm_df = adm_df[~adm_df["short3_type"].apply(_is_short3)]
     current_total = len(adm_df)
     current_emergency = 0
     if not adm_df.empty and "route" in adm_df.columns:
@@ -263,6 +267,8 @@ def project_month_end(
     # 過去14日間のデータで曜日別パターンを算出
     lookback_start = td - timedelta(days=13)
     all_adm = _filter_admissions(detail_df, ward=ward)
+    if exclude_short3 and not all_adm.empty and "short3_type" in all_adm.columns:
+        all_adm = all_adm[~all_adm["short3_type"].apply(_is_short3)]
 
     if not all_adm.empty:
         all_adm = all_adm.copy()
@@ -357,7 +363,7 @@ def project_month_end(
         "dow_pattern": {k: round(v, 2) for k, v in dow_pattern.items()},
         "ward": ward,
         "year_month": ym,
-        "exclude_short3": False,
+        "exclude_short3": exclude_short3,
     }
 
 
@@ -383,6 +389,7 @@ def calculate_additional_needed(
     )
     projection = project_month_end(
         detail_df, ward=ward, year_month=ym, target_date=td,
+        exclude_short3=exclude_short3,
     )
 
     current_emergency = ratio_result["numerator"]

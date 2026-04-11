@@ -577,3 +577,33 @@ def test_additional_needed_invariant_primary_le_reference():
     # Both keys exist
     assert "projected_emergency_standard" in result
     assert "additional_needed_from_actual" in result
+
+
+# ---------------------------------------------------------------------------
+# 14. test_project_month_end_exclude_short3
+# ---------------------------------------------------------------------------
+
+
+def test_project_month_end_exclude_short3():
+    """短手3除外モードで月末予測の分母が変わることを確認。"""
+    records = []
+    # Create 20 admissions for a month, 5 are short3, 3 are emergency
+    for i in range(20):
+        route = "救急" if i < 3 else "外来紹介"
+        short3 = "大腸ポリペクトミー" if i >= 15 else "該当なし"
+        records.append({
+            "date": f"2026-04-{(i % 10) + 1:02d}",
+            "ward": "5F",
+            "route": route,
+            "short3_type": short3,
+        })
+    df = _make_detail_df(records)
+
+    proj_official = project_month_end(df, "5F", "2026-04", date(2026, 4, 11))
+    proj_operational = project_month_end(df, "5F", "2026-04", date(2026, 4, 11), exclude_short3=True)
+
+    # Official includes all 20 in current total, operational excludes 5 short3
+    assert proj_official["current"]["total_count"] == 20
+    assert proj_operational["current"]["total_count"] == 15  # 20 - 5 short3
+    assert proj_official["exclude_short3"] is False
+    assert proj_operational["exclude_short3"] is True
