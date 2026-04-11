@@ -188,6 +188,37 @@ except Exception as _bmm_err:
     _BED_MGMT_METRICS_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# 制度ガードレール・需要波・C群コントロール
+# ---------------------------------------------------------------------------
+_GUARDRAIL_AVAILABLE = False
+try:
+    from guardrail_engine import (
+        calculate_los_limit,
+        calculate_guardrail_status,
+        calculate_los_headroom,
+        format_guardrail_display,
+    )
+    from demand_wave import (
+        calculate_demand_trend,
+        classify_demand_period,
+        calculate_dow_pattern,
+        calculate_demand_score,
+        detect_demand_alerts,
+    )
+    from c_group_control import (
+        get_c_group_summary,
+        calculate_c_adjustment_capacity,
+        simulate_c_group_scenario,
+        calculate_demand_absorption,
+        generate_c_group_alerts,
+        C_CONTRIBUTION_PER_DAY,
+    )
+    _GUARDRAIL_AVAILABLE = True
+except Exception as _gr_err:
+    import traceback as _gr_tb
+    _GUARDRAIL_ERROR = f"{_gr_err}\n{_gr_tb.format_exc()}"
+
+# ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
 # ---------------------------------------------------------------------------
 try:
@@ -544,6 +575,9 @@ if not _DETAIL_DATA_AVAILABLE and "_DETAIL_DATA_ERROR" in dir():
 
 if not _BED_MGMT_METRICS_AVAILABLE and "_BED_MGMT_METRICS_ERROR" in dir():
     st.sidebar.warning(f"⚠️ 空床マネジメント指標モジュールのインポートに失敗しました\n\n{_BED_MGMT_METRICS_ERROR}")
+
+if not _GUARDRAIL_AVAILABLE and "_GUARDRAIL_ERROR" in dir():
+    st.sidebar.warning(f"⚠️ 制度ガードレールモジュールのインポートに失敗しました\n\n{_GUARDRAIL_ERROR}")
 
 st.title("🏥 ベッドコントロールシミュレーター")
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
@@ -2538,6 +2572,8 @@ if _is_actual_data_mode:
         tab_names.append("👨‍⚕️ 医師別分析")
         tab_names.append("💡 改善のヒント")
         tab_names.append("⚙️ 医師マスター")
+    if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
+        tab_names.append("🛡️ 制度・需要・C群")
     if _HOPE_AVAILABLE:
         tab_names.append("📨 HOPE送信")
 else:
@@ -2557,6 +2593,8 @@ else:
         tab_names.append("👨‍⚕️ 医師別分析")
         tab_names.append("💡 改善のヒント")
         tab_names.append("⚙️ 医師マスター")
+    if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
+        tab_names.append("🛡️ 制度・需要・C群")
     if _HOPE_AVAILABLE:
         tab_names.append("📨 HOPE送信")
 
@@ -7923,6 +7961,280 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
         if not _hints_found and len(_hint_savings) == 0:
             st.success("現時点で特に改善が必要なヒントはありません。データが蓄積されると自動で検出されます。")
+
+# =====================================================================
+# 制度ガードレール・需要波・C群コントロール タブ
+# =====================================================================
+if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要・C群" in _tab_idx:
+    with tabs[_tab_idx["🛡️ 制度・需要・C群"]]:
+        st.header("🛡️ 制度ガードレール・需要波・C群コントロール")
+        st.caption("⚠️ C群（退院準備期）は院内運用上のラベルであり、制度上の公式区分ではありません。推計値は参考値です。")
+
+        # --- データ準備 ---
+        # _daily_df は既存変数（日次データ）。存在しない場合のフォールバック
+        _gr_daily_df = _daily_df if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0 else None
+        _gr_detail_df = None  # 詳細データがあれば使う
+        # detail_data_manager から取得を試みる
+        if _DETAIL_DATA_AVAILABLE:
+            try:
+                _gr_detail_df = globals().get("_detail_events_df")
+            except Exception:
+                pass
+
+        _gr_config = {
+            "age_85_ratio": 0.25,  # HOSPITAL_DEFAULTS参照
+        }
+
+        # --- 3つのサブセクション ---
+        _gr_sub1, _gr_sub2, _gr_sub3 = st.tabs(["🛡️ 制度余力", "🌊 需要波", "📋 C群コントロール"])
+
+        # ============================================
+        # サブタブ1: 制度余力
+        # ============================================
+        with _gr_sub1:
+            st.subheader("制度余力ダッシュボード")
+
+            if _gr_daily_df is not None:
+                _gr_results = calculate_guardrail_status(_gr_daily_df, _gr_detail_df, _gr_config)
+                _gr_display = format_guardrail_display(_gr_results)
+
+                # 全体ステータス
+                _status_emoji = {"safe": "🟢", "warning": "🟡", "danger": "🔴"}.get(_gr_display["overall_status"], "⚪")
+                st.markdown(f"### {_status_emoji} 総合判定: **{_gr_display['overall_status'].upper()}**")
+
+                # 指標カード
+                for _item in _gr_results:
+                    _ds_label = {"measured": "実測", "proxy": "推計", "manual_input": "手動入力", "not_available": "未取得"}.get(_item["data_source"], "")
+                    _status_icon = {"safe": "🟢", "warning": "🟡", "danger": "🔴", "not_available": "⚪"}.get(_item["status"], "⚪")
+
+                    if _item["current_value"] is not None:
+                        _val_str = f"{_item['current_value']}"
+                        _margin_str = f"余力: {_item['margin']:+.1f}" if _item["margin"] is not None else ""
+                        st.markdown(
+                            f"{_status_icon} **{_item['name']}**: {_val_str} "
+                            f"（基準 {_item['operator']} {_item['threshold']}）{_margin_str} "
+                            f"<small style='color:gray'>({_ds_label})</small>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown(
+                            f"{_status_icon} **{_item['name']}**: — "
+                            f"<small style='color:gray'>({_ds_label}: {_item['description']})</small>",
+                            unsafe_allow_html=True,
+                        )
+
+                # LOS余力の詳細
+                st.markdown("---")
+                st.subheader("📏 LOS余力（平均在院日数の制度ヘッドルーム）")
+                _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
+                if _los_hr["current_los"] is not None:
+                    _hr_col1, _hr_col2, _hr_col3 = st.columns(3)
+                    with _hr_col1:
+                        st.metric("現在のrolling LOS", f"{_los_hr['current_los']:.1f}日")
+                    with _hr_col2:
+                        st.metric("制度上限", f"{_los_hr['los_limit']:.0f}日")
+                    with _hr_col3:
+                        _hr_delta = _los_hr['headroom_days']
+                        st.metric("余力", f"{_hr_delta:.1f}日", delta=f"C群延長{'可' if _los_hr['can_extend_c_group'] else '不可'}")
+
+                    if _los_hr.get("headroom_patient_days") is not None:
+                        st.info(f"📊 patient-days換算の余力: 約 {_los_hr['headroom_patient_days']:.0f} patient-days（推計）")
+                else:
+                    st.warning("日次データ不足のためLOS余力を計算できません")
+            else:
+                st.info("日次データを入力すると制度余力が表示されます")
+
+        # ============================================
+        # サブタブ2: 需要波
+        # ============================================
+        with _gr_sub2:
+            st.subheader("需要波ダッシュボード")
+
+            if _gr_daily_df is not None:
+                # 病棟選択
+                _dw_ward = st.selectbox("病棟", [None, "5F", "6F"], format_func=lambda x: "全体" if x is None else x, key="dw_ward_select")
+
+                # トレンド
+                _dw_trend = calculate_demand_trend(_gr_daily_df, _dw_ward)
+                _trend_emoji = {"increasing": "📈", "decreasing": "📉", "stable": "➡️"}.get(_dw_trend["trend_label"], "➡️")
+                st.markdown(f"### {_trend_emoji} {_dw_trend['trend_description']}")
+
+                _tr_col1, _tr_col2, _tr_col3 = st.columns(3)
+                with _tr_col1:
+                    st.metric("前2週間 平均入院", f"{_dw_trend['prev_2w_avg_admissions']:.1f}件/日")
+                with _tr_col2:
+                    st.metric("直近1週間 平均入院", f"{_dw_trend['last_1w_avg_admissions']:.1f}件/日")
+                with _tr_col3:
+                    _ratio_pct = round(_dw_trend["trend_ratio"] * 100)
+                    st.metric("前2週比", f"{_ratio_pct}%")
+
+                # 閑散/繁忙判定
+                st.markdown("---")
+                _dw_class = classify_demand_period(_gr_daily_df, _dw_ward)
+                _class_emoji = {"quiet": "🔵", "normal": "🟢", "busy": "🔴"}.get(_dw_class["classification"], "⚪")
+                st.markdown(f"**需要分類**: {_class_emoji} {_dw_class['classification_ja']} （パーセンタイル: {_dw_class['percentile']:.0f}%、信頼度: {_dw_class['confidence']}）")
+
+                # 需要スコア
+                _dw_score = calculate_demand_score(_gr_daily_df, _dw_ward)
+                _sc_col1, _sc_col2 = st.columns(2)
+                with _sc_col1:
+                    st.metric("14日需要スコア", f"{_dw_score['score_14d']:.0f}/100", delta=_dw_score["label_14d"])
+                with _sc_col2:
+                    st.metric("30日需要スコア", f"{_dw_score['score_30d']:.0f}/100", delta=_dw_score["label_30d"])
+
+                # 曜日別パターン
+                st.markdown("---")
+                st.subheader("📅 曜日別パターン")
+                _dw_dow = calculate_dow_pattern(_gr_daily_df, _dw_ward)
+                if _dw_dow is not None and len(_dw_dow) > 0:
+                    import matplotlib.pyplot as plt
+                    _fig_dow, _ax_dow = plt.subplots(figsize=(10, 3))
+                    _x = range(7)
+                    _ax_dow.bar([i - 0.15 for i in _x], _dw_dow["avg_admissions"], width=0.3, label="入院", color="#4CAF50", alpha=0.8)
+                    _ax_dow.bar([i + 0.15 for i in _x], _dw_dow["avg_discharges"], width=0.3, label="退院", color="#FF5722", alpha=0.8)
+                    _ax_dow.set_xticks(list(_x))
+                    _ax_dow.set_xticklabels(_dw_dow["dow_label"].tolist())
+                    _ax_dow.set_ylabel("件数")
+                    _ax_dow.legend()
+                    _ax_dow.set_title("曜日別 入院・退院パターン")
+                    st.pyplot(_fig_dow)
+                    plt.close(_fig_dow)
+
+                # アラート
+                _dw_alerts = detect_demand_alerts(_gr_daily_df, _dw_ward)
+                if _dw_alerts:
+                    st.markdown("---")
+                    st.subheader("⚡ 需要アラート")
+                    for _alert in _dw_alerts:
+                        _alert_icon = {"warning": "⚠️", "info": "ℹ️"}.get(_alert["level"], "ℹ️")
+                        st.markdown(f"{_alert_icon} {_alert['message']}")
+            else:
+                st.info("日次データを入力すると需要波分析が表示されます")
+
+        # ============================================
+        # サブタブ3: C群コントロール
+        # ============================================
+        with _gr_sub3:
+            st.subheader("C群コントロールパネル")
+            st.caption("C群（在院15日目以降）は院内運用ラベルです。制度上の公式区分ではありません。")
+
+            if _gr_daily_df is not None:
+                # C群サマリー
+                _cg_summary = get_c_group_summary(_gr_daily_df)
+                _cg_col1, _cg_col2, _cg_col3 = st.columns(3)
+                with _cg_col1:
+                    _ds_tag = f"({_cg_summary['data_source']})" if _cg_summary['data_source'] != "not_available" else ""
+                    st.metric("C群患者数", f"{_cg_summary['c_count']}名 {_ds_tag}")
+                with _cg_col2:
+                    st.metric("C群構成比", f"{_cg_summary['c_ratio']:.1f}%")
+                with _cg_col3:
+                    _contrib = _cg_summary['c_daily_contribution']
+                    st.metric("C群 日次貢献額", f"¥{_contrib:,.0f}")
+
+                # C群調整キャパシティ
+                st.markdown("---")
+                _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
+                _los_limit = _los_hr["los_limit"]
+
+                # rolling_los_result を取得
+                _cg_rolling = calculate_rolling_los(_gr_daily_df) if _gr_daily_df is not None else None
+                _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
+
+                _cap_color = {"green": "🟢", "yellow": "🟡", "red": "🔴", "gray": "⚪"}.get(_cg_capacity["status_color"], "⚪")
+                st.markdown(f"### {_cap_color} LOS余力: **{_cg_capacity['status']}**")
+
+                if _cg_capacity["current_los"] is not None:
+                    _cap_col1, _cap_col2, _cap_col3 = st.columns(3)
+                    with _cap_col1:
+                        st.metric("現在LOS", f"{_cg_capacity['current_los']:.1f}日")
+                    with _cap_col2:
+                        st.metric("制度上限", f"{_cg_capacity['los_limit']:.0f}日")
+                    with _cap_col3:
+                        st.metric("余力", f"{_cg_capacity['headroom_days']:.1f}日")
+
+                    if _cg_capacity["can_delay_discharge"]:
+                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} bed-days、推計）")
+                    else:
+                        st.error("❌ C群退院の後ろ倒し不可（LOS余力不足）")
+
+                    if _cg_capacity["warning_message"]:
+                        st.warning(_cg_capacity["warning_message"])
+
+                # 需要吸収
+                st.markdown("---")
+                st.subheader("🌊 需要吸収シミュレーション")
+
+                _dw_trend_cg = calculate_demand_trend(_gr_daily_df)
+                # 稼働率を取得（_occ_now が既存変数として存在するか確認）
+                _cg_occ = globals().get("_occ_now")
+                if _cg_occ is None:
+                    # 直近の稼働率を計算
+                    _latest = _gr_daily_df.iloc[-1] if len(_gr_daily_df) > 0 else None
+                    if _latest is not None:
+                        _tp = float(_latest.get("total_patients", 0))
+                        _ds = float(_latest.get("discharges", 0))
+                        _cg_occ = (_tp + _ds) / 94 if 94 > 0 else 0.0
+                    else:
+                        _cg_occ = 0.0
+
+                _cg_absorption = calculate_demand_absorption(
+                    _cg_capacity,
+                    _dw_trend_cg["trend_label"],
+                    _cg_occ,
+                    target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+                )
+
+                _rec_emoji = {"C群キープ推奨": "🔵", "C群前倒し推奨": "🟠", "現状維持": "🟢"}.get(_cg_absorption["recommendation"], "⚪")
+                st.markdown(f"### {_rec_emoji} {_cg_absorption['recommendation']}")
+                st.markdown(_cg_absorption["recommendation_reason"])
+                st.info(_cg_absorption["absorption_description"])
+
+                # C群シナリオシミュレーション
+                st.markdown("---")
+                st.subheader("🔮 C群 What-If シミュレーション")
+
+                _sim_col1, _sim_col2 = st.columns(2)
+                with _sim_col1:
+                    st.markdown("**退院後ろ倒し**")
+                    _sim_n_delay = st.slider("後ろ倒し人数", 0, 10, 0, key="cg_n_delay")
+                    _sim_delay_days = st.slider("後ろ倒し日数", 0, 7, 2, key="cg_delay_days")
+                with _sim_col2:
+                    st.markdown("**退院前倒し**")
+                    _sim_n_accel = st.slider("前倒し人数", 0, 10, 0, key="cg_n_accel")
+                    _sim_accel_days = st.slider("前倒し日数", 0, 7, 1, key="cg_accel_days")
+
+                if _sim_n_delay > 0 or _sim_n_accel > 0:
+                    _sim_result = simulate_c_group_scenario(
+                        _cg_rolling, _los_limit,
+                        n_delay=_sim_n_delay, delay_days=_sim_delay_days,
+                        n_accelerate=_sim_n_accel, accelerate_days=_sim_accel_days,
+                    )
+
+                    if _sim_result["simulated_los"] is not None:
+                        _guardrail_icon = "✅" if _sim_result["within_guardrail"] else "❌"
+                        st.markdown(f"**{_guardrail_icon} {_sim_result['description']}**")
+
+                        if not _sim_result["within_guardrail"]:
+                            st.error("⚠️ このシナリオでは平均在院日数が制度上限を超過します。実行は推奨しません。")
+                    else:
+                        st.warning(_sim_result["description"])
+
+                # C群アラート
+                _dw_class_cg = classify_demand_period(_gr_daily_df)
+                _cg_alerts = generate_c_group_alerts(_cg_summary, _cg_capacity, _dw_class_cg["classification"])
+                if _cg_alerts:
+                    st.markdown("---")
+                    st.subheader("⚡ C群アラート")
+                    for _alert in _cg_alerts:
+                        _alert_emoji = {"danger": "🔴", "warning": "🟡", "info": "ℹ️"}.get(_alert["level"], "ℹ️")
+                        if _alert["level"] == "danger":
+                            st.error(f"{_alert_emoji} {_alert['message']}")
+                        elif _alert["level"] == "warning":
+                            st.warning(f"{_alert_emoji} {_alert['message']}")
+                        else:
+                            st.info(f"{_alert_emoji} {_alert['message']}")
+            else:
+                st.info("日次データを入力するとC群コントロールパネルが表示されます")
 
 # ---------------------------------------------------------------------------
 # HOPE送信用サマリータブ

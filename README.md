@@ -34,6 +34,9 @@
 | **夜勤安全ライン** | 夜勤帯の在院数を守りながら稼働率を上げるシミュレーション |
 | **病棟別分析** | 5F/6Fの課題の違いを可視化、均等努力方式 |
 | **平均在院日数(rolling)** | 過去90日の病棟別LOS、2026年改定の施設基準判定 |
+| **制度ガードレール** | LOS余力・救急搬送割合を自動計算、制度逸脱リスクを信号表示 |
+| **需要波** | 前2週vs直近1週の入院トレンド比較、閑散/繁忙の自動判定 |
+| **C群コントロール** | 制度余力の中でC群による稼働率下支え効果を可視化 |
 
 ## 起動方法
 
@@ -71,10 +74,17 @@ scripts/
   help_content.py                # ヘルプテキスト
   doctor_master.py               # 医師マスター管理
   hope_message_generator.py      # HOPE連携メッセージ
+  guardrail_engine.py            # 制度ガードレールエンジン
+  demand_wave.py                 # 需要波モデル
+  c_group_control.py             # C群コントロール
 tests/
   test_bed_data_manager.py       # データ管理のテスト（18件）
   test_db_manager.py             # SQLite永続化のテスト（8件）
   test_metrics.py                # 空床マネジメント指標のテスト（21件）
+  test_guardrail_engine.py       # 制度ガードレールのテスト（10件）
+  test_demand_wave.py            # 需要波のテスト（8件）
+  test_c_group_control.py        # C群コントロールのテスト（10件）
+  （全75件）
 pyproject.toml                   # ruff 設定
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）
@@ -86,3 +96,5 @@ requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 - モジュール分割の深化（forecast_view_model.py 等の抽出）
 - 未充填退院キュー proxy の UI 統合
 - 空床ラグ（退院→次の入院までの時間）のリアルタイム計測
+- 在宅復帰率の自動計算（退院先データの追加が前提）
+- 看護必要度の自動取得（HIS連携が前提）
