@@ -170,6 +170,24 @@ except Exception as _detail_err:
     _DETAIL_DATA_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# 空床マネジメント指標モジュール
+# ---------------------------------------------------------------------------
+try:
+    from bed_management_metrics import (
+        prepare_bed_mgmt_daily_df,
+        calculate_weekend_empty_metrics,
+        calculate_next_day_reuse_rate,
+        calculate_weekend_costs,
+        calculate_weekend_whatif,
+        calculate_unfilled_discharge_queue,
+    )
+    _BED_MGMT_METRICS_AVAILABLE = True
+except Exception as _bmm_err:
+    import traceback as _bmm_tb
+    _BED_MGMT_METRICS_ERROR = f"{_bmm_err}\n{_bmm_tb.format_exc()}"
+    _BED_MGMT_METRICS_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
 # ---------------------------------------------------------------------------
 try:
@@ -7465,52 +7483,19 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
         # 空床マネジメントの核心: 退院タイミングを整えて空床時間を最小化する
         # 当院は土曜入院も1-2件程度のため、土日2日間を「谷」として計算
         # =====================================================================
-        if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
-            _bed_mgmt_df = _daily_df.copy()
-            _bed_mgmt_df["date"] = pd.to_datetime(_bed_mgmt_df["date"])
-            # 病棟フィルタ
-            if "ward" in _bed_mgmt_df.columns:
-                if _selected_ward_key in ("5F", "6F"):
-                    _bed_mgmt_df = _bed_mgmt_df[_bed_mgmt_df["ward"] == _selected_ward_key]
-                else:
-                    _bed_mgmt_df = _bed_mgmt_df.groupby("date").agg({
-                        "total_patients": "sum",
-                        "new_admissions": "sum",
-                        "discharges": "sum",
-                    }).reset_index()
-            _bed_mgmt_df["dow"] = pd.to_datetime(_bed_mgmt_df["date"]).dt.dayofweek
-            _bed_mgmt_df["empty"] = _view_beds - _bed_mgmt_df["total_patients"].clip(upper=_view_beds)
-
-            # 曜日別の平均空床数
-            _dow_empty = _bed_mgmt_df.groupby("dow")["empty"].mean()
-            _fri_empty = _dow_empty.get(4, 0)
-            _sat_empty = _dow_empty.get(5, 0)
-            _sun_empty = _dow_empty.get(6, 0)
-            _weekend_empty = (_sat_empty + _sun_empty) / 2  # 土日平均
-
-            # 金曜退院数の平均
-            _fri_dis = _bed_mgmt_df[_bed_mgmt_df["dow"] == 4]["discharges"].mean() if 4 in _bed_mgmt_df["dow"].values else 0
-            # 月曜入院数の平均
-            _mon_adm = _bed_mgmt_df[_bed_mgmt_df["dow"] == 0]["new_admissions"].mean() if 0 in _bed_mgmt_df["dow"].values else 0
-            # 金曜退院→月曜充填率
-            _fill_rate = (_mon_adm / _fri_dis * 100) if _fri_dis > 0 else 0
-
-            # 退院翌日再利用率（全曜日）
-            _bed_mgmt_sorted = _bed_mgmt_df.sort_values("date").reset_index(drop=True)
-            _reuse_pairs = 0
-            _reuse_total = 0
-            for _ri in range(len(_bed_mgmt_sorted) - 1):
-                _today_dis = int(_bed_mgmt_sorted.iloc[_ri].get("discharges", 0) or 0)
-                _tomorrow_adm = int(_bed_mgmt_sorted.iloc[_ri + 1].get("new_admissions", 0) or 0)
-                if _today_dis > 0:
-                    _reuse_pairs += min(_today_dis, _tomorrow_adm)
-                    _reuse_total += _today_dis
-            _reuse_rate = (_reuse_pairs / _reuse_total * 100) if _reuse_total > 0 else 0
-
-            # 週末空床コスト
-            _weekend_cost_per_week = _weekend_empty * 2 * _UNIT_PRICE_PER_DAY
-            _weekend_cost_monthly = _weekend_cost_per_week * 4
-            _weekend_cost_annual = _weekend_cost_monthly * 12
+        if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0 and _BED_MGMT_METRICS_AVAILABLE:
+            # --- 空床マネジメント指標: bed_management_metrics モジュールで算出 ---
+            _bed_mgmt_df = prepare_bed_mgmt_daily_df(_daily_df, _selected_ward_key, _view_beds)
+            _wem = calculate_weekend_empty_metrics(_bed_mgmt_df, _view_beds)
+            _weekend_empty = _wem["weekend_empty"]
+            _fri_dis = _wem["fri_dis"]
+            _mon_adm = _wem["mon_adm"]
+            _fill_rate = _wem["fri_to_mon_fill_rate"]
+            _reuse = calculate_next_day_reuse_rate(_bed_mgmt_df)
+            _reuse_rate = _reuse["reuse_rate"]
+            _wcosts = calculate_weekend_costs(_weekend_empty, _UNIT_PRICE_PER_DAY)
+            _weekend_cost_per_week = _wcosts["weekly"]
+            _weekend_cost_annual = _wcosts["annual"]
 
             if _weekend_empty > 2:  # 空床が目立つ場合にのみ表示
                 _hints_found = True
@@ -7566,12 +7551,12 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                             key="_hint_fill_rate",
                             help="木曜に退院→同日に新規入院が入る見込み。連携室の調整力次第。",
                         )
-                    # 実際に週末空床が減るのは「前倒し人数 × 充填確率」
-                    _bm_effective_fill = _bm_shift * (_bm_fill_rate / 100)
-                    _bm_new_weekend_empty = max(0, _weekend_empty - _bm_effective_fill)
-                    _bm_new_cost_weekly = _bm_new_weekend_empty * 2 * _UNIT_PRICE_PER_DAY
-                    _bm_saving_weekly = _weekend_cost_per_week - _bm_new_cost_weekly
-                    _bm_saving_annual = _bm_saving_weekly * 4 * 12
+                    # 空床マネジメント指標モジュールで計算
+                    _wi = calculate_weekend_whatif(_bm_shift, _bm_fill_rate, _weekend_empty, _UNIT_PRICE_PER_DAY)
+                    _bm_effective_fill = _wi["effective_fill"]
+                    _bm_new_weekend_empty = _wi["new_weekend_empty"]
+                    _bm_new_cost_weekly = _wi["new_cost_weekly"]
+                    _bm_saving_annual = _wi["saving_annual"]
 
                     _hint_savings["週末空床削減"] = _bm_saving_annual
 

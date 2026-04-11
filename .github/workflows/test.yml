@@ -14,8 +14,11 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install pandas numpy pytest streamlit plotly matplotlib ruff
-      - name: Lint with ruff
+          pip install pandas numpy pytest streamlit plotly matplotlib ruff jpholiday
+      - name: Lint (blocking - critical errors)
+        run: |
+          ruff check scripts/ tests/ --select F,E9 --ignore E402
+      - name: Lint (non-blocking - style warnings)
         run: |
           ruff check scripts/ tests/ --select E,F,W --ignore E501,E402,F841,W503 --exit-zero
       - name: Run tests

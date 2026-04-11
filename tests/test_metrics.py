@@ -1,7 +1,7 @@
 """
 ベッドコントロール指標のユニットテスト
 
-週末空床計算、退院曜日分布、前倒し x 充填確率ロジックをテストする。
+bed_management_metrics.py の本番コードを直接 import してテストする。
 """
 
 import pytest
@@ -9,190 +9,241 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 
+from bed_management_metrics import (
+    prepare_bed_mgmt_daily_df,
+    calculate_weekend_empty_metrics,
+    calculate_next_day_reuse_rate,
+    calculate_weekend_costs,
+    calculate_weekend_whatif,
+    calculate_unfilled_discharge_queue,
+)
+
 
 # ---------------------------------------------------------------
-# 前倒し x 充填確率 の純粋関数（アプリ内のインラインロジックを抽出）
+# Helper: テスト用 DataFrame 構築
 # ---------------------------------------------------------------
-# アプリ内の計算式:
-#   _bm_effective_fill = _bm_shift * (_bm_fill_rate / 100)
-#   _bm_new_weekend_empty = max(0, _weekend_empty - _bm_effective_fill)
+
+def _build_weekly_df(total_beds: int, weekday_discharges: list, weekend_discharges: list):
+    """1週間分のテスト DataFrame を構築する。"""
+    base = pd.Timestamp("2026-04-06")  # 月曜日
+    dates = [base + timedelta(days=i) for i in range(7)]
+    discharges = weekday_discharges + weekend_discharges
+    admissions = [5, 4, 5, 4, 3, 1, 1]
+
+    patients = [total_beds]
+    for i in range(1, 7):
+        patients.append(patients[-1] + admissions[i] - discharges[i])
+
+    return pd.DataFrame({
+        "date": dates,
+        "total_patients": patients,
+        "new_admissions": admissions,
+        "discharges": discharges,
+    })
 
 
-def calc_weekend_whatif(shift: int, fill_rate: float, weekend_empty: float):
-    """
-    退院前倒し x 充填確率 What-If 計算
+def _build_two_week_df(total_beds: int = 90):
+    """2週間分のデータ（退院翌日再利用率テスト用）"""
+    base = pd.Timestamp("2026-04-06")
+    dates = [base + timedelta(days=i) for i in range(14)]
+    # 平日は退院多め、土日は少ない
+    discharges = [3, 4, 5, 4, 6, 1, 0] * 2
+    admissions = [5, 4, 3, 5, 2, 1, 1] * 2
+    patients = [total_beds]
+    for i in range(1, 14):
+        patients.append(max(0, patients[-1] + admissions[i] - discharges[i]))
+    return pd.DataFrame({
+        "date": dates,
+        "total_patients": patients,
+        "new_admissions": admissions,
+        "discharges": discharges,
+    })
 
-    Args:
-        shift: 金曜退院のうち木曜に前倒しする人数
-        fill_rate: 前倒しで空いた床に入院が入る確率（0-100）
-        weekend_empty: 改善前の土日平均空床数
 
-    Returns:
-        (effective_fill, new_weekend_empty)
-    """
-    effective_fill = shift * (fill_rate / 100)
-    new_weekend_empty = max(0, weekend_empty - effective_fill)
-    return effective_fill, new_weekend_empty
+# ---------------------------------------------------------------
+# prepare_bed_mgmt_daily_df
+# ---------------------------------------------------------------
 
+class TestPrepare:
+    """データ前処理のテスト"""
+
+    def test_adds_dow_and_empty(self):
+        df = _build_weekly_df(94, [3, 4, 5, 4, 6], [1, 0])
+        result = prepare_bed_mgmt_daily_df(df, "全体", 94)
+        assert "dow" in result.columns
+        assert "empty" in result.columns
+        assert len(result) == 7
+
+    def test_ward_filter(self):
+        df = _build_weekly_df(47, [2, 2, 3, 2, 3], [0, 0])
+        df["ward"] = "5F"
+        df2 = df.copy()
+        df2["ward"] = "6F"
+        combined = pd.concat([df, df2], ignore_index=True)
+        result = prepare_bed_mgmt_daily_df(combined, "5F", 47)
+        assert len(result) == 7
+
+    def test_empty_df(self):
+        result = prepare_bed_mgmt_daily_df(pd.DataFrame(), "全体", 94)
+        assert len(result) == 0
+
+    def test_none_input(self):
+        result = prepare_bed_mgmt_daily_df(None, "全体", 94)
+        assert len(result) == 0
+
+
+# ---------------------------------------------------------------
+# calculate_weekend_whatif (本番関数テスト)
+# ---------------------------------------------------------------
 
 class TestWeekendWhatIf:
     """前倒し x 充填確率 What-If のテスト"""
 
     def test_basic_case(self):
-        """shift=3, fill_rate=50, weekend_empty=10 → effective=1.5, new_empty=8.5"""
-        eff, new_empty = calc_weekend_whatif(shift=3, fill_rate=50, weekend_empty=10)
-        assert eff == pytest.approx(1.5)
-        assert new_empty == pytest.approx(8.5)
+        result = calculate_weekend_whatif(shift=3, fill_rate=50, weekend_empty=10, unit_price_per_day=28900)
+        assert result["effective_fill"] == pytest.approx(1.5)
+        assert result["new_weekend_empty"] == pytest.approx(8.5)
 
     def test_full_fill_rate(self):
-        """shift=5, fill_rate=100, weekend_empty=10 → effective=5, new_empty=5"""
-        eff, new_empty = calc_weekend_whatif(shift=5, fill_rate=100, weekend_empty=10)
-        assert eff == pytest.approx(5.0)
-        assert new_empty == pytest.approx(5.0)
+        result = calculate_weekend_whatif(shift=5, fill_rate=100, weekend_empty=10, unit_price_per_day=28900)
+        assert result["effective_fill"] == pytest.approx(5.0)
+        assert result["new_weekend_empty"] == pytest.approx(5.0)
 
     def test_zero_fill_rate(self):
-        """shift=3, fill_rate=0, weekend_empty=10 → effective=0, new_empty=10"""
-        eff, new_empty = calc_weekend_whatif(shift=3, fill_rate=0, weekend_empty=10)
-        assert eff == pytest.approx(0.0)
-        assert new_empty == pytest.approx(10.0)
+        result = calculate_weekend_whatif(shift=3, fill_rate=0, weekend_empty=10, unit_price_per_day=28900)
+        assert result["effective_fill"] == pytest.approx(0.0)
+        assert result["new_weekend_empty"] == pytest.approx(10.0)
 
     def test_clamped_to_zero(self):
-        """shift=10, fill_rate=100, weekend_empty=5 → effective=10, new_empty=0（下限クランプ）"""
-        eff, new_empty = calc_weekend_whatif(shift=10, fill_rate=100, weekend_empty=5)
-        assert eff == pytest.approx(10.0)
-        assert new_empty == pytest.approx(0.0)
+        result = calculate_weekend_whatif(shift=10, fill_rate=100, weekend_empty=5, unit_price_per_day=28900)
+        assert result["effective_fill"] == pytest.approx(10.0)
+        assert result["new_weekend_empty"] == pytest.approx(0.0)
 
     def test_zero_shift(self):
-        """前倒しゼロなら空床は変わらない"""
-        eff, new_empty = calc_weekend_whatif(shift=0, fill_rate=100, weekend_empty=10)
-        assert eff == pytest.approx(0.0)
-        assert new_empty == pytest.approx(10.0)
+        result = calculate_weekend_whatif(shift=0, fill_rate=100, weekend_empty=10, unit_price_per_day=28900)
+        assert result["effective_fill"] == pytest.approx(0.0)
+        assert result["new_weekend_empty"] == pytest.approx(10.0)
 
-    def test_weekend_cost_calculation(self):
-        """週末コスト削減額の計算が正しいことを確認"""
-        unit_price = 28900  # 1床1日あたりの運営貢献額
-        weekend_empty = 8.0
-
-        _, new_empty = calc_weekend_whatif(shift=4, fill_rate=50, weekend_empty=weekend_empty)
-        # effective = 4 * 0.5 = 2.0, new_empty = 6.0
-
-        cost_before = weekend_empty * 2 * unit_price  # 土日2日分
-        cost_after = new_empty * 2 * unit_price
-        saving_weekly = cost_before - cost_after
-        saving_annual = saving_weekly * 4 * 12
-
-        assert saving_weekly == pytest.approx(2.0 * 2 * unit_price)
-        assert saving_annual == pytest.approx(saving_weekly * 48)
+    def test_saving_annual(self):
+        result = calculate_weekend_whatif(shift=4, fill_rate=50, weekend_empty=8.0, unit_price_per_day=28900)
+        # effective=2.0, saving_weekly = 2.0 * 2 * 28900 = 115,600
+        assert result["saving_annual"] == pytest.approx(115600 * 48)
 
 
 # ---------------------------------------------------------------
-# 週末空床数の計算テスト
+# calculate_weekend_empty_metrics (本番関数テスト)
 # ---------------------------------------------------------------
 
+class TestWeekendEmptyMetrics:
+    """週末空床メトリクスのテスト"""
 
-def _build_weekly_df(total_beds: int, weekday_discharges: list, weekend_discharges: list):
-    """
-    1週間分のテストDataFrameを構築する。
+    def test_basic_metrics(self):
+        df = _build_weekly_df(94, [3, 4, 5, 4, 6], [1, 0])
+        df["dow"] = pd.to_datetime(df["date"]).dt.dayofweek
+        df["empty"] = 94 - df["total_patients"].clip(upper=94)
+        result = calculate_weekend_empty_metrics(df, 94)
+        assert result["weekend_empty"] >= 0
+        assert result["fri_dis"] == pytest.approx(6.0)
 
-    Args:
-        total_beds: 総ベッド数
-        weekday_discharges: 月〜金の退院数リスト (5要素)
-        weekend_discharges: 土日の退院数リスト (2要素)
-
-    Returns:
-        DataFrame with date, total_patients, discharges, dow columns
-    """
-    # 2026-04-06 (月) から始まる1週間
-    base = pd.Timestamp("2026-04-06")  # 月曜日
-    dates = [base + timedelta(days=i) for i in range(7)]
-    discharges = weekday_discharges + weekend_discharges
-    admissions = [5, 4, 5, 4, 3, 1, 1]  # 典型的な入院パターン
-
-    # 在院患者数を計算（初日から累積）
-    patients = [total_beds]
-    for i in range(1, 7):
-        patients.append(patients[-1] + admissions[i] - discharges[i])
-
-    df = pd.DataFrame({
-        "date": dates,
-        "ward": ["all"] * 7,
-        "total_patients": patients,
-        "new_admissions": admissions,
-        "discharges": discharges,
-    })
-    df["dow"] = df["date"].dt.dayofweek  # 0=月, 6=日
-    return df
-
-
-class TestWeekendEmptyBedCalculation:
-    """週末空床数の計算テスト"""
-
-    def test_weekend_empty_from_df(self):
-        """DataFrameから土日の平均空床数を計算"""
-        total_beds = 94
-        # 月〜金: 退院が多い、土日: 退院が少ない
-        df = _build_weekly_df(
-            total_beds=total_beds,
-            weekday_discharges=[3, 4, 5, 4, 6],  # 金曜6名退院
-            weekend_discharges=[1, 0],  # 土日はほぼ退院なし
-        )
-
-        # アプリの計算ロジックを再現:
-        # 曜日別の空床数（total_beds - total_patients）
-        df["empty_beds"] = total_beds - df["total_patients"]
-        dow_empty = df.groupby("dow")["empty_beds"].mean()
-
-        sat_empty = dow_empty.get(5, 0)
-        sun_empty = dow_empty.get(6, 0)
-        weekend_empty = (sat_empty + sun_empty) / 2
-
-        # 空床数が正の値であること（退院が多い金曜の後なので土日は空床が増える）
-        assert weekend_empty >= 0
-        # 土日は入院少ない＋金曜退院多いので空床が生じる
-        assert sat_empty >= 0
-        assert sun_empty >= 0
-
-    def test_no_weekend_empty_when_full(self):
-        """満床なら週末空床はゼロ"""
-        total_beds = 94
-        # 退院と同数の入院がある場合
-        df = _build_weekly_df(
-            total_beds=total_beds,
-            weekday_discharges=[0, 0, 0, 0, 0],
-            weekend_discharges=[0, 0],
-        )
-        df["empty_beds"] = total_beds - df["total_patients"]
-        dow_empty = df.groupby("dow")["empty_beds"].mean()
-
-        sat_empty = dow_empty.get(5, 0)
-        sun_empty = dow_empty.get(6, 0)
-        weekend_empty = (sat_empty + sun_empty) / 2
-
-        # 退院ゼロなら空床は入院数の累積分マイナス（＝過密）か0
-        # total_patientsがtotal_bedsを超えることもありうるので empty <= 0
-        assert weekend_empty <= total_beds
+    def test_empty_df(self):
+        result = calculate_weekend_empty_metrics(pd.DataFrame(), 94)
+        assert result["weekend_empty"] == 0
+        assert result["fri_to_mon_fill_rate"] == 0
 
 
 # ---------------------------------------------------------------
-# 退院曜日分布（bed_data_manager から）
+# calculate_next_day_reuse_rate (本番関数テスト)
 # ---------------------------------------------------------------
 
+class TestNextDayReuseRate:
+    """退院翌日再利用率のテスト"""
+
+    def test_basic_reuse(self):
+        df = _build_two_week_df(90)
+        result = calculate_next_day_reuse_rate(df)
+        assert 0 <= result["reuse_rate"] <= 100
+        assert result["reuse_total"] > 0
+
+    def test_empty_df(self):
+        result = calculate_next_day_reuse_rate(pd.DataFrame())
+        assert result["reuse_rate"] == 0.0
+
+    def test_single_row(self):
+        """1行だけなら翌日がないので reuse=0"""
+        df = pd.DataFrame({
+            "date": [pd.Timestamp("2026-04-06")],
+            "discharges": [5],
+            "new_admissions": [3],
+        })
+        result = calculate_next_day_reuse_rate(df)
+        assert result["reuse_rate"] == 0.0
+
+
+# ---------------------------------------------------------------
+# calculate_weekend_costs
+# ---------------------------------------------------------------
+
+class TestWeekendCosts:
+    """週末コスト計算のテスト"""
+
+    def test_cost_structure(self):
+        result = calculate_weekend_costs(10.0, 28900)
+        assert result["weekly"] == pytest.approx(10 * 2 * 28900)
+        assert result["monthly"] == pytest.approx(result["weekly"] * 4)
+        assert result["annual"] == pytest.approx(result["monthly"] * 12)
+
+
+# ---------------------------------------------------------------
+# calculate_unfilled_discharge_queue (新 proxy 指標)
+# ---------------------------------------------------------------
+
+class TestUnfilledDischargeQueue:
+    """未充填退院キュー proxy のテスト"""
+
+    def test_basic_queue(self):
+        df = _build_two_week_df(90)
+        result = calculate_unfilled_discharge_queue(df)
+        assert len(result["queue_series"]) == 14
+        assert result["pseudo_empty_bed_days"] >= 0
+        assert result["pseudo_lag_days"] >= 0
+
+    def test_empty_df(self):
+        result = calculate_unfilled_discharge_queue(pd.DataFrame())
+        assert result["pseudo_empty_bed_days"] == 0.0
+
+    def test_queue_clamped_to_zero(self):
+        """入院 > 退院 なら q_t はゼロにクランプ"""
+        df = pd.DataFrame({
+            "date": [pd.Timestamp("2026-04-06"), pd.Timestamp("2026-04-07")],
+            "discharges": [0, 0],
+            "new_admissions": [5, 5],
+        })
+        result = calculate_unfilled_discharge_queue(df)
+        assert all(q == 0.0 for _, q in result["queue_series"])
+
+    def test_7d_avg(self):
+        """7日移動平均が返ること"""
+        df = _build_two_week_df(90)
+        result = calculate_unfilled_discharge_queue(df)
+        assert result["queue_7d_avg"] >= 0
+
+
+# ---------------------------------------------------------------
+# 退院曜日分布（bed_data_manager から — 既存テスト維持）
+# ---------------------------------------------------------------
 
 class TestDischargeWeekdayDistribution:
     """退院曜日分布関数のテスト"""
 
     def test_get_discharge_weekday_distribution(self):
-        """get_discharge_weekday_distribution が曜日別の退院数を返す"""
         try:
             from bed_data_manager import get_discharge_weekday_distribution
         except ImportError:
             pytest.skip("get_discharge_weekday_distribution not importable")
 
-        # この関数は詳細DataFrame（event_type列あり）を期待する
-        # 2週間分の退院イベントを作成（月〜日 x 2）
-        base = pd.Timestamp("2026-04-06")  # 月曜
+        base = pd.Timestamp("2026-04-06")
         records = []
-        discharge_counts = [3, 4, 5, 4, 6, 1, 0]  # 曜日別退院数
+        discharge_counts = [3, 4, 5, 4, 6, 1, 0]
         for week in range(2):
             for dow, count in enumerate(discharge_counts):
                 event_date = base + timedelta(days=week * 7 + dow)
@@ -206,56 +257,7 @@ class TestDischargeWeekdayDistribution:
 
         df = pd.DataFrame(records)
         result = get_discharge_weekday_distribution(df)
-
-        # dictで全曜日(0-6)のキーが返る
         assert isinstance(result, dict)
         assert len(result) == 7
-        # 金曜(4)の退院数が最多: 6 x 2週 = 12
         assert result[4] == 12
-        # 日曜(6)の退院数はゼロ
         assert result[6] == 0
-
-
-# ---------------------------------------------------------------
-# 退院翌日再利用率（same-day reuse rate のロジック）
-# ---------------------------------------------------------------
-
-
-class TestSameDayReuseRate:
-    """退院翌日再利用率の計算ロジックテスト"""
-
-    def test_reuse_rate_calculation(self):
-        """金曜退院 → 月曜入院のペア数から再利用率を計算"""
-        # アプリのロジック再現:
-        # _reuse_pairs = min(fri_discharges, mon_admissions)
-        # _reuse_total = max(fri_discharges, mon_admissions)
-        # _reuse_rate = (_reuse_pairs / _reuse_total * 100) if _reuse_total > 0 else 0
-
-        fri_dis = 6.0
-        mon_adm = 5.0
-        reuse_pairs = min(fri_dis, mon_adm)
-        reuse_total = max(fri_dis, mon_adm)
-        reuse_rate = (reuse_pairs / reuse_total * 100) if reuse_total > 0 else 0
-
-        assert reuse_pairs == pytest.approx(5.0)
-        assert reuse_rate == pytest.approx(83.33, abs=0.01)
-
-    def test_reuse_rate_zero_discharges(self):
-        """金曜退院ゼロなら再利用率もゼロ"""
-        fri_dis = 0.0
-        mon_adm = 5.0
-        reuse_pairs = min(fri_dis, mon_adm)
-        reuse_total = max(fri_dis, mon_adm)
-        reuse_rate = (reuse_pairs / reuse_total * 100) if reuse_total > 0 else 0
-
-        assert reuse_rate == pytest.approx(0.0)
-
-    def test_reuse_rate_perfect_match(self):
-        """金曜退院と月曜入院が同数なら100%"""
-        fri_dis = 5.0
-        mon_adm = 5.0
-        reuse_pairs = min(fri_dis, mon_adm)
-        reuse_total = max(fri_dis, mon_adm)
-        reuse_rate = (reuse_pairs / reuse_total * 100) if reuse_total > 0 else 0
-
-        assert reuse_rate == pytest.approx(100.0)
