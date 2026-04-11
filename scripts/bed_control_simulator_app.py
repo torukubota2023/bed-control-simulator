@@ -2278,7 +2278,7 @@ _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サン�
 _sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
 if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.session_state.get("demo_data"), pd.DataFrame) and len(st.session_state.get("demo_data", pd.DataFrame())) > 0):
     with st.container():
-        st.markdown("#### ☀️ 今日のブリーフィング")
+        st.markdown("#### ☀️ 本日の病床状況")
         _brief_cols = st.columns([1, 1, 1, 2])
 
         # 稼働率ゲージ（plotly gauge chart）
