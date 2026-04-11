@@ -256,8 +256,11 @@ def calculate_guardrail_status(
     # ---------------------------------------------------------------
     emg_threshold = DEFAULT_GUARDRAIL_THRESHOLDS["emergency_ratio"]["threshold"]
     if detail_df is not None and len(detail_df) > 0 and "route" in detail_df.columns:
-        total_admissions = len(detail_df)
-        emergency_count = int((detail_df["route"] == "救急").sum())
+        # 入院イベントのみを分母とする（退院イベントを含めない）
+        admissions_df = detail_df[detail_df["event_type"] == "admission"]
+        total_admissions = len(admissions_df)
+        # 救急・下り搬送の両方をカウント
+        emergency_count = int(admissions_df["route"].isin(["救急", "下り搬送"]).sum())
         current_emg = (emergency_count / total_admissions * 100) if total_admissions > 0 else 0.0
         margin = current_emg - emg_threshold
         status = _margin_to_status(margin, safe_threshold=5.0)
@@ -269,7 +272,7 @@ def calculate_guardrail_status(
             "margin": round(margin, 1),
             "status": status,
             "data_source": "measured",
-            "description": f"救急搬送後入院 {emergency_count}/{total_admissions}件",
+            "description": f"救急・下り搬送後入院 {emergency_count}/{total_admissions}件",
         })
     else:
         results.append(_not_available_item(

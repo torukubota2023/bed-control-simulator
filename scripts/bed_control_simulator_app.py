@@ -213,10 +213,23 @@ try:
         generate_c_group_alerts,
         C_CONTRIBUTION_PER_DAY,
     )
+    from emergency_ratio import (
+        calculate_emergency_ratio,
+        calculate_dual_ratio,
+        project_month_end,
+        calculate_additional_needed,
+        generate_emergency_alerts,
+        get_ward_emergency_summary,
+        get_monthly_history,
+        get_cumulative_progress,
+        EMERGENCY_THRESHOLD_PCT,
+    )
     _GUARDRAIL_AVAILABLE = True
+    _EMERGENCY_RATIO_AVAILABLE = True
 except Exception as _gr_err:
     import traceback as _gr_tb
     _GUARDRAIL_ERROR = f"{_gr_err}\n{_gr_tb.format_exc()}"
+    _EMERGENCY_RATIO_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
@@ -2895,7 +2908,7 @@ if _DATA_MANAGER_AVAILABLE:
             # 医師・経路マスター読込
             _active_doctors_ui = dm_doctor.get_active_doctors() if _DOCTOR_MASTER_AVAILABLE else []
             _doctor_names_ui = [d["name"] for d in _active_doctors_ui]
-            _routes_ui = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else ["外来紹介", "救急", "連携室", "ウォークイン"]
+            _routes_ui = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else ["外来紹介", "救急", "下り搬送", "連携室", "ウォークイン"]
             _source_options_ui = dm_doctor.get_admission_source_options() if _DOCTOR_MASTER_AVAILABLE else {}
             _flat_source_list = ["（なし）"]
             for _g_label, _names in _source_options_ui.items():
@@ -7979,15 +7992,17 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
         if _DETAIL_DATA_AVAILABLE:
             try:
                 _gr_detail_df = globals().get("_detail_events_df")
+                if _gr_detail_df is None or (isinstance(_gr_detail_df, pd.DataFrame) and len(_gr_detail_df) == 0):
+                    _gr_detail_df = st.session_state.get("admission_details")
             except Exception:
-                pass
+                _gr_detail_df = st.session_state.get("admission_details")
 
         _gr_config = {
             "age_85_ratio": 0.25,  # HOSPITAL_DEFAULTS参照
         }
 
         # --- 3つのサブセクション ---
-        _gr_sub1, _gr_sub2, _gr_sub3 = st.tabs(["🛡️ 制度余力", "🌊 需要波", "📋 C群コントロール"])
+        _gr_sub1, _gr_sub2, _gr_sub3, _gr_sub4 = st.tabs(["🛡️ 制度余力", "🌊 需要波", "📋 C群コントロール", "🚑 救急搬送15%"])
 
         # ============================================
         # サブタブ1: 制度余力
@@ -8222,7 +8237,35 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 
                 # C群アラート
                 _dw_class_cg = classify_demand_period(_gr_daily_df)
-                _cg_alerts = generate_c_group_alerts(_cg_summary, _cg_capacity, _dw_class_cg["classification"])
+                # 救急搬送比率リスクをC群アラートに連携
+                _er_risk_for_cg = None
+                if _EMERGENCY_RATIO_AVAILABLE and _gr_detail_df is not None and len(_gr_detail_df) > 0:
+                    try:
+                        from datetime import date as _cg_date
+                        _cg_today = _cg_date.today()
+                        _cg_ym = _cg_today.strftime("%Y-%m")
+                        _er_5f_cg = calculate_emergency_ratio(_gr_detail_df, "5F", _cg_ym, target_date=_cg_today)
+                        _er_6f_cg = calculate_emergency_ratio(_gr_detail_df, "6F", _cg_ym, target_date=_cg_today)
+                        _er_need_5f_cg = calculate_additional_needed(_gr_detail_df, "5F", _cg_ym, _cg_today)
+                        _er_need_6f_cg = calculate_additional_needed(_gr_detail_df, "6F", _cg_ym, _cg_today)
+                        _er_risk_for_cg = {
+                            "5F": {
+                                "status": _er_5f_cg["status"],
+                                "additional_needed": _er_need_5f_cg["additional_needed"],
+                                "ratio_pct": _er_5f_cg["ratio_pct"],
+                            },
+                            "6F": {
+                                "status": _er_6f_cg["status"],
+                                "additional_needed": _er_need_6f_cg["additional_needed"],
+                                "ratio_pct": _er_6f_cg["ratio_pct"],
+                            },
+                        }
+                    except Exception:
+                        pass
+                _cg_alerts = generate_c_group_alerts(
+                    _cg_summary, _cg_capacity, _dw_class_cg["classification"],
+                    emergency_ratio_risk=_er_risk_for_cg,
+                )
                 if _cg_alerts:
                     st.markdown("---")
                     st.subheader("⚡ C群アラート")
@@ -8236,6 +8279,356 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                             st.info(f"{_alert_emoji} {_alert['message']}")
             else:
                 st.info("日次データを入力するとC群コントロールパネルが表示されます")
+
+        # ============================================
+        # サブタブ4: 救急搬送後患者割合 15%
+        # ============================================
+        with _gr_sub4:
+            st.subheader("🚑 救急搬送後患者割合（病棟別・単月管理）")
+            st.caption("施設基準: 救急搬送後の入院患者割合が15%以上であること。5F・6Fそれぞれで単月管理します。")
+
+            if _gr_detail_df is not None and len(_gr_detail_df) > 0 and _EMERGENCY_RATIO_AVAILABLE:
+                import matplotlib.pyplot as plt
+                from datetime import date as _er_date
+
+                _er_today = _er_date.today()
+                _er_ym = _er_today.strftime("%Y-%m")
+
+                # --- 表示モード選択 ---
+                _er_display_mode = st.radio(
+                    "表示する比率",
+                    ["両方表示（推奨）", "届出確認用のみ", "院内運用用のみ（短手3除外）"],
+                    index=0,
+                    horizontal=True,
+                    key="er_display_mode",
+                )
+
+                # =========================================
+                # セクション1: 5F / 6F 別の今月カード
+                # =========================================
+                st.markdown("---")
+                st.markdown("### 📊 今月の状況（5F / 6F）")
+
+                _er_col_5f, _er_col_6f = st.columns(2)
+
+                for _er_ward, _er_col in [("5F", _er_col_5f), ("6F", _er_col_6f)]:
+                    with _er_col:
+                        st.markdown(f"#### {_er_ward}")
+
+                        _er_dual = calculate_dual_ratio(_gr_detail_df, _er_ward, _er_ym, _er_today)
+
+                        # 届出確認用
+                        _er_official = _er_dual["official"]
+                        # 院内運用用
+                        _er_operational = _er_dual["operational"]
+
+                        # メイン表示の決定
+                        if _er_display_mode == "届出確認用のみ":
+                            _er_items = [("届出確認用", _er_official)]
+                        elif _er_display_mode == "院内運用用のみ（短手3除外）":
+                            _er_items = [("院内運用用（短手3除外）", _er_operational)]
+                        else:
+                            _er_items = [("届出確認用", _er_official), ("院内運用用（短手3除外）", _er_operational)]
+
+                        for _er_label, _er_data in _er_items:
+                            _er_status_icon = {"green": "🟢", "yellow": "🟡", "red": "🔴"}.get(_er_data["status"], "⚪")
+                            _er_gap = _er_data["gap_to_target_pt"]
+                            _er_gap_str = f"+{_er_gap:.1f}pt" if _er_gap >= 0 else f"{_er_gap:.1f}pt"
+
+                            st.markdown(f"**{_er_label}**")
+                            st.metric(
+                                label=f"{_er_status_icon} 救急搬送後患者割合",
+                                value=f"{_er_data['ratio_pct']:.1f}%",
+                                delta=f"基準との差 {_er_gap_str}",
+                                delta_color="normal" if _er_gap >= 0 else "inverse",
+                            )
+                            st.caption(
+                                f"分子（救急+下り搬送）: {_er_data['numerator']}件 / "
+                                f"分母（対象入院）: {_er_data['denominator']}件"
+                            )
+                            # 内訳
+                            _bd = _er_data["breakdown"]
+                            _bd_parts = []
+                            if _bd["ambulance"] > 0:
+                                _bd_parts.append(f"救急車 {_bd['ambulance']}")
+                            if _bd["downstream"] > 0:
+                                _bd_parts.append(f"下り搬送 {_bd['downstream']}")
+                            if _bd_parts:
+                                st.caption(f"内訳: {' / '.join(_bd_parts)}")
+                            if _er_data["exclude_short3"] and _bd.get("excluded_short3", 0) > 0:
+                                st.caption(f"短手3除外: {_bd['excluded_short3']}件")
+
+                # =========================================
+                # セクション2: 月末着地予測
+                # =========================================
+                st.markdown("---")
+                st.markdown("### 🔮 月末着地予測")
+
+                _proj_col_5f, _proj_col_6f = st.columns(2)
+
+                for _er_ward, _proj_col in [("5F", _proj_col_5f), ("6F", _proj_col_6f)]:
+                    with _proj_col:
+                        st.markdown(f"#### {_er_ward}")
+                        _er_proj = project_month_end(_gr_detail_df, _er_ward, _er_ym, _er_today)
+
+                        st.caption(
+                            f"経過日数: {_er_proj['current']['elapsed_days']}日 / "
+                            f"残り: {_er_proj['remaining_calendar_days']}日（営業日 {_er_proj['remaining_business_days']}日）"
+                        )
+
+                        # 3シナリオ表示
+                        _scn_cols = st.columns(3)
+                        for _scn_idx, (_scn_key, _scn_label, _scn_color) in enumerate([
+                            ("conservative", "保守", "🔵"),
+                            ("standard", "標準", "🟢"),
+                            ("optimistic", "良好", "🟡"),
+                        ]):
+                            with _scn_cols[_scn_idx]:
+                                _scn = _er_proj[_scn_key]
+                                _scn_icon = "✅" if _scn["meets_target"] else "❌"
+                                st.metric(
+                                    f"{_scn_color} {_scn_label}",
+                                    f"{_scn['projected_ratio_pct']:.1f}%",
+                                    delta=f"{'達成' if _scn['meets_target'] else '未達'}",
+                                    delta_color="normal" if _scn["meets_target"] else "inverse",
+                                )
+                                st.caption(
+                                    f"搬送 {_scn['projected_emergency']}件 / "
+                                    f"入院 {_scn['projected_total']}件"
+                                )
+
+                        # 直近14日の実績ベース
+                        st.caption(
+                            f"推計基盤: 直近14日の救急搬送 平均 {_er_proj['daily_emergency_rate_14d']:.1f}件/日、"
+                            f"入院 平均 {_er_proj['daily_total_rate_14d']:.1f}件/日"
+                        )
+
+                # =========================================
+                # セクション3: あと何件必要か
+                # =========================================
+                st.markdown("---")
+                st.markdown("### 🎯 15%達成に必要な追加件数")
+
+                _need_col_5f, _need_col_6f = st.columns(2)
+
+                for _er_ward, _need_col in [("5F", _need_col_5f), ("6F", _need_col_6f)]:
+                    with _need_col:
+                        st.markdown(f"#### {_er_ward}")
+                        _er_need = calculate_additional_needed(
+                            _gr_detail_df, _er_ward, _er_ym, _er_today
+                        )
+
+                        if _er_need["additional_needed"] <= 0:
+                            st.success(f"✅ 現時点で15%基準を達成済み（現在 {_er_need['current_emergency']}件）")
+                        else:
+                            _diff_label = {
+                                "achieved": "達成済み",
+                                "easy": "達成見込み",
+                                "moderate": "やや厳しい",
+                                "difficult": "厳しい",
+                                "very_difficult": "非常に厳しい",
+                            }.get(_er_need["difficulty"], "")
+                            _diff_color = {
+                                "easy": "🟢",
+                                "moderate": "🟡",
+                                "difficult": "🟠",
+                                "very_difficult": "🔴",
+                            }.get(_er_need["difficulty"], "⚪")
+
+                            st.markdown(
+                                f"{_diff_color} **あと {_er_need['additional_needed']}件** 必要 "
+                                f"（難易度: {_diff_label}）"
+                            )
+                            st.caption(
+                                f"残り日数あたり: {_er_need['per_remaining_calendar_day']:.1f}件/日 "
+                                f"（営業日あたり: {_er_need['per_remaining_business_day']:.1f}件/日）"
+                            )
+                            if _er_need["this_week_needed"] > 0:
+                                st.caption(f"今週中に必要: {_er_need['this_week_needed']}件")
+
+                            if not _er_need["achievable"]:
+                                st.error(
+                                    "⚠️ 現在のペースでは達成困難です。"
+                                    "救急搬送・下り搬送の受入体制を強化してください。"
+                                )
+
+                # =========================================
+                # セクション4: 危険域アラート
+                # =========================================
+                _er_ratio_5f = calculate_emergency_ratio(_gr_detail_df, "5F", _er_ym, target_date=_er_today)
+                _er_ratio_6f = calculate_emergency_ratio(_gr_detail_df, "6F", _er_ym, target_date=_er_today)
+                _er_proj_5f = project_month_end(_gr_detail_df, "5F", _er_ym, _er_today)
+                _er_proj_6f = project_month_end(_gr_detail_df, "6F", _er_ym, _er_today)
+                _er_need_5f = calculate_additional_needed(_gr_detail_df, "5F", _er_ym, _er_today)
+                _er_need_6f = calculate_additional_needed(_gr_detail_df, "6F", _er_ym, _er_today)
+
+                _er_alerts = generate_emergency_alerts(
+                    _er_ratio_5f, _er_ratio_6f,
+                    _er_proj_5f, _er_proj_6f,
+                    _er_need_5f, _er_need_6f,
+                )
+
+                _critical_alerts = [a for a in _er_alerts if a["level"] == "critical"]
+                _warning_alerts = [a for a in _er_alerts if a["level"] == "warning"]
+                _caution_alerts = [a for a in _er_alerts if a["level"] == "caution"]
+
+                if _critical_alerts:
+                    st.markdown("---")
+                    st.markdown("### 🚨 緊急アラート — 受入最優先モード")
+                    for _alert in _critical_alerts:
+                        st.error(f"🔴 **{_alert['title']}**")
+                        st.error(_alert["message"])
+                        if _alert.get("actions"):
+                            for _action in _alert["actions"]:
+                                st.markdown(f"  → {_action}")
+
+                if _warning_alerts:
+                    st.markdown("---")
+                    for _alert in _warning_alerts:
+                        st.warning(f"🟡 **{_alert['title']}**")
+                        st.warning(_alert["message"])
+
+                if _caution_alerts:
+                    for _alert in _caution_alerts:
+                        st.info(f"ℹ️ {_alert['title']}: {_alert['message']}")
+
+                # =========================================
+                # セクション5: グラフ
+                # =========================================
+                st.markdown("---")
+                st.markdown("### 📈 推移グラフ")
+
+                _chart_tab1, _chart_tab2, _chart_tab3 = st.tabs([
+                    "月内累積推移", "過去12か月実績", "入院経路の構成比"
+                ])
+
+                # グラフ1: 月内累積推移（5F / 6F）
+                with _chart_tab1:
+                    _cum_col_5f, _cum_col_6f = st.columns(2)
+                    for _er_ward, _cum_col in [("5F", _cum_col_5f), ("6F", _cum_col_6f)]:
+                        with _cum_col:
+                            st.markdown(f"**{_er_ward}**")
+                            _cum_data = get_cumulative_progress(
+                                _gr_detail_df, _er_ward, _er_ym, _er_today
+                            )
+                            if _cum_data:
+                                _cum_df = pd.DataFrame(_cum_data)
+                                _fig_cum, _ax_cum = plt.subplots(figsize=(6, 3))
+                                _ax_cum.plot(
+                                    range(len(_cum_df)),
+                                    _cum_df["cumulative_ratio_pct"],
+                                    marker="o",
+                                    markersize=3,
+                                    linewidth=1.5,
+                                    color="#1976D2",
+                                    label=f"{_er_ward} 累積比率",
+                                )
+                                _ax_cum.axhline(
+                                    y=15, color="red", linestyle="--",
+                                    linewidth=1, label="基準 15%"
+                                )
+                                _ax_cum.set_ylabel("%")
+                                _ax_cum.set_title(f"{_er_ward} 月内累積推移")
+                                _ax_cum.set_xticks(range(len(_cum_df)))
+                                _day_labels = [str(i + 1) for i in range(len(_cum_df))]
+                                _ax_cum.set_xticklabels(_day_labels, fontsize=7)
+                                _ax_cum.set_xlabel("日")
+                                _ax_cum.legend(fontsize=8)
+                                _ax_cum.set_ylim(0, max(30, _cum_df["cumulative_ratio_pct"].max() + 5))
+                                _fig_cum.tight_layout()
+                                st.pyplot(_fig_cum)
+                                plt.close(_fig_cum)
+                            else:
+                                st.info("データなし")
+
+                # グラフ2: 過去12か月の単月実績
+                with _chart_tab2:
+                    _hist_col_5f, _hist_col_6f = st.columns(2)
+                    for _er_ward, _hist_col in [("5F", _hist_col_5f), ("6F", _hist_col_6f)]:
+                        with _hist_col:
+                            st.markdown(f"**{_er_ward}**")
+                            _hist_data = get_monthly_history(
+                                _gr_detail_df, _er_ward, n_months=12, target_date=_er_today
+                            )
+                            if _hist_data:
+                                _hist_df = pd.DataFrame(_hist_data)
+                                _fig_hist, _ax_hist = plt.subplots(figsize=(6, 3))
+                                _bar_colors = [
+                                    "#4CAF50" if r >= 15 else "#F44336"
+                                    for r in _hist_df["ratio_pct"]
+                                ]
+                                _ax_hist.bar(
+                                    range(len(_hist_df)),
+                                    _hist_df["ratio_pct"],
+                                    color=_bar_colors,
+                                    alpha=0.8,
+                                )
+                                _ax_hist.axhline(
+                                    y=15, color="red", linestyle="--",
+                                    linewidth=1, label="基準 15%"
+                                )
+                                _ax_hist.set_ylabel("%")
+                                _ax_hist.set_title(f"{_er_ward} 過去12か月")
+                                _ax_hist.set_xticks(range(len(_hist_df)))
+                                _ax_hist.set_xticklabels(
+                                    [ym[-5:] for ym in _hist_df["year_month"]],
+                                    fontsize=7, rotation=45,
+                                )
+                                _ax_hist.legend(fontsize=8)
+                                _fig_hist.tight_layout()
+                                st.pyplot(_fig_hist)
+                                plt.close(_fig_hist)
+                            else:
+                                st.info("過去データなし")
+
+                # グラフ3: 入院経路の構成比（今月）
+                with _chart_tab3:
+                    _route_col_5f, _route_col_6f = st.columns(2)
+                    for _er_ward, _route_col in [("5F", _route_col_5f), ("6F", _route_col_6f)]:
+                        with _route_col:
+                            st.markdown(f"**{_er_ward}**")
+                            _er_ratio_ward = calculate_emergency_ratio(
+                                _gr_detail_df, _er_ward, _er_ym, target_date=_er_today
+                            )
+                            _bd = _er_ratio_ward["breakdown"]
+                            _pie_labels = []
+                            _pie_values = []
+                            _pie_colors = []
+                            _color_map = {
+                                "救急車": ("#F44336", _bd["ambulance"]),
+                                "下り搬送": ("#FF9800", _bd["downstream"]),
+                                "外来紹介": ("#4CAF50", _bd["scheduled"]),
+                                "連携室": ("#2196F3", _bd["liaison"]),
+                                "ウォークイン": ("#9E9E9E", _bd["walkin"]),
+                                "その他": ("#607D8B", _bd["other"]),
+                            }
+                            for _lbl, (_clr, _val) in _color_map.items():
+                                if _val > 0:
+                                    _pie_labels.append(f"{_lbl} ({_val})")
+                                    _pie_values.append(_val)
+                                    _pie_colors.append(_clr)
+
+                            if _pie_values:
+                                _fig_pie, _ax_pie = plt.subplots(figsize=(5, 3))
+                                _ax_pie.pie(
+                                    _pie_values,
+                                    labels=_pie_labels,
+                                    colors=_pie_colors,
+                                    autopct="%1.0f%%",
+                                    startangle=90,
+                                    textprops={"fontsize": 8},
+                                )
+                                _ax_pie.set_title(f"{_er_ward} 入院経路構成（今月）")
+                                _fig_pie.tight_layout()
+                                st.pyplot(_fig_pie)
+                                plt.close(_fig_pie)
+                            else:
+                                st.info("データなし")
+
+            elif not _EMERGENCY_RATIO_AVAILABLE:
+                st.warning("救急搬送後患者割合モジュールの読み込みに失敗しました")
+            else:
+                st.info("入退院詳細データを入力すると救急搬送後患者割合が表示されます")
 
 # ---------------------------------------------------------------------------
 # HOPE送信用サマリータブ

@@ -473,7 +473,8 @@ def calculate_demand_absorption(
 def generate_c_group_alerts(
     c_summary: dict,
     c_capacity: dict,
-    demand_classification: str,
+    demand_classification: str | None = None,
+    emergency_ratio_risk: dict | None = None,
 ) -> list[dict]:
     """C群コントロールに関するアラートを生成する。
 
@@ -534,5 +535,23 @@ def generate_c_group_alerts(
             "message": "需要繁忙期。C群の前倒し退院で受入枠を確保できます",
             "category": "c_group",
         })
+
+    # 救急搬送後患者割合リスク — C群長期滞在とのトレードオフ
+    if emergency_ratio_risk is not None:
+        for ward_name, ward_risk in emergency_ratio_risk.items():
+            if isinstance(ward_risk, dict) and ward_risk.get("status") == "red":
+                additional = ward_risk.get("additional_needed", 0)
+                ratio_pct = ward_risk.get("ratio_pct", 0.0)
+                alerts.append({
+                    "level": "warning",
+                    "category": "emergency_ratio",
+                    "message": (
+                        f"{ward_name} の救急搬送後患者割合が {ratio_pct:.1f}%（目標15%）と低く、"
+                        f"あと {additional} 件の救急入院が必要です。"
+                        "C群の長期滞在がベッドを占有すると救急受入枠が減り、"
+                        "割合改善が困難になります"
+                        "（C群キープ↔救急受入のトレードオフに注意）"
+                    ),
+                })
 
     return alerts

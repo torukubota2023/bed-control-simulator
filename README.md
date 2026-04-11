@@ -37,6 +37,7 @@
 | **制度ガードレール** | LOS余力・救急搬送割合を自動計算、制度逸脱リスクを信号表示 |
 | **需要波** | 前2週vs直近1週の入院トレンド比較、閑散/繁忙の自動判定 |
 | **C群コントロール** | 制度余力の中でC群による稼働率下支え効果を可視化 |
+| **救急搬送後患者割合** | 15%基準の単月管理、月末着地予測、未達アラート |
 
 ## 起動方法
 
@@ -77,6 +78,7 @@ scripts/
   guardrail_engine.py            # 制度ガードレールエンジン
   demand_wave.py                 # 需要波モデル
   c_group_control.py             # C群コントロール
+  emergency_ratio.py             # 救急搬送後患者割合
 tests/
   test_bed_data_manager.py       # データ管理のテスト（18件）
   test_db_manager.py             # SQLite永続化のテスト（8件）
@@ -84,7 +86,8 @@ tests/
   test_guardrail_engine.py       # 制度ガードレールのテスト（10件）
   test_demand_wave.py            # 需要波のテスト（8件）
   test_c_group_control.py        # C群コントロールのテスト（10件）
-  （全75件）
+  test_emergency_ratio.py        # 救急搬送後患者割合のテスト（15件）
+  （全90件）
 pyproject.toml                   # ruff 設定
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）

@@ -76,8 +76,11 @@ class TestCalculateGuardrailStatus:
 
     def test_with_detail_df(self):
         df = _make_daily_df(30)
-        # 30件の入退院詳細: 10件が救急
-        detail_rows = [{"route": "救急"} for _ in range(10)] + [{"route": "紹介"} for _ in range(20)]
+        # 30件の入退院詳細（入院イベント）: 10件が救急
+        detail_rows = (
+            [{"route": "救急", "event_type": "admission"} for _ in range(10)]
+            + [{"route": "紹介", "event_type": "admission"} for _ in range(20)]
+        )
         detail_df = pd.DataFrame(detail_rows)
 
         results = calculate_guardrail_status(df, detail_df=detail_df)

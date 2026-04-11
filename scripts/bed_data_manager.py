@@ -1505,7 +1505,7 @@ ADMISSION_DETAIL_COLUMNS = [
     "date",              # イベント日付 (YYYY-MM-DD)
     "ward",              # 病棟 ("5F" or "6F")
     "event_type",        # "admission" or "discharge"
-    "route",             # 入院経路（外来紹介/救急/連携室/ウォークイン）— 入院のみ
+    "route",             # 入院経路（外来紹介/救急/下り搬送/連携室/ウォークイン）— 入院のみ
     "source_doctor",     # 入院創出医 — 入院のみ、空欄可
     "attending_doctor",  # 入院担当医/主治医
     "los_days",          # 在院日数 — 退院のみ、入院時は空欄
@@ -1514,7 +1514,7 @@ ADMISSION_DETAIL_COLUMNS = [
 ]
 
 # 有効な入院経路
-VALID_ROUTES = ["外来紹介", "救急", "連携室", "ウォークイン"]
+VALID_ROUTES = ["外来紹介", "救急", "下り搬送", "連携室", "ウォークイン"]
 
 # 有効なイベント種別
 VALID_EVENT_TYPES = ["admission", "discharge"]
@@ -1565,7 +1565,7 @@ def add_admission_event(
         df: 既存の詳細DataFrame
         date: 入院日（YYYY-MM-DD形式の文字列またはdatetime）
         ward: 病棟（"5F" or "6F"）
-        route: 入院経路（外来紹介/救急/連携室/ウォークイン）
+        route: 入院経路（外来紹介/救急/下り搬送/連携室/ウォークイン）
         source_doctor: 入院創出医（空文字列可）
         attending_doctor: 入院担当医/主治医
         short3_type: 短手3 の種類（"該当なし"/"大腸ポリペク..."等、Phase 3）
