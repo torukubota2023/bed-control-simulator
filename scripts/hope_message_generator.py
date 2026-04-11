@@ -13,7 +13,7 @@ HOPE送信用サマリー生成モジュール
 """
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import streamlit as st
 
@@ -303,19 +303,290 @@ def generate_doctor_message(
 
 
 # ---------------------------------------------------------------------------
-# 3. Streamlit UI描画関数
+# 3. アラート付きメッセージ生成（v3.3 拡張）
+# ---------------------------------------------------------------------------
+
+
+def generate_action_items(
+    guardrail_results: Optional[List[Dict[str, Any]]] = None,
+    emergency_summary: Optional[Dict[str, Any]] = None,
+    c_group_alerts: Optional[List[Dict[str, Any]]] = None,
+    ward_data: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[str]:
+    """制度・救急・C群のアラートから具体的なアクション項目を優先順で生成する。
+
+    Parameters
+    ----------
+    guardrail_results : list of dict, optional
+        guardrail_engine.calculate_guardrail_status() の戻り値。
+        各dictに name, current_value, threshold, status 等を含む。
+    emergency_summary : dict, optional
+        emergency_ratio.get_ward_emergency_summary() の戻り値。
+        病棟別の dual_ratio, additional 等を含む。
+    c_group_alerts : list of dict, optional
+        c_group_control.generate_c_group_alerts() の戻り値。
+        各dictに level, message, category を含む。
+    ward_data : dict, optional
+        病棟別データ。例: {"5F": {"patients": 40, "beds": 47}, ...}
+
+    Returns
+    -------
+    list of str
+        優先度順のアクション項目リスト
+    """
+    items: List[str] = []
+
+    # 1. 制度ガードレール: LOS warning/danger
+    if guardrail_results:
+        for item in guardrail_results:
+            name = item.get("name", "")
+            status = item.get("status", "")
+            if "在院日数" in name and status in ("warning", "danger"):
+                current = item.get("current_value")
+                threshold = item.get("threshold")
+                if current is not None and threshold is not None:
+                    items.append(
+                        f"退院調整: 在院日数{current:.1f}日/上限{threshold:.0f}日"
+                    )
+
+    # 2. 救急搬送比率 red
+    if emergency_summary:
+        for ward_name in ("5F", "6F"):
+            ward_info = emergency_summary.get(ward_name)
+            if ward_info is None:
+                continue
+            dual = ward_info.get("dual_ratio", {})
+            official = dual.get("official", {})
+            ratio_status = official.get("status", "")
+            if ratio_status == "red":
+                additional = ward_info.get("additional", {})
+                needed = additional.get("additional_needed", 0)
+                items.append(
+                    f"{ward_name} 救急受入強化（あと{needed}件で15%達成）"
+                )
+
+    # 3. C群アラート（danger/warning のみ）
+    if c_group_alerts:
+        for alert in c_group_alerts:
+            level = alert.get("level", "")
+            if level in ("danger", "warning"):
+                msg = alert.get("message", "")
+                # メッセージを短縮（先頭40文字）
+                short_msg = msg[:40] + "…" if len(msg) > 40 else msg
+                items.append(f"C群: {short_msg}")
+
+    # 4. 稼働率ベースのアクション
+    if ward_data:
+        for ward_name in sorted(ward_data.keys()):
+            w = ward_data[ward_name]
+            patients = w.get("patients", 0)
+            beds = w.get("beds", 1)
+            rate = patients / beds * 100 if beds > 0 else 0
+            if rate > 95:
+                items.append(f"{ward_name} 入院制限検討")
+            elif rate < 85:
+                items.append(f"{ward_name} 入院促進")
+
+    return items
+
+
+def _build_alert_section(
+    guardrail_results: Optional[List[Dict[str, Any]]] = None,
+    emergency_summary: Optional[Dict[str, Any]] = None,
+    c_group_alerts: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """制度・救急・C群のコンパクトなアラートセクションを構築する。
+
+    Parameters
+    ----------
+    guardrail_results : list of dict, optional
+        guardrail_engine.calculate_guardrail_status() の戻り値。
+    emergency_summary : dict, optional
+        emergency_ratio.get_ward_emergency_summary() の戻り値。
+    c_group_alerts : list of dict, optional
+        c_group_control.generate_c_group_alerts() の戻り値。
+
+    Returns
+    -------
+    str
+        コンパクトなアラート文字列（複数行）
+    """
+    lines: List[str] = []
+
+    # [制度] LOS行
+    if guardrail_results:
+        los_parts: List[str] = []
+        for item in guardrail_results:
+            name = item.get("name", "")
+            if "在院日数" not in name:
+                continue
+            current = item.get("current_value")
+            status = item.get("status", "")
+            if current is None:
+                continue
+            icon = {"safe": "✅", "warning": "⚠", "danger": "🔴"}.get(status, "❓")
+            # 病棟情報は description から推定、なければ全体として表示
+            los_parts.append(f"{current:.1f}日{icon}")
+        if los_parts:
+            lines.append(f"[制度] LOS {' / '.join(los_parts)}")
+
+    # [救急] 行
+    if emergency_summary:
+        emg_parts: List[str] = []
+        for ward_name in ("5F", "6F"):
+            ward_info = emergency_summary.get(ward_name)
+            if ward_info is None:
+                continue
+            dual = ward_info.get("dual_ratio", {})
+            official = dual.get("official", {})
+            ratio_pct = official.get("ratio_pct", 0.0)
+            ratio_status = official.get("status", "")
+            icon = {"green": "✅", "yellow": "⚠", "red": "🔴"}.get(ratio_status, "❓")
+            part = f"{ward_name}:{ratio_pct:.1f}%{icon}"
+            if ratio_status == "red":
+                additional = ward_info.get("additional", {})
+                needed = additional.get("additional_needed", 0)
+                part += f"(あと{needed}件)"
+            emg_parts.append(part)
+        if emg_parts:
+            lines.append(f"[救急] {' '.join(emg_parts)}")
+
+    # [C群] 行
+    if c_group_alerts:
+        # danger/warning があればそれを優先表示
+        danger_warnings = [a for a in c_group_alerts if a.get("level") in ("danger", "warning")]
+        infos = [a for a in c_group_alerts if a.get("level") == "info"]
+        if danger_warnings:
+            msg = danger_warnings[0].get("message", "")
+            short_msg = msg[:30] + "…" if len(msg) > 30 else msg
+            lines.append(f"[C群] {short_msg}")
+        elif infos:
+            msg = infos[0].get("message", "")
+            short_msg = msg[:30] + "…" if len(msg) > 30 else msg
+            lines.append(f"[C群] {short_msg}")
+
+    return "\n".join(lines)
+
+
+def generate_enhanced_summary_message(
+    target_date,
+    total_beds: int,
+    ward_data: Dict[str, Dict[str, Any]],
+    admissions: int,
+    discharges: int,
+    avg_los: Optional[float] = None,
+    notes: Optional[str] = None,
+    ward_rolling_los: Optional[Dict] = None,
+    rolling_los_limit: Optional[int] = None,
+    guardrail_results: Optional[List[Dict[str, Any]]] = None,
+    emergency_summary: Optional[Dict[str, Any]] = None,
+    c_group_alerts: Optional[List[Dict[str, Any]]] = None,
+) -> List[str]:
+    """アラート付き拡張サマリーメッセージをリストで返す。
+
+    各メッセージは400文字以内。
+    - メッセージ1: 従来の病床状況サマリー（generate_summary_message と同等）
+    - メッセージ2: アラート＋アクション項目（アラートデータがある場合のみ）
+
+    Parameters
+    ----------
+    target_date : date
+        対象日付
+    total_beds : int
+        総病床数
+    ward_data : dict
+        病棟別データ
+    admissions : int
+        当日入院数
+    discharges : int
+        当日退院数
+    avg_los : float, optional
+        平均在院日数（今月集計）
+    notes : str, optional
+        追加コメント
+    ward_rolling_los : dict, optional
+        病棟別の3ヶ月rolling LOS
+    rolling_los_limit : int, optional
+        施設基準の上限日数
+    guardrail_results : list of dict, optional
+        制度ガードレール結果
+    emergency_summary : dict, optional
+        救急搬送サマリー
+    c_group_alerts : list of dict, optional
+        C群アラート
+
+    Returns
+    -------
+    list of str
+        400文字以内のメッセージのリスト（1〜2件）
+    """
+    # メッセージ1: 従来サマリー
+    msg1 = generate_summary_message(
+        target_date=target_date,
+        total_beds=total_beds,
+        ward_data=ward_data,
+        admissions=admissions,
+        discharges=discharges,
+        avg_los=avg_los,
+        notes=notes,
+        ward_rolling_los=ward_rolling_los,
+        rolling_los_limit=rolling_los_limit,
+    )
+    messages = [msg1]
+
+    # アラートデータがない場合はメッセージ1のみ
+    has_alerts = any([guardrail_results, emergency_summary, c_group_alerts])
+    if not has_alerts:
+        return messages
+
+    # メッセージ2: アラート＋アクション
+    date_str = _format_date_short(target_date)
+    lines2: List[str] = [f"【制度アラート】{date_str}"]
+
+    # アラートセクション
+    alert_section = _build_alert_section(guardrail_results, emergency_summary, c_group_alerts)
+    if alert_section:
+        lines2.append(alert_section)
+
+    # アクション項目
+    action_items = generate_action_items(
+        guardrail_results=guardrail_results,
+        emergency_summary=emergency_summary,
+        c_group_alerts=c_group_alerts,
+        ward_data=ward_data,
+    )
+    if action_items:
+        lines2.append("")
+        lines2.append("▼対応")
+        for ai in action_items:
+            lines2.append(f"・{ai}")
+
+    lines2.append(SIGNATURE)
+    msg2 = "\n".join(lines2)
+    msg2 = _trim_to_limit(msg2)
+    messages.append(msg2)
+
+    return messages
+
+
+# ---------------------------------------------------------------------------
+# 4. Streamlit UI描画関数
 # ---------------------------------------------------------------------------
 
 def render_hope_tab(
     df=None,
     ward_df=None,
     doctor_patients=None,
+    guardrail_results=None,
+    emergency_summary=None,
+    c_group_alerts=None,
 ):
     """
     HOPE送信用サマリータブのUI描画関数。
 
     Streamlitのタブ内で呼び出し、以下を表示する:
     - 全体サマリーセクション: メッセージプレビュー + コピー用表示
+    - アラート付きメッセージ（オプション）
     - 医師別メッセージセクション: 医師選択 → メッセージプレビュー + コピー用表示
     - 文字数カウント（400文字制限）
     - カスタマイズ用の追加コメント入力欄
@@ -329,6 +600,12 @@ def render_hope_tab(
     doctor_patients : dict, optional
         医師別の長期入院患者データ。例:
         {"田中医師": [{"ward": "6F", "admission_date": "3/15", "los": 21}, ...]}
+    guardrail_results : list of dict, optional
+        guardrail_engine.calculate_guardrail_status() の戻り値。
+    emergency_summary : dict, optional
+        emergency_ratio.get_ward_emergency_summary() の戻り値。
+    c_group_alerts : list of dict, optional
+        c_group_control.generate_c_group_alerts() の戻り値。
     """
     st.subheader("📨 HOPE送信用サマリー")
     st.caption("富士通HOPE電子カルテ ToDo機能用メッセージ（400文字以内）")
@@ -481,6 +758,45 @@ def render_hope_tab(
         st.error(f"文字数: {char_count}/{MAX_CHARS} — 制限超過！")
 
     st.code(summary_msg, language=None)
+
+    # =====================================================================
+    # アラート付きメッセージセクション（v3.3拡張）
+    # =====================================================================
+    has_alert_data = any([guardrail_results, emergency_summary, c_group_alerts])
+    if has_alert_data:
+        enable_alerts = st.checkbox(
+            "アラート付きメッセージを生成",
+            value=False,
+            key="hope_enable_alerts",
+            help="制度ガードレール・救急搬送・C群のアラート情報を含むメッセージを追加生成します",
+        )
+
+        if enable_alerts:
+            enhanced_messages = generate_enhanced_summary_message(
+                target_date=target_date,
+                total_beds=total_beds,
+                ward_data=ward_data,
+                admissions=admissions,
+                discharges=discharges,
+                avg_los=avg_los,
+                notes=notes if notes and notes.strip() else None,
+                ward_rolling_los=ward_rolling_los if ward_rolling_los else None,
+                rolling_los_limit=rolling_limit_input,
+                guardrail_results=guardrail_results,
+                emergency_summary=emergency_summary,
+                c_group_alerts=c_group_alerts,
+            )
+
+            # メッセージ2以降（アラートメッセージ）を表示
+            if len(enhanced_messages) > 1:
+                st.markdown("#### 制度アラートメッセージ")
+                for idx, msg in enumerate(enhanced_messages[1:], start=2):
+                    alert_char_count = _count_chars(msg)
+                    if alert_char_count <= MAX_CHARS:
+                        st.success(f"メッセージ{idx} 文字数: {alert_char_count}/{MAX_CHARS}")
+                    else:
+                        st.error(f"メッセージ{idx} 文字数: {alert_char_count}/{MAX_CHARS} — 制限超過！")
+                    st.code(msg, language=None)
 
     st.markdown("---")
 

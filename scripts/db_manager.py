@@ -118,6 +118,33 @@ def init_tables(conn):
             )
         """)
 
+        # saved_scenarios テーブル
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS saved_scenarios (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                scenario_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                parameters TEXT NOT NULL,
+                results TEXT NOT NULL,
+                baseline_snapshot TEXT,
+                tags TEXT DEFAULT '',
+                notes TEXT DEFAULT ''
+            )
+        """)
+
+        # scenario_comparisons テーブル
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS scenario_comparisons (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                scenario_ids TEXT NOT NULL,
+                analysis_result TEXT,
+                notes TEXT DEFAULT ''
+            )
+        """)
+
         conn.commit()
 
     except Exception as e:

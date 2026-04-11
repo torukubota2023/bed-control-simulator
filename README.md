@@ -38,6 +38,10 @@
 | **需要波** | 前2週vs直近1週の入院トレンド比較、閑散/繁忙の自動判定 |
 | **C群コントロール** | 制度余力の中でC群による稼働率下支え効果を可視化 |
 | **救急搬送後患者割合** | 15%基準の単月管理、月末着地予測、未達アラート |
+| **サイドバーナビゲーション** | 17タブ→5セクション（ダッシュボード/意思決定支援/制度管理/データ管理/HOPE連携）に整理 |
+| **パスワード認証** | アプリ起動時にパスワード認証（session_state管理） |
+| **改善仮説の保存・比較** | What-Ifシナリオの名前付き保存、複数比較、ルールベースAI分析 |
+| **データエクスポート** | 病棟日次データ・入退院詳細（CSV）、シナリオデータ（JSON） |
 
 ## 起動方法
 
@@ -79,6 +83,7 @@ scripts/
   demand_wave.py                 # 需要波モデル
   c_group_control.py             # C群コントロール
   emergency_ratio.py             # 救急搬送後患者割合
+  scenario_manager.py            # シナリオ保存・比較・AI分析
 tests/
   test_bed_data_manager.py       # データ管理のテスト（18件）
   test_db_manager.py             # SQLite永続化のテスト（8件）
@@ -87,7 +92,9 @@ tests/
   test_demand_wave.py            # 需要波のテスト（11件）
   test_c_group_control.py        # C群コントロールのテスト（10件）
   test_emergency_ratio.py        # 救急搬送後患者割合のテスト（21件）
-  （テスト総数は pytest 実行結果を参照 — 現在100件）
+  test_hope_message.py           # HOPEメッセージのテスト（8件）
+  test_scenario_manager.py       # シナリオマネージャーのテスト（10件）
+  （テスト総数は pytest 実行結果を参照 — 現在118件）
 pyproject.toml                   # ruff 設定
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）

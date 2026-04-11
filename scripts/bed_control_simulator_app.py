@@ -146,6 +146,17 @@ except Exception as _hope_err:
     import traceback as _hope_tb
     _HOPE_ERROR = f"{_hope_err}\n{_hope_tb.format_exc()}"
 
+# シナリオ保存・比較・AI分析マネージャー
+_SCENARIO_MANAGER_AVAILABLE = False
+try:
+    from scenario_manager import (
+        save_scenario, load_scenario, list_scenarios, delete_scenario,
+        compare_scenarios, analyze_scenarios
+    )
+    _SCENARIO_MANAGER_AVAILABLE = True
+except ImportError:
+    pass
+
 # 入退院詳細データ
 try:
     from bed_data_manager import (
@@ -565,6 +576,21 @@ st.set_page_config(
     page_icon="🏥",
     layout="wide",
 )
+
+# --- パスワード認証 ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.title("🔐 病棟稼働率シミュレーター")
+    _pw = st.text_input("パスワードを入力してください", type="password")
+    if st.button("ログイン"):
+        if _pw == "1234":
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("パスワードが違います")
+    st.stop()
 
 if not _CORE_AVAILABLE:
     st.error(f"⚠️ コアモジュールのインポートに失敗しました\n\n{_CORE_ERROR}")
@@ -2570,61 +2596,87 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
 
 
 # ---------------------------------------------------------------------------
-# タブ構成
+# サイドバーセクション選択 + タブ構成
 # ---------------------------------------------------------------------------
-if _is_actual_data_mode:
-    # 実績データモード: 戦略比較は非表示
-    tab_names = [
-        "📊 日次推移", "🔄 フェーズ構成", "💰 運営分析", "🚨 運営改善アラート",
-        "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
-    ]
-    tab_names.append("👨‍⚕️ 退院タイミング")
-    tab_names.append("データ")
-    if _DATA_MANAGER_AVAILABLE:
-        tab_names.append("📋 日次データ入力")
-        tab_names.append("🔮 実績分析・予測")
-    if _DOCTOR_MASTER_AVAILABLE:
-        tab_names.append("👨‍⚕️ 医師別分析")
-        tab_names.append("💡 改善のヒント")
-        tab_names.append("⚙️ 医師マスター")
-    if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
-        tab_names.append("🛡️ 制度・需要・C群")
-    if _HOPE_AVAILABLE:
-        tab_names.append("📨 HOPE送信")
-else:
-    # シミュレーションモード（従来通り）
-    tab_names = [
-        "📊 日次推移", "🔄 フェーズ構成", "💰 運営分析", "🚨 運営改善アラート",
-        "\U0001f3af 意思決定ダッシュボード", "\U0001f52e What-if分析", "\U0001f4c8 トレンド分析",
-    ]
-    tab_names.append("👨‍⚕️ 退院タイミング")
-    if st.session_state.comparison is not None:
-        tab_names.append("戦略比較")
-    tab_names.append("データ")
-    if _DATA_MANAGER_AVAILABLE:
-        tab_names.append("📋 日次データ入力")
-        tab_names.append("🔮 実績分析・予測")
-    if _DOCTOR_MASTER_AVAILABLE:
-        tab_names.append("👨‍⚕️ 医師別分析")
-        tab_names.append("💡 改善のヒント")
-        tab_names.append("⚙️ 医師マスター")
-    if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
-        tab_names.append("🛡️ 制度・需要・C群")
-    if _HOPE_AVAILABLE:
-        tab_names.append("📨 HOPE送信")
+st.sidebar.markdown("---")
+_section_names = ["\U0001f4ca ダッシュボード", "\U0001f3af 意思決定支援"]
+if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
+    _section_names.append("\U0001f6e1\ufe0f 制度管理")
+if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE:
+    _section_names.append("\U0001f4cb データ管理")
+if _HOPE_AVAILABLE:
+    _section_names.append("\U0001f4e8 HOPE連携")
 
-st.caption("👇 下のタブをクリックして各画面を切り替えてください")
-tabs = st.tabs(tab_names)
-# タブ名→インデックスのマッピング
-_tab_idx = {name: i for i, name in enumerate(tab_names)}
+_selected_section = st.sidebar.radio("メニュー", _section_names, label_visibility="collapsed")
+
+# --- セクション別タブ構成 ---
+if _selected_section == "\U0001f4ca ダッシュボード":
+    tab_names = ["\U0001f4ca 日次推移", "\U0001f504 フェーズ構成", "\U0001f4b0 運営分析", "\U0001f4c8 トレンド分析"]
+elif _selected_section == "\U0001f3af 意思決定支援":
+    tab_names = ["\U0001f3af 意思決定ダッシュボード", "\U0001f6a8 運営改善アラート", "\U0001f52e What-if分析", "\U0001f468\u200d\u2695\ufe0f 退院タイミング"]
+    if not _is_actual_data_mode and st.session_state.get("comparison") is not None:
+        tab_names.append("戦略比較")
+    if _SCENARIO_MANAGER_AVAILABLE:
+        tab_names.append("\U0001f4be 仮説管理")
+elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
+    tab_names = ["\U0001f6e1\ufe0f 制度・需要・C群"]
+    if _DOCTOR_MASTER_AVAILABLE:
+        tab_names.append("\U0001f4a1 改善のヒント")
+elif _selected_section == "\U0001f4cb データ管理":
+    tab_names = []
+    if _DATA_MANAGER_AVAILABLE:
+        tab_names.extend(["\U0001f4cb 日次データ入力", "\U0001f52e 実績分析・予測"])
+    if _DOCTOR_MASTER_AVAILABLE:
+        tab_names.extend(["\U0001f468\u200d\u2695\ufe0f 医師別分析", "\u2699\ufe0f 医師マスター"])
+    tab_names.append("\U0001f4e5 データエクスポート")
+    tab_names.append("データ")
+elif _selected_section == "\U0001f4e8 HOPE連携":
+    tab_names = ["\U0001f4e8 HOPE送信"]
+else:
+    tab_names = ["\U0001f4ca 日次推移"]
+
+st.caption("\U0001f447 下のタブをクリックして各画面を切り替えてください")
+
+# 全タブ名の一覧（セクション外のタブも _tab_idx に含めるため）
+_ALL_TAB_NAMES = [
+    "\U0001f4ca 日次推移", "\U0001f504 フェーズ構成", "\U0001f4b0 運営分析",
+    "\U0001f4c8 トレンド分析", "\U0001f3af 意思決定ダッシュボード",
+    "\U0001f6a8 運営改善アラート", "\U0001f52e What-if分析",
+    "\U0001f468\u200d\u2695\ufe0f 退院タイミング", "戦略比較",
+    "\U0001f4be 仮説管理", "\U0001f6e1\ufe0f 制度・需要・C群",
+    "\U0001f4a1 改善のヒント", "\U0001f4cb 日次データ入力",
+    "\U0001f52e 実績分析・予測", "\U0001f468\u200d\u2695\ufe0f 医師別分析",
+    "\u2699\ufe0f 医師マスター", "\U0001f4e5 データエクスポート",
+    "データ", "\U0001f4e8 HOPE送信",
+]
+# セクション外のタブ名を非表示タブとして末尾に追加
+_hidden_tab_names = [t for t in _ALL_TAB_NAMES if t not in tab_names]
+_visible_count = len(tab_names)
+_full_tab_names = tab_names + _hidden_tab_names
+
+tabs = st.tabs(_full_tab_names)
+# タブ名→インデックスのマッピング（全タブ含む）
+_tab_idx = {name: i for i, name in enumerate(_full_tab_names)}
+
+# 非表示タブを CSS で隠す（セクション外のタブヘッダーを非表示にする）
+if _hidden_tab_names:
+    # nth-child は 1-indexed
+    _hide_selectors = ", ".join(
+        f".stTabs [data-baseweb='tab-list'] button:nth-child({_visible_count + i + 1})"
+        for i in range(len(_hidden_tab_names))
+    )
+    st.markdown(
+        f"<style>{_hide_selectors} {{ display: none !important; }}</style>",
+        unsafe_allow_html=True,
+    )
 
 # =====================================================================
 # 日次データ管理タブ（シミュレーション未実行でも利用可能）
 # st.stop() の前に配置することで、シミュレーション未実行でも表示される
 # =====================================================================
-if _DATA_MANAGER_AVAILABLE:
+if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
     _dm_tab_daily_idx = _tab_idx["📋 日次データ入力"]
-    _dm_tab_analysis_idx = _tab_idx["🔮 実績分析・予測"]
+    _dm_tab_analysis_idx = _tab_idx.get("🔮 実績分析・予測")
 
     # ----- タブ: 📋 日次データ入力 -----
     with tabs[_dm_tab_daily_idx]:
@@ -6453,6 +6505,23 @@ if "\U0001f52e What-if分析" in _tab_idx:
                         else:
                             st.info(f"**分析結果:** {_s_rec}")
 
+            # --- What-If シナリオ保存 ---
+            if _SCENARIO_MANAGER_AVAILABLE:
+                st.markdown("---")
+                with st.expander("💾 このシナリオを保存"):
+                    from datetime import datetime as _dt_now
+                    _save_name = st.text_input("シナリオ名", value=f"whatif_{_dt_now.now().strftime('%m%d_%H%M')}", key="save_scenario_name")
+                    _save_notes = st.text_area("メモ", value="", height=60, key="save_scenario_notes")
+                    if st.button("保存", key="save_whatif_btn"):
+                        _scenario_id = save_scenario(
+                            name=_save_name,
+                            scenario_type="what_if",
+                            parameters={},
+                            results={},
+                            notes=_save_notes,
+                        )
+                        st.success(f"✅ 保存しました: {_save_name}")
+
 # --- タブ: トレンド分析 ---
 with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
     if not _DECISION_SUPPORT_AVAILABLE:
@@ -6634,6 +6703,124 @@ with tabs[_tab_idx["\U0001f4c8 トレンド分析"]]:
             with col3:
                 st.success(f"**レンジ内最大:** {best_range[0]}\n\n{best_range[1]['目標レンジ内率']:.1f}%")
 
+
+
+# ===== タブ: 💾 仮説管理 =====
+if "💾 仮説管理" in _tab_idx and _SCENARIO_MANAGER_AVAILABLE:
+    with tabs[_tab_idx["💾 仮説管理"]]:
+        st.header("💾 改善仮説の保存・比較")
+        st.caption("What-Ifシミュレーション結果を保存し、複数シナリオを比較・AI分析できます")
+
+        # Section 1: Saved scenarios list
+        _scenarios = list_scenarios()
+
+        if not _scenarios:
+            st.info("保存済みのシナリオはありません。What-if分析タブで結果を保存してください。")
+        else:
+            st.subheader("📋 保存済みシナリオ")
+            _sc_df = pd.DataFrame([{
+                "選択": False,
+                "名前": s["name"],
+                "種類": s.get("scenario_type", ""),
+                "保存日時": s.get("created_at", "")[:16],
+                "メモ": s.get("notes", ""),
+                "ID": s["id"],
+            } for s in _scenarios])
+
+            _edited_df = st.data_editor(
+                _sc_df,
+                column_config={
+                    "選択": st.column_config.CheckboxColumn("比較対象"),
+                    "ID": None,  # hide
+                },
+                disabled=["名前", "種類", "保存日時", "メモ"],
+                hide_index=True,
+                key="scenario_selector"
+            )
+
+            _selected_ids = _edited_df[_edited_df["選択"]]["ID"].tolist()
+
+            # Section 2: Comparison
+            if len(_selected_ids) >= 2:
+                st.subheader("📊 シナリオ比較")
+                _comparison = compare_scenarios(_selected_ids)
+
+                if _comparison and "comparison" in _comparison:
+                    _comp = _comparison["comparison"]
+
+                    # Metrics table
+                    if "metrics_table" in _comp:
+                        st.dataframe(
+                            pd.DataFrame(_comp["metrics_table"]),
+                            hide_index=True,
+                            use_container_width=True
+                        )
+
+                    # Summary cards
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        _occ_range = _comp.get("occupancy_range", [0, 0])
+                        st.metric("稼働率レンジ", f"{_occ_range[0]:.1f}% 〜 {_occ_range[1]:.1f}%")
+                    with col2:
+                        _rev_range = _comp.get("revenue_range", [0, 0])
+                        st.metric("収益影響レンジ", f"{_rev_range[0]:.0f} 〜 {_rev_range[1]:.0f} 万円/年")
+
+                # Section 3: AI Analysis
+                st.subheader("🤖 AI分析")
+                if st.button("分析を実行", key="run_ai_analysis"):
+                    _loaded = [load_scenario(sid) for sid in _selected_ids]
+                    _loaded = [s for s in _loaded if s is not None]
+
+                    _analysis = analyze_scenarios(
+                        scenarios=_loaded,
+                        current_metrics=None,
+                        guardrail_status=None,
+                        emergency_summary=None,
+                    )
+
+                    if _analysis:
+                        # Executive summary
+                        if _analysis.get("summary"):
+                            st.info(f"**総合所見:** {_analysis['summary']}")
+
+                        # Best scenario
+                        _best = _analysis.get("best_scenario", {})
+                        if _best.get("name"):
+                            st.success(f"**推奨シナリオ:** {_best['name']}  \n理由: {_best.get('reason', '')}")
+
+                        # Insights
+                        _insights = _analysis.get("insights", [])
+                        if _insights:
+                            with st.expander("💡 分析結果の詳細", expanded=True):
+                                for ins in _insights:
+                                    _icon = "🔴" if ins.get("priority") == "high" else "🟡" if ins.get("priority") == "medium" else "🟢"
+                                    st.markdown(f"{_icon} {ins.get('text', '')}")
+
+                        # Recommendations
+                        _recs = _analysis.get("recommendations", [])
+                        if _recs:
+                            with st.expander("📋 推奨アクション", expanded=True):
+                                for rec in _recs:
+                                    st.markdown(f"**{rec.get('rank', '')}. {rec.get('action', '')}**")
+                                    st.caption(f"期待効果: {rec.get('expected_impact', '')} | 実行しやすさ: {rec.get('feasibility', '')} | リスク: {rec.get('risk', '')}")
+
+                        # Risk assessment
+                        if _analysis.get("risk_assessment"):
+                            with st.expander("⚠️ リスク評価"):
+                                st.warning(_analysis["risk_assessment"])
+
+            elif len(_selected_ids) == 1:
+                st.info("比較するには2つ以上のシナリオを選択してください。")
+
+            # Delete button
+            st.markdown("---")
+            _del_id = st.selectbox("削除するシナリオ", options=["（選択してください）"] + [f"{s['name']} ({s['id'][:8]})" for s in _scenarios], key="del_scenario")
+            if _del_id != "（選択してください）" and st.button("🗑️ 削除", key="delete_scenario_btn"):
+                _del_actual_id = [s["id"] for s in _scenarios if f"{s['name']} ({s['id'][:8]})" == _del_id]
+                if _del_actual_id:
+                    delete_scenario(_del_actual_id[0])
+                    st.success("削除しました")
+                    st.rerun()
 
 
 # ===== タブ: 👨‍⚕️ 退院タイミング =====
@@ -8690,6 +8877,88 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 st.warning("救急搬送後患者割合モジュールの読み込みに失敗しました")
             else:
                 st.info("入退院詳細データを入力すると救急搬送後患者割合が表示されます")
+
+# ---------------------------------------------------------------------------
+# データエクスポートタブ
+# ---------------------------------------------------------------------------
+if "📥 データエクスポート" in _tab_idx:
+    with tabs[_tab_idx["📥 データエクスポート"]]:
+        st.header("📥 データエクスポート")
+        st.caption("入力済みデータをCSV形式でダウンロードできます。Excel等で解析にご利用ください。")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("📋 病棟日次データ")
+            _export_ward_df = None
+            if _DATA_MANAGER_AVAILABLE:
+                try:
+                    from bed_data_manager import load_actual_data
+                    for _ward in ["5F", "6F"]:
+                        _wdf = load_actual_data(_ward)
+                        if _wdf is not None and not _wdf.empty:
+                            if _export_ward_df is None:
+                                _export_ward_df = _wdf.copy()
+                            else:
+                                _export_ward_df = pd.concat([_export_ward_df, _wdf], ignore_index=True)
+                except Exception:
+                    pass
+
+            if _export_ward_df is not None and not _export_ward_df.empty:
+                st.write(f"レコード数: {len(_export_ward_df)}件")
+                st.download_button(
+                    "⬇️ 病棟日次データ (CSV)",
+                    data=_export_ward_df.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="ward_daily_data.csv",
+                    mime="text/csv",
+                    key="dl_ward_data"
+                )
+            else:
+                st.info("病棟日次データがありません")
+
+        with col2:
+            st.subheader("📋 入退院詳細データ")
+            _export_detail_df = None
+            if _DATA_MANAGER_AVAILABLE:
+                try:
+                    from bed_data_manager import load_admission_details
+                    _export_detail_df = load_admission_details()
+                except Exception:
+                    pass
+
+            if _export_detail_df is not None and not _export_detail_df.empty:
+                st.write(f"レコード数: {len(_export_detail_df)}件")
+                st.download_button(
+                    "⬇️ 入退院詳細データ (CSV)",
+                    data=_export_detail_df.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="admission_details.csv",
+                    mime="text/csv",
+                    key="dl_detail_data"
+                )
+            else:
+                st.info("入退院詳細データがありません")
+
+        # Scenario export
+        st.markdown("---")
+        st.subheader("💾 保存済みシナリオ")
+        if _SCENARIO_MANAGER_AVAILABLE:
+            _export_scenarios = list_scenarios()
+            if _export_scenarios:
+                import json as _json_export
+                _sc_json = _json_export.dumps(_export_scenarios, ensure_ascii=False, indent=2, default=str)
+                st.write(f"シナリオ数: {len(_export_scenarios)}件")
+                st.download_button(
+                    "⬇️ シナリオデータ (JSON)",
+                    data=_sc_json.encode("utf-8"),
+                    file_name="saved_scenarios.json",
+                    mime="application/json",
+                    key="dl_scenarios"
+                )
+            else:
+                st.info("保存済みシナリオがありません")
+        else:
+            st.info("シナリオマネージャーが利用できません")
+
 
 # ---------------------------------------------------------------------------
 # HOPE送信用サマリータブ
