@@ -200,13 +200,22 @@ def test_additional_needed_calculation():
     )
 
     # additional_needed should be > 0
-    assert result["additional_needed"] > 0
+    assert result["additional_needed"] >= 0
+    assert result["additional_needed_from_actual"] > 0
     assert result["current_emergency"] == 5
+    assert "projected_emergency_standard" in result
 
-    # Verify: target = ceil(0.15 * projected_total) - current_emergency
+    # Verify: additional_needed_from_actual = ceil(0.15 * projected_total) - current_emergency
     target_emg = math.ceil(EMERGENCY_THRESHOLD_PCT / 100.0 * result["projected_total_at_month_end"])
-    expected_needed = max(target_emg - 5, 0)
+    expected_from_actual = max(target_emg - 5, 0)
+    assert result["additional_needed_from_actual"] == expected_from_actual
+
+    # Verify: additional_needed = ceil(0.15 * projected_total) - projected_emergency_standard
+    expected_needed = max(target_emg - result["projected_emergency_standard"], 0)
     assert result["additional_needed"] == expected_needed
+
+    # PRIMARY should always be <= REFERENCE
+    assert result["additional_needed"] <= result["additional_needed_from_actual"]
 
 
 def test_additional_needed_zero_when_above_target():
@@ -508,3 +517,63 @@ def test_cumulative_progress():
     assert progress[-1]["cumulative_total"] == 5
     assert progress[-1]["cumulative_emergency"] == 3
     assert progress[-1]["cumulative_ratio_pct"] == 60.0
+
+
+# ---------------------------------------------------------------------------
+# 13. test_additional_needed_standard_projection_deduction
+# ---------------------------------------------------------------------------
+
+
+def test_additional_needed_standard_projection_deduction():
+    """標準シナリオで自然に目標到達する場合、additional_needed=0になる。
+
+    また additional_needed <= additional_needed_from_actual が常に成り立つことを検証。
+    """
+    records = []
+    # 月初10日間にわたって毎日救急3件+外来紹介7件 = 合計100件中30件救急(30%)
+    # 残り20日間で同ペースなら月末で救急90件/total300件 = 30% >> 15%
+    # → 標準シナリオでも余裕で達成 → additional_needed = 0
+    for day in range(1, 11):
+        d = f"2026-04-{day:02d}"
+        for _ in range(3):
+            records.append({"date": d, "ward": "5F", "route": "救急"})
+        for _ in range(7):
+            records.append({"date": d, "ward": "5F", "route": "外来紹介"})
+
+    df = _make_detail_df(records)
+
+    result = calculate_additional_needed(
+        df, ward="5F", year_month="2026-04", target_date=date(2026, 4, 10),
+    )
+
+    # 自然流入で余裕で達成するケース
+    assert result["additional_needed"] == 0
+    assert result["difficulty"] == "achieved"
+
+    # additional_needed <= additional_needed_from_actual は常に成立
+    assert result["additional_needed"] <= result["additional_needed_from_actual"]
+
+    # projected_emergency_standard が返されていること
+    assert result["projected_emergency_standard"] >= result["current_emergency"]
+
+
+def test_additional_needed_invariant_primary_le_reference():
+    """additional_needed <= additional_needed_from_actual が低割合データでも成立する。"""
+    records = []
+    # 5F: 50 admissions, 2 emergency => 4% (well below 15%)
+    for i in range(48):
+        records.append({"date": "2026-04-05", "ward": "5F", "route": "外来紹介"})
+    for i in range(2):
+        records.append({"date": "2026-04-05", "ward": "5F", "route": "救急"})
+
+    df = _make_detail_df(records)
+
+    result = calculate_additional_needed(
+        df, ward="5F", year_month="2026-04", target_date=date(2026, 4, 10),
+    )
+
+    # PRIMARY <= REFERENCE は常に成立
+    assert result["additional_needed"] <= result["additional_needed_from_actual"]
+    # Both keys exist
+    assert "projected_emergency_standard" in result
+    assert "additional_needed_from_actual" in result

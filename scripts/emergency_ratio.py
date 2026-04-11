@@ -387,9 +387,13 @@ def calculate_additional_needed(
 
     current_emergency = ratio_result["numerator"]
     projected_total = projection["standard"]["projected_total"]
+    projected_emergency_standard = projection["standard"]["projected_emergency"]
     target_emg = math.ceil(EMERGENCY_THRESHOLD_PCT / 100.0 * projected_total)
 
-    needed = max(target_emg - current_emergency, 0)
+    # PRIMARY: 標準シナリオの予測救急数を差し引いた追加必要数
+    needed = max(target_emg - projected_emergency_standard, 0)
+    # REFERENCE: 現在の実績のみから算出した追加必要数（自然流入を見込まない）
+    needed_from_actual = max(target_emg - current_emergency, 0)
 
     remaining_cal = projection["remaining_calendar_days"]
     remaining_biz = projection["remaining_business_days"]
@@ -406,7 +410,7 @@ def calculate_additional_needed(
     else:
         this_week_needed = 0
 
-    # 難易度判定
+    # 難易度判定（PRIMARY値ベース）
     if needed <= 0:
         difficulty = "achieved"
     elif per_biz < 0.5:
@@ -422,7 +426,9 @@ def calculate_additional_needed(
 
     return {
         "additional_needed": needed,
+        "additional_needed_from_actual": needed_from_actual,
         "current_emergency": current_emergency,
+        "projected_emergency_standard": projected_emergency_standard,
         "projected_total_at_month_end": projected_total,
         "target_emergency_at_month_end": target_emg,
         "per_remaining_calendar_day": round(per_cal, 2),

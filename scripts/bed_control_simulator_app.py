@@ -5727,7 +5727,7 @@ with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
                     st.info(_text)
 
             # --- LOS最適化 ---
-            st.markdown("**平均在院日数（LOS）最適化分析**")
+            st.markdown("**平均在院日数 最適化分析**")
 
             # 前提条件: 月間入院数をスライダーで変更可能にする
             _los_default_adm = _cli_params["monthly_admissions"]
@@ -8016,7 +8016,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 
                 # 全体ステータス
                 _status_emoji = {"safe": "🟢", "warning": "🟡", "danger": "🔴"}.get(_gr_display["overall_status"], "⚪")
-                st.markdown(f"### {_status_emoji} 総合判定: **{_gr_display['overall_status'].upper()}**")
+                _status_ja = {"safe": "安全", "warning": "注意", "danger": "危険"}.get(_gr_display["overall_status"], "不明")
+                st.markdown(f"### {_status_emoji} 総合判定: **{_status_ja}**")
 
                 # 指標カード
                 for _item in _gr_results:
@@ -8041,12 +8042,12 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 
                 # LOS余力の詳細
                 st.markdown("---")
-                st.subheader("📏 LOS余力（平均在院日数の制度ヘッドルーム）")
+                st.subheader("📏 平均在院日数の余力")
                 _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
                 if _los_hr["current_los"] is not None:
                     _hr_col1, _hr_col2, _hr_col3 = st.columns(3)
                     with _hr_col1:
-                        st.metric("現在のrolling LOS", f"{_los_hr['current_los']:.1f}日")
+                        st.metric("現在の平均在院日数", f"{_los_hr['current_los']:.1f}日")
                     with _hr_col2:
                         st.metric("制度上限", f"{_los_hr['los_limit']:.0f}日")
                     with _hr_col3:
@@ -8054,9 +8055,9 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         st.metric("余力", f"{_hr_delta:.1f}日", delta=f"C群延長{'可' if _los_hr['can_extend_c_group'] else '不可'}")
 
                     if _los_hr.get("headroom_patient_days") is not None:
-                        st.info(f"📊 patient-days換算の余力: 約 {_los_hr['headroom_patient_days']:.0f} patient-days（推計）")
+                        st.info(f"📊 延べ入院日数換算の余力: 約 {_los_hr['headroom_patient_days']:.0f} 日分（推計）")
                 else:
-                    st.warning("日次データ不足のためLOS余力を計算できません")
+                    st.warning("日次データ不足のため平均在院日数の余力を計算できません")
             else:
                 st.info("日次データを入力すると制度余力が表示されます")
 
@@ -8139,7 +8140,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _cg_summary = get_c_group_summary(_gr_daily_df)
                 _cg_col1, _cg_col2, _cg_col3 = st.columns(3)
                 with _cg_col1:
-                    _ds_tag = f"({_cg_summary['data_source']})" if _cg_summary['data_source'] != "not_available" else ""
+                    _ds_ja_map = {"measured": "実測", "proxy": "推計", "manual_input": "手動", "not_available": ""}
+                    _ds_tag = f"({_ds_ja_map.get(_cg_summary['data_source'], '')})" if _cg_summary['data_source'] != "not_available" else ""
                     st.metric("C群患者数", f"{_cg_summary['c_count']}名 {_ds_tag}")
                 with _cg_col2:
                     st.metric("C群構成比", f"{_cg_summary['c_ratio']:.1f}%")
@@ -8157,21 +8159,21 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
 
                 _cap_color = {"green": "🟢", "yellow": "🟡", "red": "🔴", "gray": "⚪"}.get(_cg_capacity["status_color"], "⚪")
-                st.markdown(f"### {_cap_color} LOS余力: **{_cg_capacity['status']}**")
+                st.markdown(f"### {_cap_color} 平均在院日数の余力: **{_cg_capacity['status']}**")
 
                 if _cg_capacity["current_los"] is not None:
                     _cap_col1, _cap_col2, _cap_col3 = st.columns(3)
                     with _cap_col1:
-                        st.metric("現在LOS", f"{_cg_capacity['current_los']:.1f}日")
+                        st.metric("現在の平均在院日数", f"{_cg_capacity['current_los']:.1f}日")
                     with _cap_col2:
                         st.metric("制度上限", f"{_cg_capacity['los_limit']:.0f}日")
                     with _cap_col3:
                         st.metric("余力", f"{_cg_capacity['headroom_days']:.1f}日")
 
                     if _cg_capacity["can_delay_discharge"]:
-                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} bed-days、推計）")
+                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} 延べベッド日数、推計）")
                     else:
-                        st.error("❌ C群退院の後ろ倒し不可（LOS余力不足）")
+                        st.error("❌ C群退院の後ろ倒し不可（平均在院日数の余力不足）")
 
                     if _cg_capacity["warning_message"]:
                         st.warning(_cg_capacity["warning_message"])
@@ -8445,6 +8447,11 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                             )
                             if _er_need["this_week_needed"] > 0:
                                 st.caption(f"今週中に必要: {_er_need['this_week_needed']}件")
+
+                            if _er_need["additional_needed_from_actual"] > _er_need["additional_needed"]:
+                                st.caption(
+                                    f"（参考: 今後の自然流入を見込まない場合は {_er_need['additional_needed_from_actual']}件必要）"
+                                )
 
                             if not _er_need["achievable"]:
                                 st.error(

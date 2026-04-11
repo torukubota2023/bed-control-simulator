@@ -4,12 +4,16 @@
 4ファイルを生成:
   1. data/doctor_master.csv                   - 医師マスタ（10名）
   2. data/admission_routes.csv                - 入院経路マスタ
-  3. data/admission_details.csv               - 入退院詳細（2026年3月、約150入院・140退院）
+  3. data/admission_details.csv               - 入退院詳細（2026年3-4月、約150入院/月）
   4. data/sample_actual_data_ward_202603.csv   - 病棟別日次サマリー
 
 病棟特性:
   5F（外科・整形科, 47床）: 低稼働率 ~85%, 短在院日数 ~12日, 空床目立つ
   6F（内科・ペイン, 47床）: 高稼働率 ~95%, 長在院日数 ~22日, 満床・入院断り
+
+4月データは教育用シナリオ（救急搬送比率）:
+  5F: 救急20% + 下り搬送5% → 合計25% → 🟢 15%基準クリア
+  6F: 救急10% + 下り搬送2% → 合計12% → 🔴 15%基準未達（要改善）
 
 固定シードで決定論的に生成。
 """
@@ -126,8 +130,24 @@ def los_to_phase(los: int) -> str:
         return "C"
 
 
+SHORT3_TYPES = [
+    "大腸ポリペクトミー",
+    "ヘルニア手術",
+    "ポリソムノグラフィー",
+]
+
+
+def _pick_short3_type(ward, is_april=False):
+    """短手3の種類を決定。大半は該当なし。"""
+    # 4月データでは明示的に呼び出し側で制御するため、ここでは低確率
+    if not is_april:
+        return "該当なし"
+    # 4月は呼び出し側で制御
+    return "該当なし"
+
+
 def _pick_5f_admission_details():
-    """5F入院の経路・入院創出医・担当医を決定"""
+    """5F入院の経路・入院創出医・担当医を決定（3月用）"""
     r = random.random()
     if r < 0.35:
         route = "外来紹介"
@@ -287,153 +307,295 @@ def _pick_6f_discharge_details(is_friday=False):
     return doc, los, phase
 
 
+def _pick_5f_admission_details_april():
+    """5F入院の経路・入院創出医・担当医を決定（4月用・教育シナリオ）
+
+    目標経路分布:
+      救急: 20%, 下り搬送: 5%, 外来紹介: 35%, 連携室: 25%, ウォークイン: 15%
+    → 救急系合計 25% → 15%基準を余裕でクリア 🟢
+    """
+    r = random.random()
+    if r < 0.35:
+        route = "外来紹介"
+    elif r < 0.55:
+        route = "救急"
+    elif r < 0.60:
+        route = "下り搬送"
+    elif r < 0.85:
+        route = "連携室"
+    else:
+        route = "ウォークイン"
+
+    if route in ("救急", "下り搬送"):
+        source = random.choice(["C", "G", "C"])
+    elif route == "外来紹介":
+        r2 = random.random()
+        if r2 < 0.35:
+            source = "D"
+        elif r2 < 0.55:
+            source = "C"
+        elif r2 < 0.70:
+            source = "H"
+        elif r2 < 0.85:
+            source = "I"
+        else:
+            source = "F"
+    elif route == "連携室":
+        source = random.choice(["C", "C", "D", "H"])
+    else:
+        source = random.choice(["C", "H", "G"])
+
+    if source in ["C"]:
+        attending = "C"
+    elif source in ["H"]:
+        attending = "H"
+    else:
+        attending = random.choices(["C", "H"], weights=[60, 40])[0]
+
+    if random.random() < 0.03:
+        attending = "F"
+
+    return route, source, attending
+
+
+def _pick_6f_admission_details_april():
+    """6F入院の経路・入院創出医・担当医を決定（4月用・教育シナリオ）
+
+    目標経路分布:
+      救急: 10%, 下り搬送: 2%, 外来紹介: 40%, 連携室: 30%, ウォークイン: 18%
+    → 救急系合計 12% → 15%基準未達 🔴（教育ポイント）
+    """
+    r = random.random()
+    if r < 0.40:
+        route = "外来紹介"
+    elif r < 0.50:
+        route = "救急"
+    elif r < 0.52:
+        route = "下り搬送"
+    elif r < 0.82:
+        route = "連携室"
+    else:
+        route = "ウォークイン"
+
+    if route in ("救急", "下り搬送"):
+        source = "G" if random.random() < 0.70 else random.choice(["A", "B", "E"])
+    elif route == "外来紹介":
+        r2 = random.random()
+        if r2 < 0.40:
+            source = "D"
+        elif r2 < 0.58:
+            source = "A"
+        elif r2 < 0.74:
+            source = "B"
+        elif r2 < 0.88:
+            source = "E"
+        else:
+            source = "I"
+    elif route == "連携室":
+        source = random.choice(["A", "B", "E", "D"])
+    else:
+        source = random.choice(["A", "B", "E", "G"])
+
+    if route in ("救急", "下り搬送") and source == "G":
+        if random.random() < 0.45:
+            attending = "G"
+        else:
+            attending = random.choice(["A", "B", "E"])
+    else:
+        attending = random.choices(["A", "B", "E"], weights=[35, 35, 30])[0]
+
+    return route, source, attending
+
+
 def generate_admission_details():
     """日次シミュレーションで入退院を生成
 
     各日の入退院数を稼働率ターゲットに基づき決定:
     - 5F: 稼働率 ~85% (40人前後/47床)
     - 6F: 稼働率 ~95% (45人前後/47床)
+
+    3月（31日間）+ 4月（1-11日、教育用シナリオ）を生成。
+    4月は救急搬送比率に病棟間差を設け、制度基準の教育材料とする。
     """
-    start_date = date(2026, 3, 1)
-    end_date = date(2026, 3, 31)
-    num_days = (end_date - start_date).days + 1
+    records = []
+    admission_count = 0
+    discharge_count = 0
+
+    # ------------------------------------------------------------------
+    # 4月の短手3を事前に配置するための日程リスト
+    # 5F: 4件、6F: 3件（教育用）
+    # ------------------------------------------------------------------
+    short3_schedule_5f = {
+        date(2026, 4, 2): "大腸ポリペクトミー",
+        date(2026, 4, 4): "大腸ポリペクトミー",
+        date(2026, 4, 7): "ヘルニア手術",
+        date(2026, 4, 9): "大腸ポリペクトミー",
+    }
+    short3_schedule_6f = {
+        date(2026, 4, 3): "大腸ポリペクトミー",
+        date(2026, 4, 6): "ポリソムノグラフィー",
+        date(2026, 4, 10): "大腸ポリペクトミー",
+    }
+    # 使用済みフラグ
+    short3_used_5f = {d: False for d in short3_schedule_5f}
+    short3_used_6f = {d: False for d in short3_schedule_6f}
+
+    # ------------------------------------------------------------------
+    # 月ごとのシミュレーション
+    # ------------------------------------------------------------------
+    months = [
+        (date(2026, 3, 1), date(2026, 3, 31)),   # 3月全日
+        (date(2026, 4, 1), date(2026, 4, 11)),    # 4月1-11日
+    ]
 
     # 初期患者数
     patients_5f = 41
     patients_6f = 44
 
-    records = []
-    admission_count = 0
-    discharge_count = 0
+    for start_date, end_date in months:
+        num_days = (end_date - start_date).days + 1
+        is_april = start_date.month == 4
 
-    for day_offset in range(num_days):
-        current_date = start_date + timedelta(days=day_offset)
-        dow = current_date.weekday()  # 0=Mon ... 6=Sun
-        is_weekend = dow >= 5
-        is_friday = dow == 4
+        for day_offset in range(num_days):
+            current_date = start_date + timedelta(days=day_offset)
+            dow = current_date.weekday()  # 0=Mon ... 6=Sun
+            is_weekend = dow >= 5
+            is_friday = dow == 4
 
-        # ====== 5F: 低稼働パターン ======
-        # 目標: ~40人 (85%)
-        # 入院: 平日2-3件、週末1件
-        # 退院: 入院より多め → 空床が残る
-        if is_weekend:
-            n_adm_5f = random.choice([1, 1, 1, 2])
-            n_dis_5f = random.choice([1, 1, 2, 2])
-        else:
-            # 基本入院数
-            n_adm_5f = random.choice([2, 2, 3, 3])
-            # 退院数: 入院と同等〜やや多め（空床を維持）
-            base_dis = random.choice([2, 2, 2, 3, 3])
-            # 患者数が目標(40)より多ければ退院増
-            if patients_5f > 41:
-                base_dis += 1
-            elif patients_5f < 39:
-                base_dis = max(1, base_dis - 1)
-            n_dis_5f = base_dis
+            # ====== 5F: 低稼働パターン ======
+            if is_weekend:
+                n_adm_5f = random.choice([1, 1, 1, 2])
+                n_dis_5f = random.choice([1, 1, 2, 2])
+            else:
+                n_adm_5f = random.choice([2, 2, 3, 3])
+                base_dis = random.choice([2, 2, 2, 3, 3])
+                if patients_5f > 41:
+                    base_dis += 1
+                elif patients_5f < 39:
+                    base_dis = max(1, base_dis - 1)
+                n_dis_5f = base_dis
 
-        # 退院数は患者数を超えない
-        n_dis_5f = min(n_dis_5f, patients_5f)
-        # 入院数はベッド数を超えない
-        n_adm_5f = min(n_adm_5f, WARD_BEDS["5F"] - patients_5f + n_dis_5f)
-        n_adm_5f = max(0, n_adm_5f)
+            n_dis_5f = min(n_dis_5f, patients_5f)
+            n_adm_5f = min(n_adm_5f, WARD_BEDS["5F"] - patients_5f + n_dis_5f)
+            n_adm_5f = max(0, n_adm_5f)
 
-        # 5F入院レコード生成
-        for _ in range(n_adm_5f):
-            route, source, attending = _pick_5f_admission_details()
-            records.append({
-                "id": fixed_uuid(f"adm_{current_date}_{admission_count}"),
-                "date": current_date.isoformat(),
-                "ward": "5F",
-                "event_type": "admission",
-                "route": route,
-                "source_doctor": DOCTOR_BY_KEY[source]["name"],
-                "attending_doctor": DOCTOR_BY_KEY[attending]["name"],
-                "los_days": "",
-                "phase": "",
-            })
-            admission_count += 1
+            # 5F入院レコード生成
+            for i_adm in range(n_adm_5f):
+                if is_april:
+                    route, source, attending = _pick_5f_admission_details_april()
+                else:
+                    route, source, attending = _pick_5f_admission_details()
 
-        # 5F退院レコード生成
-        for _ in range(n_dis_5f):
-            doc, los, phase = _pick_5f_discharge_details()
-            records.append({
-                "id": fixed_uuid(f"dis_{current_date}_{discharge_count}"),
-                "date": current_date.isoformat(),
-                "ward": "5F",
-                "event_type": "discharge",
-                "route": "",
-                "source_doctor": "",
-                "attending_doctor": DOCTOR_BY_KEY[doc]["name"],
-                "los_days": str(los),
-                "phase": phase,
-            })
-            discharge_count += 1
+                # short3_type 決定
+                short3_type = "該当なし"
+                if is_april and current_date in short3_used_5f and not short3_used_5f[current_date]:
+                    short3_type = short3_schedule_5f[current_date]
+                    short3_used_5f[current_date] = True
+                    # 短手3は外来紹介経路が多い
+                    route = "外来紹介"
 
-        patients_5f = patients_5f + n_adm_5f - n_dis_5f
+                records.append({
+                    "id": fixed_uuid(f"adm_{current_date}_{admission_count}"),
+                    "date": current_date.isoformat(),
+                    "ward": "5F",
+                    "event_type": "admission",
+                    "route": route,
+                    "source_doctor": DOCTOR_BY_KEY[source]["name"],
+                    "attending_doctor": DOCTOR_BY_KEY[attending]["name"],
+                    "los_days": "",
+                    "phase": "",
+                    "short3_type": short3_type,
+                })
+                admission_count += 1
 
-        # ====== 6F: 高稼働パターン ======
-        # 目標: ~45人 (95%)
-        # 入院: 平日2件（満床で受けられない日も）
-        # 退院: 少なめ → 満床が続く、金曜に集中
-        if is_weekend:
-            n_adm_6f = random.choice([1, 1, 1, 2])
-            n_dis_6f = random.choice([0, 0, 1, 1])
-        elif is_friday:
-            # 金曜は退院集中日
-            n_adm_6f = random.choice([1, 2, 2, 2])
-            n_dis_6f = random.choice([3, 4, 4, 5, 5])
-        else:
-            n_adm_6f = random.choice([2, 2, 2, 3])
-            # 通常日は退院少ない（月〜木）
-            n_dis_6f = random.choice([1, 1, 2, 2, 2])
-            # 患者数が多すぎれば退院増
-            if patients_6f >= 47:
-                n_dis_6f += 1
-            elif patients_6f < 43:
-                n_dis_6f = max(0, n_dis_6f - 1)
+            # 5F退院レコード生成
+            for _ in range(n_dis_5f):
+                doc, los, phase = _pick_5f_discharge_details()
+                records.append({
+                    "id": fixed_uuid(f"dis_{current_date}_{discharge_count}"),
+                    "date": current_date.isoformat(),
+                    "ward": "5F",
+                    "event_type": "discharge",
+                    "route": "",
+                    "source_doctor": "",
+                    "attending_doctor": DOCTOR_BY_KEY[doc]["name"],
+                    "los_days": str(los),
+                    "phase": phase,
+                    "short3_type": "",
+                })
+                discharge_count += 1
 
-        n_dis_6f = min(n_dis_6f, patients_6f)
-        # 満床なら入院制限
-        available_6f = WARD_BEDS["6F"] - patients_6f + n_dis_6f
-        if available_6f <= 0:
-            n_adm_6f = 0
-        else:
-            n_adm_6f = min(n_adm_6f, available_6f)
-        n_adm_6f = max(0, n_adm_6f)
+            patients_5f = patients_5f + n_adm_5f - n_dis_5f
 
-        # 6F入院レコード生成
-        for _ in range(n_adm_6f):
-            route, source, attending = _pick_6f_admission_details()
-            records.append({
-                "id": fixed_uuid(f"adm_{current_date}_{admission_count}"),
-                "date": current_date.isoformat(),
-                "ward": "6F",
-                "event_type": "admission",
-                "route": route,
-                "source_doctor": DOCTOR_BY_KEY[source]["name"],
-                "attending_doctor": DOCTOR_BY_KEY[attending]["name"],
-                "los_days": "",
-                "phase": "",
-            })
-            admission_count += 1
+            # ====== 6F: 高稼働パターン ======
+            if is_weekend:
+                n_adm_6f = random.choice([1, 1, 1, 2])
+                n_dis_6f = random.choice([0, 0, 1, 1])
+            elif is_friday:
+                n_adm_6f = random.choice([1, 2, 2, 2])
+                n_dis_6f = random.choice([3, 4, 4, 5, 5])
+            else:
+                n_adm_6f = random.choice([2, 2, 2, 3])
+                n_dis_6f = random.choice([1, 1, 2, 2, 2])
+                if patients_6f >= 47:
+                    n_dis_6f += 1
+                elif patients_6f < 43:
+                    n_dis_6f = max(0, n_dis_6f - 1)
 
-        # 6F退院レコード生成
-        for _ in range(n_dis_6f):
-            doc, los, phase = _pick_6f_discharge_details(is_friday=is_friday)
-            records.append({
-                "id": fixed_uuid(f"dis_{current_date}_{discharge_count}"),
-                "date": current_date.isoformat(),
-                "ward": "6F",
-                "event_type": "discharge",
-                "route": "",
-                "source_doctor": "",
-                "attending_doctor": DOCTOR_BY_KEY[doc]["name"],
-                "los_days": str(los),
-                "phase": phase,
-            })
-            discharge_count += 1
+            n_dis_6f = min(n_dis_6f, patients_6f)
+            available_6f = WARD_BEDS["6F"] - patients_6f + n_dis_6f
+            if available_6f <= 0:
+                n_adm_6f = 0
+            else:
+                n_adm_6f = min(n_adm_6f, available_6f)
+            n_adm_6f = max(0, n_adm_6f)
 
-        patients_6f = patients_6f + n_adm_6f - n_dis_6f
+            # 6F入院レコード生成
+            for i_adm in range(n_adm_6f):
+                if is_april:
+                    route, source, attending = _pick_6f_admission_details_april()
+                else:
+                    route, source, attending = _pick_6f_admission_details()
+
+                # short3_type 決定
+                short3_type = "該当なし"
+                if is_april and current_date in short3_used_6f and not short3_used_6f[current_date]:
+                    short3_type = short3_schedule_6f[current_date]
+                    short3_used_6f[current_date] = True
+                    route = "外来紹介"
+
+                records.append({
+                    "id": fixed_uuid(f"adm_{current_date}_{admission_count}"),
+                    "date": current_date.isoformat(),
+                    "ward": "6F",
+                    "event_type": "admission",
+                    "route": route,
+                    "source_doctor": DOCTOR_BY_KEY[source]["name"],
+                    "attending_doctor": DOCTOR_BY_KEY[attending]["name"],
+                    "los_days": "",
+                    "phase": "",
+                    "short3_type": short3_type,
+                })
+                admission_count += 1
+
+            # 6F退院レコード生成
+            for _ in range(n_dis_6f):
+                doc, los, phase = _pick_6f_discharge_details(is_friday=is_friday)
+                records.append({
+                    "id": fixed_uuid(f"dis_{current_date}_{discharge_count}"),
+                    "date": current_date.isoformat(),
+                    "ward": "6F",
+                    "event_type": "discharge",
+                    "route": "",
+                    "source_doctor": "",
+                    "attending_doctor": DOCTOR_BY_KEY[doc]["name"],
+                    "los_days": str(los),
+                    "phase": phase,
+                    "short3_type": "",
+                })
+                discharge_count += 1
+
+            patients_6f = patients_6f + n_adm_6f - n_dis_6f
 
     print(f"  入院数: {admission_count}")
     print(f"  退院数: {discharge_count}")
@@ -446,12 +608,13 @@ def generate_admission_details():
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["id", "date", "ward", "event_type", "route",
-                     "source_doctor", "attending_doctor", "los_days", "phase"])
+                     "source_doctor", "attending_doctor", "los_days", "phase",
+                     "short3_type"])
         for r in records:
             w.writerow([
                 r["id"], r["date"], r["ward"], r["event_type"],
                 r["route"], r["source_doctor"], r["attending_doctor"],
-                r["los_days"], r["phase"],
+                r["los_days"], r["phase"], r["short3_type"],
             ])
     print(f"  -> {path} ({len(records)} records)")
     return records
@@ -464,7 +627,7 @@ DOW_NAMES_JP = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日",
 
 
 def generate_ward_daily_summary(records):
-    """入退院詳細データから病棟別日次サマリーを生成"""
+    """入退院詳細データから病棟別日次サマリーを生成（3月分のみ）"""
     start_date = date(2026, 3, 1)
     end_date = date(2026, 3, 31)
     num_days = (end_date - start_date).days + 1
@@ -472,7 +635,7 @@ def generate_ward_daily_summary(records):
     # 初期患者数（admission_detailsと同じ）
     current_patients = {"5F": 41, "6F": 44}
 
-    # 日別・病棟別の入退院を集計
+    # 日別・病棟別の入退院を集計（3月分のみ）
     daily_events = {}
     for day_offset in range(num_days):
         d = start_date + timedelta(days=day_offset)
@@ -702,6 +865,35 @@ def verify(records, ward_rows=None):
                   if r["ward"] == "6F"
                   and date.fromisoformat(r["date"]).weekday() == 4]
     print(f"6F金曜退院数: {len(fri_6f_dis)}")
+
+    # === 4月データの救急搬送比率（教育シナリオ検証） ===
+    apr_admissions = [r for r in admissions
+                      if r["date"].startswith("2026-04")]
+    if apr_admissions:
+        print("\n=== 4月 救急搬送比率（教育シナリオ） ===")
+        for ward in ["5F", "6F"]:
+            w_adm = [r for r in apr_admissions if r["ward"] == ward]
+            if not w_adm:
+                continue
+            emg = sum(1 for r in w_adm if r["route"] in ("救急", "下り搬送"))
+            ratio = emg / len(w_adm) * 100 if w_adm else 0
+            status = "🟢" if ratio >= 15 else "🔴"
+            print(f"  {ward}: {emg}/{len(w_adm)} = {ratio:.1f}% {status}")
+            # 経路内訳
+            from collections import Counter
+            route_counts = Counter(r["route"] for r in w_adm)
+            for route, cnt in sorted(route_counts.items()):
+                print(f"    {route}: {cnt} ({cnt/len(w_adm)*100:.0f}%)")
+
+        # short3_type
+        print("\n=== 4月 短手3データ ===")
+        for ward in ["5F", "6F"]:
+            w_adm = [r for r in apr_admissions if r["ward"] == ward]
+            s3 = [r for r in w_adm
+                  if r.get("short3_type", "該当なし") not in ("該当なし", "")]
+            print(f"  {ward}: {len(s3)}件")
+            for r in s3:
+                print(f"    {r['date']} {r['short3_type']}")
 
     # 病棟別稼働率
     if ward_rows:
