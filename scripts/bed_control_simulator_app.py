@@ -4302,7 +4302,7 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
             _key_adm = f"whatif_phase_adm_{_selected_ward_key}"
             _key_occ = f"whatif_phase_occ_{_selected_ward_key}"
             _default_adm = int(max(_wi_min, min(_wi_max, _monthly_adm_input)))
-            _default_occ = int(round(_target_occ_mid * 100))
+            _default_occ = round(_target_occ_mid * 100 * 2) / 2  # 0.5刻みに丸め
             if _key_adm not in st.session_state:
                 st.session_state[_key_adm] = _default_adm
             if _key_occ not in st.session_state:
@@ -4310,7 +4310,7 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
             # スライダー値がプリセット/病棟切替で min/max レンジ外になった場合のクランプ
             if st.session_state[_key_adm] < _wi_min or st.session_state[_key_adm] > _wi_max:
                 st.session_state[_key_adm] = _default_adm
-            if st.session_state[_key_occ] < 85 or st.session_state[_key_occ] > 100:
+            if st.session_state[_key_occ] < 85.0 or st.session_state[_key_occ] > 100.0:
                 st.session_state[_key_occ] = _default_occ
 
             _whatif_admissions = st.slider(
@@ -4323,21 +4323,22 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
             )
             _whatif_occ_pct = st.slider(
                 "目標稼働率 (%)",
-                min_value=85,
-                max_value=100,
-                step=1,
+                min_value=85.0,
+                max_value=100.0,
+                step=0.5,
+                format="%.1f",
                 key=_key_occ,
-                help="目標稼働率を85〜100%の範囲で変更できます",
+                help="目標稼働率を85〜100%の範囲で0.5%刻みで変更できます",
             )
             # 念のため session_state から直接読む（戻り値とずれていた場合の防御）
             _whatif_admissions = int(st.session_state[_key_adm])
-            _whatif_occ_pct = int(st.session_state[_key_occ])
+            _whatif_occ_pct = float(st.session_state[_key_occ])
             _whatif_occ = _whatif_occ_pct / 100
 
             st.markdown("")
             st.caption(
                 f"現在のサイドバー設定（ベースライン）: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%  \n"
-                f"↑ このスライダーの値: **月{_whatif_admissions}人 / {_whatif_occ_pct}%**（右側の計算に使用中）"
+                f"↑ このスライダーの値: **月{_whatif_admissions}人 / {_whatif_occ_pct:.1f}%**（右側の計算に使用中）"
             )
 
         with _whatif_col_right:
@@ -4401,7 +4402,7 @@ with tabs[_tab_idx["🔄 フェーズ構成"]]:
                 )
             ax_wi.set_ylabel("患者数（人）")
             ax_wi.set_title(
-                f"月{_whatif_admissions}人入院 × 目標稼働率{_whatif_occ_pct}% → 理論構成",
+                f"月{_whatif_admissions}人入院 × 目標稼働率{_whatif_occ_pct:.1f}% → 理論構成",
                 fontsize=11,
             )
             ax_wi.set_ylim(0, max(_wi_counts) * 1.25)
