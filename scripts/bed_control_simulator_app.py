@@ -4145,138 +4145,138 @@ if "🔄 フェーズ構成" in _tab_idx and _data_ready:
 急性期・初期加算あり<br>
 <b>貢献額 2.4万円/日</b>　目安15〜20%
 </div>""", unsafe_allow_html=True)
-    with _col_b:
-        st.markdown("""<div style="background:#EAFAF1;padding:6px 8px;border-radius:6px;border-left:3px solid #27AE60;font-size:0.85em;">
+        with _col_b:
+            st.markdown("""<div style="background:#EAFAF1;padding:6px 8px;border-radius:6px;border-left:3px solid #27AE60;font-size:0.85em;">
 <b style="color:#27AE60;">🟢 B群（6〜14日）</b><br>
 回復期・★安定貢献層<br>
 <b>貢献額 3.0万円/日</b>　目安40〜50%
 </div>""", unsafe_allow_html=True)
-    with _col_c:
-        st.markdown("""<div style="background:#EBF5FB;padding:6px 8px;border-radius:6px;border-left:3px solid #2980B9;font-size:0.85em;">
+        with _col_c:
+            st.markdown("""<div style="background:#EBF5FB;padding:6px 8px;border-radius:6px;border-left:3px solid #2980B9;font-size:0.85em;">
 <b style="color:#2980B9;">🔵 C群（15日〜）</b><br>
 退院準備・退院調整で稼働維持<br>
 <b>貢献額 2.9万円/日</b>　目安30〜40%
 </div>""", unsafe_allow_html=True)
 
-    if _HELP_AVAILABLE and "tab_phase" in HELP_TEXTS:
-        with st.expander("📖 さらに詳しい活用法を見る"):
-            st.markdown(HELP_TEXTS["tab_phase"])
+        if _HELP_AVAILABLE and "tab_phase" in HELP_TEXTS:
+            with st.expander("📖 さらに詳しい活用法を見る"):
+                st.markdown(HELP_TEXTS["tab_phase"])
 
-    # --- A/B/C構成比の積み上げ面グラフ ---
-    fig, ax = plt.subplots(figsize=(12, 3))
-    ax.stackplot(
-        df["日"],
-        df["A群_患者数"], df["B群_患者数"], df["C群_患者数"],
-        labels=["A群（急性期）", "B群（回復期）", "C群（退院準備）"],
-        colors=[COLOR_A, COLOR_B, COLOR_C],
-        alpha=0.75,
-    )
-    ax.set_xlabel("日")
-    ax.set_ylabel("患者数")
-    ax.set_title("フェーズ別患者数推移（積み上げ）")
-    ax.legend(loc="upper right")
-    ax.set_xlim(1, days_in_month)
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-    plt.close(fig)
-
-    col1, col2 = st.columns(2)
-
-    # --- 平均円グラフ ---
-    with col1:
-        fig, ax = plt.subplots(figsize=(4, 4))
-        sizes = [summary["A群平均構成比"], summary["B群平均構成比"], summary["C群平均構成比"]]
-        labels = [
-            f"A群（急性期）\n{sizes[0]:.1f}%",
-            f"B群（回復期）\n{sizes[1]:.1f}%",
-            f"C群（退院準備）\n{sizes[2]:.1f}%",
-        ]
-        if sum(sizes) > 0:
-            ax.pie(
-                sizes, labels=labels, colors=[COLOR_A, COLOR_B, COLOR_C],
-                autopct=None, startangle=90, textprops={"fontsize": 10},
-            )
-        else:
-            ax.text(0.5, 0.5, "フェーズデータなし", ha="center", va="center",
-                    fontsize=12, transform=ax.transAxes)
-        ax.set_title("A/B/C平均構成比")
-        st.pyplot(fig)
-        plt.close(fig)
-
-    # --- フェーズ別患者数推移（折れ線） ---
-    with col2:
-        fig, ax = plt.subplots(figsize=(5, 3.5))
-        ax.plot(df["日"], df["A群_患者数"], color=COLOR_A, linewidth=2, label="A群（急性期）")
-        ax.plot(df["日"], df["B群_患者数"], color=COLOR_B, linewidth=2, label="B群（回復期）")
-        ax.plot(df["日"], df["C群_患者数"], color=COLOR_C, linewidth=2, label="C群（退院準備）")
+        # --- A/B/C構成比の積み上げ面グラフ ---
+        fig, ax = plt.subplots(figsize=(12, 3))
+        ax.stackplot(
+            df["日"],
+            df["A群_患者数"], df["B群_患者数"], df["C群_患者数"],
+            labels=["A群（急性期）", "B群（回復期）", "C群（退院準備）"],
+            colors=[COLOR_A, COLOR_B, COLOR_C],
+            alpha=0.75,
+        )
         ax.set_xlabel("日")
         ax.set_ylabel("患者数")
-        ax.set_title("フェーズ別患者数推移")
-        ax.legend()
+        ax.set_title("フェーズ別患者数推移（積み上げ）")
+        ax.legend(loc="upper right")
         ax.set_xlim(1, days_in_month)
         ax.grid(True, alpha=0.3)
         st.pyplot(fig)
         plt.close(fig)
 
-    # --- 理論上限との比較（Little法則ベース）---
-    # ⚠️ これは「全患者が14日以上在院する」前提の上限値であり、
-    #    実際には早期退院があるため B 実績 < 上限、C 実績 > 上限 となる傾向がある
-    st.markdown("---")
-    st.subheader("📐 理論上限との比較（Little法則ベース）")
+        col1, col2 = st.columns(2)
 
-    # サイドバーの現在設定から理論値を動的計算
-    # ⚠️ 病棟別表示時は、月間入院数も病床比率で按分する必要がある
-    # （全体150人 × 47床/94床 = 75人/月 が病棟あたりの想定入院数）
-    _target_occ_mid = (target_lower + target_upper) / 2  # 90-95%範囲の中央値
-    _monthly_adm_full = params_dict.get("monthly_admissions", 150)
-    if _selected_ward_key in ("5F", "6F"):
-        _bed_ratio_phase = _view_beds / _TOTAL_BEDS_METRIC if _TOTAL_BEDS_METRIC > 0 else 0.5
-        _monthly_adm_input = int(round(_monthly_adm_full * _bed_ratio_phase))
-    else:
-        _monthly_adm_input = _monthly_adm_full
-    _ideal_result = calculate_ideal_phase_ratios(
-        num_beds=_view_beds,
-        monthly_admissions=_monthly_adm_input,
-        target_occupancy=_target_occ_mid,
-        days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
-        phase_a_contrib=phase_a_rev - phase_a_cost,
-        phase_b_contrib=phase_b_rev - phase_b_cost,
-        phase_c_contrib=phase_c_rev - phase_c_cost,
-    )
-    _ideal = {
-        "A群": _ideal_result["a_pct"],
-        "B群": _ideal_result["b_pct"],
-        "C群": _ideal_result["c_pct"],
-    }
-    _actual_phase = {
-        "A群": summary["A群平均構成比"],
-        "B群": summary["B群平均構成比"],
-        "C群": summary["C群平均構成比"],
-    }
+        # --- 平均円グラフ ---
+        with col1:
+            fig, ax = plt.subplots(figsize=(4, 4))
+            sizes = [summary["A群平均構成比"], summary["B群平均構成比"], summary["C群平均構成比"]]
+            labels = [
+                f"A群（急性期）\n{sizes[0]:.1f}%",
+                f"B群（回復期）\n{sizes[1]:.1f}%",
+                f"C群（退院準備）\n{sizes[2]:.1f}%",
+            ]
+            if sum(sizes) > 0:
+                ax.pie(
+                    sizes, labels=labels, colors=[COLOR_A, COLOR_B, COLOR_C],
+                    autopct=None, startangle=90, textprops={"fontsize": 10},
+                )
+            else:
+                ax.text(0.5, 0.5, "フェーズデータなし", ha="center", va="center",
+                        fontsize=12, transform=ax.transAxes)
+            ax.set_title("A/B/C平均構成比")
+            st.pyplot(fig)
+            plt.close(fig)
 
-    # 理論値の導出条件を表示
-    if _selected_ward_key in ("5F", "6F"):
-        _adm_explain = f"月間入院数 **{_monthly_adm_input}人**（全体{_monthly_adm_full}人 × {_view_beds}/{_TOTAL_BEDS_METRIC}床比按分）"
-    else:
-        _adm_explain = f"月間入院数 **{_monthly_adm_input}人**"
-    st.info(
-        f"📊 **理論上限の前提条件**: "
-        f"{_adm_explain} × "
-        f"目標稼働率 **{_target_occ_mid*100:.1f}%**（{target_lower*100:.0f}〜{target_upper*100:.0f}%の中央値） × "
-        f"病床数 **{_view_beds}床** "
-        f"→ 理論的平均在院日数 **{_ideal_result['target_los']:.1f}日**  \n"
-        f"A群 (1-5日): **{_ideal_result['a_count']:.1f}人** / "
-        f"B群 (6-14日): **{_ideal_result['b_count']:.1f}人** / "
-        f"C群 (15日-): **{_ideal_result['c_count']:.1f}人**  \n"
-        f"⚠️ **これは「全員が14日以上在院する」前提の上限値です。** "
-        f"実際には短期退院があるため、B群は上限より少なく・C群は上限より多くなるのが普通です。"
-    )
-    if not _ideal_result["feasible"]:
-        st.warning(f"⚠️ {_ideal_result['notes']}")
+        # --- フェーズ別患者数推移（折れ線） ---
+        with col2:
+            fig, ax = plt.subplots(figsize=(5, 3.5))
+            ax.plot(df["日"], df["A群_患者数"], color=COLOR_A, linewidth=2, label="A群（急性期）")
+            ax.plot(df["日"], df["B群_患者数"], color=COLOR_B, linewidth=2, label="B群（回復期）")
+            ax.plot(df["日"], df["C群_患者数"], color=COLOR_C, linewidth=2, label="C群（退院準備）")
+            ax.set_xlabel("日")
+            ax.set_ylabel("患者数")
+            ax.set_title("フェーズ別患者数推移")
+            ax.legend()
+            ax.set_xlim(1, days_in_month)
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+            plt.close(fig)
 
-    # 根拠の詳細説明
-    with st.expander("🔎 この理論上限はどう計算しているか（Little法則）"):
-        st.markdown(f"""
+        # --- 理論上限との比較（Little法則ベース）---
+        # ⚠️ これは「全患者が14日以上在院する」前提の上限値であり、
+        #    実際には早期退院があるため B 実績 < 上限、C 実績 > 上限 となる傾向がある
+        st.markdown("---")
+        st.subheader("📐 理論上限との比較（Little法則ベース）")
+
+        # サイドバーの現在設定から理論値を動的計算
+        # ⚠️ 病棟別表示時は、月間入院数も病床比率で按分する必要がある
+        # （全体150人 × 47床/94床 = 75人/月 が病棟あたりの想定入院数）
+        _target_occ_mid = (target_lower + target_upper) / 2  # 90-95%範囲の中央値
+        _monthly_adm_full = params_dict.get("monthly_admissions", 150)
+        if _selected_ward_key in ("5F", "6F"):
+            _bed_ratio_phase = _view_beds / _TOTAL_BEDS_METRIC if _TOTAL_BEDS_METRIC > 0 else 0.5
+            _monthly_adm_input = int(round(_monthly_adm_full * _bed_ratio_phase))
+        else:
+            _monthly_adm_input = _monthly_adm_full
+        _ideal_result = calculate_ideal_phase_ratios(
+            num_beds=_view_beds,
+            monthly_admissions=_monthly_adm_input,
+            target_occupancy=_target_occ_mid,
+            days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+            phase_a_contrib=phase_a_rev - phase_a_cost,
+            phase_b_contrib=phase_b_rev - phase_b_cost,
+            phase_c_contrib=phase_c_rev - phase_c_cost,
+        )
+        _ideal = {
+            "A群": _ideal_result["a_pct"],
+            "B群": _ideal_result["b_pct"],
+            "C群": _ideal_result["c_pct"],
+        }
+        _actual_phase = {
+            "A群": summary["A群平均構成比"],
+            "B群": summary["B群平均構成比"],
+            "C群": summary["C群平均構成比"],
+        }
+
+        # 理論値の導出条件を表示
+        if _selected_ward_key in ("5F", "6F"):
+            _adm_explain = f"月間入院数 **{_monthly_adm_input}人**（全体{_monthly_adm_full}人 × {_view_beds}/{_TOTAL_BEDS_METRIC}床比按分）"
+        else:
+            _adm_explain = f"月間入院数 **{_monthly_adm_input}人**"
+        st.info(
+            f"📊 **理論上限の前提条件**: "
+            f"{_adm_explain} × "
+            f"目標稼働率 **{_target_occ_mid*100:.1f}%**（{target_lower*100:.0f}〜{target_upper*100:.0f}%の中央値） × "
+            f"病床数 **{_view_beds}床** "
+            f"→ 理論的平均在院日数 **{_ideal_result['target_los']:.1f}日**  \n"
+            f"A群 (1-5日): **{_ideal_result['a_count']:.1f}人** / "
+            f"B群 (6-14日): **{_ideal_result['b_count']:.1f}人** / "
+            f"C群 (15日-): **{_ideal_result['c_count']:.1f}人**  \n"
+            f"⚠️ **これは「全員が14日以上在院する」前提の上限値です。** "
+            f"実際には短期退院があるため、B群は上限より少なく・C群は上限より多くなるのが普通です。"
+        )
+        if not _ideal_result["feasible"]:
+            st.warning(f"⚠️ {_ideal_result['notes']}")
+
+        # 根拠の詳細説明
+        with st.expander("🔎 この理論上限はどう計算しているか（Little法則）"):
+            st.markdown(f"""
 **計算ステップ**
 
 1. **目標稼働率から必要な在院患者数を算出**
@@ -4307,226 +4307,226 @@ if "🔄 フェーズ構成" in _tab_idx and _data_ready:
 `平均患者数 = 入院率 × 平均在院日数`
 """)
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    _phase_labels = list(_ideal.keys())
-    _x_pos = np.arange(len(_phase_labels))
-    _bar_w = 0.35
-    _bars_ideal = ax.bar(_x_pos - _bar_w/2, [_ideal[k] for k in _phase_labels], _bar_w,
-                          label="理論上限（全員14日以上在院の仮定）", color=["#F5B7B1", "#ABEBC6", "#AED6F1"], edgecolor="gray", linewidth=0.5)
-    _bars_actual = ax.bar(_x_pos + _bar_w/2, [_actual_phase[k] for k in _phase_labels], _bar_w,
-                           label="実績", color=[COLOR_A, COLOR_B, COLOR_C], alpha=0.85)
-    ax.set_ylabel("構成比 (%)")
-    ax.set_title(f"理論上限 vs 実績（月{_monthly_adm_input}人入院・稼働率{_target_occ_mid*100:.1f}%前提）")
-    ax.set_xticks(_x_pos)
-    ax.set_xticklabels(_phase_labels)
-    ax.legend()
-    ax.grid(True, alpha=0.3, axis="y")
-    # 値ラベル
-    for _bar in _bars_ideal:
-        _h = _bar.get_height()
-        ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.1f}%", ha="center", fontsize=9, color="gray")
-    for _bar in _bars_actual:
-        _h = _bar.get_height()
-        ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.1f}%", ha="center", fontsize=9)
-    st.pyplot(fig)
-    plt.close(fig)
+        fig, ax = plt.subplots(figsize=(8, 4))
+        _phase_labels = list(_ideal.keys())
+        _x_pos = np.arange(len(_phase_labels))
+        _bar_w = 0.35
+        _bars_ideal = ax.bar(_x_pos - _bar_w/2, [_ideal[k] for k in _phase_labels], _bar_w,
+                              label="理論上限（全員14日以上在院の仮定）", color=["#F5B7B1", "#ABEBC6", "#AED6F1"], edgecolor="gray", linewidth=0.5)
+        _bars_actual = ax.bar(_x_pos + _bar_w/2, [_actual_phase[k] for k in _phase_labels], _bar_w,
+                               label="実績", color=[COLOR_A, COLOR_B, COLOR_C], alpha=0.85)
+        ax.set_ylabel("構成比 (%)")
+        ax.set_title(f"理論上限 vs 実績（月{_monthly_adm_input}人入院・稼働率{_target_occ_mid*100:.1f}%前提）")
+        ax.set_xticks(_x_pos)
+        ax.set_xticklabels(_phase_labels)
+        ax.legend()
+        ax.grid(True, alpha=0.3, axis="y")
+        # 値ラベル
+        for _bar in _bars_ideal:
+            _h = _bar.get_height()
+            ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.1f}%", ha="center", fontsize=9, color="gray")
+        for _bar in _bars_actual:
+            _h = _bar.get_height()
+            ax.text(_bar.get_x() + _bar.get_width()/2, _h + 0.5, f"{_h:.1f}%", ha="center", fontsize=9)
+        st.pyplot(fig)
+        plt.close(fig)
 
-    # 乖離の一文解説（上限との差を「早期退院の多さ」「長期在院層の厚み」として読み替える）
-    _b_diff = _actual_phase["B群"] - _ideal["B群"]
-    _c_diff = _actual_phase["C群"] - _ideal["C群"]
-    st.info(
-        f"**実績と上限の差の読み方**  \n"
-        f"- B群: 上限 {_ideal['B群']:.1f}% に対して実績 {_actual_phase['B群']:.1f}%（{_b_diff:+.1f}%）"
-        f" → 差がマイナスに大きいほど、入院後14日以内に退院する患者さんの割合が高いことを意味します  \n"
-        f"- C群: 上限 {_ideal['C群']:.1f}% に対して実績 {_actual_phase['C群']:.1f}%（{_c_diff:+.1f}%）"
-        f" → 差がプラスに大きいほど、15日以上の長期在院層が厚いことを意味します（退院調整の余地を見る指標）"
-    )
-    if _c_diff > 8:
-        st.warning(f"⚠️ C群が上限より {_c_diff:+.1f}% と大きく上回っています。長期在院層の退院調整を検討する価値があります。")
-
-    # --- What-if シミュレーション（経営会議提案用）---
-    st.markdown("---")
-    with st.expander("🔬 What-if シミュレーション — 入院数・稼働率を変えたら", expanded=False):
-        st.caption(
-            "経営会議で「もし月間入院数を○人にしたら」「目標稼働率を○%にしたら」という議論をする際、"
-            "理論的なフェーズ構成と運営貢献額の変化を即座に試算できます。"
+        # 乖離の一文解説（上限との差を「早期退院の多さ」「長期在院層の厚み」として読み替える）
+        _b_diff = _actual_phase["B群"] - _ideal["B群"]
+        _c_diff = _actual_phase["C群"] - _ideal["C群"]
+        st.info(
+            f"**実績と上限の差の読み方**  \n"
+            f"- B群: 上限 {_ideal['B群']:.1f}% に対して実績 {_actual_phase['B群']:.1f}%（{_b_diff:+.1f}%）"
+            f" → 差がマイナスに大きいほど、入院後14日以内に退院する患者さんの割合が高いことを意味します  \n"
+            f"- C群: 上限 {_ideal['C群']:.1f}% に対して実績 {_actual_phase['C群']:.1f}%（{_c_diff:+.1f}%）"
+            f" → 差がプラスに大きいほど、15日以上の長期在院層が厚いことを意味します（退院調整の余地を見る指標）"
         )
+        if _c_diff > 8:
+            st.warning(f"⚠️ C群が上限より {_c_diff:+.1f}% と大きく上回っています。長期在院層の退院調整を検討する価値があります。")
 
-        _whatif_col_left, _whatif_col_right = st.columns([1, 2])
-
-        with _whatif_col_left:
-            st.markdown("**📊 シナリオ設定**")
-            # 病棟別表示時はスライダー範囲も病床比率で按分
-            if _selected_ward_key in ("5F", "6F"):
-                _wi_min = 60
-                _wi_max = 90
-                _wi_step = 5
-                _wi_help = f"{_selected_ward_key}病棟の月間入院数を60〜90人の範囲で変更できます"
-            else:
-                _wi_min = 120
-                _wi_max = 180
-                _wi_step = 5
-                _wi_help = "全体の月間入院数を120〜180人の範囲で変更できます"
-            # Session state を明示的に初期化する（`value=` と `key=` の併用による
-            # 状態不整合を避けるため）
-            _key_adm = f"whatif_phase_adm_{_selected_ward_key}"
-            _key_occ = f"whatif_phase_occ_{_selected_ward_key}"
-            _default_adm = int(max(_wi_min, min(_wi_max, _monthly_adm_input)))
-            _default_occ = round(_target_occ_mid * 100 * 2) / 2  # 0.5刻みに丸め
-            if _key_adm not in st.session_state:
-                st.session_state[_key_adm] = _default_adm
-            if _key_occ not in st.session_state:
-                st.session_state[_key_occ] = _default_occ
-            # スライダー値がプリセット/病棟切替で min/max レンジ外になった場合のクランプ
-            if st.session_state[_key_adm] < _wi_min or st.session_state[_key_adm] > _wi_max:
-                st.session_state[_key_adm] = _default_adm
-            if st.session_state[_key_occ] < 85.0 or st.session_state[_key_occ] > 100.0:
-                st.session_state[_key_occ] = _default_occ
-
-            _whatif_admissions = st.slider(
-                "月間入院数",
-                min_value=_wi_min,
-                max_value=_wi_max,
-                step=_wi_step,
-                key=_key_adm,
-                help=_wi_help,
-            )
-            _whatif_occ_pct = st.slider(
-                "目標稼働率 (%)",
-                min_value=85.0,
-                max_value=100.0,
-                step=0.5,
-                format="%.1f",
-                key=_key_occ,
-                help="目標稼働率を85〜100%の範囲で0.5%刻みで変更できます",
-            )
-            # 念のため session_state から直接読む（戻り値とずれていた場合の防御）
-            _whatif_admissions = int(st.session_state[_key_adm])
-            _whatif_occ_pct = float(st.session_state[_key_occ])
-            _whatif_occ = _whatif_occ_pct / 100
-
-            st.markdown("")
+        # --- What-if シミュレーション（経営会議提案用）---
+        st.markdown("---")
+        with st.expander("🔬 What-if シミュレーション — 入院数・稼働率を変えたら", expanded=False):
             st.caption(
-                f"現在のサイドバー設定（ベースライン）: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%  \n"
-                f"↑ このスライダーの値: **月{_whatif_admissions}人 / {_whatif_occ_pct:.1f}%**（右側の計算に使用中）"
+                "経営会議で「もし月間入院数を○人にしたら」「目標稼働率を○%にしたら」という議論をする際、"
+                "理論的なフェーズ構成と運営貢献額の変化を即座に試算できます。"
             )
 
-        with _whatif_col_right:
-            # 選択値で理論値を計算（プリセットの診療報酬を反映）
-            _whatif_result = calculate_ideal_phase_ratios(
+            _whatif_col_left, _whatif_col_right = st.columns([1, 2])
+
+            with _whatif_col_left:
+                st.markdown("**📊 シナリオ設定**")
+                # 病棟別表示時はスライダー範囲も病床比率で按分
+                if _selected_ward_key in ("5F", "6F"):
+                    _wi_min = 60
+                    _wi_max = 90
+                    _wi_step = 5
+                    _wi_help = f"{_selected_ward_key}病棟の月間入院数を60〜90人の範囲で変更できます"
+                else:
+                    _wi_min = 120
+                    _wi_max = 180
+                    _wi_step = 5
+                    _wi_help = "全体の月間入院数を120〜180人の範囲で変更できます"
+                # Session state を明示的に初期化する（`value=` と `key=` の併用による
+                # 状態不整合を避けるため）
+                _key_adm = f"whatif_phase_adm_{_selected_ward_key}"
+                _key_occ = f"whatif_phase_occ_{_selected_ward_key}"
+                _default_adm = int(max(_wi_min, min(_wi_max, _monthly_adm_input)))
+                _default_occ = round(_target_occ_mid * 100 * 2) / 2  # 0.5刻みに丸め
+                if _key_adm not in st.session_state:
+                    st.session_state[_key_adm] = _default_adm
+                if _key_occ not in st.session_state:
+                    st.session_state[_key_occ] = _default_occ
+                # スライダー値がプリセット/病棟切替で min/max レンジ外になった場合のクランプ
+                if st.session_state[_key_adm] < _wi_min or st.session_state[_key_adm] > _wi_max:
+                    st.session_state[_key_adm] = _default_adm
+                if st.session_state[_key_occ] < 85.0 or st.session_state[_key_occ] > 100.0:
+                    st.session_state[_key_occ] = _default_occ
+
+                _whatif_admissions = st.slider(
+                    "月間入院数",
+                    min_value=_wi_min,
+                    max_value=_wi_max,
+                    step=_wi_step,
+                    key=_key_adm,
+                    help=_wi_help,
+                )
+                _whatif_occ_pct = st.slider(
+                    "目標稼働率 (%)",
+                    min_value=85.0,
+                    max_value=100.0,
+                    step=0.5,
+                    format="%.1f",
+                    key=_key_occ,
+                    help="目標稼働率を85〜100%の範囲で0.5%刻みで変更できます",
+                )
+                # 念のため session_state から直接読む（戻り値とずれていた場合の防御）
+                _whatif_admissions = int(st.session_state[_key_adm])
+                _whatif_occ_pct = float(st.session_state[_key_occ])
+                _whatif_occ = _whatif_occ_pct / 100
+
+                st.markdown("")
+                st.caption(
+                    f"現在のサイドバー設定（ベースライン）: 月{int(_monthly_adm_input)}人 / {_target_occ_mid*100:.1f}%  \n"
+                    f"↑ このスライダーの値: **月{_whatif_admissions}人 / {_whatif_occ_pct:.1f}%**（右側の計算に使用中）"
+                )
+
+            with _whatif_col_right:
+                # 選択値で理論値を計算（プリセットの診療報酬を反映）
+                _whatif_result = calculate_ideal_phase_ratios(
+                    num_beds=_view_beds,
+                    monthly_admissions=_whatif_admissions,
+                    target_occupancy=_whatif_occ,
+                    days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
+                    phase_a_contrib=phase_a_rev - phase_a_cost,
+                    phase_b_contrib=phase_b_rev - phase_b_cost,
+                    phase_c_contrib=phase_c_rev - phase_c_cost,
+                )
+
+                # 上部: 主要メトリクス
+                _m1, _m2, _m3 = st.columns(3)
+                _m1.metric("平均在院日数", f"{_whatif_result['target_los']:.1f}日")
+                _m2.metric("目標在院患者数", f"{_whatif_result['target_patients']:.0f}人")
+                _m3.metric("1日次運営貢献額", f"{_whatif_result['daily_contribution']/10000:.0f}万円")
+
+                # 施設基準との比較
+                if _whatif_result['target_los'] > 21:
+                    st.error(
+                        f"🔴 **施設基準リスク**: 平均在院日数 {_whatif_result['target_los']:.1f}日 > 21日 "
+                        f"(2025年度上限)。このシナリオは地域包括医療病棟入院料1の算定基準を満たせません。"
+                    )
+                elif _whatif_result['target_los'] > 20:
+                    st.warning(
+                        f"🟡 **2026年度注意**: 平均在院日数 {_whatif_result['target_los']:.1f}日 は "
+                        f"2026年度上限20日を超過。85歳以上20%超なら+1日緩和で21日以内。"
+                    )
+                elif not _whatif_result['feasible']:
+                    st.warning(f"⚠️ {_whatif_result['notes']}")
+                else:
+                    st.success(
+                        f"✅ 平均在院日数 {_whatif_result['target_los']:.1f}日は施設基準内（上限21日）"
+                    )
+
+                # フェーズ別人数と比率の棒グラフ
+                fig_wi, ax_wi = plt.subplots(figsize=(8, 3.5))
+                _wi_labels = ["A群\n(1-5日)", "B群\n(6-14日)", "C群\n(15日-)"]
+                _wi_counts = [
+                    _whatif_result['a_count'],
+                    _whatif_result['b_count'],
+                    _whatif_result['c_count'],
+                ]
+                _wi_pcts = [
+                    _whatif_result['a_pct'],
+                    _whatif_result['b_pct'],
+                    _whatif_result['c_pct'],
+                ]
+                _wi_colors_list = [COLOR_A, COLOR_B, COLOR_C]
+                _wi_bars = ax_wi.bar(_wi_labels, _wi_counts, color=_wi_colors_list, alpha=0.85)
+                for _bar, _count, _pct in zip(_wi_bars, _wi_counts, _wi_pcts):
+                    _h = _bar.get_height()
+                    ax_wi.text(
+                        _bar.get_x() + _bar.get_width() / 2,
+                        _h + max(_wi_counts) * 0.02,
+                        f"{_count:.1f}人\n({_pct:.1f}%)",
+                        ha="center", fontsize=10, fontweight="bold",
+                    )
+                ax_wi.set_ylabel("患者数（人）")
+                ax_wi.set_title(
+                    f"月{_whatif_admissions}人入院 × 目標稼働率{_whatif_occ_pct:.1f}% → 理論構成",
+                    fontsize=11,
+                )
+                ax_wi.set_ylim(0, max(_wi_counts) * 1.25)
+                ax_wi.grid(True, alpha=0.3, axis="y")
+                st.pyplot(fig_wi)
+                plt.close(fig_wi)
+
+            # 現在値との差分を1行サマリーで表示
+            _delta_adm = _whatif_admissions - int(_monthly_adm_input)
+            _delta_occ = _whatif_occ_pct - (_target_occ_mid * 100)
+            _current_result = calculate_ideal_phase_ratios(
                 num_beds=_view_beds,
-                monthly_admissions=_whatif_admissions,
-                target_occupancy=_whatif_occ,
+                monthly_admissions=int(_monthly_adm_input),
+                target_occupancy=_target_occ_mid,
                 days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
                 phase_a_contrib=phase_a_rev - phase_a_cost,
                 phase_b_contrib=phase_b_rev - phase_b_cost,
                 phase_c_contrib=phase_c_rev - phase_c_cost,
             )
+            _delta_contrib = (_whatif_result['daily_contribution'] - _current_result['daily_contribution'])
+            _delta_contrib_monthly = _delta_contrib * 30
+            _delta_contrib_yearly = _delta_contrib * 365
 
-            # 上部: 主要メトリクス
-            _m1, _m2, _m3 = st.columns(3)
-            _m1.metric("平均在院日数", f"{_whatif_result['target_los']:.1f}日")
-            _m2.metric("目標在院患者数", f"{_whatif_result['target_patients']:.0f}人")
-            _m3.metric("1日次運営貢献額", f"{_whatif_result['daily_contribution']/10000:.0f}万円")
+            if abs(_delta_adm) > 0 or abs(_delta_occ) > 0.1:
+                _delta_label = []
+                if _delta_adm != 0:
+                    _delta_label.append(f"入院 **{_delta_adm:+d}人/月**")
+                if abs(_delta_occ) > 0.1:
+                    _delta_label.append(f"稼働率 **{_delta_occ:+.1f}%**")
+                _delta_text = " / ".join(_delta_label)
 
-            # 施設基準との比較
-            if _whatif_result['target_los'] > 21:
-                st.error(
-                    f"🔴 **施設基準リスク**: 平均在院日数 {_whatif_result['target_los']:.1f}日 > 21日 "
-                    f"(2025年度上限)。このシナリオは地域包括医療病棟入院料1の算定基準を満たせません。"
-                )
-            elif _whatif_result['target_los'] > 20:
-                st.warning(
-                    f"🟡 **2026年度注意**: 平均在院日数 {_whatif_result['target_los']:.1f}日 は "
-                    f"2026年度上限20日を超過。85歳以上20%超なら+1日緩和で21日以内。"
-                )
-            elif not _whatif_result['feasible']:
-                st.warning(f"⚠️ {_whatif_result['notes']}")
-            else:
-                st.success(
-                    f"✅ 平均在院日数 {_whatif_result['target_los']:.1f}日は施設基準内（上限21日）"
-                )
+                if _delta_contrib > 0:
+                    st.info(
+                        f"💰 **現状との比較**: {_delta_text}\n\n"
+                        f"→ 日次運営貢献額 **+{_delta_contrib/10000:.1f}万円/日** "
+                        f"（月間 **+{_delta_contrib_monthly/10000:.0f}万円** / "
+                        f"年間 **+{_delta_contrib_yearly/10000:,.0f}万円**）"
+                    )
+                elif _delta_contrib < 0:
+                    st.warning(
+                        f"💰 **現状との比較**: {_delta_text}\n\n"
+                        f"→ 日次運営貢献額 **{_delta_contrib/10000:.1f}万円/日** "
+                        f"（月間 **{_delta_contrib_monthly/10000:.0f}万円** / "
+                        f"年間 **{_delta_contrib_yearly/10000:,.0f}万円**）"
+                    )
 
-            # フェーズ別人数と比率の棒グラフ
-            fig_wi, ax_wi = plt.subplots(figsize=(8, 3.5))
-            _wi_labels = ["A群\n(1-5日)", "B群\n(6-14日)", "C群\n(15日-)"]
-            _wi_counts = [
-                _whatif_result['a_count'],
-                _whatif_result['b_count'],
-                _whatif_result['c_count'],
-            ]
-            _wi_pcts = [
-                _whatif_result['a_pct'],
-                _whatif_result['b_pct'],
-                _whatif_result['c_pct'],
-            ]
-            _wi_colors_list = [COLOR_A, COLOR_B, COLOR_C]
-            _wi_bars = ax_wi.bar(_wi_labels, _wi_counts, color=_wi_colors_list, alpha=0.85)
-            for _bar, _count, _pct in zip(_wi_bars, _wi_counts, _wi_pcts):
-                _h = _bar.get_height()
-                ax_wi.text(
-                    _bar.get_x() + _bar.get_width() / 2,
-                    _h + max(_wi_counts) * 0.02,
-                    f"{_count:.1f}人\n({_pct:.1f}%)",
-                    ha="center", fontsize=10, fontweight="bold",
-                )
-            ax_wi.set_ylabel("患者数（人）")
-            ax_wi.set_title(
-                f"月{_whatif_admissions}人入院 × 目標稼働率{_whatif_occ_pct:.1f}% → 理論構成",
-                fontsize=11,
+            # 経営会議提案用の注記
+            st.caption(
+                "💡 **経営会議での使い方**: スライダーで「実現可能な目標」を探り、"
+                "その場合のフェーズ構成・運営貢献額・施設基準リスクを同時に確認できます。"
+                "入院数を増やす施策（外来強化・連携室拡充）の定量的な期待値算出に活用できます。"
             )
-            ax_wi.set_ylim(0, max(_wi_counts) * 1.25)
-            ax_wi.grid(True, alpha=0.3, axis="y")
-            st.pyplot(fig_wi)
-            plt.close(fig_wi)
 
-        # 現在値との差分を1行サマリーで表示
-        _delta_adm = _whatif_admissions - int(_monthly_adm_input)
-        _delta_occ = _whatif_occ_pct - (_target_occ_mid * 100)
-        _current_result = calculate_ideal_phase_ratios(
-            num_beds=_view_beds,
-            monthly_admissions=int(_monthly_adm_input),
-            target_occupancy=_target_occ_mid,
-            days_per_month=_sidebar_calendar_days if '_sidebar_calendar_days' in dir() else 30,
-            phase_a_contrib=phase_a_rev - phase_a_cost,
-            phase_b_contrib=phase_b_rev - phase_b_cost,
-            phase_c_contrib=phase_c_rev - phase_c_cost,
-        )
-        _delta_contrib = (_whatif_result['daily_contribution'] - _current_result['daily_contribution'])
-        _delta_contrib_monthly = _delta_contrib * 30
-        _delta_contrib_yearly = _delta_contrib * 365
-
-        if abs(_delta_adm) > 0 or abs(_delta_occ) > 0.1:
-            _delta_label = []
-            if _delta_adm != 0:
-                _delta_label.append(f"入院 **{_delta_adm:+d}人/月**")
-            if abs(_delta_occ) > 0.1:
-                _delta_label.append(f"稼働率 **{_delta_occ:+.1f}%**")
-            _delta_text = " / ".join(_delta_label)
-
-            if _delta_contrib > 0:
-                st.info(
-                    f"💰 **現状との比較**: {_delta_text}\n\n"
-                    f"→ 日次運営貢献額 **+{_delta_contrib/10000:.1f}万円/日** "
-                    f"（月間 **+{_delta_contrib_monthly/10000:.0f}万円** / "
-                    f"年間 **+{_delta_contrib_yearly/10000:,.0f}万円**）"
-                )
-            elif _delta_contrib < 0:
-                st.warning(
-                    f"💰 **現状との比較**: {_delta_text}\n\n"
-                    f"→ 日次運営貢献額 **{_delta_contrib/10000:.1f}万円/日** "
-                    f"（月間 **{_delta_contrib_monthly/10000:.0f}万円** / "
-                    f"年間 **{_delta_contrib_yearly/10000:,.0f}万円**）"
-                )
-
-        # 経営会議提案用の注記
-        st.caption(
-            "💡 **経営会議での使い方**: スライダーで「実現可能な目標」を探り、"
-            "その場合のフェーズ構成・運営貢献額・施設基準リスクを同時に確認できます。"
-            "入院数を増やす施策（外来強化・連携室拡充）の定量的な期待値算出に活用できます。"
-        )
-
-    # 病棟別フェーズ構成は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
+        # 病棟別フェーズ構成は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
 # ===== タブ3: 運営分析 =====
@@ -4614,52 +4614,52 @@ if "💰 運営分析" in _tab_idx and _data_ready:
 </div>
 """, unsafe_allow_html=True)
 
-    # --- メトリクスカード（現在のプリセットでリアルタイム再計算）---
-    # フェーズ別患者日数からプリセットの報酬・コストで再計算
-    _recalc_rev = summary["月次診療報酬"]
-    _recalc_cost = summary["月次コスト"]
-    _recalc_profit = summary["月次運営貢献額"]
-    if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-        _has_phase = all(c in _active_raw_df.columns for c in ["phase_a_count", "phase_b_count", "phase_c_count"])
-        if _has_phase:
-            _pa_days = int(_active_raw_df["phase_a_count"].sum())
-            _pb_days = int(_active_raw_df["phase_b_count"].sum())
-            _pc_days = int(_active_raw_df["phase_c_count"].sum())
-            _recalc_rev = _pa_days * phase_a_rev + _pb_days * phase_b_rev + _pc_days * phase_c_rev
-            _recalc_cost = _pa_days * phase_a_cost + _pb_days * phase_b_cost + _pc_days * phase_c_cost
-            _recalc_profit = _recalc_rev - _recalc_cost
+        # --- メトリクスカード（現在のプリセットでリアルタイム再計算）---
+        # フェーズ別患者日数からプリセットの報酬・コストで再計算
+        _recalc_rev = summary["月次診療報酬"]
+        _recalc_cost = summary["月次コスト"]
+        _recalc_profit = summary["月次運営貢献額"]
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _has_phase = all(c in _active_raw_df.columns for c in ["phase_a_count", "phase_b_count", "phase_c_count"])
+            if _has_phase:
+                _pa_days = int(_active_raw_df["phase_a_count"].sum())
+                _pb_days = int(_active_raw_df["phase_b_count"].sum())
+                _pc_days = int(_active_raw_df["phase_c_count"].sum())
+                _recalc_rev = _pa_days * phase_a_rev + _pb_days * phase_b_rev + _pc_days * phase_c_rev
+                _recalc_cost = _pa_days * phase_a_cost + _pb_days * phase_b_cost + _pc_days * phase_c_cost
+                _recalc_profit = _recalc_rev - _recalc_cost
 
-    # --- 月末予測・目標値の計算 ---
-    _proj_rev = _recalc_rev / _days_elapsed * _calendar_month_days if _days_elapsed > 0 else _recalc_rev
-    _proj_cost = _recalc_cost / _days_elapsed * _calendar_month_days if _days_elapsed > 0 else _recalc_cost
-    _proj_profit = _proj_rev - _proj_cost
-    # 目標値（稼働率90%・95%での月間額）
-    _target_lo_rev = _view_beds * target_lower * _calendar_month_days * _daily_rev_per_bed
-    _target_hi_rev = _view_beds * target_upper * _calendar_month_days * _daily_rev_per_bed
-    _target_lo_cost = _view_beds * target_lower * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
-    _target_hi_cost = _view_beds * target_upper * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
-    _target_lo_profit = _target_lo_rev - _target_lo_cost
-    _target_hi_profit = _target_hi_rev - _target_hi_cost
-    # 予測 vs 目標の比較基準: 目標レンジの中央値（90%と95%の中間 → 例: 92.5%だが端数回避で切り上げ）
-    _target_mid = (target_lower + target_upper) / 2  # 例: 0.925
-    # 94%固定ではなくレンジ中央+1ptを採用（90-95%なら93.5→94%相当）
-    _target_compare = 0.94
-    _target_cmp_rev = _view_beds * _target_compare * _calendar_month_days * _daily_rev_per_bed
-    _target_cmp_cost = _view_beds * _target_compare * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
-    _target_cmp_profit = _target_cmp_rev - _target_cmp_cost
-    _profit_vs_target = (_proj_profit / _target_cmp_profit * 100) if _target_cmp_profit > 0 else 0
+        # --- 月末予測・目標値の計算 ---
+        _proj_rev = _recalc_rev / _days_elapsed * _calendar_month_days if _days_elapsed > 0 else _recalc_rev
+        _proj_cost = _recalc_cost / _days_elapsed * _calendar_month_days if _days_elapsed > 0 else _recalc_cost
+        _proj_profit = _proj_rev - _proj_cost
+        # 目標値（稼働率90%・95%での月間額）
+        _target_lo_rev = _view_beds * target_lower * _calendar_month_days * _daily_rev_per_bed
+        _target_hi_rev = _view_beds * target_upper * _calendar_month_days * _daily_rev_per_bed
+        _target_lo_cost = _view_beds * target_lower * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
+        _target_hi_cost = _view_beds * target_upper * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
+        _target_lo_profit = _target_lo_rev - _target_lo_cost
+        _target_hi_profit = _target_hi_rev - _target_hi_cost
+        # 予測 vs 目標の比較基準: 目標レンジの中央値（90%と95%の中間 → 例: 92.5%だが端数回避で切り上げ）
+        _target_mid = (target_lower + target_upper) / 2  # 例: 0.925
+        # 94%固定ではなくレンジ中央+1ptを採用（90-95%なら93.5→94%相当）
+        _target_compare = 0.94
+        _target_cmp_rev = _view_beds * _target_compare * _calendar_month_days * _daily_rev_per_bed
+        _target_cmp_cost = _view_beds * _target_compare * _calendar_month_days * (0.15 * phase_a_cost + 0.45 * phase_b_cost + 0.40 * phase_c_cost)
+        _target_cmp_profit = _target_cmp_rev - _target_cmp_cost
+        _profit_vs_target = (_proj_profit / _target_cmp_profit * 100) if _target_cmp_profit > 0 else 0
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"診療報酬（{_days_elapsed}日分実績）", fmt_yen(_recalc_rev),
-              help="入院患者の診療報酬合計（入院料＋初期加算＋リハビリ出来高）")
-    c2.metric(f"コスト（{_days_elapsed}日分実績）", fmt_yen(_recalc_cost),
-              help="薬剤費・材料費・検査費・給食費などの変動費合計（固定費は含まない）")
-    c3.metric(f"運営貢献額（{_days_elapsed}日分実績）", fmt_yen(_recalc_profit),
-              help="診療報酬 − 変動費コスト = 病棟が生み出す粗利益（固定費カバーに充てる額）")
-    c4.metric("平均稼働率", f"{summary['平均稼働率']:.1f}%")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(f"診療報酬（{_days_elapsed}日分実績）", fmt_yen(_recalc_rev),
+                  help="入院患者の診療報酬合計（入院料＋初期加算＋リハビリ出来高）")
+        c2.metric(f"コスト（{_days_elapsed}日分実績）", fmt_yen(_recalc_cost),
+                  help="薬剤費・材料費・検査費・給食費などの変動費合計（固定費は含まない）")
+        c3.metric(f"運営貢献額（{_days_elapsed}日分実績）", fmt_yen(_recalc_profit),
+                  help="診療報酬 − 変動費コスト = 病棟が生み出す粗利益（固定費カバーに充てる額）")
+        c4.metric("平均稼働率", f"{summary['平均稼働率']:.1f}%")
 
-    # 月末予測・目標値
-    st.markdown(f"""
+        # 月末予測・目標値
+        st.markdown(f"""
 <div style="background:#F8F9FA; padding:12px 16px; border-radius:8px; margin:8px 0 12px 0; font-size:0.9em;">
 <table style="width:100%; border-collapse:collapse;">
 <tr style="border-bottom:1px solid #DEE2E6;">
@@ -4690,93 +4690,93 @@ if "💰 運営分析" in _tab_idx and _data_ready:
 <p style="margin:6px 0 0 0; text-align:right; color:#555;">予測 vs 目標（稼働率{_target_compare*100:.0f}%）: <b style="color:{'#27AE60' if _profit_vs_target >= 100 else '#E74C3C'};">{_profit_vs_target:.1f}%</b></p>
 </div>
 """, unsafe_allow_html=True)
-    st.caption("💡 診療報酬=入院料収入 | コスト=変動費(固定費除く) | 運営貢献額=粗利益")
+        st.caption("💡 診療報酬=入院料収入 | コスト=変動費(固定費除く) | 運営貢献額=粗利益")
 
-    # =========================================================================
-    # 短手3 分離表示パネル（Phase 3）
-    # =========================================================================
-    # 通常入院 + 短手3 包括点数の運営貢献額を分離して見せる
-    # admission_details の short3_type 列を使って種類別に集計
-    _show_short3_panel = False
-    _short3_summary_month = {"total_cases": 0, "total_revenue": 0, "total_cost": 0, "by_type": {}}
-    if _DETAIL_DATA_AVAILABLE and isinstance(st.session_state.get("admission_details"), pd.DataFrame):
-        _ad_df = st.session_state.admission_details
-        if len(_ad_df) > 0 and "short3_type" in _ad_df.columns:
-            # 現在月でフィルタ
-            _ad_df = _ad_df.copy()
-            _ad_df["date"] = pd.to_datetime(_ad_df["date"])
-            if len(_ad_df) > 0:
-                _latest = _ad_df["date"].max()
-                _month_mask = (_ad_df["date"].dt.year == _latest.year) & (_ad_df["date"].dt.month == _latest.month)
-                _ad_month = _ad_df[_month_mask]
-                # 病棟でフィルタ（全体のときはフィルタしない）
-                if _selected_ward_key in ("5F", "6F"):
-                    _ad_month = _ad_month[_ad_month["ward"] == _selected_ward_key]
-                # 入院イベントかつ short3_type あり
-                _ad_s3 = _ad_month[
-                    (_ad_month["event_type"] == "admission")
-                    & _ad_month["short3_type"].notna()
-                    & (_ad_month["short3_type"] != "")
-                ]
-                if len(_ad_s3) > 0:
-                    _show_short3_panel = True
-                    for _s3t, _grp in _ad_s3.groupby("short3_type"):
-                        _cnt = len(_grp)
-                        _rev = _short3_revenue_map.get(_s3t, 0) * _cnt
-                        _cost = _short3_cost_map.get(_s3t, 0) * _cnt
-                        _short3_summary_month["by_type"][str(_s3t)] = {
-                            "cases": _cnt, "revenue": _rev, "cost": _cost,
-                            "contribution": _rev - _cost,
-                        }
-                        _short3_summary_month["total_cases"] += _cnt
-                        _short3_summary_month["total_revenue"] += _rev
-                        _short3_summary_month["total_cost"] += _cost
+        # =========================================================================
+        # 短手3 分離表示パネル（Phase 3）
+        # =========================================================================
+        # 通常入院 + 短手3 包括点数の運営貢献額を分離して見せる
+        # admission_details の short3_type 列を使って種類別に集計
+        _show_short3_panel = False
+        _short3_summary_month = {"total_cases": 0, "total_revenue": 0, "total_cost": 0, "by_type": {}}
+        if _DETAIL_DATA_AVAILABLE and isinstance(st.session_state.get("admission_details"), pd.DataFrame):
+            _ad_df = st.session_state.admission_details
+            if len(_ad_df) > 0 and "short3_type" in _ad_df.columns:
+                # 現在月でフィルタ
+                _ad_df = _ad_df.copy()
+                _ad_df["date"] = pd.to_datetime(_ad_df["date"])
+                if len(_ad_df) > 0:
+                    _latest = _ad_df["date"].max()
+                    _month_mask = (_ad_df["date"].dt.year == _latest.year) & (_ad_df["date"].dt.month == _latest.month)
+                    _ad_month = _ad_df[_month_mask]
+                    # 病棟でフィルタ（全体のときはフィルタしない）
+                    if _selected_ward_key in ("5F", "6F"):
+                        _ad_month = _ad_month[_ad_month["ward"] == _selected_ward_key]
+                    # 入院イベントかつ short3_type あり
+                    _ad_s3 = _ad_month[
+                        (_ad_month["event_type"] == "admission")
+                        & _ad_month["short3_type"].notna()
+                        & (_ad_month["short3_type"] != "")
+                    ]
+                    if len(_ad_s3) > 0:
+                        _show_short3_panel = True
+                        for _s3t, _grp in _ad_s3.groupby("short3_type"):
+                            _cnt = len(_grp)
+                            _rev = _short3_revenue_map.get(_s3t, 0) * _cnt
+                            _cost = _short3_cost_map.get(_s3t, 0) * _cnt
+                            _short3_summary_month["by_type"][str(_s3t)] = {
+                                "cases": _cnt, "revenue": _rev, "cost": _cost,
+                                "contribution": _rev - _cost,
+                            }
+                            _short3_summary_month["total_cases"] += _cnt
+                            _short3_summary_month["total_revenue"] += _rev
+                            _short3_summary_month["total_cost"] += _cost
 
-    if _show_short3_panel:
-        _s3_total_contrib = _short3_summary_month["total_revenue"] - _short3_summary_month["total_cost"]
-        # 通常分の運営貢献額 (recalc profit は通常分として扱う)
-        _normal_contrib = _recalc_profit
-        _combined_contrib = _normal_contrib + _s3_total_contrib
+        if _show_short3_panel:
+            _s3_total_contrib = _short3_summary_month["total_revenue"] - _short3_summary_month["total_cost"]
+            # 通常分の運営貢献額 (recalc profit は通常分として扱う)
+            _normal_contrib = _recalc_profit
+            _combined_contrib = _normal_contrib + _s3_total_contrib
 
-        st.markdown("### 🏃 短手3（包括点数）分離表示")
-        st.caption(
-            f"{_selected_ward_key} の今月の短期滞在手術等基本料3 算定分。包括点数ベースで別計算しています。"
-        )
+            st.markdown("### 🏃 短手3（包括点数）分離表示")
+            st.caption(
+                f"{_selected_ward_key} の今月の短期滞在手術等基本料3 算定分。包括点数ベースで別計算しています。"
+            )
 
-        _s3_cols = st.columns(3)
-        _s3_cols[0].metric(
-            "短手3 件数",
-            f"{_short3_summary_month['total_cases']}件",
-            help="当月の 短期滞在手術等基本料3 算定件数",
-        )
-        _s3_cols[1].metric(
-            "短手3 収入（包括）",
-            f"¥{_short3_summary_month['total_revenue']/10000:,.1f}万",
-            help="種類別の包括点数 × 件数の合計",
-        )
-        _s3_cols[2].metric(
-            "短手3 運営貢献額",
-            f"¥{_s3_total_contrib/10000:,.1f}万",
-            help="短手3 収入 − 短手3 コスト",
-        )
+            _s3_cols = st.columns(3)
+            _s3_cols[0].metric(
+                "短手3 件数",
+                f"{_short3_summary_month['total_cases']}件",
+                help="当月の 短期滞在手術等基本料3 算定件数",
+            )
+            _s3_cols[1].metric(
+                "短手3 収入（包括）",
+                f"¥{_short3_summary_month['total_revenue']/10000:,.1f}万",
+                help="種類別の包括点数 × 件数の合計",
+            )
+            _s3_cols[2].metric(
+                "短手3 運営貢献額",
+                f"¥{_s3_total_contrib/10000:,.1f}万",
+                help="短手3 収入 − 短手3 コスト",
+            )
 
-        # 種類別内訳テーブル
-        _s3_rows = []
-        for _t, _d in _short3_summary_month["by_type"].items():
-            _s3_rows.append({
-                "種類": _t,
-                "件数": _d["cases"],
-                "収入/件": f"¥{_short3_revenue_map.get(_t, 0):,}",
-                "収入合計": f"¥{_d['revenue']:,}",
-                "貢献額/件": f"¥{_short3_revenue_map.get(_t, 0) - _short3_cost_map.get(_t, 0):,}",
-                "貢献額合計": f"¥{_d['contribution']:,}",
-            })
-        if _s3_rows:
-            st.dataframe(pd.DataFrame(_s3_rows), hide_index=True, use_container_width=True)
+            # 種類別内訳テーブル
+            _s3_rows = []
+            for _t, _d in _short3_summary_month["by_type"].items():
+                _s3_rows.append({
+                    "種類": _t,
+                    "件数": _d["cases"],
+                    "収入/件": f"¥{_short3_revenue_map.get(_t, 0):,}",
+                    "収入合計": f"¥{_d['revenue']:,}",
+                    "貢献額/件": f"¥{_short3_revenue_map.get(_t, 0) - _short3_cost_map.get(_t, 0):,}",
+                    "貢献額合計": f"¥{_d['contribution']:,}",
+                })
+            if _s3_rows:
+                st.dataframe(pd.DataFrame(_s3_rows), hide_index=True, use_container_width=True)
 
-        # 合算表示: 通常分 + 短手3分
-        st.markdown(
-            f"""
+            # 合算表示: 通常分 + 短手3分
+            st.markdown(
+                f"""
 <div style="background:#F0F9FF; padding:12px 16px; border-radius:8px; border-left:4px solid #0EA5E9; margin:8px 0;">
 <b>📊 月次運営貢献額（通常分 + 短手3 分）</b><br/>
 <table style="width:100%; border-collapse:collapse; margin-top:6px;">
@@ -4790,522 +4790,522 @@ if "💰 運営分析" in _tab_idx and _data_ready:
 </table>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
+                unsafe_allow_html=True,
+            )
 
-    c5, c6, c7, c8, c9 = st.columns(5)
-    c5.metric("月間入院数", f"{summary['月間入院数']}人")
-    c6.metric("月間退院数", f"{summary['月間退院数']}人")
-    c7.metric("目標レンジ内日数", f"{summary['目標レンジ内日数']}/{days_in_month}日")
-    c8.metric("目標レンジ内率", f"{summary['目標レンジ内率']}%")
-    _current_avg_los = summary["平均在院日数"]  # 今月集計値（選択中ビューの値）
-    _is_ward_view = _selected_ward_key in ("5F", "6F")
+        c5, c6, c7, c8, c9 = st.columns(5)
+        c5.metric("月間入院数", f"{summary['月間入院数']}人")
+        c6.metric("月間退院数", f"{summary['月間退院数']}人")
+        c7.metric("目標レンジ内日数", f"{summary['目標レンジ内日数']}/{days_in_month}日")
+        c8.metric("目標レンジ内率", f"{summary['目標レンジ内率']}%")
+        _current_avg_los = summary["平均在院日数"]  # 今月集計値（選択中ビューの値）
+        _is_ward_view = _selected_ward_key in ("5F", "6F")
 
-    # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準は各病棟ごとに判定）---
-    # ⚠️ 重要: 地域包括医療病棟の施設基準は各病棟ごとに満たす必要がある。
-    # 全病棟・5F・6F それぞれを個別に計算して判定する。
-    # 2026年改定: 短手3算定患者は平均在院日数計算から除外する
-    _rolling_ds = None
-    _rolling_los_ds = None
-    _rolling_los_ex_ds = None
-    _rolling_days_ds = 0
-    _rolling_is_partial_ds = False
-    if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0:
-        try:
-            _rolling_ds = calculate_rolling_los(_active_raw_df_full, window_days=90)
-            if _rolling_ds:
-                _rolling_los_ds = _rolling_ds.get("rolling_los")
-                _rolling_los_ex_ds = _rolling_ds.get("rolling_los_ex_short3")
-                _rolling_days_ds = _rolling_ds.get("actual_days", 0)
-                _rolling_is_partial_ds = _rolling_ds.get("is_partial", False)
-        except Exception:
-            _rolling_ds = None
+        # --- 過去3ヶ月rolling 平均在院日数（2026年改定対応・施設基準は各病棟ごとに判定）---
+        # ⚠️ 重要: 地域包括医療病棟の施設基準は各病棟ごとに満たす必要がある。
+        # 全病棟・5F・6F それぞれを個別に計算して判定する。
+        # 2026年改定: 短手3算定患者は平均在院日数計算から除外する
+        _rolling_ds = None
+        _rolling_los_ds = None
+        _rolling_los_ex_ds = None
+        _rolling_days_ds = 0
+        _rolling_is_partial_ds = False
+        if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0:
+            try:
+                _rolling_ds = calculate_rolling_los(_active_raw_df_full, window_days=90)
+                if _rolling_ds:
+                    _rolling_los_ds = _rolling_ds.get("rolling_los")
+                    _rolling_los_ex_ds = _rolling_ds.get("rolling_los_ex_short3")
+                    _rolling_days_ds = _rolling_ds.get("actual_days", 0)
+                    _rolling_is_partial_ds = _rolling_ds.get("is_partial", False)
+            except Exception:
+                _rolling_ds = None
 
-    # 各病棟ごとの rolling を計算
-    _ward_rolling_ds = {}
-    if _DATA_MANAGER_AVAILABLE:
-        _ward_dfs_ds = (
-            globals().get("_ward_raw_dfs_full", {})
-            or st.session_state.get("ward_raw_dfs_full", {})
-        )
-        for _w in ["5F", "6F"]:
-            _wdf_ds = _ward_dfs_ds.get(_w) if _ward_dfs_ds else None
-            if _wdf_ds is None and _selected_ward_key == _w and isinstance(_active_raw_df_full, pd.DataFrame):
-                _wdf_ds = _active_raw_df_full
-            if _wdf_ds is not None and isinstance(_wdf_ds, pd.DataFrame) and len(_wdf_ds) > 0:
-                try:
-                    _ward_rolling_ds[_w] = calculate_rolling_los(_wdf_ds, window_days=90)
-                except Exception:
-                    pass
+        # 各病棟ごとの rolling を計算
+        _ward_rolling_ds = {}
+        if _DATA_MANAGER_AVAILABLE:
+            _ward_dfs_ds = (
+                globals().get("_ward_raw_dfs_full", {})
+                or st.session_state.get("ward_raw_dfs_full", {})
+            )
+            for _w in ["5F", "6F"]:
+                _wdf_ds = _ward_dfs_ds.get(_w) if _ward_dfs_ds else None
+                if _wdf_ds is None and _selected_ward_key == _w and isinstance(_active_raw_df_full, pd.DataFrame):
+                    _wdf_ds = _active_raw_df_full
+                if _wdf_ds is not None and isinstance(_wdf_ds, pd.DataFrame) and len(_wdf_ds) > 0:
+                    try:
+                        _ward_rolling_ds[_w] = calculate_rolling_los(_wdf_ds, window_days=90)
+                    except Exception:
+                        pass
 
-    # 施設基準判定: rolling (短手3除外後) 値を優先、未計算なら月次集計値にフォールバック
-    # 2026年改定で施設基準判定は短手3除外後の値を用いる
-    _judge_rolling = _rolling_los_ex_ds if _rolling_los_ex_ds is not None else _rolling_los_ds
-    _judge_los = _judge_rolling if _judge_rolling is not None else _current_avg_los
-    _los_over = _judge_los - _max_avg_los
+        # 施設基準判定: rolling (短手3除外後) 値を優先、未計算なら月次集計値にフォールバック
+        # 2026年改定で施設基準判定は短手3除外後の値を用いる
+        _judge_rolling = _rolling_los_ex_ds if _rolling_los_ex_ds is not None else _rolling_los_ds
+        _judge_los = _judge_rolling if _judge_rolling is not None else _current_avg_los
+        _los_over = _judge_los - _max_avg_los
 
-    if _rolling_los_ds is not None:
-        # 短手3 を除外した場合に値が変わるなら併記
-        if _rolling_los_ex_ds is not None and _rolling_los_ex_ds != _rolling_los_ds:
-            _delta_label = f"3ヶ月平均: {_rolling_los_ds}日→除外後{_rolling_los_ex_ds}日"
+        if _rolling_los_ds is not None:
+            # 短手3 を除外した場合に値が変わるなら併記
+            if _rolling_los_ex_ds is not None and _rolling_los_ex_ds != _rolling_los_ds:
+                _delta_label = f"3ヶ月平均: {_rolling_los_ds}日→除外後{_rolling_los_ex_ds}日"
+            else:
+                _delta_label = f"3ヶ月平均: {_rolling_los_ds}日（{_rolling_days_ds}日分）"
         else:
-            _delta_label = f"3ヶ月平均: {_rolling_los_ds}日（{_rolling_days_ds}日分）"
-    else:
-        _delta_label = None
+            _delta_label = None
 
-    c9.metric(
-        "平均在院日数（今月集計）",
-        f"{_current_avg_los}日",
-        delta=_delta_label if _delta_label else (f"基準超過 +{_los_over:.1f}日" if _los_over > 0 else f"基準内（余裕 {-_los_over:.1f}日）"),
-        delta_color="off" if _delta_label else ("inverse" if _los_over > 0 else "normal"),
-        help="施設基準判定は3ヶ月rolling平均で行います。厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)",
-    )
-
-    _caption_lines = [
-        f"※ 今月集計は厚生労働省「病院報告」の公式定義に準拠",
-        f"算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）",
-    ]
-    st.caption("　|　".join(_caption_lines))
-
-    # --- 各病棟の施設基準判定を常時表示（病棟別個別判定）---
-    if _ward_rolling_ds:
-        st.markdown(
-            "**📏 各病棟の施設基準判定（3ヶ月rolling・各病棟ごと）**  \n"
-            "<span style='color:#666;font-size:0.85em;'>"
-            "⚠️ 地域包括医療病棟の平均在院日数基準は、病院全体ではなく"
-            "<strong>各病棟それぞれ</strong>が満たす必要があります"
-            "</span>",
-            unsafe_allow_html=True,
+        c9.metric(
+            "平均在院日数（今月集計）",
+            f"{_current_avg_los}日",
+            delta=_delta_label if _delta_label else (f"基準超過 +{_los_over:.1f}日" if _los_over > 0 else f"基準内（余裕 {-_los_over:.1f}日）"),
+            delta_color="off" if _delta_label else ("inverse" if _los_over > 0 else "normal"),
+            help="施設基準判定は3ヶ月rolling平均で行います。厚労省公式: 在院患者延日数 ÷ ((新入院患者数 + 退院患者数) ÷ 2)",
         )
-        _ward_judge_cols = st.columns(len(_ward_rolling_ds))
-        _any_ward_over = False
-        _ward_over_details = []
-        for _idx, (_w, _wres) in enumerate(_ward_rolling_ds.items()):
-            with _ward_judge_cols[_idx]:
-                if _wres is None or _wres.get("rolling_los") is None:
-                    st.markdown(f"**{_w}**: データなし")
-                    continue
-                _wlos = _wres["rolling_los"]
-                _wlos_ex = _wres.get("rolling_los_ex_short3")
-                _wshort3 = _wres.get("total_short3", 0) or 0
-                _wdays = _wres["actual_days"]
-                _wpartial = _wres["is_partial"]
-                # 施設基準判定は「短手3除外後」値で行う（2026年改定対応）
-                _wjudge = _wlos_ex if _wlos_ex is not None else _wlos
-                _wdiff = _wjudge - _max_avg_los
-                if _wjudge <= _max_avg_los:
-                    _wicon = "✅"
-                    _wstatus = "基準内"
-                    _wcolor = "#27AE60"
-                elif _wjudge <= _max_avg_los + 0.5:
-                    _wicon = "⚠️"
-                    _wstatus = f"ぎりぎり(+{_wdiff:.1f}日)"
-                    _wcolor = "#F39C12"
-                    _any_ward_over = True
-                    _ward_over_details.append((_w, _wjudge, _wdiff))
+
+        _caption_lines = [
+            f"※ 今月集計は厚生労働省「病院報告」の公式定義に準拠",
+            f"算定基準上限: **{_max_avg_los}日以内**（{_fee_preset_name}）",
+        ]
+        st.caption("　|　".join(_caption_lines))
+
+        # --- 各病棟の施設基準判定を常時表示（病棟別個別判定）---
+        if _ward_rolling_ds:
+            st.markdown(
+                "**📏 各病棟の施設基準判定（3ヶ月rolling・各病棟ごと）**  \n"
+                "<span style='color:#666;font-size:0.85em;'>"
+                "⚠️ 地域包括医療病棟の平均在院日数基準は、病院全体ではなく"
+                "<strong>各病棟それぞれ</strong>が満たす必要があります"
+                "</span>",
+                unsafe_allow_html=True,
+            )
+            _ward_judge_cols = st.columns(len(_ward_rolling_ds))
+            _any_ward_over = False
+            _ward_over_details = []
+            for _idx, (_w, _wres) in enumerate(_ward_rolling_ds.items()):
+                with _ward_judge_cols[_idx]:
+                    if _wres is None or _wres.get("rolling_los") is None:
+                        st.markdown(f"**{_w}**: データなし")
+                        continue
+                    _wlos = _wres["rolling_los"]
+                    _wlos_ex = _wres.get("rolling_los_ex_short3")
+                    _wshort3 = _wres.get("total_short3", 0) or 0
+                    _wdays = _wres["actual_days"]
+                    _wpartial = _wres["is_partial"]
+                    # 施設基準判定は「短手3除外後」値で行う（2026年改定対応）
+                    _wjudge = _wlos_ex if _wlos_ex is not None else _wlos
+                    _wdiff = _wjudge - _max_avg_los
+                    if _wjudge <= _max_avg_los:
+                        _wicon = "✅"
+                        _wstatus = "基準内"
+                        _wcolor = "#27AE60"
+                    elif _wjudge <= _max_avg_los + 0.5:
+                        _wicon = "⚠️"
+                        _wstatus = f"ぎりぎり(+{_wdiff:.1f}日)"
+                        _wcolor = "#F39C12"
+                        _any_ward_over = True
+                        _ward_over_details.append((_w, _wjudge, _wdiff))
+                    else:
+                        _wicon = "🔴"
+                        _wstatus = f"超過(+{_wdiff:.1f}日)"
+                        _wcolor = "#C0392B"
+                        _any_ward_over = True
+                        _ward_over_details.append((_w, _wjudge, _wdiff))
+                    _wdays_txt = f"過去{_wdays}日(不足)" if _wpartial else f"過去{_wdays}日"
+                    # 短手3 除外後の併記
+                    if _wshort3 > 0 and _wlos_ex is not None and _wlos_ex != _wlos:
+                        _wex_txt = (
+                            f"<br/><span style='color:#666;font-size:0.85em;'>"
+                            f"通常 {_wlos}日 → 短手3除外後 "
+                            f"<strong style='color:{_wcolor};'>{_wlos_ex}日</strong>"
+                            f"（除外 {int(_wshort3)}件）</span>"
+                        )
+                    else:
+                        _wex_txt = ""
+                    st.markdown(
+                        f"<div style='padding:8px 12px;background:#F8F9FA;border-left:4px solid {_wcolor};border-radius:4px;'>"
+                        f"<strong>{_w}病棟</strong>: {_wicon} "
+                        f"<strong style='color:{_wcolor};font-size:1.15em;'>{_wjudge}日</strong> "
+                        f"/ 上限 {_max_avg_los}日<br/>{_wstatus}"
+                        f"{_wex_txt}"
+                        f"<br/><span style='color:#888;font-size:0.8em;'>{_wdays_txt}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        # --- 平均在院日数アラート（病棟別判定に変更）---
+        # いずれかの病棟が基準超過している場合にアラート表示
+        if _ward_rolling_ds and _ward_over_details:
+            # C群患者数を取得（選択病棟の値）
+            _c_count = 0
+            if "C群患者数" in df.columns:
+                _c_count = int(df["C群患者数"].iloc[-1]) if len(df) > 0 else 0
+            elif "phase_c_count" in df.columns:
+                _c_count = int(df["phase_c_count"].iloc[-1]) if len(df) > 0 else 0
+
+            _over_descriptions = []
+            for _w, _wlos, _wdiff in _ward_over_details:
+                _over_descriptions.append(f"**{_w}: {_wlos}日（+{_wdiff:.1f}日超過）**")
+            _over_text = "、".join(_over_descriptions)
+
+            _critical = any(_wdiff > 0.5 for _w, _wlos, _wdiff in _ward_over_details)
+            _los_alert_lines = [
+                f"🚨 **病棟施設基準超過** — {_over_text}\n\n",
+                f"地域包括医療病棟の施設基準（各病棟ごとに平均在院日数{_max_avg_los}日以内）を満たさなくなるリスクがあります。",
+                f" 該当病棟で早急にC群（15日目以降）患者の退院調整が必要です。\n\n",
+                "**対策（該当病棟のC群患者からの退院促進）:**\n",
+                "- 超過している病棟のC群（在院15日以上）患者をリストアップ\n",
+                "- 転院先・在宅復帰先の早期確保（連携室への依頼）\n",
+                "- 退院前カンファレンスの前倒し実施\n",
+                "- 該当病棟への新規入院受入れ（分母を増やす）による平均在院日数の引き下げ\n",
+            ]
+            if _c_count > 0 and _is_ward_view:
+                _los_alert_lines.append(f"\n現在の{_selected_ward_key}のC群患者数: **{_c_count}名**")
+            if _critical:
+                st.error("".join(_los_alert_lines))
+            else:
+                st.warning("".join(_los_alert_lines))
+        elif _rolling_los_ds is not None and _los_over > -1 and _los_over < 0:
+            # 選択病棟・全体が基準ぎりぎり（余裕1日未満）
+            # 施設基準判定は除外後の値を使う
+            _info_los = _judge_rolling if _judge_rolling is not None else _rolling_los_ds
+            _ex_note = ""
+            if _rolling_los_ex_ds is not None and _rolling_los_ex_ds != _rolling_los_ds:
+                _ex_note = f"（通常 {_rolling_los_ds}日 → 短手3除外後 {_rolling_los_ex_ds}日）"
+            st.info(
+                f"ℹ️ **余裕は{-_los_over:.1f}日** — {_selected_ward_key} の3ヶ月rolling は {_info_los}日 "
+                f"{_ex_note}で基準内ですが、基準超過が近づいています。C群患者の退院タイミングに注意してください。"
+            )
+
+        # --- 日次診療報酬・コスト・運営貢献額（プリセット連動で再計算）---
+        _chart_rev = df["日次診療報酬"]
+        _chart_cost = df["日次コスト"]
+        _chart_profit = df["日次運営貢献額"]
+        # フェーズ別患者数カラムがあれば現在のプリセットで再計算
+        _phase_cols_ja = {"A群患者数": (phase_a_rev, phase_a_cost), "B群患者数": (phase_b_rev, phase_b_cost), "C群患者数": (phase_c_rev, phase_c_cost)}
+        if all(c in df.columns for c in _phase_cols_ja):
+            _chart_rev = sum(df[c] * r for c, (r, _) in _phase_cols_ja.items())
+            _chart_cost = sum(df[c] * k for c, (_, k) in _phase_cols_ja.items())
+            _chart_profit = _chart_rev - _chart_cost
+
+        fig, ax = plt.subplots(figsize=(12, 3))
+        ax.plot(df["日"], _chart_rev / 10000, color=COLOR_REVENUE, linewidth=2, label="診療報酬収入")
+        ax.plot(df["日"], _chart_cost / 10000, color=COLOR_COST, linewidth=2, label="コスト")
+        ax.plot(df["日"], _chart_profit / 10000, color=COLOR_PROFIT, linewidth=2, label="運営貢献額")
+        ax.axhline(y=0, color="black", linewidth=0.5)
+        ax.set_xlabel("日")
+        ax.set_ylabel("金額（万円）")
+        ax.set_title("日次診療報酬・コスト・運営貢献額推移")
+        ax.legend()
+        ax.set_xlim(1, days_in_month)
+        ax.grid(True, alpha=0.3)
+        st.pyplot(fig)
+        plt.close(fig)
+
+        # --- 累積運営貢献額推移（月全体・予測線・目標ライン付き）---
+        _cum_profit = _chart_profit.cumsum()
+        _cum_values = (_cum_profit / 10000).values  # 万円単位
+        _days_values = df["日"].values
+        _days_elapsed = len(_days_values)
+        _end_day = int(_calendar_month_days) if '_calendar_month_days' in dir() else int(days_in_month)
+
+        fig, ax = plt.subplots(figsize=(12, 3))
+        # 実績の塗りつぶし
+        ax.fill_between(
+            _days_values, _cum_values, 0,
+            where=_cum_values >= 0, color=COLOR_PROFIT, alpha=0.3,
+        )
+        ax.fill_between(
+            _days_values, _cum_values, 0,
+            where=_cum_values < 0, color=COLOR_A, alpha=0.3,
+        )
+        # 実績ライン
+        ax.plot(_days_values, _cum_values, color=COLOR_PROFIT, linewidth=2.5, label="実績（累積）")
+
+        # --- 月末までの予測と目標ラインを描画 ---
+        _projection_text = []
+        if _days_elapsed >= 1 and _end_day > _days_elapsed:
+            # ① 現ペース維持の月末予測値
+            _current_pace_per_day = _cum_values[-1] / _days_elapsed  # 万円/日
+            _projected_end = _cum_values[-1] + _current_pace_per_day * (_end_day - _days_elapsed)
+
+            _proj_x = [_days_values[-1], _end_day]
+            _proj_y = [_cum_values[-1], _projected_end]
+            ax.plot(_proj_x, _proj_y,
+                    linestyle="--", linewidth=2.5, color=COLOR_PROFIT, alpha=0.6,
+                    label=f"現ペース予測 → 月末 約{_projected_end:,.0f}万円")
+            ax.scatter([_end_day], [_projected_end], s=80, color=COLOR_PROFIT, zorder=5)
+            _projection_text.append(f"現ペース予測 **{_projected_end:,.0f}万円**")
+
+            # ② 目標稼働率レンジでの月末見込み（90%/95%）
+            #    目標達成時の1日あたり平均運営貢献額 ≈ ベッド数 × 目標稼働率 × 平均運営貢献額/床日
+            #    ここでは、実績の「在院患者あたり運営貢献額」をそのまま使い、患者数を稼働率から逆算
+            try:
+                _avg_profit_per_patient = (
+                    _chart_profit.sum() / df["在院患者数"].sum()
+                    if df["在院患者数"].sum() > 0 else 0
+                )  # 円/人
+            except Exception:
+                _avg_profit_per_patient = 0
+
+            if _avg_profit_per_patient > 0:
+                # 目標下限（90%）で月全体を運用した場合
+                _target_lo_daily = _view_beds * target_lower * _avg_profit_per_patient / 10000  # 万円/日
+                _target_hi_daily = _view_beds * target_upper * _avg_profit_per_patient / 10000
+                _target_lo_end = _target_lo_daily * _end_day
+                _target_hi_end = _target_hi_daily * _end_day
+
+                # 目標レンジ帯（1日目から月末まで線形増加）
+                _target_x = [1, _end_day]
+                _target_lo_y = [_target_lo_daily, _target_lo_end]
+                _target_hi_y = [_target_hi_daily, _target_hi_end]
+
+                ax.fill_between(
+                    _target_x, _target_lo_y, _target_hi_y,
+                    color="#F39C12", alpha=0.15,
+                    label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%稼働)",
+                )
+                ax.plot(_target_x, _target_lo_y,
+                        linestyle=":", linewidth=1.5, color="#F39C12", alpha=0.7)
+                ax.plot(_target_x, _target_hi_y,
+                        linestyle=":", linewidth=1.5, color="#F39C12", alpha=0.7)
+
+                # 目標下限の月末値をマーク
+                ax.scatter([_end_day], [_target_lo_end], s=60, color="#E67E22", zorder=5, marker="s")
+
+                # --- ラベル配置: 値の大小順に上下を決める ---
+                # 高い値のラベルを上に、低い値のラベルを下に配置する
+                if _target_lo_end >= _projected_end:
+                    # 目標下限 > 実績予測 → 目標下限を上、実績予測を下
+                    _upper_xy = (_end_day, _target_lo_end)
+                    _upper_text = f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円"
+                    _upper_color = "#D35400"
+                    _upper_edge = "#E67E22"
+                    _lower_xy = (_end_day, _projected_end)
+                    _lower_text = f"実績ペース予測\n{_projected_end:,.0f}万円"
+                    _lower_color = COLOR_PROFIT
+                    _lower_edge = COLOR_PROFIT
+                    _upper_fontsize = 8
+                    _lower_fontsize = 9
                 else:
-                    _wicon = "🔴"
-                    _wstatus = f"超過(+{_wdiff:.1f}日)"
-                    _wcolor = "#C0392B"
-                    _any_ward_over = True
-                    _ward_over_details.append((_w, _wjudge, _wdiff))
-                _wdays_txt = f"過去{_wdays}日(不足)" if _wpartial else f"過去{_wdays}日"
-                # 短手3 除外後の併記
-                if _wshort3 > 0 and _wlos_ex is not None and _wlos_ex != _wlos:
-                    _wex_txt = (
-                        f"<br/><span style='color:#666;font-size:0.85em;'>"
-                        f"通常 {_wlos}日 → 短手3除外後 "
-                        f"<strong style='color:{_wcolor};'>{_wlos_ex}日</strong>"
-                        f"（除外 {int(_wshort3)}件）</span>"
+                    # 実績予測 > 目標下限 → 実績予測を上、目標下限を下
+                    _upper_xy = (_end_day, _projected_end)
+                    _upper_text = f"実績ペース予測\n{_projected_end:,.0f}万円"
+                    _upper_color = COLOR_PROFIT
+                    _upper_edge = COLOR_PROFIT
+                    _lower_xy = (_end_day, _target_lo_end)
+                    _lower_text = f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円"
+                    _lower_color = "#D35400"
+                    _lower_edge = "#E67E22"
+                    _upper_fontsize = 9
+                    _lower_fontsize = 8
+
+                ax.annotate(
+                    _upper_text,
+                    xy=_upper_xy,
+                    xytext=(-10, 12), textcoords="offset points",
+                    fontsize=_upper_fontsize, fontweight="bold", color=_upper_color,
+                    ha="right", va="bottom",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_upper_edge, alpha=0.9),
+                )
+                ax.annotate(
+                    _lower_text,
+                    xy=_lower_xy,
+                    xytext=(-10, -12), textcoords="offset points",
+                    fontsize=_lower_fontsize, fontweight="bold", color=_lower_color,
+                    ha="right", va="top",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_lower_edge, alpha=0.9),
+                )
+
+                # 差額の計算
+                _gap_to_target_lo = _projected_end - _target_lo_end
+                _gap_to_target_hi = _projected_end - _target_hi_end
+                _projection_text.append(
+                    f"目標下限({target_lower*100:.0f}%)比 **{_gap_to_target_lo:+,.0f}万円** / "
+                    f"目標上限({target_upper*100:.0f}%)比 **{_gap_to_target_hi:+,.0f}万円**"
+                )
+            else:
+                # 目標レンジが計算できない場合: 実績予測ラベルのみ表示
+                ax.annotate(
+                    f"実績ペース予測\n{_projected_end:,.0f}万円",
+                    xy=(_end_day, _projected_end),
+                    xytext=(-10, 12), textcoords="offset points",
+                    fontsize=9, fontweight="bold", color=COLOR_PROFIT,
+                    ha="right", va="bottom",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=COLOR_PROFIT, alpha=0.9),
+                )
+
+        ax.axhline(y=0, color="black", linewidth=0.5)
+        ax.set_xlabel("日")
+        ax.set_ylabel("累積運営貢献額（万円）")
+        ax.set_title("累積運営貢献額推移（月全体・予測線・目標レンジ付き）")
+        ax.set_xlim(1, _end_day + 0.5)
+        ax.legend(loc="upper left", fontsize=9)
+        ax.grid(True, alpha=0.3)
+        st.pyplot(fig)
+        plt.close(fig)
+
+        # 予測値の要約キャプション
+        if _projection_text:
+            st.caption("📊 " + " ｜ ".join(_projection_text))
+
+        # --- フェーズ別運営貢献額の内訳 ---
+        st.subheader("📊 フェーズ別運営貢献額の内訳")
+        # 運営貢献額単価（変動費のみ）: A=24000, B=30000, C=28900
+        _profit_per_day = {
+            "A群": _active_cli_params.get("phase_a_revenue", 36000) - _active_cli_params.get("phase_a_cost", 12000),
+            "B群": _active_cli_params.get("phase_b_revenue", 36000) - _active_cli_params.get("phase_b_cost", 6000),
+            "C群": _active_cli_params.get("phase_c_revenue", 33400) - _active_cli_params.get("phase_c_cost", 4500),
+        }
+        _phase_profit_a = (df["A群_患者数"] * _profit_per_day["A群"]).sum()
+        _phase_profit_b = (df["B群_患者数"] * _profit_per_day["B群"]).sum()
+        _phase_profit_c = (df["C群_患者数"] * _profit_per_day["C群"]).sum()
+        _phase_profit_total = _phase_profit_a + _phase_profit_b + _phase_profit_c
+
+        _fp_c1, _fp_c2, _fp_c3 = st.columns(3)
+        with _fp_c1:
+            _pct_a = (_phase_profit_a / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
+            st.markdown(
+                f'<div style="background-color:#FDEDEC; padding:10px; border-radius:8px; text-align:center;">'
+                f'<b style="color:#E74C3C;">A群の運営貢献額</b><br>'
+                f'<span style="font-size:1.3em;">{_phase_profit_a/10000:,.0f}万円</span><br>'
+                f'<span style="font-size:0.9em;">全体の {_pct_a:.1f}%</span></div>',
+                unsafe_allow_html=True,
+            )
+        with _fp_c2:
+            _pct_b = (_phase_profit_b / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
+            st.markdown(
+                f'<div style="background-color:#EAFAF1; padding:10px; border-radius:8px; text-align:center;">'
+                f'<b style="color:#27AE60;">B群の運営貢献額</b><br>'
+                f'<span style="font-size:1.3em;">{_phase_profit_b/10000:,.0f}万円</span><br>'
+                f'<span style="font-size:0.9em;">全体の {_pct_b:.1f}%</span></div>',
+                unsafe_allow_html=True,
+            )
+        with _fp_c3:
+            _pct_c = (_phase_profit_c / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
+            st.markdown(
+                f'<div style="background-color:#EBF5FB; padding:10px; border-radius:8px; text-align:center;">'
+                f'<b style="color:#2980B9;">C群の運営貢献額</b><br>'
+                f'<span style="font-size:1.3em;">{_phase_profit_c/10000:,.0f}万円</span><br>'
+                f'<span style="font-size:0.9em;">全体の {_pct_c:.1f}%</span></div>',
+                unsafe_allow_html=True,
+            )
+
+        # 運営貢献額のどこが効いているかの一文解説
+        _max_phase = max([("A群", _pct_a), ("B群", _pct_b), ("C群", _pct_c)], key=lambda x: x[1])
+        _phase_desc = {"A群": "A群（急性期）", "B群": "B群（回復期）", "C群": "C群（退院準備期）"}
+        st.caption(f"💡 運営貢献額の {_max_phase[1]:.0f}% は {_phase_desc[_max_phase[0]]} が創出")
+
+        # --- 🌙 夜勤安全ライン × 稼働率シミュレーション ---
+        with st.expander("🌙 夜勤安全ライン × 稼働率シミュレーション", expanded=False):
+
+            _nc_cols = st.columns([1, 1, 2])
+
+            with _nc_cols[0]:
+                st.markdown("**🌙 夜勤の設定**")
+                _nc_nightly = st.slider(
+                    "夜勤安全ライン（在院数）",
+                    min_value=int(_view_beds * 0.70),
+                    max_value=int(_view_beds * 0.98),
+                    value=int(_view_beds * 0.87),
+                    step=1,
+                    help="夜勤者が無理なく対応できる在院患者数",
+                    key="nc_nightly_slider"
+                )
+                _nc_empty_night = _view_beds - _nc_nightly
+                st.caption(f"夜間空床: {_nc_empty_night}床（急変時ベッド確保）")
+
+            with _nc_cols[1]:
+                st.markdown("**☀️ 日中の回転目標**")
+                _nc_wd_dis = st.slider(
+                    "平日の退院目標（人/日）",
+                    min_value=1,
+                    max_value=12,
+                    value=7,
+                    step=1,
+                    help="退院1人＋入院1人のペアリングが前提",
+                    key="nc_weekday_dis_slider"
+                )
+                _nc_we_dis = st.slider(
+                    "土日の退院（人/日）",
+                    min_value=0,
+                    max_value=4,
+                    value=1,
+                    step=1,
+                    help="土曜のみ2組・日曜0の場合は平均1を入力",
+                    key="nc_weekend_dis_slider"
+                )
+                _nc_monthly_admits = _nc_wd_dis * 20 + _nc_we_dis * 10
+                st.caption(f"月間入院数: 平日{_nc_wd_dis}×20日 + 土日{_nc_we_dis}×10日 = {_nc_monthly_admits}人（当院の現状≒150人）\n※土曜2組・日曜0の場合、平均1人/日で入力")
+
+            with _nc_cols[2]:
+                # Calculate results
+                _nc_wd_occ = (_nc_nightly + _nc_wd_dis) / _view_beds * 100
+                _nc_we_occ = (_nc_nightly + _nc_we_dis) / _view_beds * 100
+                _nc_monthly_occ = (_nc_wd_occ * 20 + _nc_we_occ * 10) / 30
+
+                # Current values for comparison
+                _nc_current_occ = _gauge_occ if '_gauge_occ' in dir() else 88.8
+                _nc_occ_improvement = _nc_monthly_occ - _nc_current_occ
+                _nc_annual_improvement = _nc_occ_improvement * float(st.session_state.get("annual_value_1pct", 1199))
+
+                # Bonus calculation
+                _nc_bonus_per_person = _nc_annual_improvement * 10000 * 0.58 / 290  # yen
+
+                st.markdown("**📊 シミュレーション結果**")
+
+                _rc1, _rc2 = st.columns(2)
+                with _rc1:
+                    st.metric("平日稼働率", f"{_nc_wd_occ:.1f}%",
+                              delta=f"夜{_nc_nightly}人+退院{_nc_wd_dis}人")
+                    st.metric("土日稼働率", f"{_nc_we_occ:.1f}%",
+                              delta=f"夜{_nc_nightly}人+退院{_nc_we_dis}人")
+                with _rc2:
+                    st.metric("月平均稼働率", f"{_nc_monthly_occ:.1f}%",
+                              delta=f"{_nc_occ_improvement:+.1f}pt",
+                              delta_color="normal" if _nc_occ_improvement >= 0 else "inverse")
+                    st.metric("年間改善額", f"{_nc_annual_improvement:+,.0f}万円",
+                              delta=f"一人あたり +{_nc_bonus_per_person:,.0f}円/年" if _nc_bonus_per_person > 0 else f"一人あたり {_nc_bonus_per_person:,.0f}円/年")
+
+                # Visual comparison
+                if _nc_occ_improvement > 0:
+                    st.success(
+                        f"🌙 **夜勤在院{_nc_nightly}人**（現状より楽）で、"
+                        f"稼働率**{_nc_monthly_occ:.1f}%**（+{_nc_occ_improvement:.1f}pt）。\n\n"
+                        f"年間 **{_nc_annual_improvement:,.0f}万円** の改善。"
+                        f"職員一人あたり年間 **+{_nc_bonus_per_person:,.0f}円**（賞与約+{_nc_bonus_per_person/50000:.0f}%相当）。\n\n"
+                        f"**条件:** 平日の退院を{_nc_wd_dis}人/日に増やし、退院当日に入院を受ける（入退院ペアリング）。"
+                    )
+                elif _nc_occ_improvement < -1:
+                    st.warning(
+                        f"⚠️ この設定では稼働率が{_nc_occ_improvement:+.1f}pt低下します。"
+                        f"夜勤安全ラインを上げるか、日中退院を増やしてください。"
                     )
                 else:
-                    _wex_txt = ""
-                st.markdown(
-                    f"<div style='padding:8px 12px;background:#F8F9FA;border-left:4px solid {_wcolor};border-radius:4px;'>"
-                    f"<strong>{_w}病棟</strong>: {_wicon} "
-                    f"<strong style='color:{_wcolor};font-size:1.15em;'>{_wjudge}日</strong> "
-                    f"/ 上限 {_max_avg_los}日<br/>{_wstatus}"
-                    f"{_wex_txt}"
-                    f"<br/><span style='color:#888;font-size:0.8em;'>{_wdays_txt}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+                    st.info(f"ℹ️ 現状維持に近い設定です。日中退院を増やすとさらに改善します。")
 
-    # --- 平均在院日数アラート（病棟別判定に変更）---
-    # いずれかの病棟が基準超過している場合にアラート表示
-    if _ward_rolling_ds and _ward_over_details:
-        # C群患者数を取得（選択病棟の値）
-        _c_count = 0
-        if "C群患者数" in df.columns:
-            _c_count = int(df["C群患者数"].iloc[-1]) if len(df) > 0 else 0
-        elif "phase_c_count" in df.columns:
-            _c_count = int(df["phase_c_count"].iloc[-1]) if len(df) > 0 else 0
+            # What-if table
+            st.markdown(f"**📋 退院数による改善効果（夜勤在院{_nc_nightly}人固定）**")
 
-        _over_descriptions = []
-        for _w, _wlos, _wdiff in _ward_over_details:
-            _over_descriptions.append(f"**{_w}: {_wlos}日（+{_wdiff:.1f}日超過）**")
-        _over_text = "、".join(_over_descriptions)
+            _nc_table_data = []
+            for d in range(0, 11):
+                _d_occ = (_nc_nightly + d) / _view_beds * 100
+                _d_monthly = (_d_occ * 20 + _nc_we_occ * 10) / 30
+                _d_imp = (_d_monthly - _nc_current_occ) * float(st.session_state.get("annual_value_1pct", 1199))
+                _d_bonus = _d_imp * 10000 * 0.58 / 290
+                _nc_table_data.append({
+                    "平日退院数": f"{d}人/日",
+                    "平日稼働率": f"{_d_occ:.1f}%",
+                    "月平均稼働率": f"{_d_monthly:.1f}%",
+                    "年間改善額": f"{_d_imp:+,.0f}万円",
+                    "一人あたり": f"{_d_bonus:+,.0f}円/年",
+                })
 
-        _critical = any(_wdiff > 0.5 for _w, _wlos, _wdiff in _ward_over_details)
-        _los_alert_lines = [
-            f"🚨 **病棟施設基準超過** — {_over_text}\n\n",
-            f"地域包括医療病棟の施設基準（各病棟ごとに平均在院日数{_max_avg_los}日以内）を満たさなくなるリスクがあります。",
-            f" 該当病棟で早急にC群（15日目以降）患者の退院調整が必要です。\n\n",
-            "**対策（該当病棟のC群患者からの退院促進）:**\n",
-            "- 超過している病棟のC群（在院15日以上）患者をリストアップ\n",
-            "- 転院先・在宅復帰先の早期確保（連携室への依頼）\n",
-            "- 退院前カンファレンスの前倒し実施\n",
-            "- 該当病棟への新規入院受入れ（分母を増やす）による平均在院日数の引き下げ\n",
-        ]
-        if _c_count > 0 and _is_ward_view:
-            _los_alert_lines.append(f"\n現在の{_selected_ward_key}のC群患者数: **{_c_count}名**")
-        if _critical:
-            st.error("".join(_los_alert_lines))
-        else:
-            st.warning("".join(_los_alert_lines))
-    elif _rolling_los_ds is not None and _los_over > -1 and _los_over < 0:
-        # 選択病棟・全体が基準ぎりぎり（余裕1日未満）
-        # 施設基準判定は除外後の値を使う
-        _info_los = _judge_rolling if _judge_rolling is not None else _rolling_los_ds
-        _ex_note = ""
-        if _rolling_los_ex_ds is not None and _rolling_los_ex_ds != _rolling_los_ds:
-            _ex_note = f"（通常 {_rolling_los_ds}日 → 短手3除外後 {_rolling_los_ex_ds}日）"
-        st.info(
-            f"ℹ️ **余裕は{-_los_over:.1f}日** — {_selected_ward_key} の3ヶ月rolling は {_info_los}日 "
-            f"{_ex_note}で基準内ですが、基準超過が近づいています。C群患者の退院タイミングに注意してください。"
-        )
+            _nc_table_df = pd.DataFrame(_nc_table_data)
+            st.dataframe(_nc_table_df, use_container_width=True, hide_index=True)
 
-    # --- 日次診療報酬・コスト・運営貢献額（プリセット連動で再計算）---
-    _chart_rev = df["日次診療報酬"]
-    _chart_cost = df["日次コスト"]
-    _chart_profit = df["日次運営貢献額"]
-    # フェーズ別患者数カラムがあれば現在のプリセットで再計算
-    _phase_cols_ja = {"A群患者数": (phase_a_rev, phase_a_cost), "B群患者数": (phase_b_rev, phase_b_cost), "C群患者数": (phase_c_rev, phase_c_cost)}
-    if all(c in df.columns for c in _phase_cols_ja):
-        _chart_rev = sum(df[c] * r for c, (r, _) in _phase_cols_ja.items())
-        _chart_cost = sum(df[c] * k for c, (_, k) in _phase_cols_ja.items())
-        _chart_profit = _chart_rev - _chart_cost
-
-    fig, ax = plt.subplots(figsize=(12, 3))
-    ax.plot(df["日"], _chart_rev / 10000, color=COLOR_REVENUE, linewidth=2, label="診療報酬収入")
-    ax.plot(df["日"], _chart_cost / 10000, color=COLOR_COST, linewidth=2, label="コスト")
-    ax.plot(df["日"], _chart_profit / 10000, color=COLOR_PROFIT, linewidth=2, label="運営貢献額")
-    ax.axhline(y=0, color="black", linewidth=0.5)
-    ax.set_xlabel("日")
-    ax.set_ylabel("金額（万円）")
-    ax.set_title("日次診療報酬・コスト・運営貢献額推移")
-    ax.legend()
-    ax.set_xlim(1, days_in_month)
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-    plt.close(fig)
-
-    # --- 累積運営貢献額推移（月全体・予測線・目標ライン付き）---
-    _cum_profit = _chart_profit.cumsum()
-    _cum_values = (_cum_profit / 10000).values  # 万円単位
-    _days_values = df["日"].values
-    _days_elapsed = len(_days_values)
-    _end_day = int(_calendar_month_days) if '_calendar_month_days' in dir() else int(days_in_month)
-
-    fig, ax = plt.subplots(figsize=(12, 3))
-    # 実績の塗りつぶし
-    ax.fill_between(
-        _days_values, _cum_values, 0,
-        where=_cum_values >= 0, color=COLOR_PROFIT, alpha=0.3,
-    )
-    ax.fill_between(
-        _days_values, _cum_values, 0,
-        where=_cum_values < 0, color=COLOR_A, alpha=0.3,
-    )
-    # 実績ライン
-    ax.plot(_days_values, _cum_values, color=COLOR_PROFIT, linewidth=2.5, label="実績（累積）")
-
-    # --- 月末までの予測と目標ラインを描画 ---
-    _projection_text = []
-    if _days_elapsed >= 1 and _end_day > _days_elapsed:
-        # ① 現ペース維持の月末予測値
-        _current_pace_per_day = _cum_values[-1] / _days_elapsed  # 万円/日
-        _projected_end = _cum_values[-1] + _current_pace_per_day * (_end_day - _days_elapsed)
-
-        _proj_x = [_days_values[-1], _end_day]
-        _proj_y = [_cum_values[-1], _projected_end]
-        ax.plot(_proj_x, _proj_y,
-                linestyle="--", linewidth=2.5, color=COLOR_PROFIT, alpha=0.6,
-                label=f"現ペース予測 → 月末 約{_projected_end:,.0f}万円")
-        ax.scatter([_end_day], [_projected_end], s=80, color=COLOR_PROFIT, zorder=5)
-        _projection_text.append(f"現ペース予測 **{_projected_end:,.0f}万円**")
-
-        # ② 目標稼働率レンジでの月末見込み（90%/95%）
-        #    目標達成時の1日あたり平均運営貢献額 ≈ ベッド数 × 目標稼働率 × 平均運営貢献額/床日
-        #    ここでは、実績の「在院患者あたり運営貢献額」をそのまま使い、患者数を稼働率から逆算
-        try:
-            _avg_profit_per_patient = (
-                _chart_profit.sum() / df["在院患者数"].sum()
-                if df["在院患者数"].sum() > 0 else 0
-            )  # 円/人
-        except Exception:
-            _avg_profit_per_patient = 0
-
-        if _avg_profit_per_patient > 0:
-            # 目標下限（90%）で月全体を運用した場合
-            _target_lo_daily = _view_beds * target_lower * _avg_profit_per_patient / 10000  # 万円/日
-            _target_hi_daily = _view_beds * target_upper * _avg_profit_per_patient / 10000
-            _target_lo_end = _target_lo_daily * _end_day
-            _target_hi_end = _target_hi_daily * _end_day
-
-            # 目標レンジ帯（1日目から月末まで線形増加）
-            _target_x = [1, _end_day]
-            _target_lo_y = [_target_lo_daily, _target_lo_end]
-            _target_hi_y = [_target_hi_daily, _target_hi_end]
-
-            ax.fill_between(
-                _target_x, _target_lo_y, _target_hi_y,
-                color="#F39C12", alpha=0.15,
-                label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%稼働)",
+            st.caption(
+                "※ 前提: 退院した日に入院を受ける（入退院ペアリング）。"
+                "人件費率58%・職員290名で計算。稼働率1%の年間価値は左サイドバーの値を使用。"
             )
-            ax.plot(_target_x, _target_lo_y,
-                    linestyle=":", linewidth=1.5, color="#F39C12", alpha=0.7)
-            ax.plot(_target_x, _target_hi_y,
-                    linestyle=":", linewidth=1.5, color="#F39C12", alpha=0.7)
-
-            # 目標下限の月末値をマーク
-            ax.scatter([_end_day], [_target_lo_end], s=60, color="#E67E22", zorder=5, marker="s")
-
-            # --- ラベル配置: 値の大小順に上下を決める ---
-            # 高い値のラベルを上に、低い値のラベルを下に配置する
-            if _target_lo_end >= _projected_end:
-                # 目標下限 > 実績予測 → 目標下限を上、実績予測を下
-                _upper_xy = (_end_day, _target_lo_end)
-                _upper_text = f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円"
-                _upper_color = "#D35400"
-                _upper_edge = "#E67E22"
-                _lower_xy = (_end_day, _projected_end)
-                _lower_text = f"実績ペース予測\n{_projected_end:,.0f}万円"
-                _lower_color = COLOR_PROFIT
-                _lower_edge = COLOR_PROFIT
-                _upper_fontsize = 8
-                _lower_fontsize = 9
-            else:
-                # 実績予測 > 目標下限 → 実績予測を上、目標下限を下
-                _upper_xy = (_end_day, _projected_end)
-                _upper_text = f"実績ペース予測\n{_projected_end:,.0f}万円"
-                _upper_color = COLOR_PROFIT
-                _upper_edge = COLOR_PROFIT
-                _lower_xy = (_end_day, _target_lo_end)
-                _lower_text = f"目標下限{target_lower*100:.0f}%\n{_target_lo_end:,.0f}万円"
-                _lower_color = "#D35400"
-                _lower_edge = "#E67E22"
-                _upper_fontsize = 9
-                _lower_fontsize = 8
-
-            ax.annotate(
-                _upper_text,
-                xy=_upper_xy,
-                xytext=(-10, 12), textcoords="offset points",
-                fontsize=_upper_fontsize, fontweight="bold", color=_upper_color,
-                ha="right", va="bottom",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_upper_edge, alpha=0.9),
-            )
-            ax.annotate(
-                _lower_text,
-                xy=_lower_xy,
-                xytext=(-10, -12), textcoords="offset points",
-                fontsize=_lower_fontsize, fontweight="bold", color=_lower_color,
-                ha="right", va="top",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_lower_edge, alpha=0.9),
-            )
-
-            # 差額の計算
-            _gap_to_target_lo = _projected_end - _target_lo_end
-            _gap_to_target_hi = _projected_end - _target_hi_end
-            _projection_text.append(
-                f"目標下限({target_lower*100:.0f}%)比 **{_gap_to_target_lo:+,.0f}万円** / "
-                f"目標上限({target_upper*100:.0f}%)比 **{_gap_to_target_hi:+,.0f}万円**"
-            )
-        else:
-            # 目標レンジが計算できない場合: 実績予測ラベルのみ表示
-            ax.annotate(
-                f"実績ペース予測\n{_projected_end:,.0f}万円",
-                xy=(_end_day, _projected_end),
-                xytext=(-10, 12), textcoords="offset points",
-                fontsize=9, fontweight="bold", color=COLOR_PROFIT,
-                ha="right", va="bottom",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=COLOR_PROFIT, alpha=0.9),
-            )
-
-    ax.axhline(y=0, color="black", linewidth=0.5)
-    ax.set_xlabel("日")
-    ax.set_ylabel("累積運営貢献額（万円）")
-    ax.set_title("累積運営貢献額推移（月全体・予測線・目標レンジ付き）")
-    ax.set_xlim(1, _end_day + 0.5)
-    ax.legend(loc="upper left", fontsize=9)
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-    plt.close(fig)
-
-    # 予測値の要約キャプション
-    if _projection_text:
-        st.caption("📊 " + " ｜ ".join(_projection_text))
-
-    # --- フェーズ別運営貢献額の内訳 ---
-    st.subheader("📊 フェーズ別運営貢献額の内訳")
-    # 運営貢献額単価（変動費のみ）: A=24000, B=30000, C=28900
-    _profit_per_day = {
-        "A群": _active_cli_params.get("phase_a_revenue", 36000) - _active_cli_params.get("phase_a_cost", 12000),
-        "B群": _active_cli_params.get("phase_b_revenue", 36000) - _active_cli_params.get("phase_b_cost", 6000),
-        "C群": _active_cli_params.get("phase_c_revenue", 33400) - _active_cli_params.get("phase_c_cost", 4500),
-    }
-    _phase_profit_a = (df["A群_患者数"] * _profit_per_day["A群"]).sum()
-    _phase_profit_b = (df["B群_患者数"] * _profit_per_day["B群"]).sum()
-    _phase_profit_c = (df["C群_患者数"] * _profit_per_day["C群"]).sum()
-    _phase_profit_total = _phase_profit_a + _phase_profit_b + _phase_profit_c
-
-    _fp_c1, _fp_c2, _fp_c3 = st.columns(3)
-    with _fp_c1:
-        _pct_a = (_phase_profit_a / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
-        st.markdown(
-            f'<div style="background-color:#FDEDEC; padding:10px; border-radius:8px; text-align:center;">'
-            f'<b style="color:#E74C3C;">A群の運営貢献額</b><br>'
-            f'<span style="font-size:1.3em;">{_phase_profit_a/10000:,.0f}万円</span><br>'
-            f'<span style="font-size:0.9em;">全体の {_pct_a:.1f}%</span></div>',
-            unsafe_allow_html=True,
-        )
-    with _fp_c2:
-        _pct_b = (_phase_profit_b / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
-        st.markdown(
-            f'<div style="background-color:#EAFAF1; padding:10px; border-radius:8px; text-align:center;">'
-            f'<b style="color:#27AE60;">B群の運営貢献額</b><br>'
-            f'<span style="font-size:1.3em;">{_phase_profit_b/10000:,.0f}万円</span><br>'
-            f'<span style="font-size:0.9em;">全体の {_pct_b:.1f}%</span></div>',
-            unsafe_allow_html=True,
-        )
-    with _fp_c3:
-        _pct_c = (_phase_profit_c / _phase_profit_total * 100) if _phase_profit_total > 0 else 0
-        st.markdown(
-            f'<div style="background-color:#EBF5FB; padding:10px; border-radius:8px; text-align:center;">'
-            f'<b style="color:#2980B9;">C群の運営貢献額</b><br>'
-            f'<span style="font-size:1.3em;">{_phase_profit_c/10000:,.0f}万円</span><br>'
-            f'<span style="font-size:0.9em;">全体の {_pct_c:.1f}%</span></div>',
-            unsafe_allow_html=True,
-        )
-
-    # 運営貢献額のどこが効いているかの一文解説
-    _max_phase = max([("A群", _pct_a), ("B群", _pct_b), ("C群", _pct_c)], key=lambda x: x[1])
-    _phase_desc = {"A群": "A群（急性期）", "B群": "B群（回復期）", "C群": "C群（退院準備期）"}
-    st.caption(f"💡 運営貢献額の {_max_phase[1]:.0f}% は {_phase_desc[_max_phase[0]]} が創出")
-
-    # --- 🌙 夜勤安全ライン × 稼働率シミュレーション ---
-    with st.expander("🌙 夜勤安全ライン × 稼働率シミュレーション", expanded=False):
-
-        _nc_cols = st.columns([1, 1, 2])
-
-        with _nc_cols[0]:
-            st.markdown("**🌙 夜勤の設定**")
-            _nc_nightly = st.slider(
-                "夜勤安全ライン（在院数）",
-                min_value=int(_view_beds * 0.70),
-                max_value=int(_view_beds * 0.98),
-                value=int(_view_beds * 0.87),
-                step=1,
-                help="夜勤者が無理なく対応できる在院患者数",
-                key="nc_nightly_slider"
-            )
-            _nc_empty_night = _view_beds - _nc_nightly
-            st.caption(f"夜間空床: {_nc_empty_night}床（急変時ベッド確保）")
-
-        with _nc_cols[1]:
-            st.markdown("**☀️ 日中の回転目標**")
-            _nc_wd_dis = st.slider(
-                "平日の退院目標（人/日）",
-                min_value=1,
-                max_value=12,
-                value=7,
-                step=1,
-                help="退院1人＋入院1人のペアリングが前提",
-                key="nc_weekday_dis_slider"
-            )
-            _nc_we_dis = st.slider(
-                "土日の退院（人/日）",
-                min_value=0,
-                max_value=4,
-                value=1,
-                step=1,
-                help="土曜のみ2組・日曜0の場合は平均1を入力",
-                key="nc_weekend_dis_slider"
-            )
-            _nc_monthly_admits = _nc_wd_dis * 20 + _nc_we_dis * 10
-            st.caption(f"月間入院数: 平日{_nc_wd_dis}×20日 + 土日{_nc_we_dis}×10日 = {_nc_monthly_admits}人（当院の現状≒150人）\n※土曜2組・日曜0の場合、平均1人/日で入力")
-
-        with _nc_cols[2]:
-            # Calculate results
-            _nc_wd_occ = (_nc_nightly + _nc_wd_dis) / _view_beds * 100
-            _nc_we_occ = (_nc_nightly + _nc_we_dis) / _view_beds * 100
-            _nc_monthly_occ = (_nc_wd_occ * 20 + _nc_we_occ * 10) / 30
-
-            # Current values for comparison
-            _nc_current_occ = _gauge_occ if '_gauge_occ' in dir() else 88.8
-            _nc_occ_improvement = _nc_monthly_occ - _nc_current_occ
-            _nc_annual_improvement = _nc_occ_improvement * float(st.session_state.get("annual_value_1pct", 1199))
-
-            # Bonus calculation
-            _nc_bonus_per_person = _nc_annual_improvement * 10000 * 0.58 / 290  # yen
-
-            st.markdown("**📊 シミュレーション結果**")
-
-            _rc1, _rc2 = st.columns(2)
-            with _rc1:
-                st.metric("平日稼働率", f"{_nc_wd_occ:.1f}%",
-                          delta=f"夜{_nc_nightly}人+退院{_nc_wd_dis}人")
-                st.metric("土日稼働率", f"{_nc_we_occ:.1f}%",
-                          delta=f"夜{_nc_nightly}人+退院{_nc_we_dis}人")
-            with _rc2:
-                st.metric("月平均稼働率", f"{_nc_monthly_occ:.1f}%",
-                          delta=f"{_nc_occ_improvement:+.1f}pt",
-                          delta_color="normal" if _nc_occ_improvement >= 0 else "inverse")
-                st.metric("年間改善額", f"{_nc_annual_improvement:+,.0f}万円",
-                          delta=f"一人あたり +{_nc_bonus_per_person:,.0f}円/年" if _nc_bonus_per_person > 0 else f"一人あたり {_nc_bonus_per_person:,.0f}円/年")
-
-            # Visual comparison
-            if _nc_occ_improvement > 0:
-                st.success(
-                    f"🌙 **夜勤在院{_nc_nightly}人**（現状より楽）で、"
-                    f"稼働率**{_nc_monthly_occ:.1f}%**（+{_nc_occ_improvement:.1f}pt）。\n\n"
-                    f"年間 **{_nc_annual_improvement:,.0f}万円** の改善。"
-                    f"職員一人あたり年間 **+{_nc_bonus_per_person:,.0f}円**（賞与約+{_nc_bonus_per_person/50000:.0f}%相当）。\n\n"
-                    f"**条件:** 平日の退院を{_nc_wd_dis}人/日に増やし、退院当日に入院を受ける（入退院ペアリング）。"
-                )
-            elif _nc_occ_improvement < -1:
-                st.warning(
-                    f"⚠️ この設定では稼働率が{_nc_occ_improvement:+.1f}pt低下します。"
-                    f"夜勤安全ラインを上げるか、日中退院を増やしてください。"
-                )
-            else:
-                st.info(f"ℹ️ 現状維持に近い設定です。日中退院を増やすとさらに改善します。")
-
-        # What-if table
-        st.markdown(f"**📋 退院数による改善効果（夜勤在院{_nc_nightly}人固定）**")
-
-        _nc_table_data = []
-        for d in range(0, 11):
-            _d_occ = (_nc_nightly + d) / _view_beds * 100
-            _d_monthly = (_d_occ * 20 + _nc_we_occ * 10) / 30
-            _d_imp = (_d_monthly - _nc_current_occ) * float(st.session_state.get("annual_value_1pct", 1199))
-            _d_bonus = _d_imp * 10000 * 0.58 / 290
-            _nc_table_data.append({
-                "平日退院数": f"{d}人/日",
-                "平日稼働率": f"{_d_occ:.1f}%",
-                "月平均稼働率": f"{_d_monthly:.1f}%",
-                "年間改善額": f"{_d_imp:+,.0f}万円",
-                "一人あたり": f"{_d_bonus:+,.0f}円/年",
-            })
-
-        _nc_table_df = pd.DataFrame(_nc_table_data)
-        st.dataframe(_nc_table_df, use_container_width=True, hide_index=True)
-
-        st.caption(
-            "※ 前提: 退院した日に入院を受ける（入退院ペアリング）。"
-            "人件費率58%・職員290名で計算。稼働率1%の年間価値は左サイドバーの値を使用。"
-        )
 
 
 # ===== タブ4: 運営改善アラート =====
@@ -7172,260 +7172,260 @@ if "👨‍⚕️ 退院タイミング" in _tab_idx:
 <strong>{icon} {title}</strong><br>{msg}
 </div>""", unsafe_allow_html=True)
 
-    # ============================================================
-    # ④ 退院マネジメント（家族目線の退院調整）
-    # ============================================================
-    _dm_detail_df = st.session_state.get("admission_details", pd.DataFrame())
-    if not isinstance(_dm_detail_df, pd.DataFrame) or len(_dm_detail_df) == 0:
-        st.info("入退院詳細データが必要です")
-    else:
-        # --- セクション1: 📊 退院曜日分布（グラフ） ---
-        try:
-            _dm_stats = get_discharge_weekday_stats(_dm_detail_df)
-            st.markdown("### 📊 退院曜日分布")
+        # ============================================================
+        # ④ 退院マネジメント（家族目線の退院調整）
+        # ============================================================
+        _dm_detail_df = st.session_state.get("admission_details", pd.DataFrame())
+        if not isinstance(_dm_detail_df, pd.DataFrame) or len(_dm_detail_df) == 0:
+            st.info("入退院詳細データが必要です")
+        else:
+            # --- セクション1: 📊 退院曜日分布（グラフ） ---
+            try:
+                _dm_stats = get_discharge_weekday_stats(_dm_detail_df)
+                st.markdown("### 📊 退院曜日分布")
 
-            _dm_dist = _dm_stats["distribution"]
-            _dm_labels = _dm_stats["labels"]
-            _dm_total = _dm_stats["total"]
-            _dm_fri_pct = _dm_stats["friday_pct"]
+                _dm_dist = _dm_stats["distribution"]
+                _dm_labels = _dm_stats["labels"]
+                _dm_total = _dm_stats["total"]
+                _dm_fri_pct = _dm_stats["friday_pct"]
 
-            if _dm_total > 0:
-                st.metric("金曜退院率", f"{_dm_fri_pct}%",
-                          delta=f"金曜集中度 {_dm_stats['concentration_index']:.1f}倍",
-                          delta_color="inverse")
+                if _dm_total > 0:
+                    st.metric("金曜退院率", f"{_dm_fri_pct}%",
+                              delta=f"金曜集中度 {_dm_stats['concentration_index']:.1f}倍",
+                              delta_color="inverse")
 
-                _dm_counts = [_dm_dist.get(i, 0) for i in range(7)]
-                _dm_colors = ["#e74c3c" if i == 4 else "#3498db" for i in range(7)]
-                _dm_avg_line = _dm_total / 7.0
+                    _dm_counts = [_dm_dist.get(i, 0) for i in range(7)]
+                    _dm_colors = ["#e74c3c" if i == 4 else "#3498db" for i in range(7)]
+                    _dm_avg_line = _dm_total / 7.0
 
-                _dm_fig, _dm_ax = plt.subplots(figsize=(10, 3))
-                _dm_ax.bar(_dm_labels, _dm_counts, color=_dm_colors, edgecolor="white")
-                _dm_ax.axhline(y=_dm_avg_line, color="gray", linestyle="--", linewidth=1, label=f"均等分布 ({_dm_avg_line:.1f}件)")
-                _dm_ax.set_ylabel("退院件数")
-                _dm_ax.set_title("曜日別退院件数")
-                _dm_ax.legend()
-                for idx_bar, cnt in enumerate(_dm_counts):
-                    if cnt > 0:
-                        _dm_ax.text(idx_bar, cnt + 0.3, str(cnt), ha="center", fontsize=10)
-                _dm_fig.tight_layout()
-                st.pyplot(_dm_fig)
-                plt.close(_dm_fig)
+                    _dm_fig, _dm_ax = plt.subplots(figsize=(10, 3))
+                    _dm_ax.bar(_dm_labels, _dm_counts, color=_dm_colors, edgecolor="white")
+                    _dm_ax.axhline(y=_dm_avg_line, color="gray", linestyle="--", linewidth=1, label=f"均等分布 ({_dm_avg_line:.1f}件)")
+                    _dm_ax.set_ylabel("退院件数")
+                    _dm_ax.set_title("曜日別退院件数")
+                    _dm_ax.legend()
+                    for idx_bar, cnt in enumerate(_dm_counts):
+                        if cnt > 0:
+                            _dm_ax.text(idx_bar, cnt + 0.3, str(cnt), ha="center", fontsize=10)
+                    _dm_fig.tight_layout()
+                    st.pyplot(_dm_fig)
+                    plt.close(_dm_fig)
 
-                st.caption("金曜に退院が集中すると、土日に空床が増えます")
-            else:
-                st.info("退院データがありません")
-        except Exception as _dm_e1:
-            st.warning(f"退院曜日分布の表示でエラーが発生しました: {_dm_e1}")
-
-        # --- セクション2: 👨‍👩‍👧 日曜退院候補リスト ---
-        try:
-            st.markdown("### 👨‍👩‍👧 ご家族の都合に合わせた日曜退院候補")
-
-            _dm_daily_src = st.session_state.get("daily_data")
-            if isinstance(_dm_daily_src, pd.DataFrame) and len(_dm_daily_src) > 0:
-                _dm_daily_df = aggregate_wards(_dm_daily_src) if "ward" in _dm_daily_src.columns else _dm_daily_src
-            elif _dt_raw is not None and len(_dt_raw) > 0:
-                _dm_daily_df = _dt_raw
-            else:
-                _dm_daily_df = pd.DataFrame()
-
-            _dm_ward_beds = {"5F": 47, "6F": 47}
-
-            if len(_dm_daily_df) == 0:
-                st.info("日次データが必要です")
-            else:
-                _dm_candidates = get_sunday_discharge_candidates(
-                    _dm_detail_df, _dm_daily_df, ward_beds=_dm_ward_beds
-                )
-
-                # --- パターンB「早める」条件付き表示ロジック ---
-                # 現在の稼働率・LOSを計算
-                if "total_patients" in _dm_daily_df.columns:
-                    _dm_current_occ = _dm_daily_df["total_patients"].tail(7).mean() / 94 * 100
+                    st.caption("金曜に退院が集中すると、土日に空床が増えます")
                 else:
-                    _dm_current_occ = 0.0
-                if "avg_los" in _dm_daily_df.columns:
-                    _dm_current_los = _dm_daily_df["avg_los"].tail(7).mean()
+                    st.info("退院データがありません")
+            except Exception as _dm_e1:
+                st.warning(f"退院曜日分布の表示でエラーが発生しました: {_dm_e1}")
+
+            # --- セクション2: 👨‍👩‍👧 日曜退院候補リスト ---
+            try:
+                st.markdown("### 👨‍👩‍👧 ご家族の都合に合わせた日曜退院候補")
+
+                _dm_daily_src = st.session_state.get("daily_data")
+                if isinstance(_dm_daily_src, pd.DataFrame) and len(_dm_daily_src) > 0:
+                    _dm_daily_df = aggregate_wards(_dm_daily_src) if "ward" in _dm_daily_src.columns else _dm_daily_src
+                elif _dt_raw is not None and len(_dt_raw) > 0:
+                    _dm_daily_df = _dt_raw
                 else:
-                    _dm_current_los = 0.0
+                    _dm_daily_df = pd.DataFrame()
 
-                _dm_target_occ_pct = target_lower * 100  # 目標稼働率（%）
-                _dm_los_threshold = _max_avg_los - 1.0   # 施設基準-1日（迫るライン）
+                _dm_ward_beds = {"5F": 47, "6F": 47}
 
-                _dm_show_pattern_b = (_dm_current_occ >= _dm_target_occ_pct) or (_dm_current_los >= _dm_los_threshold)
-
-                # パターンB非表示の場合はフィルタリング
-                if not _dm_show_pattern_b:
-                    _dm_candidates = [c for c in _dm_candidates if c.get("shift_type") != "早める"]
-
-                # --- ガイダンスメッセージ ---
-                if not _dm_show_pattern_b:
-                    st.info(
-                        f"💡 稼働率{_dm_current_occ:.1f}%・在院日数{_dm_current_los:.1f}日 — "
-                        "C群在院継続で貢献額確保が有利。「早める」候補は稼働率目標到達時に表示。"
+                if len(_dm_daily_df) == 0:
+                    st.info("日次データが必要です")
+                else:
+                    _dm_candidates = get_sunday_discharge_candidates(
+                        _dm_detail_df, _dm_daily_df, ward_beds=_dm_ward_beds
                     )
-                else:
-                    if _dm_current_los >= _dm_los_threshold:
-                        st.warning(
-                            f"⚠️ 平均在院日数 {_dm_current_los:.1f}日 — "
-                            f"施設基準{_max_avg_los}日に迫っています。"
-                            "在院日数短縮のため「早める」退院調整を検討してください。"
-                        )
-                    elif _dm_current_occ >= _dm_target_occ_pct:
-                        st.success(
-                            f"✅ 稼働率 {_dm_current_occ:.1f}% — 目標圏内です。"
-                            "月曜の新規入院枠確保のため「早める」退院調整も有効です。"
-                        )
 
-                if len(_dm_candidates) == 0:
-                    st.info("現在、日曜退院の調整候補はありません")
-                else:
-                    _dm_cand_df = pd.DataFrame(_dm_candidates)
-
-                    # 調整方向カラムを生成
-                    _dm_weekday_names = {0: "月", 1: "火", 4: "金", 5: "土"}
-                    def _dm_format_direction(row):
-                        _orig_date = pd.to_datetime(row["date"])
-                        _orig_wd = _orig_date.dayofweek
-                        _wd_name = _dm_weekday_names.get(_orig_wd, "?")
-                        _days = row["additional_days"]
-                        if row["shift_type"] == "延ばす":
-                            return f"\U0001f7e2 {_wd_name}\u2192日（+{_days}日）"
-                        else:
-                            return f"\U0001f535 {_wd_name}\u2192日（{_days}日）"
-                    if "shift_type" in _dm_cand_df.columns:
-                        _dm_cand_df["direction_label"] = _dm_cand_df.apply(_dm_format_direction, axis=1)
+                    # --- パターンB「早める」条件付き表示ロジック ---
+                    # 現在の稼働率・LOSを計算
+                    if "total_patients" in _dm_daily_df.columns:
+                        _dm_current_occ = _dm_daily_df["total_patients"].tail(7).mean() / 94 * 100
                     else:
-                        _dm_cand_df["direction_label"] = ""
+                        _dm_current_occ = 0.0
+                    if "avg_los" in _dm_daily_df.columns:
+                        _dm_current_los = _dm_daily_df["avg_los"].tail(7).mean()
+                    else:
+                        _dm_current_los = 0.0
 
-                    # LOS余裕を見やすくフォーマット
-                    if "los_margin" in _dm_cand_df.columns:
-                        _dm_cand_df["los_margin"] = _dm_cand_df["los_margin"].apply(
-                            lambda x: f"+{x:.1f}日" if x >= 0 else f"{x:.1f}日"
+                    _dm_target_occ_pct = target_lower * 100  # 目標稼働率（%）
+                    _dm_los_threshold = _max_avg_los - 1.0   # 施設基準-1日（迫るライン）
+
+                    _dm_show_pattern_b = (_dm_current_occ >= _dm_target_occ_pct) or (_dm_current_los >= _dm_los_threshold)
+
+                    # パターンB非表示の場合はフィルタリング
+                    if not _dm_show_pattern_b:
+                        _dm_candidates = [c for c in _dm_candidates if c.get("shift_type") != "早める"]
+
+                    # --- ガイダンスメッセージ ---
+                    if not _dm_show_pattern_b:
+                        st.info(
+                            f"💡 稼働率{_dm_current_occ:.1f}%・在院日数{_dm_current_los:.1f}日 — "
+                            "C群在院継続で貢献額確保が有利。「早める」候補は稼働率目標到達時に表示。"
+                        )
+                    else:
+                        if _dm_current_los >= _dm_los_threshold:
+                            st.warning(
+                                f"⚠️ 平均在院日数 {_dm_current_los:.1f}日 — "
+                                f"施設基準{_max_avg_los}日に迫っています。"
+                                "在院日数短縮のため「早める」退院調整を検討してください。"
+                            )
+                        elif _dm_current_occ >= _dm_target_occ_pct:
+                            st.success(
+                                f"✅ 稼働率 {_dm_current_occ:.1f}% — 目標圏内です。"
+                                "月曜の新規入院枠確保のため「早める」退院調整も有効です。"
+                            )
+
+                    if len(_dm_candidates) == 0:
+                        st.info("現在、日曜退院の調整候補はありません")
+                    else:
+                        _dm_cand_df = pd.DataFrame(_dm_candidates)
+
+                        # 調整方向カラムを生成
+                        _dm_weekday_names = {0: "月", 1: "火", 4: "金", 5: "土"}
+                        def _dm_format_direction(row):
+                            _orig_date = pd.to_datetime(row["date"])
+                            _orig_wd = _orig_date.dayofweek
+                            _wd_name = _dm_weekday_names.get(_orig_wd, "?")
+                            _days = row["additional_days"]
+                            if row["shift_type"] == "延ばす":
+                                return f"\U0001f7e2 {_wd_name}\u2192日（+{_days}日）"
+                            else:
+                                return f"\U0001f535 {_wd_name}\u2192日（{_days}日）"
+                        if "shift_type" in _dm_cand_df.columns:
+                            _dm_cand_df["direction_label"] = _dm_cand_df.apply(_dm_format_direction, axis=1)
+                        else:
+                            _dm_cand_df["direction_label"] = ""
+
+                        # LOS余裕を見やすくフォーマット
+                        if "los_margin" in _dm_cand_df.columns:
+                            _dm_cand_df["los_margin"] = _dm_cand_df["los_margin"].apply(
+                                lambda x: f"+{x:.1f}日" if x >= 0 else f"{x:.1f}日"
+                            )
+
+                        _dm_display_cols = {
+                            "ward": "病棟",
+                            "date": "退院予定日",
+                            "direction_label": "調整方向",
+                            "phase": "フェーズ",
+                            "los_days": "在院日数",
+                            "attending_doctor": "担当医",
+                            "sunday_date": "日曜退院日",
+                            "los_margin": "LOS余裕",
+                            "recommendation": "推奨",
+                        }
+                        _dm_cand_show = _dm_cand_df[[c for c in _dm_display_cols.keys() if c in _dm_cand_df.columns]].copy()
+                        _dm_cand_show.rename(columns=_dm_display_cols, inplace=True)
+
+                        def _dm_highlight_recommend(row):
+                            if row.get("推奨") == "◎":
+                                return ["background-color: #e8f5e9"] * len(row)
+                            return [""] * len(row)
+
+                        st.dataframe(
+                            _dm_cand_show.style.apply(_dm_highlight_recommend, axis=1),
+                            use_container_width=True,
+                            hide_index=True,
                         )
 
-                    _dm_display_cols = {
-                        "ward": "病棟",
-                        "date": "退院予定日",
-                        "direction_label": "調整方向",
-                        "phase": "フェーズ",
-                        "los_days": "在院日数",
-                        "attending_doctor": "担当医",
-                        "sunday_date": "日曜退院日",
-                        "los_margin": "LOS余裕",
-                        "recommendation": "推奨",
-                    }
-                    _dm_cand_show = _dm_cand_df[[c for c in _dm_display_cols.keys() if c in _dm_cand_df.columns]].copy()
-                    _dm_cand_show.rename(columns=_dm_display_cols, inplace=True)
+                    st.caption("働き世代のご家族にとって、日曜はお迎えしやすい日です。"
+                               "🟢延ばす＝週末稼働率UP、🔵早める＝在院日数短縮＋月曜入院枠確保。"
+                               "家族目線の退院調整が運営改善にもつながります。")
+            except Exception as _dm_e2:
+                st.warning(f"日曜退院候補リストの表示でエラーが発生しました: {_dm_e2}")
 
-                    def _dm_highlight_recommend(row):
-                        if row.get("推奨") == "◎":
-                            return ["background-color: #e8f5e9"] * len(row)
-                        return [""] * len(row)
+            # --- セクション3: 🔮 退院調整シミュレーション ---
+            try:
+                st.markdown("### 🔮 退院調整シミュレーション")
 
-                    st.dataframe(
-                        _dm_cand_show.style.apply(_dm_highlight_recommend, axis=1),
-                        use_container_width=True,
-                        hide_index=True,
+                # スライダーの最大値は候補者数（候補がいなければ5をデフォルト）
+                _dm_max_shifts = len(_dm_candidates) if "_dm_candidates" in dir() and len(_dm_candidates) > 0 else 5
+                _dm_n_shifts = st.slider(
+                    "日曜退院に調整する人数",
+                    min_value=0,
+                    max_value=max(_dm_max_shifts, 1),
+                    value=0,
+                    key="dm_shift_slider",
+                )
+
+                _dm_result = simulate_discharge_shift(
+                    daily_df=_dm_daily_df if "_dm_daily_df" in dir() and isinstance(_dm_daily_df, pd.DataFrame) and len(_dm_daily_df) > 0 else pd.DataFrame(),
+                    detail_df=_dm_detail_df,
+                    n_shifts=_dm_n_shifts,
+                    beds_total=_view_beds,
+                )
+
+                _dm_before = _dm_result["before"]
+                _dm_after = _dm_result["after"]
+                _dm_impact = _dm_result["impact"]
+
+                _dm_col1, _dm_col2, _dm_col3 = st.columns(3)
+                with _dm_col1:
+                    st.metric(
+                        "週末稼働率",
+                        f"{_dm_after['weekend_avg_occ']:.1f}%",
+                        delta=f"{_dm_impact['weekend_occ_change_pt']:+.1f}pt" if _dm_n_shifts > 0 else None,
+                    )
+                with _dm_col2:
+                    _dm_monthly_man = _dm_impact["additional_contribution_per_month"]
+                    st.metric(
+                        "月間追加運営貢献額",
+                        f"{_dm_monthly_man // 10000}万円" if _dm_monthly_man >= 10000 else f"{_dm_monthly_man:,}円",
+                    )
+                with _dm_col3:
+                    st.metric(
+                        "在院日数への影響",
+                        f"+{_dm_impact['los_impact_days']:.2f}日",
                     )
 
-                st.caption("働き世代のご家族にとって、日曜はお迎えしやすい日です。"
-                           "🟢延ばす＝週末稼働率UP、🔵早める＝在院日数短縮＋月曜入院枠確保。"
-                           "家族目線の退院調整が運営改善にもつながります。")
-        except Exception as _dm_e2:
-            st.warning(f"日曜退院候補リストの表示でエラーが発生しました: {_dm_e2}")
+                # 曜日別稼働率の週間パターン（グループ棒グラフ）
+                _dm_day_labels = ["月", "火", "水", "木", "金", "土", "日"]
+                _dm_before_vals = [_dm_before["weekday_occ"].get(i, 0) for i in range(7)]
+                _dm_after_vals = [_dm_after["weekday_occ"].get(i, 0) for i in range(7)]
 
-        # --- セクション3: 🔮 退院調整シミュレーション ---
-        try:
-            st.markdown("### 🔮 退院調整シミュレーション")
+                _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 3))
+                _dm_x = np.arange(len(_dm_day_labels))
+                _dm_width = 0.35
 
-            # スライダーの最大値は候補者数（候補がいなければ5をデフォルト）
-            _dm_max_shifts = len(_dm_candidates) if "_dm_candidates" in dir() and len(_dm_candidates) > 0 else 5
-            _dm_n_shifts = st.slider(
-                "日曜退院に調整する人数",
-                min_value=0,
-                max_value=max(_dm_max_shifts, 1),
-                value=0,
-                key="dm_shift_slider",
-            )
+                # 目標レンジ（棒の背面に描画）
+                _dm_ax2.axhspan(90, 95, alpha=0.1, color='gold', label='目標レンジ (90-95%)')
 
-            _dm_result = simulate_discharge_shift(
-                daily_df=_dm_daily_df if "_dm_daily_df" in dir() and isinstance(_dm_daily_df, pd.DataFrame) and len(_dm_daily_df) > 0 else pd.DataFrame(),
-                detail_df=_dm_detail_df,
-                n_shifts=_dm_n_shifts,
-                beds_total=_view_beds,
-            )
+                # 棒グラフ描画
+                _dm_bars1 = _dm_ax2.bar(_dm_x - _dm_width / 2, _dm_before_vals, _dm_width, label='現状', color='#95a5a6', alpha=0.8)
+                if _dm_n_shifts > 0:
+                    _dm_bars2 = _dm_ax2.bar(_dm_x + _dm_width / 2, _dm_after_vals, _dm_width, label='調整後', color='#27ae60', alpha=0.8)
 
-            _dm_before = _dm_result["before"]
-            _dm_after = _dm_result["after"]
-            _dm_impact = _dm_result["impact"]
-
-            _dm_col1, _dm_col2, _dm_col3 = st.columns(3)
-            with _dm_col1:
-                st.metric(
-                    "週末稼働率",
-                    f"{_dm_after['weekend_avg_occ']:.1f}%",
-                    delta=f"{_dm_impact['weekend_occ_change_pt']:+.1f}pt" if _dm_n_shifts > 0 else None,
-                )
-            with _dm_col2:
-                _dm_monthly_man = _dm_impact["additional_contribution_per_month"]
-                st.metric(
-                    "月間追加運営貢献額",
-                    f"{_dm_monthly_man // 10000}万円" if _dm_monthly_man >= 10000 else f"{_dm_monthly_man:,}円",
-                )
-            with _dm_col3:
-                st.metric(
-                    "在院日数への影響",
-                    f"+{_dm_impact['los_impact_days']:.2f}日",
-                )
-
-            # 曜日別稼働率の週間パターン（グループ棒グラフ）
-            _dm_day_labels = ["月", "火", "水", "木", "金", "土", "日"]
-            _dm_before_vals = [_dm_before["weekday_occ"].get(i, 0) for i in range(7)]
-            _dm_after_vals = [_dm_after["weekday_occ"].get(i, 0) for i in range(7)]
-
-            _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 3))
-            _dm_x = np.arange(len(_dm_day_labels))
-            _dm_width = 0.35
-
-            # 目標レンジ（棒の背面に描画）
-            _dm_ax2.axhspan(90, 95, alpha=0.1, color='gold', label='目標レンジ (90-95%)')
-
-            # 棒グラフ描画
-            _dm_bars1 = _dm_ax2.bar(_dm_x - _dm_width / 2, _dm_before_vals, _dm_width, label='現状', color='#95a5a6', alpha=0.8)
-            if _dm_n_shifts > 0:
-                _dm_bars2 = _dm_ax2.bar(_dm_x + _dm_width / 2, _dm_after_vals, _dm_width, label='調整後', color='#27ae60', alpha=0.8)
-
-            # 値ラベル（現状）
-            for _dm_bar in _dm_bars1:
-                _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
-                             f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#666')
-            # 値ラベル（調整後）
-            if _dm_n_shifts > 0:
-                for _dm_bar in _dm_bars2:
+                # 値ラベル（現状）
+                for _dm_bar in _dm_bars1:
                     _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
-                                 f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#27ae60')
+                                 f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#666')
+                # 値ラベル（調整後）
+                if _dm_n_shifts > 0:
+                    for _dm_bar in _dm_bars2:
+                        _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
+                                     f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#27ae60')
 
-            _dm_ax2.set_xticks(_dm_x)
-            _dm_ax2.set_xticklabels(_dm_day_labels)
-            _dm_ax2.set_ylabel("稼働率 (%)")
-            _dm_ax2.set_title("曜日別稼働率の変化（週間パターン）")
-            _dm_ax2.legend()
+                _dm_ax2.set_xticks(_dm_x)
+                _dm_ax2.set_xticklabels(_dm_day_labels)
+                _dm_ax2.set_ylabel("稼働率 (%)")
+                _dm_ax2.set_title("曜日別稼働率の変化（週間パターン）")
+                _dm_ax2.legend()
 
-            # Y軸範囲を自動調整（差が見えるように）
-            _dm_all_vals = _dm_before_vals + (_dm_after_vals if _dm_n_shifts > 0 else [])
-            _dm_y_min = max(0, min(_dm_all_vals) - 3)
-            _dm_y_max = min(100, max(_dm_all_vals) + 3)
-            _dm_ax2.set_ylim(_dm_y_min, _dm_y_max)
+                # Y軸範囲を自動調整（差が見えるように）
+                _dm_all_vals = _dm_before_vals + (_dm_after_vals if _dm_n_shifts > 0 else [])
+                _dm_y_min = max(0, min(_dm_all_vals) - 3)
+                _dm_y_max = min(100, max(_dm_all_vals) + 3)
+                _dm_ax2.set_ylim(_dm_y_min, _dm_y_max)
 
-            _dm_ax2.grid(axis='y', alpha=0.3)
-            _dm_fig2.tight_layout()
-            st.pyplot(_dm_fig2)
-            plt.close(_dm_fig2)
+                _dm_ax2.grid(axis='y', alpha=0.3)
+                _dm_fig2.tight_layout()
+                st.pyplot(_dm_fig2)
+                plt.close(_dm_fig2)
 
-            st.caption("家族目線の退院調整が運営改善にもつながります。")
-        except Exception as _dm_e3:
-            st.warning(f"退院調整シミュレーションの表示でエラーが発生しました: {_dm_e3}")
+                st.caption("家族目線の退院調整が運営改善にもつながります。")
+            except Exception as _dm_e3:
+                st.warning(f"退院調整シミュレーションの表示でエラーが発生しました: {_dm_e3}")
 
 
 # ===== タブ: データ =====
