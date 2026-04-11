@@ -1512,11 +1512,9 @@ if run_button:
 
             if not _sim_csv_loaded:
                 st.error("教育用CSVデータが見つかりません。data/sample_actual_data_ward_202604.csv を確認してください。")
-                st.stop()
 
         except Exception as e:
             st.error(f"シミュレーションエラー: {e}")
-            st.stop()
 
 # ---------------------------------------------------------------------------
 
@@ -3725,15 +3723,19 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 # =====================================================================
 # シミュレーション結果タブ / 実績データタブ
 # =====================================================================
+# データが必要なセクション（ダッシュボード・意思決定支援）かどうか
+_needs_sim_data = _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]
+
 if _is_actual_data_mode:
     # 実績データモード
     if not _actual_data_available:
-        with tabs[0]:
-            st.info(
-                "実績データがありません。「📋 日次データ入力」タブでデータを入力するか、"
-                "デモデータを生成してください。"
-            )
-        st.stop()
+        if _needs_sim_data:
+            with tabs[0]:
+                st.info(
+                    "実績データがありません。「📋 日次データ入力」タブでデータを入力するか、"
+                    "デモデータを生成してください。"
+                )
+            st.stop()
     df = st.session_state.actual_df
     summary = st.session_state.actual_summary
     _active_raw_df = st.session_state.actual_df_raw
@@ -3755,10 +3757,10 @@ if _is_actual_data_mode:
 else:
     # シミュレーションモード
     if not _simulation_available:
-        with tabs[0]:
-            st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
-        st.stop()
-    # シミュレーションモードの病棟セレクター対応
+        if _needs_sim_data:
+            with tabs[0]:
+                st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
+            st.stop()
     if _selected_ward_key in ("5F", "6F") and st.session_state.sim_ward_dfs.get(_selected_ward_key) is not None:
         df = st.session_state.sim_ward_dfs[_selected_ward_key]
         summary = st.session_state.sim_ward_summaries[_selected_ward_key]
