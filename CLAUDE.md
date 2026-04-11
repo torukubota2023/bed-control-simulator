@@ -66,6 +66,15 @@
     - テスト: `tests/test_hope_message.py`（8件）、`tests/test_scenario_manager.py`（10件）、全118テスト通過
     - 改善仮説の第2層: What-Ifシナリオの名前付き保存、複数シナリオ比較、ルールベースAI分析（稼働率最適化・LOS準拠・収益ランキング・実行容易性）
     - データエクスポート: 病棟日次データ・入退院詳細（CSV）、シナリオデータ（JSON）
+  - **結論カード・KPI優先表示・views分離（v3.5, 2026-04-12追加）**
+    - 新規モジュール: `scripts/action_recommendation.py`（優先アクション推薦、pure function）、`scripts/c_group_candidates.py`（C群候補一覧・トレードオフ評価、pure function）
+    - 表示ロジック分離: `scripts/views/dashboard_view.py`、`scripts/views/c_group_view.py`（app.pyからの段階的分離）
+    - テスト: `tests/test_action_recommendation.py`（14件）、`tests/test_c_group_candidates.py`（10件）、全167テスト通過
+    - 結論カード（今日の一手）: ダッシュボード最上部に優先アクション推薦カードを表示。制度・稼働率・受入余力・C群を横断評価し、最も重要な1手を提示
+    - KPI優先表示: 救急搬送比率 → 稼働率 → 翌朝受入余力 → LOS → C群の優先順でKPIを並べ替え
+    - 翌営業日朝受入余力の主役化: 翌朝の空床予測をメインKPIに昇格、色分けステータス表示（安全/注意/危険）
+    - C群候補一覧（lite版）: C群退院調整候補を患者レベルで一覧表示（C群は院内運用ラベルであり制度上の公式区分ではない）
+    - C群/制度/受入余力トレードオフ評価: C群の延長（稼働率下支え） vs 退院（空床確保）のトレードオフを制度余力・受入余力と合わせて可視化
 - **将来構想（未実装）:**
   - **短期滞在手術等基本料3（短手3）の組み込み** — [リサーチ・設計案](docs/admin/short3_integration_research.md)
     - A群期間（1-5日）と短手3期間（5日以内）が完全一致する点を活用し、A群の内数として管理
@@ -114,6 +123,7 @@
 ├── data/              ← KPI・入院統計・分析用データ
 ├── templates/         ← 診療情報提供書・退院サマリーのテンプレート
 └── scripts/           ← 自動化スクリプト
+    ├── views/         ← 表示ロジック（dashboard_view.py, c_group_view.py）
     └── hooks/         ← セキュリティHooksスクリプト
 ```
 

@@ -245,6 +245,45 @@ except Exception as _gr_err:
     _EMERGENCY_RATIO_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# 結論カード / 今日の一手 / C群候補lite
+# ---------------------------------------------------------------------------
+_ACTION_CARD_AVAILABLE = False
+try:
+    from action_recommendation import (
+        generate_action_card,
+        generate_kpi_priority_list,
+        generate_tradeoff_assessment,
+    )
+    _ACTION_CARD_AVAILABLE = True
+except ImportError:
+    pass
+
+_C_GROUP_CANDIDATES_AVAILABLE = False
+try:
+    from c_group_candidates import (
+        generate_c_group_candidate_list,
+        assess_candidate_adjustability,
+        summarize_candidates_for_display,
+    )
+    _C_GROUP_CANDIDATES_AVAILABLE = True
+except ImportError:
+    pass
+
+# views（描画ロジック分離）
+_VIEWS_AVAILABLE = False
+try:
+    from views.dashboard_view import (
+        render_action_card,
+        render_kpi_priority_strip,
+        render_morning_capacity_card,
+        render_tradeoff_card,
+    )
+    from views.c_group_view import render_c_group_candidates_lite
+    _VIEWS_AVAILABLE = True
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
 # ---------------------------------------------------------------------------
 try:
@@ -3822,6 +3861,142 @@ if _active_cli_params:
 # セクション共通ヘッダー（タブの外に1回だけ表示）
 # ---------------------------------------------------------------------------
 if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+    # ---------------------------------------------------------------
+    # 結論カード（今日の一手）— 最上段に固定表示
+    # データ収集 → pure function で判定 → view で描画
+    # ---------------------------------------------------------------
+    if _data_ready and _ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE:
+        # --- データ収集（app.py はデータを集めて渡すだけ） ---
+        _ac_emergency_summary = None
+        _ac_guardrail_status = None
+        _ac_los_headroom = None
+        _ac_morning_capacity = None
+        _ac_monthly_kpi = None
+        _ac_c_summary = None
+        _ac_c_capacity = None
+        _ac_demand_class = None
+        _ac_occupancy = None
+
+        try:
+            # 日次データ・詳細データの取得
+            _ac_daily_df = _active_raw_df if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
+            _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
+            if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:
+                _ac_detail_df = None
+            _ac_config = {"age_85_ratio": 0.25}
+
+            # 稼働率
+            if _ac_daily_df is not None:
+                _ac_occ_key = "occupancy_rate" if "occupancy_rate" in _ac_daily_df.columns else "稼働率"
+                _ac_occ_val = _ac_daily_df.iloc[-1].get(_ac_occ_key, None)
+                if _ac_occ_val is not None and pd.notna(_ac_occ_val):
+                    _ac_occupancy = float(_ac_occ_val)
+
+            # 救急搬送後患者割合
+            if _EMERGENCY_RATIO_AVAILABLE and _ac_detail_df is not None:
+                try:
+                    _ac_emergency_summary = get_ward_emergency_summary(_ac_detail_df)
+                except Exception:
+                    pass
+
+            # 制度ガードレール
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_guardrail_status = calculate_guardrail_status(_ac_daily_df, _ac_detail_df, _ac_config)
+                except Exception:
+                    pass
+
+            # LOS余力
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_los_headroom = calculate_los_headroom(_ac_daily_df, _ac_config)
+                except Exception:
+                    pass
+
+            # 翌営業日朝受入余力
+            if _EMERGENCY_RATIO_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_morning_capacity = estimate_next_morning_capacity(
+                        _ac_daily_df, _ac_detail_df, ward=None, total_beds=94,
+                    )
+                except Exception:
+                    pass
+
+            # 月次KPI予測
+            if _ac_daily_df is not None:
+                try:
+                    _ac_monthly_kpi = predict_monthly_kpi(_ac_daily_df, num_beds=_view_beds)
+                except Exception:
+                    pass
+
+            # C群サマリー・調整余地
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_c_summary = get_c_group_summary(_ac_daily_df)
+                    _ac_rolling = calculate_rolling_los(_ac_daily_df, window_days=90)
+                    _ac_los_limit = calculate_los_limit(_ac_config.get("age_85_ratio", 0.25))
+                    _ac_c_capacity = calculate_c_adjustment_capacity(
+                        _ac_rolling, _ac_los_limit,
+                        _ac_c_summary.get("c_count") if _ac_c_summary else None,
+                    )
+                except Exception:
+                    pass
+
+            # 需要波分類
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_demand_class = classify_demand_period(_ac_daily_df)
+                except Exception:
+                    pass
+
+        except Exception:
+            pass  # データ収集失敗時もアプリは続行
+
+        # --- 結論カード生成 & 描画 ---
+        _ac_card = generate_action_card(
+            emergency_summary=_ac_emergency_summary,
+            guardrail_status=_ac_guardrail_status,
+            los_headroom=_ac_los_headroom,
+            morning_capacity=_ac_morning_capacity,
+            monthly_kpi=_ac_monthly_kpi,
+            c_group_summary=_ac_c_summary,
+            c_adjustment_capacity=_ac_c_capacity,
+            demand_classification=_ac_demand_class,
+            occupancy_rate=_ac_occupancy,
+            target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+        )
+        render_action_card(_ac_card)
+
+        # --- KPI優先表示 ---
+        _ac_kpi_list = generate_kpi_priority_list(
+            emergency_summary=_ac_emergency_summary,
+            guardrail_status=_ac_guardrail_status,
+            los_headroom=_ac_los_headroom,
+            morning_capacity=_ac_morning_capacity,
+            monthly_kpi=_ac_monthly_kpi,
+            c_group_summary=_ac_c_summary,
+            c_adjustment_capacity=_ac_c_capacity,
+            occupancy_rate=_ac_occupancy,
+            target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+        )
+        render_kpi_priority_strip(_ac_kpi_list)
+
+        # --- 翌営業日朝受入余力（主役級表示） ---
+        if _ac_morning_capacity is not None:
+            render_morning_capacity_card(_ac_morning_capacity)
+
+        # --- C群トレードオフ評価 ---
+        if _ac_c_capacity is not None:
+            _ac_tradeoff = generate_tradeoff_assessment(
+                c_adjustment_capacity=_ac_c_capacity,
+                emergency_summary=_ac_emergency_summary,
+                morning_capacity=_ac_morning_capacity,
+                los_headroom=_ac_los_headroom,
+            )
+            render_tradeoff_card(_ac_tradeoff)
+
+        st.markdown("---")
+
     # 病棟選択キャプション
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
@@ -8482,6 +8657,38 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                             st.warning(f"{_alert_emoji} {_alert['message']}")
                         else:
                             st.info(f"{_alert_emoji} {_alert['message']}")
+                # --- C群候補一覧（lite版・推計） ---
+                if _C_GROUP_CANDIDATES_AVAILABLE and _VIEWS_AVAILABLE:
+                    st.markdown("---")
+                    _cg_er_risk = False
+                    if _er_risk_for_cg is not None:
+                        for _w_key in ("5F", "6F"):
+                            if _er_risk_for_cg.get(_w_key, {}).get("additional_needed", 0) > 0:
+                                _cg_er_risk = True
+                                break
+                    _cg_morning_slots = None
+                    if _EMERGENCY_RATIO_AVAILABLE:
+                        try:
+                            _cg_mc = estimate_next_morning_capacity(
+                                _gr_daily_df, _gr_detail_df, ward=None, total_beds=94,
+                            )
+                            _cg_morning_slots = _cg_mc.get("estimated_emergency_slots")
+                        except Exception:
+                            pass
+                    _cg_candidates_result = generate_c_group_candidate_list(
+                        detail_df=_gr_detail_df,
+                        daily_df=_gr_daily_df,
+                        ward=None,
+                        target_date=None,
+                        los_threshold=15,
+                    )
+                    _cg_display_summary = summarize_candidates_for_display(
+                        _cg_candidates_result,
+                        los_limit=_los_limit,
+                        emergency_ratio_risk=_cg_er_risk,
+                        morning_capacity_slots=_cg_morning_slots,
+                    )
+                    render_c_group_candidates_lite(_cg_display_summary, _cg_candidates_result)
             else:
                 st.info("日次データを入力するとC群コントロールパネルが表示されます")
 

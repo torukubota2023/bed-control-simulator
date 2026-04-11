@@ -1,4 +1,4 @@
-# 病棟稼働率シミュレーター v3.0
+# 病棟稼働率シミュレーター v3.5
 
 **空床時間マネジメント** で病床経営を改善する Streamlit アプリ
 
@@ -42,6 +42,11 @@
 | **パスワード認証** | アプリ起動時にパスワード認証（session_state管理） |
 | **改善仮説の保存・比較** | What-Ifシナリオの名前付き保存、複数比較、ルールベースAI分析 |
 | **データエクスポート** | 病棟日次データ・入退院詳細（CSV）、シナリオデータ（JSON） |
+| **結論カード（今日の一手）** | 制度・稼働率・受入余力・C群を横断評価し、優先アクションを1枚のカードで提示 |
+| **KPI優先表示** | 救急搬送比率 → 稼働率 → 翌朝受入余力 → LOS → C群の優先順で表示 |
+| **翌営業日朝受入余力** | 翌朝の空床予測をメインKPIに昇格、色分けステータス表示 |
+| **C群候補一覧（lite版）** | C群退院調整候補を患者レベルで一覧表示（院内運用ラベル） |
+| **C群/制度/受入余力トレードオフ評価** | C群の延長 vs 退院のトレードオフを制度余力・受入余力と合わせて評価 |
 
 ## 起動方法
 
@@ -84,6 +89,11 @@ scripts/
   c_group_control.py             # C群コントロール
   emergency_ratio.py             # 救急搬送後患者割合
   scenario_manager.py            # シナリオ保存・比較・AI分析
+  action_recommendation.py       # 結論カード・優先アクション推薦（pure function）
+  c_group_candidates.py          # C群候補一覧・トレードオフ評価（pure function）
+  views/                         # 表示ロジック分離
+    dashboard_view.py            # ダッシュボード表示
+    c_group_view.py              # C群表示
 tests/
   test_bed_data_manager.py       # データ管理のテスト（18件）
   test_db_manager.py             # SQLite永続化のテスト（8件）
@@ -94,8 +104,10 @@ tests/
   test_emergency_ratio.py        # 救急搬送後患者割合のテスト（21件）
   test_hope_message.py           # HOPEメッセージのテスト（8件）
   test_scenario_manager.py       # シナリオマネージャーのテスト（10件）
+  test_action_recommendation.py  # 結論カード・優先アクションのテスト（14件）
+  test_c_group_candidates.py     # C群候補一覧・トレードオフのテスト（10件）
   test_app_integration.py        # アプリ統合テスト・状態遷移安全性（25件）
-  （テスト総数は pytest 実行結果を参照 — 現在143件）
+  （テスト総数は pytest 実行結果を参照 — 現在167件）
 pyproject.toml                   # ruff 設定
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）
@@ -104,7 +116,7 @@ requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 ## 今後の拡張余地
 
 - 短期滞在手術等基本料3（短手3）の組み込み
-- モジュール分割の深化（forecast_view_model.py 等の抽出）
+- モジュール分割の深化（views/ 分離を開始済み、forecast_view_model.py 等の追加抽出）
 - 未充填退院キュー proxy の UI 統合
 - 空床ラグ（退院→次の入院までの時間）のリアルタイム計測
 - 在宅復帰率の自動計算（退院先データの追加が前提）

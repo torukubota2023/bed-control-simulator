@@ -1,0 +1,209 @@
+"""
+テスト: c_group_candidates モジュール — C群候補リスト生成・調整可能性評価・表示サマリー
+
+generate_c_group_candidate_list / assess_candidate_adjustability /
+summarize_candidates_for_display の入出力を検証する。
+"""
+
+import sys
+import os
+import pytest
+import pandas as pd
+from datetime import date, timedelta
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+
+from c_group_candidates import (
+    generate_c_group_candidate_list,
+    assess_candidate_adjustability,
+    summarize_candidates_for_display,
+)
+
+
+# ===================================================================
+# ヘルパー: テスト用 detail_df 生成
+# ===================================================================
+
+
+def _make_detail_df(rows: list[dict]) -> pd.DataFrame:
+    """入退院詳細データの DataFrame を生成する。"""
+    return pd.DataFrame(rows)
+
+
+def _build_test_detail_df() -> pd.DataFrame:
+    """C群候補が出るテストデータを作成する。
+
+    - 入院1: 5F, 2026-03-01, 退院なし → 基準日2026-03-31で LOS=30 (C群)
+    - 入院2: 5F, 2026-03-10, 退院あり(LOS=9) → 除外
+    - 入院3: 6F, 2026-03-05, 退院なし → LOS=26 (C群)
+    - 入院4: 5F, 2026-03-25, 退院なし → LOS=6 (閾値未満、除外)
+    - 入院5: 5F, 2026-03-15, 退院なし → LOS=16 (C群)
+    """
+    return _make_detail_df([
+        {"日付": "2026-03-01", "病棟": "5F", "入退院区分": "入院", "経路": "救急"},
+        {"日付": "2026-03-10", "病棟": "5F", "入退院区分": "入院", "経路": "紹介"},
+        {"日付": "2026-03-10", "病棟": "5F", "入退院区分": "退院", "経路": "", "los_days": 9},
+        {"日付": "2026-03-05", "病棟": "6F", "入退院区分": "入院", "経路": "救急"},
+        {"日付": "2026-03-25", "病棟": "5F", "入退院区分": "入院", "経路": "直接"},
+        {"日付": "2026-03-15", "病棟": "5F", "入退院区分": "入院", "経路": "紹介"},
+    ])
+
+
+# ===================================================================
+# generate_c_group_candidate_list
+# ===================================================================
+
+
+class TestGenerateCGroupCandidateList:
+    """generate_c_group_candidate_list の入出力を検証する。"""
+
+    def test_empty_data_returns_empty_list(self):
+        """None detail_df → 空の候補リスト"""
+        result = generate_c_group_candidate_list(detail_df=None)
+        assert result["candidates"] == []
+        assert result["total_candidates"] == 0
+
+    def test_empty_dataframe_returns_empty(self):
+        """空の DataFrame → 空の候補リスト"""
+        df = pd.DataFrame(columns=["日付", "病棟", "入退院区分", "経路"])
+        result = generate_c_group_candidate_list(detail_df=df)
+        assert result["candidates"] == []
+        assert result["total_candidates"] == 0
+
+    def test_candidates_from_detail_df(self):
+        """入退院詳細から C群候補を正しく識別する"""
+        df = _build_test_detail_df()
+        result = generate_c_group_candidate_list(
+            detail_df=df,
+            target_date=date(2026, 3, 31),
+        )
+        # 入院1(LOS=30), 入院3(LOS=26), 入院5(LOS=16) の3件がC群候補
+        assert result["total_candidates"] == 3
+        # LOS 降順でソートされる
+        los_list = [c["estimated_los"] for c in result["candidates"]]
+        assert los_list == sorted(los_list, reverse=True)
+
+    def test_ward_filter(self):
+        """病棟フィルタで 5F のみに絞り込む"""
+        df = _build_test_detail_df()
+        result = generate_c_group_candidate_list(
+            detail_df=df,
+            ward="5F",
+            target_date=date(2026, 3, 31),
+        )
+        # 5F のC群候補: 入院1(LOS=30) と 入院5(LOS=16) の2件
+        assert result["total_candidates"] == 2
+        assert result["ward"] == "5F"
+        for c in result["candidates"]:
+            assert c["ward"] == "5F"
+
+    def test_los_threshold(self):
+        """los_threshold=20 → LOS >= 20 の候補のみ返す"""
+        df = _build_test_detail_df()
+        result = generate_c_group_candidate_list(
+            detail_df=df,
+            target_date=date(2026, 3, 31),
+            los_threshold=20,
+        )
+        # LOS=30 と LOS=26 の2件のみ
+        assert result["total_candidates"] == 2
+        for c in result["candidates"]:
+            assert c["estimated_los"] >= 20
+
+
+# ===================================================================
+# assess_candidate_adjustability
+# ===================================================================
+
+
+class TestAssessCandidateAdjustability:
+    """assess_candidate_adjustability の制約条件評価を検証する。"""
+
+    def test_assess_emergency_risk_release_required(self):
+        """emergency_ratio_risk=True → release_required"""
+        candidate = {
+            "estimated_los": 18,
+            "adjustable_days_proxy": 10,
+        }
+        result = assess_candidate_adjustability(
+            candidate=candidate,
+            los_limit=24.0,
+            emergency_ratio_risk=True,
+        )
+        assert result["recommendation"] == "release_required"
+        assert result["can_extend"] is False
+
+    def test_assess_within_los_limit(self):
+        """LOS が上限内で余裕あり → can_extend=True"""
+        candidate = {
+            "estimated_los": 16,
+            "adjustable_days_proxy": 10,
+        }
+        result = assess_candidate_adjustability(
+            candidate=candidate,
+            los_limit=24.0,
+            emergency_ratio_risk=False,
+        )
+        assert result["can_extend"] is True
+        assert result["max_extend_days"] > 0
+        assert result["recommendation"] in ("extend_ok", "release_preferred")
+
+    def test_assess_exceeds_los_limit(self):
+        """LOS が上限超過 → can_extend=False"""
+        candidate = {
+            "estimated_los": 25,
+            "adjustable_days_proxy": 0,
+        }
+        result = assess_candidate_adjustability(
+            candidate=candidate,
+            los_limit=24.0,
+            emergency_ratio_risk=False,
+        )
+        assert result["can_extend"] is False
+        assert result["recommendation"] in ("release_required", "release_preferred")
+
+
+# ===================================================================
+# summarize_candidates_for_display
+# ===================================================================
+
+
+class TestSummarizeCandidatesForDisplay:
+    """summarize_candidates_for_display の表示用サマリーを検証する。"""
+
+    def test_summarize_empty(self):
+        """空の候補 → クラッシュせずサマリーを返す"""
+        empty_result = {
+            "candidates": [],
+            "total_candidates": 0,
+            "total_adjustable_bed_days": 0,
+            "ward": None,
+            "as_of_date": "2026-03-31",
+            "data_source": "proxy",
+            "note": "",
+        }
+        summary = summarize_candidates_for_display(
+            candidates_result=empty_result,
+            los_limit=24.0,
+        )
+        assert "summary_text" in summary
+        assert summary["table_data"] == []
+        assert summary["data_quality"] == "proxy"
+
+    def test_summarize_with_candidates(self):
+        """候補あり → table_data に正しいカラムが含まれる"""
+        df = _build_test_detail_df()
+        candidates_result = generate_c_group_candidate_list(
+            detail_df=df,
+            target_date=date(2026, 3, 31),
+        )
+        summary = summarize_candidates_for_display(
+            candidates_result=candidates_result,
+            los_limit=24.0,
+        )
+        assert len(summary["table_data"]) > 0
+        expected_columns = {"入院日", "推定在院日数", "病棟", "経路", "退院近接度", "調整余地(日)", "判定", "推計"}
+        for row in summary["table_data"]:
+            assert expected_columns.issubset(row.keys()), (
+                f"Missing columns: {expected_columns - row.keys()}"
+            )
