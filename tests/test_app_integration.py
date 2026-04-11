@@ -6,7 +6,7 @@ Streamlit を実際に起動せず、AST解析とソースコード分析で
 
 検出対象:
 - st.session_state.X へのガードなしアクセス
-- _tab_idx["..."] で参照されるタブ名が _ALL_TAB_NAMES に未登録
+- _tab_idx["..."] で参照されるタブ名がセクション定義に未登録
 - データ未準備時の変数未定義パス
 - st.stop() による意図しないセクションブロック
 """
@@ -32,26 +32,23 @@ def _parse_app_ast() -> ast.Module:
     return ast.parse(APP_SOURCE, filename=str(APP_PATH))
 
 
-def _find_all_tab_names_from_source() -> list[str]:
-    """ソースから _ALL_TAB_NAMES リストの文字列要素を抽出する
+def _find_all_tab_names_from_sections() -> list[str]:
+    """セクション別タブ定義からすべてのタブ名を収集する
 
+    _ALL_TAB_NAMES は廃止されたため、各セクションの tab_names 定義から収集する。
     ソース内のユニコードエスケープ（\\U0001f4ca 等）を実際の文字に変換して返す。
     """
-    # _ALL_TAB_NAMES = [ ... ] の定義を正規表現で取得
-    pattern = r"_ALL_TAB_NAMES\s*=\s*\[(.*?)\]"
-    match = re.search(pattern, APP_SOURCE, re.DOTALL)
-    assert match, "_ALL_TAB_NAMES の定義がソース内に見つからない"
-    raw = match.group(1)
-    # 文字列リテラルを抽出（ユニコードエスケープ含む）
-    raw_names = re.findall(r'"([^"]*)"', raw)
-    # ユニコードエスケープ（\\U0001f4ca 等）を実際の文字に変換
-    names = []
-    for n in raw_names:
-        if "\\U" in n or "\\u" in n:
-            names.append(n.encode("raw_unicode_escape").decode("unicode_escape"))
-        else:
-            names.append(n)
-    return names
+    names = set()
+    for line in APP_LINES:
+        if "tab_names" not in line:
+            continue
+        # tab_names = [...], extend([...]), append("...") 内の文字列リテラルを抽出
+        for m in re.finditer(r'"([^"]+)"', line):
+            raw = m.group(1)
+            # _tab_idx 等の参照は除外（tab_names への代入行のみ対象）
+            if "tab_names" in line and ("=" in line or "extend" in line or "append" in line):
+                names.add(_normalize_unicode(raw))
+    return list(names)
 
 
 def _normalize_unicode(s: str) -> str:
@@ -146,26 +143,26 @@ class TestAppParsing:
 # =====================================================================
 
 class TestTabNameConsistency:
-    """_tab_idx 参照とマスターリスト _ALL_TAB_NAMES の整合性"""
+    """_tab_idx 参照とセクション別タブ定義の整合性"""
 
-    def test_全タブ参照がマスターリストに存在する(self):
-        """_tab_idx["X"] で参照されるすべてのタブ名が _ALL_TAB_NAMES に含まれること"""
-        all_names = _find_all_tab_names_from_source()
+    def test_全タブ参照がセクション定義に存在する(self):
+        """_tab_idx["X"] で参照されるすべてのタブ名がいずれかのセクション定義に含まれること"""
+        all_names = _find_all_tab_names_from_sections()
         references = _find_tab_idx_references()
 
         missing = []
         for line_no, tab_name in references:
             if tab_name not in all_names:
-                missing.append(f"  L{line_no}: _tab_idx[\"{tab_name}\"] — マスターリストに未登録")
+                missing.append(f"  L{line_no}: _tab_idx[\"{tab_name}\"] — セクション定義に未登録")
 
         assert not missing, (
-            f"_ALL_TAB_NAMES に含まれないタブ名が参照されている:\n"
+            f"セクション定義に含まれないタブ名が参照されている:\n"
             + "\n".join(missing)
         )
 
-    def test_マスターリストに重複がないこと(self):
-        """_ALL_TAB_NAMES に重複したタブ名がないこと"""
-        all_names = _find_all_tab_names_from_source()
+    def test_セクション定義に重複がないこと(self):
+        """セクション別タブ定義に重複したタブ名がないこと"""
+        all_names = _find_all_tab_names_from_sections()
         seen = set()
         duplicates = []
         for name in all_names:
@@ -173,7 +170,7 @@ class TestTabNameConsistency:
                 duplicates.append(name)
             seen.add(name)
 
-        assert not duplicates, f"_ALL_TAB_NAMES に重複あり: {duplicates}"
+        assert not duplicates, f"セクション別タブ定義に重複あり: {duplicates}"
 
     def test_セクション別タブが空でないこと(self):
         """各セクションの tab_names が少なくとも1つのタブを含むこと"""
@@ -203,6 +200,32 @@ class TestTabNameConsistency:
         get_count = len(re.findall(get_pattern, APP_SOURCE))
         # 少なくとも1箇所は .get() を使用しているはず（実績分析タブ等）
         assert get_count >= 1, "_tab_idx.get() の安全なアクセスが見つからない"
+
+    def test_全tab_idx参照にガードがあること(self):
+        """with tabs[_tab_idx["X"]] の前に if "X" in _tab_idx ガードがあること"""
+        unguarded = []
+        for i, line in enumerate(APP_LINES, start=1):
+            m = re.search(r'with\s+tabs\[_tab_idx\["([^"]+)"\]\]', line)
+            if not m:
+                continue
+            tab_name = _normalize_unicode(m.group(1))
+            # 前の行（空行スキップ）にガードがあるか確認
+            prev_idx = i - 2  # 0-indexed
+            found_guard = False
+            while prev_idx >= 0 and prev_idx >= i - 6:
+                prev_line = APP_LINES[prev_idx]
+                if f'"{m.group(1)}" in _tab_idx' in prev_line:
+                    found_guard = True
+                    break
+                if prev_line.strip() and not prev_line.strip().startswith('#'):
+                    break
+                prev_idx -= 1
+            if not found_guard:
+                unguarded.append(f"  L{i}: with tabs[_tab_idx[\"{tab_name}\"]] — ガードなし")
+        assert not unguarded, (
+            f"ガードなしの _tab_idx アクセス（セクション切替時にKeyError）:\n"
+            + "\n".join(unguarded)
+        )
 
 
 # =====================================================================
