@@ -14,7 +14,10 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install pandas numpy pytest streamlit plotly matplotlib
+          pip install pandas numpy pytest streamlit plotly matplotlib ruff
+      - name: Lint with ruff
+        run: |
+          ruff check scripts/ tests/ --select E,F,W --ignore E501,E402,F841,W503 --exit-zero
       - name: Run tests
         run: |
           PYTHONPATH=scripts pytest tests/ -v
