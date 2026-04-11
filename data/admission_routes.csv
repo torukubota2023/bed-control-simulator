@@ -1,6 +1,7 @@
 ﻿id,name,type,doctor_id,active
 f5aecd49-0f04-506f-ad86-87bdece91992,外来紹介,経路,,True
 0f8da208-7aac-501f-b3e7-5dcfb2dbdee5,救急,経路,,True
+b60b55e9-f4b9-5ed1-8b63-e9704a2a97f4,下り搬送,経路,,True
 a5a280bc-3633-53dc-be5e-28e51c0e55bb,連携室,経路,,True
 71552dee-7555-51fc-9fa8-3bf2715a5eca,ウォークイン,経路,,True
 763dfac6-8215-57b7-83d6-e247dcca86d2,A医師,医師,37dc22e2-1b22-5bf2-831c-4da7eb019445,True
