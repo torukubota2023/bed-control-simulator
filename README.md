@@ -94,8 +94,8 @@ tests/
   test_emergency_ratio.py        # 救急搬送後患者割合のテスト（21件）
   test_hope_message.py           # HOPEメッセージのテスト（8件）
   test_scenario_manager.py       # シナリオマネージャーのテスト（10件）
-  test_app_integration.py        # アプリ統合テスト・状態遷移安全性（24件）
-  （テスト総数は pytest 実行結果を参照 — 現在142件）
+  test_app_integration.py        # アプリ統合テスト・状態遷移安全性（25件）
+  （テスト総数は pytest 実行結果を参照 — 現在143件）
 pyproject.toml                   # ruff 設定
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）
