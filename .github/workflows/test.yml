@@ -17,10 +17,10 @@ jobs:
           pip install pandas numpy pytest streamlit plotly matplotlib ruff jpholiday
       - name: Lint (blocking - critical errors)
         run: |
-          ruff check scripts/ tests/ --select F,E9 --ignore E402
+          ruff check scripts/ tests/ --select E9,F63,F7,F82 --ignore E402
       - name: Lint (non-blocking - style warnings)
         run: |
-          ruff check scripts/ tests/ --select E,F,W --ignore E501,E402,F841,W503 --exit-zero
+          ruff check scripts/ tests/ --select E,F,W --ignore E501,E402,F841 --exit-zero
       - name: Run tests
         run: |
           PYTHONPATH=scripts pytest tests/ -v

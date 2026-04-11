@@ -65,17 +65,24 @@ streamlit run scripts/bed_control_simulator_app.py
 scripts/
   bed_control_simulator_app.py   # Streamlit UI（メイン）
   bed_control_simulator.py       # シミュレーション計算エンジン
+  bed_management_metrics.py      # 空床マネジメント指標（pure function）
   bed_data_manager.py            # データ管理・指標計算
   db_manager.py                  # SQLite 永続化
   help_content.py                # ヘルプテキスト
   doctor_master.py               # 医師マスター管理
   hope_message_generator.py      # HOPE連携メッセージ
 tests/
-  test_bed_data_manager.py       # コアロジックのテスト
+  test_bed_data_manager.py       # データ管理のテスト（18件）
+  test_db_manager.py             # SQLite永続化のテスト（8件）
+  test_metrics.py                # 空床マネジメント指標のテスト（21件）
+pyproject.toml                   # ruff 設定
+requirements-dev.txt             # 開発用依存関係（pytest, ruff）
+.github/workflows/test.yml      # CI（pytest + 2層ruff）
 ```
 
 ## 今後の拡張余地
 
 - 短期滞在手術等基本料3（短手3）の組み込み
-- モジュール分割の深化（UI層/ドメイン層/永続化層）
+- モジュール分割の深化（forecast_view_model.py 等の抽出）
+- 未充填退院キュー proxy の UI 統合
 - 空床ラグ（退院→次の入院までの時間）のリアルタイム計測

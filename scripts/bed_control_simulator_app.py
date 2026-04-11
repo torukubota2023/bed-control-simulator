@@ -6629,7 +6629,8 @@ with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
         _net_7d = _adm_7d - _dis_7d
 
         # パラメータ
-        _ui_safe = ui if "ui" in dir() and isinstance(ui, dict) else {}
+        _ui_candidate = globals().get("ui")
+        _ui_safe = _ui_candidate if isinstance(_ui_candidate, dict) else {}
         occ_gap = target_lower - _occ_now
 
         # ============================================================
