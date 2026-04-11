@@ -6,6 +6,9 @@ __pycache__/
 # OS
 .DS_Store
 
+# Word temporary files
+~$*
+
 # Output (generated files)
 output/*.csv
 output/*.png
