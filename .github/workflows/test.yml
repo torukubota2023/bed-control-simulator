@@ -21,6 +21,9 @@ jobs:
       - name: Lint (non-blocking - style warnings)
         run: |
           ruff check scripts/ tests/ --select E,F,W --ignore E501,E402,F841 --exit-zero
-      - name: Run tests
+      - name: Run unit tests
         run: |
-          PYTHONPATH=.:scripts python -m pytest tests/ -v
+          PYTHONPATH=.:scripts python -m pytest tests/ -v --ignore=tests/test_app_integration.py
+      - name: Run integration tests (app state safety)
+        run: |
+          PYTHONPATH=.:scripts python -m pytest tests/test_app_integration.py -v
