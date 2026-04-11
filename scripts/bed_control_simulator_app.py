@@ -542,6 +542,9 @@ if not _HOPE_AVAILABLE and "_HOPE_ERROR" in dir():
 if not _DETAIL_DATA_AVAILABLE and "_DETAIL_DATA_ERROR" in dir():
     st.sidebar.warning(f"⚠️ 入退院詳細データモジュールのインポートに失敗しました\n\n{_DETAIL_DATA_ERROR}")
 
+if not _BED_MGMT_METRICS_AVAILABLE and "_BED_MGMT_METRICS_ERROR" in dir():
+    st.sidebar.warning(f"⚠️ 空床マネジメント指標モジュールのインポートに失敗しました\n\n{_BED_MGMT_METRICS_ERROR}")
+
 st.title("🏥 ベッドコントロールシミュレーター")
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
 
