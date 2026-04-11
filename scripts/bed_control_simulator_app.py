@@ -248,6 +248,7 @@ except Exception as _gr_err:
 # 結論カード / 今日の一手 / C群候補lite
 # ---------------------------------------------------------------------------
 _ACTION_CARD_AVAILABLE = False
+_ACTION_CARD_ERROR = ""
 try:
     from action_recommendation import (
         generate_action_card,
@@ -255,8 +256,9 @@ try:
         generate_tradeoff_assessment,
     )
     _ACTION_CARD_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as _ac_err:
+    import traceback as _ac_tb
+    _ACTION_CARD_ERROR = f"{_ac_err}\n{_ac_tb.format_exc()}"
 
 _C_GROUP_CANDIDATES_AVAILABLE = False
 try:
@@ -266,11 +268,12 @@ try:
         summarize_candidates_for_display,
     )
     _C_GROUP_CANDIDATES_AVAILABLE = True
-except ImportError:
+except Exception:
     pass
 
 # views（描画ロジック分離）
 _VIEWS_AVAILABLE = False
+_VIEWS_ERROR = ""
 try:
     from views.dashboard_view import (
         render_action_card,
@@ -280,8 +283,9 @@ try:
     )
     from views.c_group_view import render_c_group_candidates_lite
     _VIEWS_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as _v_err:
+    import traceback as _v_tb
+    _VIEWS_ERROR = f"{_v_err}\n{_v_tb.format_exc()}"
 
 # ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
@@ -3865,6 +3869,17 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
     # 結論カード（今日の一手）— 最上段に固定表示
     # データ収集 → pure function で判定 → view で描画
     # ---------------------------------------------------------------
+    if not (_ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE):
+        # デバッグ: import失敗の詳細を表示
+        _missing = []
+        if not _ACTION_CARD_AVAILABLE:
+            _missing.append(f"action_recommendation: {_ACTION_CARD_ERROR}")
+        if not _VIEWS_AVAILABLE:
+            _missing.append(f"views: {_VIEWS_ERROR}")
+        with st.expander("⚙️ 結論カード モジュール読み込み状況", expanded=False):
+            for _m in _missing:
+                st.code(_m)
+
     if _data_ready and _ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE:
         # --- データ収集（app.py はデータを集めて渡すだけ） ---
         _ac_emergency_summary = None
@@ -3953,49 +3968,54 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             pass  # データ収集失敗時もアプリは続行
 
         # --- 結論カード生成 & 描画 ---
-        _ac_card = generate_action_card(
-            emergency_summary=_ac_emergency_summary,
-            guardrail_status=_ac_guardrail_status,
-            los_headroom=_ac_los_headroom,
-            morning_capacity=_ac_morning_capacity,
-            monthly_kpi=_ac_monthly_kpi,
-            c_group_summary=_ac_c_summary,
-            c_adjustment_capacity=_ac_c_capacity,
-            demand_classification=_ac_demand_class,
-            occupancy_rate=_ac_occupancy,
-            target_occupancy=target_lower if "target_lower" in dir() else 0.90,
-        )
-        render_action_card(_ac_card)
-
-        # --- KPI優先表示 ---
-        _ac_kpi_list = generate_kpi_priority_list(
-            emergency_summary=_ac_emergency_summary,
-            guardrail_status=_ac_guardrail_status,
-            los_headroom=_ac_los_headroom,
-            morning_capacity=_ac_morning_capacity,
-            monthly_kpi=_ac_monthly_kpi,
-            c_group_summary=_ac_c_summary,
-            c_adjustment_capacity=_ac_c_capacity,
-            occupancy_rate=_ac_occupancy,
-            target_occupancy=target_lower if "target_lower" in dir() else 0.90,
-        )
-        render_kpi_priority_strip(_ac_kpi_list)
-
-        # --- 翌営業日朝受入余力（主役級表示） ---
-        if _ac_morning_capacity is not None:
-            render_morning_capacity_card(_ac_morning_capacity)
-
-        # --- C群トレードオフ評価 ---
-        if _ac_c_capacity is not None:
-            _ac_tradeoff = generate_tradeoff_assessment(
-                c_adjustment_capacity=_ac_c_capacity,
+        try:
+            _ac_card = generate_action_card(
                 emergency_summary=_ac_emergency_summary,
-                morning_capacity=_ac_morning_capacity,
+                guardrail_status=_ac_guardrail_status,
                 los_headroom=_ac_los_headroom,
+                morning_capacity=_ac_morning_capacity,
+                monthly_kpi=_ac_monthly_kpi,
+                c_group_summary=_ac_c_summary,
+                c_adjustment_capacity=_ac_c_capacity,
+                demand_classification=_ac_demand_class,
+                occupancy_rate=_ac_occupancy,
+                target_occupancy=target_lower if "target_lower" in dir() else 0.90,
             )
-            render_tradeoff_card(_ac_tradeoff)
+            render_action_card(_ac_card)
 
-        st.markdown("---")
+            # --- KPI優先表示 ---
+            _ac_kpi_list = generate_kpi_priority_list(
+                emergency_summary=_ac_emergency_summary,
+                guardrail_status=_ac_guardrail_status,
+                los_headroom=_ac_los_headroom,
+                morning_capacity=_ac_morning_capacity,
+                monthly_kpi=_ac_monthly_kpi,
+                c_group_summary=_ac_c_summary,
+                c_adjustment_capacity=_ac_c_capacity,
+                occupancy_rate=_ac_occupancy,
+                target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+            )
+            render_kpi_priority_strip(_ac_kpi_list)
+
+            # --- 翌営業日朝受入余力（主役級表示） ---
+            if _ac_morning_capacity is not None:
+                render_morning_capacity_card(_ac_morning_capacity)
+
+            # --- C群トレードオフ評価 ---
+            if _ac_c_capacity is not None:
+                _ac_tradeoff = generate_tradeoff_assessment(
+                    c_adjustment_capacity=_ac_c_capacity,
+                    emergency_summary=_ac_emergency_summary,
+                    morning_capacity=_ac_morning_capacity,
+                    los_headroom=_ac_los_headroom,
+                )
+                render_tradeoff_card(_ac_tradeoff)
+
+            st.markdown("---")
+        except Exception as _render_err:
+            st.error(f"結論カード描画エラー: {_render_err}")
+            import traceback
+            st.code(traceback.format_exc())
 
     # 病棟選択キャプション
     if _selected_ward_key != "全体":
