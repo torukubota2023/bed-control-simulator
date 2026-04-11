@@ -138,3 +138,14 @@ class TestFormatGuardrailDisplay:
         assert isinstance(display["not_available"], list)
         # auto_calculated + not_available で全6項目
         assert len(display["auto_calculated"]) + len(display["not_available"]) == 6
+
+    def test_incomplete_when_not_available_exists(self):
+        """安全な指標のみでも not_available があれば overall_status は incomplete。"""
+        # detail_df なし・config なしで呼ぶと在宅復帰率等が not_available になる
+        results = calculate_guardrail_status(_make_daily_df(30))
+        display = format_guardrail_display(results)
+        # not_available が存在するはず（在宅復帰率・ADL低下割合・看護必要度など）
+        assert len(display["not_available"]) > 0
+        # danger/warning がなくても safe にはならず incomplete になる
+        if not display["danger_items"] and not display["warning_items"]:
+            assert display["overall_status"] == "incomplete"

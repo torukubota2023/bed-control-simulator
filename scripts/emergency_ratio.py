@@ -695,3 +695,164 @@ def get_cumulative_progress(
         d += timedelta(days=1)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# 9. estimate_next_morning_capacity
+# ---------------------------------------------------------------------------
+
+
+def _next_business_date(d: date) -> date:
+    """次の営業日（土日をスキップ）を返す。祝日は未対応。"""
+    nxt = d + timedelta(days=1)
+    while nxt.weekday() >= 5:  # 5=Sat, 6=Sun
+        nxt += timedelta(days=1)
+    return nxt
+
+
+def estimate_next_morning_capacity(
+    daily_df: pd.DataFrame,
+    detail_df: Optional[pd.DataFrame] = None,
+    ward: Optional[str] = None,
+    target_date: Optional[date] = None,
+    total_beds: int = 94,
+    ward_beds: Optional[int] = None,
+) -> Dict[str, Any]:
+    """翌営業日朝の救急受入余力をproxy推計する。
+
+    直近のデータから、翌営業日朝の時点で何床空いているかを推計する。
+    推計値はproxyであり、実際の空床数とは異なる可能性がある。
+
+    Args:
+        daily_df: 日次データ
+        detail_df: 入退院詳細データ（退院予定の確認用、Noneなら平均で推計）
+        ward: "5F" / "6F" / None
+        target_date: 基準日。None なら今日
+        total_beds: 病院全体の病床数
+        ward_beds: 病棟の病床数（ward指定時のみ使用）
+
+    Returns:
+        翌朝の受入余力を含む dict
+    """
+    td = target_date if target_date is not None else date.today()
+    beds = ward_beds if (ward is not None and ward_beds is not None) else total_beds
+    next_biz = _next_business_date(td)
+
+    # デフォルト結果（データ不足時）
+    default_result: Dict[str, Any] = {
+        "current_empty_beds": 0,
+        "current_occupancy_pct": 0.0,
+        "planned_discharges_tomorrow": 0.0,
+        "expected_admissions_tomorrow": 0.0,
+        "estimated_emergency_slots": 0,
+        "three_day_min_slots": 0,
+        "ward": ward,
+        "target_date": td.isoformat(),
+        "is_proxy": True,
+        "next_business_date": next_biz.isoformat(),
+    }
+
+    if daily_df is None or not isinstance(daily_df, pd.DataFrame) or len(daily_df) == 0:
+        return default_result
+
+    df = daily_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+
+    # 病棟フィルタ
+    if ward is not None and "ward" in df.columns:
+        df = df[df["ward"] == ward]
+
+    # 日付単位で合算
+    numeric_cols = [c for c in ["total_patients", "new_admissions", "discharges"]
+                    if c in df.columns]
+    if not numeric_cols or "total_patients" not in df.columns:
+        return default_result
+
+    agg_dict = {c: "sum" for c in numeric_cols}
+    df = df.groupby("date", as_index=False).agg(agg_dict)
+    df = df.sort_values("date").reset_index(drop=True)
+
+    if df.empty:
+        return default_result
+
+    # 最新日のデータ
+    latest = df.iloc[-1]
+    current_patients = int(latest["total_patients"])
+    current_empty = max(beds - current_patients, 0)
+    current_occupancy = (current_patients / beds * 100.0) if beds > 0 else 0.0
+
+    # --- 退院推計 ---
+    planned_discharges: float = 0.0
+
+    # detail_dfから翌営業日の退院予定を取得
+    if detail_df is not None and isinstance(detail_df, pd.DataFrame) and len(detail_df) > 0:
+        det = detail_df.copy()
+        if "event_type" in det.columns:
+            dis_df = det[det["event_type"] == "discharge"]
+            if ward is not None and "ward" in dis_df.columns:
+                dis_df = dis_df[dis_df["ward"] == ward]
+            if not dis_df.empty:
+                dis_df = dis_df.copy()
+                dis_df["_date"] = pd.to_datetime(dis_df["date"]).dt.date
+                planned_tomorrow = dis_df[dis_df["_date"] == next_biz]
+                if len(planned_tomorrow) > 0:
+                    planned_discharges = float(len(planned_tomorrow))
+
+    # detail_dfに翌日データがない場合、過去7日の平均退院数を使用
+    if planned_discharges == 0.0 and "discharges" in df.columns:
+        last_7d = df.tail(7)
+        if len(last_7d) > 0:
+            planned_discharges = round(float(last_7d["discharges"].mean()), 1)
+
+    # --- 入院推計（同じ曜日の過去4週間平均） ---
+    target_dow = next_biz.weekday()
+    expected_admissions: float = 0.0
+
+    if "new_admissions" in df.columns:
+        df["_dow"] = df["date"].dt.dayofweek
+        same_dow = df[df["_dow"] == target_dow].tail(4)
+        if len(same_dow) > 0:
+            expected_admissions = round(float(same_dow["new_admissions"].mean()), 1)
+
+    # --- 翌朝の受入可能枠 ---
+    net_capacity = current_empty + planned_discharges - expected_admissions
+    emergency_slots = max(int(round(net_capacity)), 0)
+
+    # --- 3営業日の最小受入余力 ---
+    min_slots = emergency_slots
+    cumulative_empty = float(current_empty)
+
+    biz_day = next_biz
+    for i in range(3):
+        dow_i = biz_day.weekday()
+        # 同曜日の退院・入院推計
+        if "_dow" not in df.columns:
+            df["_dow"] = df["date"].dt.dayofweek
+        same_dow_i = df[df["_dow"] == dow_i].tail(4)
+
+        dis_est = float(same_dow_i["discharges"].mean()) if (
+            len(same_dow_i) > 0 and "discharges" in same_dow_i.columns
+        ) else planned_discharges
+        adm_est = float(same_dow_i["new_admissions"].mean()) if (
+            len(same_dow_i) > 0 and "new_admissions" in same_dow_i.columns
+        ) else expected_admissions
+
+        cumulative_empty = cumulative_empty + dis_est - adm_est
+        day_slots = max(int(round(cumulative_empty)), 0)
+        if day_slots < min_slots:
+            min_slots = day_slots
+
+        biz_day = _next_business_date(biz_day)
+
+    return {
+        "current_empty_beds": current_empty,
+        "current_occupancy_pct": round(current_occupancy, 1),
+        "planned_discharges_tomorrow": planned_discharges,
+        "expected_admissions_tomorrow": expected_admissions,
+        "estimated_emergency_slots": emergency_slots,
+        "three_day_min_slots": min_slots,
+        "ward": ward,
+        "target_date": td.isoformat(),
+        "is_proxy": True,
+        "next_business_date": next_biz.isoformat(),
+    }

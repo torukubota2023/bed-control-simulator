@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from demand_wave import (
     calculate_demand_trend,
+    calculate_route_demand_trend,
     classify_demand_period,
     calculate_dow_pattern,
     calculate_demand_score,
@@ -128,3 +129,102 @@ class TestCalculateDemandScore:
         result = calculate_demand_score(df)
         assert 0 <= result["score_14d"] <= 100
         assert 0 <= result["score_30d"] <= 100
+
+
+# ---------------------------------------------------------------------------
+# TestCalculateRouteDemandTrend
+# ---------------------------------------------------------------------------
+
+def _make_detail_df_for_route(records):
+    """経路別テスト用の detail DataFrame を生成する。"""
+    rows = []
+    for i, rec in enumerate(records):
+        rows.append({
+            "id": i + 1,
+            "date": rec["date"],
+            "event_type": "admission",
+            "ward": rec.get("ward", "5F"),
+            "route": rec["route"],
+        })
+    return pd.DataFrame(rows)
+
+
+class TestCalculateRouteDemandTrend:
+    def test_route_demand_trend_separate_categories(self):
+        """経路ごとに rescue / downstream / other に正しく分類される。"""
+        base = date(2026, 4, 10)
+        records = [
+            {"date": str(base - timedelta(days=2)), "route": "救急"},
+            {"date": str(base - timedelta(days=2)), "route": "救急"},
+            {"date": str(base - timedelta(days=1)), "route": "下り搬送"},
+            {"date": str(base - timedelta(days=1)), "route": "外来紹介"},
+            {"date": str(base - timedelta(days=1)), "route": "連携室"},
+            {"date": str(base), "route": "ウォークイン"},
+        ]
+        detail_df = _make_detail_df_for_route(records)
+        daily_df = _make_daily_df(14, start_date=base - timedelta(days=13))
+
+        result = calculate_route_demand_trend(
+            daily_df, detail_df, ward=None, target_date=base,
+        )
+
+        # rescue = 救急 のみ
+        assert result["rescue"]["last_7d_count"] == 2
+        # downstream = 下り搬送 のみ
+        assert result["downstream"]["last_7d_count"] == 1
+        # other = 外来紹介 + 連携室 + ウォークイン
+        assert result["other"]["last_7d_count"] == 3
+        # total = rescue + downstream + other
+        total_parts = (
+            result["rescue"]["last_7d_count"]
+            + result["downstream"]["last_7d_count"]
+            + result["other"]["last_7d_count"]
+        )
+        assert result["total"]["last_7d_count"] == total_parts
+
+    def test_route_demand_trend_empty_df(self):
+        """空の detail_df でもクラッシュせず、ゼロの結果を返す。"""
+        daily_df = _make_daily_df(14)
+        empty_detail = pd.DataFrame(columns=["id", "date", "event_type", "ward", "route"])
+
+        result = calculate_route_demand_trend(
+            daily_df, empty_detail, ward=None, target_date=date(2026, 4, 10),
+        )
+
+        assert result["rescue"]["last_7d_count"] == 0
+        assert result["downstream"]["last_7d_count"] == 0
+        assert result["other"]["last_7d_count"] == 0
+        assert result["total"]["last_7d_count"] == 0
+        # None でも同様
+        result_none = calculate_route_demand_trend(
+            daily_df, None, ward=None, target_date=date(2026, 4, 10),
+        )
+        assert result_none["total"]["last_7d_count"] == 0
+
+    def test_route_demand_trend_ward_filter(self):
+        """病棟フィルタが正しく適用される。"""
+        base = date(2026, 4, 10)
+        records = [
+            {"date": str(base), "route": "救急", "ward": "5F"},
+            {"date": str(base), "route": "救急", "ward": "5F"},
+            {"date": str(base), "route": "救急", "ward": "6F"},
+            {"date": str(base), "route": "外来紹介", "ward": "6F"},
+        ]
+        detail_df = _make_detail_df_for_route(records)
+        daily_df = _make_daily_df(14, start_date=base - timedelta(days=13))
+
+        r5 = calculate_route_demand_trend(
+            daily_df, detail_df, ward="5F", target_date=base,
+        )
+        r6 = calculate_route_demand_trend(
+            daily_df, detail_df, ward="6F", target_date=base,
+        )
+
+        assert r5["rescue"]["last_7d_count"] == 2
+        assert r5["total"]["last_7d_count"] == 2
+        assert r5["ward"] == "5F"
+
+        assert r6["rescue"]["last_7d_count"] == 1
+        assert r6["other"]["last_7d_count"] == 1
+        assert r6["total"]["last_7d_count"] == 2
+        assert r6["ward"] == "6F"

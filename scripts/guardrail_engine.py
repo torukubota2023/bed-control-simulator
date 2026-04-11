@@ -469,10 +469,13 @@ def format_guardrail_display(results: list[dict]) -> dict:
             warning_items.append(name)
 
     # overall_status: 最悪の指標に合わせる
+    # not_available の重要指標がある場合は "incomplete" として安全と誤認させない
     if danger_items:
         overall_status = "danger"
     elif warning_items:
         overall_status = "warning"
+    elif not_available:
+        overall_status = "incomplete"
     else:
         overall_status = "safe"
 

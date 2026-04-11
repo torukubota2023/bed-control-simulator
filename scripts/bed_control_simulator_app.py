@@ -204,6 +204,7 @@ try:
         calculate_dow_pattern,
         calculate_demand_score,
         detect_demand_alerts,
+        calculate_route_demand_trend,
     )
     from c_group_control import (
         get_c_group_summary,
@@ -223,6 +224,7 @@ try:
         get_monthly_history,
         get_cumulative_progress,
         EMERGENCY_THRESHOLD_PCT,
+        estimate_next_morning_capacity,
     )
     _GUARDRAIL_AVAILABLE = True
     _EMERGENCY_RATIO_AVAILABLE = True
@@ -8015,8 +8017,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _gr_display = format_guardrail_display(_gr_results)
 
                 # 全体ステータス
-                _status_emoji = {"safe": "🟢", "warning": "🟡", "danger": "🔴"}.get(_gr_display["overall_status"], "⚪")
-                _status_ja = {"safe": "安全", "warning": "注意", "danger": "危険"}.get(_gr_display["overall_status"], "不明")
+                _status_emoji = {"safe": "🟢", "warning": "🟡", "danger": "🔴", "incomplete": "🟠"}.get(_gr_display["overall_status"], "⚪")
+                _status_ja = {"safe": "安全", "warning": "注意", "danger": "危険", "incomplete": "未完（データ不足）"}.get(_gr_display["overall_status"], "不明")
                 st.markdown(f"### {_status_emoji} 総合判定: **{_status_ja}**")
 
                 # 指標カード
@@ -8058,6 +8060,30 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         st.info(f"📊 延べ入院日数換算の余力: 約 {_los_hr['headroom_patient_days']:.0f} 日分（推計）")
                 else:
                     st.warning("日次データ不足のため平均在院日数の余力を計算できません")
+
+                # 翌営業日朝の受入余力
+                if _EMERGENCY_RATIO_AVAILABLE:
+                    st.markdown("---")
+                    st.subheader("🌅 翌営業日朝の救急受入余力（推計）")
+                    try:
+                        _morning_cap = estimate_next_morning_capacity(
+                            _gr_daily_df, _gr_detail_df,
+                            ward=None,  # always show hospital-wide
+                            target_date=None,
+                            total_beds=94,
+                        )
+                        _mc_cols = st.columns(3)
+                        with _mc_cols[0]:
+                            st.metric("今夜の空床", f"{_morning_cap['current_empty_beds']}床")
+                        with _mc_cols[1]:
+                            st.metric("明朝の受入可能枠", f"{_morning_cap['estimated_emergency_slots']}床",
+                                      delta="推計")
+                        with _mc_cols[2]:
+                            st.metric("3営業日の最小受入余力", f"{_morning_cap['three_day_min_slots']}床",
+                                      delta="最悪ケース")
+                        st.caption("⚠️ 推計値です。予定入院・退院の変動により実際とは異なります。")
+                    except Exception:
+                        st.info("データ不足のため翌朝受入余力を計算できません")
             else:
                 st.info("日次データを入力すると制度余力が表示されます")
 
@@ -8125,6 +8151,29 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     for _alert in _dw_alerts:
                         _alert_icon = {"warning": "⚠️", "info": "ℹ️"}.get(_alert["level"], "ℹ️")
                         st.markdown(f"{_alert_icon} {_alert['message']}")
+
+                # 経路別需要トレンド
+                if _EMERGENCY_RATIO_AVAILABLE and _gr_detail_df is not None and len(_gr_detail_df) > 0:
+                    st.markdown("---")
+                    st.subheader("🚑 経路別需要トレンド（救急 / 下り搬送 / その他）")
+
+                    _route_trend = calculate_route_demand_trend(_gr_daily_df, _gr_detail_df, _dw_ward)
+
+                    _rt_cols = st.columns(3)
+                    _rt_labels = [
+                        ("rescue", "🚑 救急", _route_trend.get("rescue", {})),
+                        ("downstream", "🏥 下り搬送", _route_trend.get("downstream", {})),
+                        ("other", "📋 その他", _route_trend.get("other", {})),
+                    ]
+                    for _rt_idx, (_rt_key, _rt_label, _rt_data) in enumerate(_rt_labels):
+                        with _rt_cols[_rt_idx]:
+                            if _rt_data:
+                                _rt_emoji = {"increasing": "📈", "stable": "➡️", "decreasing": "📉"}.get(_rt_data.get("trend_label", "stable"), "➡️")
+                                st.metric(
+                                    _rt_label,
+                                    f"{_rt_data.get('daily_avg', 0):.1f}件/日",
+                                    delta=f"{_rt_emoji} 前週比 {_rt_data.get('trend_ratio', 1.0)*100:.0f}%",
+                                )
             else:
                 st.info("日次データを入力すると需要波分析が表示されます")
 
@@ -8519,7 +8568,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         with _cum_col:
                             st.markdown(f"**{_er_ward}**")
                             _cum_data = get_cumulative_progress(
-                                _gr_detail_df, _er_ward, _er_ym, _er_today
+                                _gr_detail_df, _er_ward, _er_ym, _er_today,
+                                exclude_short3=_er_use_short3_excl,
                             )
                             if _cum_data:
                                 _cum_df = pd.DataFrame(_cum_data)
@@ -8558,7 +8608,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         with _hist_col:
                             st.markdown(f"**{_er_ward}**")
                             _hist_data = get_monthly_history(
-                                _gr_detail_df, _er_ward, n_months=12, target_date=_er_today
+                                _gr_detail_df, _er_ward, n_months=12, target_date=_er_today,
+                                exclude_short3=_er_use_short3_excl,
                             )
                             if _hist_data:
                                 _hist_df = pd.DataFrame(_hist_data)

@@ -443,6 +443,163 @@ def calculate_demand_score(
 # 6. detect_demand_alerts
 # ---------------------------------------------------------------------------
 
+def calculate_route_demand_trend(
+    daily_df: pd.DataFrame,
+    detail_df: pd.DataFrame,
+    ward: Optional[str] = None,
+    target_date: Optional[date] = None,
+) -> dict:
+    """入院経路別（救急/下り搬送/その他）の需要トレンドを計算する。
+
+    detail_dfのrouteカラムを使って、過去14日間の経路別入院数トレンドを算出する。
+    daily_dfは使用しない（detail_dfのみで計算）が、インターフェース統一のため残す。
+
+    Args:
+        daily_df: 日次データ（未使用、インターフェース統一のため残す）
+        detail_df: 入退院詳細データ（route カラム必須）
+        ward: "5F" / "6F" / None
+        target_date: 基準日。None なら今日
+
+    Returns:
+        経路別トレンド情報を含む辞書
+    """
+    td = target_date if target_date is not None else date.today()
+
+    # 空データチェック
+    if detail_df is None or not isinstance(detail_df, pd.DataFrame) or len(detail_df) == 0:
+        empty_entry = {
+            "last_7d_count": 0,
+            "prev_7d_count": 0,
+            "trend_ratio": 1.0,
+            "daily_avg": 0.0,
+            "trend_label": "stable",
+        }
+        return {
+            "rescue": dict(empty_entry),
+            "downstream": dict(empty_entry),
+            "other": dict(empty_entry),
+            "total": dict(empty_entry),
+            "ward": ward,
+            "period": {"start": (td - timedelta(days=13)).isoformat(), "end": td.isoformat()},
+        }
+
+    # 入院イベントのみ抽出
+    df = detail_df.copy()
+    if "event_type" in df.columns:
+        df = df[df["event_type"] == "admission"]
+    if df.empty:
+        empty_entry = {
+            "last_7d_count": 0,
+            "prev_7d_count": 0,
+            "trend_ratio": 1.0,
+            "daily_avg": 0.0,
+            "trend_label": "stable",
+        }
+        return {
+            "rescue": dict(empty_entry),
+            "downstream": dict(empty_entry),
+            "other": dict(empty_entry),
+            "total": dict(empty_entry),
+            "ward": ward,
+            "period": {"start": (td - timedelta(days=13)).isoformat(), "end": td.isoformat()},
+        }
+
+    # 病棟フィルタ
+    if ward is not None and "ward" in df.columns:
+        df = df[df["ward"] == ward]
+
+    # 日付変換
+    df["_date"] = pd.to_datetime(df["date"]).dt.date
+
+    # 14日間の範囲
+    period_end = td
+    period_start = td - timedelta(days=13)
+    last_7d_start = td - timedelta(days=6)
+
+    df = df[(df["_date"] >= period_start) & (df["_date"] <= period_end)]
+
+    # 経路カテゴリ分類
+    def _categorize_route(route_val) -> str:
+        s = str(route_val).strip()
+        if s == "救急":
+            return "rescue"
+        elif s == "下り搬送":
+            return "downstream"
+        else:
+            return "other"
+
+    if "route" in df.columns:
+        df = df.copy()
+        df["_category"] = df["route"].apply(_categorize_route)
+    else:
+        df = df.copy()
+        df["_category"] = "other"
+
+    # カテゴリ別にトレンド計算
+    categories = ["rescue", "downstream", "other"]
+    result: dict = {}
+
+    for cat in categories:
+        cat_df = df[df["_category"] == cat]
+        last_7d = cat_df[cat_df["_date"] >= last_7d_start]
+        prev_7d = cat_df[cat_df["_date"] < last_7d_start]
+
+        last_count = len(last_7d)
+        prev_count = len(prev_7d)
+        trend_ratio = (last_count / prev_count) if prev_count > 0 else 1.0
+        daily_avg = last_count / 7.0
+
+        if trend_ratio >= 1.15:
+            trend_label = "increasing"
+        elif trend_ratio <= 0.85:
+            trend_label = "decreasing"
+        else:
+            trend_label = "stable"
+
+        result[cat] = {
+            "last_7d_count": last_count,
+            "prev_7d_count": prev_count,
+            "trend_ratio": round(trend_ratio, 3),
+            "daily_avg": round(daily_avg, 2),
+            "trend_label": trend_label,
+        }
+
+    # 全体
+    last_7d_all = df[df["_date"] >= last_7d_start]
+    prev_7d_all = df[df["_date"] < last_7d_start]
+    total_last = len(last_7d_all)
+    total_prev = len(prev_7d_all)
+    total_ratio = (total_last / total_prev) if total_prev > 0 else 1.0
+    total_daily = total_last / 7.0
+
+    if total_ratio >= 1.15:
+        total_label = "increasing"
+    elif total_ratio <= 0.85:
+        total_label = "decreasing"
+    else:
+        total_label = "stable"
+
+    result["total"] = {
+        "last_7d_count": total_last,
+        "prev_7d_count": total_prev,
+        "trend_ratio": round(total_ratio, 3),
+        "daily_avg": round(total_daily, 2),
+        "trend_label": total_label,
+    }
+
+    result["ward"] = ward
+    result["period"] = {
+        "start": period_start.isoformat(),
+        "end": period_end.isoformat(),
+    }
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 7. detect_demand_alerts
+# ---------------------------------------------------------------------------
+
 def detect_demand_alerts(
     daily_df: pd.DataFrame,
     ward: Optional[str] = None,

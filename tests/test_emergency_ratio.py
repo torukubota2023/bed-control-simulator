@@ -27,6 +27,7 @@ from scripts.emergency_ratio import (
     calculate_additional_needed,
     calculate_dual_ratio,
     calculate_emergency_ratio,
+    estimate_next_morning_capacity,
     generate_emergency_alerts,
     get_cumulative_progress,
     get_monthly_history,
@@ -607,3 +608,133 @@ def test_project_month_end_exclude_short3():
     assert proj_operational["current"]["total_count"] == 15  # 20 - 5 short3
     assert proj_official["exclude_short3"] is False
     assert proj_operational["exclude_short3"] is True
+
+
+# ---------------------------------------------------------------------------
+# 15. test_next_morning_capacity_basic
+# ---------------------------------------------------------------------------
+
+
+def _make_daily_df_for_capacity(n_days=14, base_patients=80, total_beds=94, start_date=None):
+    """翌朝キャパシティテスト用の日次DataFrameを生成する。"""
+    from datetime import timedelta as td_delta
+    if start_date is None:
+        start_date = date(2026, 4, 1)
+    rows = []
+    for i in range(n_days):
+        d = start_date + td_delta(days=i)
+        dow = d.weekday()
+        adm = 5 if dow < 5 else 2
+        dis = 5 if dow < 5 else 1
+        patients = base_patients + (i % 3 - 1)
+        rows.append({
+            "date": str(d),
+            "ward": "5F",
+            "total_patients": max(patients, 0),
+            "new_admissions": adm,
+            "discharges": dis,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_next_morning_capacity_basic():
+    """翌朝キャパシティの基本テスト。"""
+    start = date(2026, 4, 1)
+    daily_df = _make_daily_df_for_capacity(14, base_patients=80, start_date=start)
+    target = date(2026, 4, 14)
+
+    result = estimate_next_morning_capacity(
+        daily_df, ward=None, target_date=target, total_beds=94,
+    )
+
+    # 最新日のpatients
+    last_row = daily_df.iloc[-1]
+    expected_empty = 94 - int(last_row["total_patients"])
+    assert result["current_empty_beds"] == expected_empty
+    assert result["estimated_emergency_slots"] >= 0
+    assert result["is_proxy"] is True
+    assert "next_business_date" in result
+
+
+def test_next_morning_capacity_empty_data():
+    """空の daily_df でもクラッシュしない。"""
+    empty_df = pd.DataFrame(columns=["date", "ward", "total_patients", "new_admissions", "discharges"])
+
+    result = estimate_next_morning_capacity(
+        empty_df, ward=None, target_date=date(2026, 4, 10), total_beds=94,
+    )
+
+    assert result["current_empty_beds"] == 0
+    assert result["estimated_emergency_slots"] == 0
+    assert result["is_proxy"] is True
+
+    # None でも同様
+    result_none = estimate_next_morning_capacity(
+        None, ward=None, target_date=date(2026, 4, 10), total_beds=94,
+    )
+    assert result_none["current_empty_beds"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 16. test_official_operational_consistency
+# ---------------------------------------------------------------------------
+
+
+def test_official_operational_consistency():
+    """公式（exclude_short3=False）と運用（exclude_short3=True）で各関数の結果が一貫して異なる。"""
+    records = []
+    # 30 admissions total:
+    #   10 救急 (non-short3)
+    #   10 外来紹介 (non-short3)
+    #   10 外来紹介 (short3: ポリペク)
+    for i in range(10):
+        records.append({
+            "date": f"2026-04-{(i % 10) + 1:02d}", "ward": "5F",
+            "route": "救急", "short3_type": "該当なし",
+        })
+    for i in range(10):
+        records.append({
+            "date": f"2026-04-{(i % 10) + 1:02d}", "ward": "5F",
+            "route": "外来紹介", "short3_type": "該当なし",
+        })
+    for i in range(10):
+        records.append({
+            "date": f"2026-04-{(i % 10) + 1:02d}", "ward": "5F",
+            "route": "外来紹介", "short3_type": "ポリペク",
+        })
+    df = _make_detail_df(records)
+    ym = "2026-04"
+    td = date(2026, 4, 10)
+
+    # 1) calculate_emergency_ratio: 分母が異なる
+    r_off = calculate_emergency_ratio(df, ward="5F", year_month=ym, exclude_short3=False)
+    r_op = calculate_emergency_ratio(df, ward="5F", year_month=ym, exclude_short3=True)
+    assert r_off["denominator"] == 30  # all included
+    assert r_op["denominator"] == 20   # short3 excluded
+    assert r_off["denominator"] != r_op["denominator"]
+
+    # 2) project_month_end: current.total_count が異なる
+    p_off = project_month_end(df, ward="5F", year_month=ym, target_date=td, exclude_short3=False)
+    p_op = project_month_end(df, ward="5F", year_month=ym, target_date=td, exclude_short3=True)
+    assert p_off["current"]["total_count"] != p_op["current"]["total_count"]
+
+    # 3) calculate_additional_needed: projected_total_at_month_end が異なる可能性
+    a_off = calculate_additional_needed(df, ward="5F", year_month=ym, target_date=td, exclude_short3=False)
+    a_op = calculate_additional_needed(df, ward="5F", year_month=ym, target_date=td, exclude_short3=True)
+    # 分母が異なるので projected_total も異なるはず
+    assert a_off["projected_total_at_month_end"] != a_op["projected_total_at_month_end"]
+
+    # 4) get_cumulative_progress: cumulative_total が異なる
+    cp_off = get_cumulative_progress(df, ward="5F", year_month=ym, target_date=td, exclude_short3=False)
+    cp_op = get_cumulative_progress(df, ward="5F", year_month=ym, target_date=td, exclude_short3=True)
+    assert len(cp_off) > 0
+    assert len(cp_op) > 0
+    # 最終日の累積件数が異なる
+    assert cp_off[-1]["cumulative_total"] != cp_op[-1]["cumulative_total"]
+
+    # 5) get_monthly_history: ratio_pct が異なる
+    h_off = get_monthly_history(df, ward="5F", n_months=1, target_date=td, exclude_short3=False)
+    h_op = get_monthly_history(df, ward="5F", n_months=1, target_date=td, exclude_short3=True)
+    assert len(h_off) == 1
+    assert len(h_op) == 1
+    assert h_off[0]["ratio_pct"] != h_op[0]["ratio_pct"]
