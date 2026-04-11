@@ -2348,7 +2348,11 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             if _last_occ_brief < 1.5:
                 _last_occ_brief *= 100
 
+            # 月平均稼働率も取得（直近1日と月平均の両方で総合判定する）
+            _month_avg_brief = _gauge_occ  # ゲージ用に計算済みの月平均稼働率
+
             if _last_occ_brief < target_lower * 100:
+                # 直近1日が目標未達
                 _is_recovering = False
                 if len(_active_raw_df) >= 3:
                     _rec_check = _active_raw_df[_occ_col_brief].tail(3).values
@@ -2368,6 +2372,12 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                 _action_icon = "🟡"
                 _action_title = "高稼働 — 退院調整"
                 _action_detail = "A→B群移行確認 / C群退院日確定"
+            elif _month_avg_brief < target_lower * 100:
+                # 直近1日は目標レンジ内だが、月平均は目標未達
+                # → 「今日は良いが月全体では足りない」
+                _action_icon = "📊"
+                _action_title = "月平均未達 — ペースアップ"
+                _action_detail = f"今日は目標内だが月平均{_month_avg_brief:.1f}%＜目標{target_lower*100:.0f}%"
             else:
                 _action_icon = "🟢"
                 _action_title = "目標レンジ内 — 維持継続"
