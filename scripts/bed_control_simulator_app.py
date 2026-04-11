@@ -2512,7 +2512,7 @@ else:
     if _HOPE_AVAILABLE:
         tab_names.append("📨 HOPE送信")
 
-st.caption("👆 下のタブをクリックして各画面を切り替えてください")
+st.caption("👇 下のタブをクリックして各画面を切り替えてください")
 tabs = st.tabs(tab_names)
 # タブ名→インデックスのマッピング
 _tab_idx = {name: i for i, name in enumerate(tab_names)}
