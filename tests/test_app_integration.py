@@ -210,6 +210,8 @@ class TestTabNameConsistency:
                 continue
             tab_name = _normalize_unicode(m.group(1))
             # 前の行（空行スキップ）にガードがあるか確認
+            # 直前の数行、またはさらに上方（最大30行）に同タブ名のガードがあればOK
+            # （split pattern: auth check + content blockで2回参照されるケース対応）
             prev_idx = i - 2  # 0-indexed
             found_guard = False
             while prev_idx >= 0 and prev_idx >= i - 6:
@@ -220,6 +222,13 @@ class TestTabNameConsistency:
                 if prev_line.strip() and not prev_line.strip().startswith('#'):
                     break
                 prev_idx -= 1
+            # 直前に見つからなくても、上方30行以内にガードがあればOK
+            # （認証分離パターン: 同一 if ブロック内の2つ目の with tabs[...]）
+            if not found_guard:
+                for scan_idx in range(max(0, i - 31), i - 1):
+                    if f'"{m.group(1)}" in _tab_idx' in APP_LINES[scan_idx]:
+                        found_guard = True
+                        break
             if not found_guard:
                 unguarded.append(f"  L{i}: with tabs[_tab_idx[\"{tab_name}\"]] — ガードなし")
         assert not unguarded, (
@@ -314,8 +323,8 @@ class TestDataFallbackPaths:
         # 「データ不要セクション → ダミー値で続行」パス内の変数定義を確認
         required_vars = ["df", "summary", "days_in_month", "_active_raw_df", "_active_cli_params"]
 
-        # st.stop() と ダミー値パスの両方が存在することを確認
-        assert "st.stop()" in block, "st.stop() がデータロードブロックに存在しない"
+        # st.stop() を廃止し、ダミー値パスで全ケースをカバー
+        # （st.stop() は他タブの描画をブロックするため使用しない）
 
         # ダミー値定義パスの確認
         for var in required_vars:
@@ -341,35 +350,33 @@ class TestDataFallbackPaths:
                 f"シミュレーション未実行フォールバックで '{var}' の定義が見つからない"
             )
 
-    def test_st_stop前にneeds_sim_dataチェックがある(self):
-        """st.stop() が _needs_sim_data 条件内にのみ配置されていること
-        （データ不要セクションで st.stop() が発動しないこと）"""
+    def test_データロードブロックにst_stopがないこと(self):
+        """データロードブロック内に st.stop() が存在しないこと
+        （st.stop() は他タブの描画をブロックするため、ダミー値パスで代替）"""
         block = self._extract_data_loading_block()
         lines = block.splitlines()
 
         stop_locations = []
         for i, line in enumerate(lines):
-            if "st.stop()" in line:
-                # 直前の10行以内に _needs_sim_data チェックがあることを確認
-                context = "\n".join(lines[max(0, i-10):i+1])
-                has_guard = "_needs_sim_data" in context or "if _needs_sim_data" in context
-                if not has_guard:
-                    stop_locations.append(f"  データロードブロック内 L+{i}: st.stop() に _needs_sim_data ガードなし")
+            stripped = line.strip()
+            # コメント行は除外
+            if stripped.startswith("#"):
+                continue
+            if "st.stop()" in stripped:
+                stop_locations.append(f"  データロードブロック内 L+{i}: st.stop() が残存")
 
         assert not stop_locations, (
-            "st.stop() が _needs_sim_data ガードなしで配置されている — "
-            "データ不要セクション（制度管理等）がブロックされる:\n"
+            "データロードブロック内に st.stop() が残存 — "
+            "他タブの描画がブロックされる可能性あり:\n"
             + "\n".join(stop_locations)
         )
 
-    def test_ダミー値パスとst_stop_パスの排他性(self):
-        """st.stop() パスとダミー値パスが排他的であること
-        （_needs_sim_data=True → st.stop(), _needs_sim_data=False → ダミー値）"""
+    def test_ダミー値パスの完全性(self):
+        """データ未準備時にダミー値パスが必ず通ること
+        （_needs_sim_data の条件分岐が存在し、全パスでダミー値が設定される）"""
         block = self._extract_data_loading_block()
 
-        # 実績データモード側
-        actual_section = block.split("else:")[0] if "else:" in block else block
-        # 「if _needs_sim_data:」の後に st.stop()、else に ダミー値 のパターンを確認
+        # _needs_sim_data による条件分岐が存在すること
         assert "if _needs_sim_data:" in block or "if _needs_sim_data" in block, (
             "_needs_sim_data による条件分岐がデータロードブロックに存在しない"
         )
@@ -511,11 +518,16 @@ class TestPasswordGuard:
         matches = list(re.finditer(pattern, APP_SOURCE))
         assert matches, "データエクスポートタブの参照が見つからない"
 
+        # 認証分離パターン対応: 複数の参照のうち少なくとも1つに _require_data_auth があればOK
+        found_auth = False
         for m in matches:
             after = APP_SOURCE[m.end():m.end() + 500]
-            assert "_require_data_auth" in after, (
-                "データエクスポートタブに _require_data_auth ガードが見つからない"
-            )
+            if "_require_data_auth" in after:
+                found_auth = True
+                break
+        assert found_auth, (
+            "データエクスポートタブに _require_data_auth ガードが見つからない"
+        )
 
 
 # =====================================================================

@@ -2653,696 +2653,716 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
     _dm_tab_analysis_idx = _tab_idx.get("🔮 実績分析・予測")
 
     # ----- タブ: 📋 日次データ入力 -----
+    _dm_auth_ok = False
     with tabs[_dm_tab_daily_idx]:
         st.subheader("📋 日次データ入力")
-        if not _require_data_auth("データ入力"):
-            st.stop()
+        _dm_auth_ok = _require_data_auth("データ入力")
 
-        # --- モード切替 ---
-        st.radio(
-            "データモード",
-            ["📊 実データ入力モード", "🎮 デモモード（サンプルデータ）"],
-            key="data_mode",
-        )
-        _is_demo_mode = st.session_state.data_mode == "🎮 デモモード（サンプルデータ）"
-
-        st.markdown("---")
-
-        if _is_demo_mode:
-            # ============================================================
-            # デモモード
-            # ============================================================
-            st.info("🎓 これは教育用デモデータです。5F（稼働率低下傾向）と6F（安定稼働）のシナリオが含まれています。")
-
-            # デモデータが既にロード済みかチェック
-            _demo_loaded = isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0
-
-            dm_demo_col1, dm_demo_col2, dm_demo_col3 = st.columns(3)
-            with dm_demo_col1:
-                if _demo_loaded:
-                    _demo_ward_count = st.session_state.demo_data["ward"].nunique() if "ward" in st.session_state.demo_data.columns else 0
-                    _demo_day_count = st.session_state.demo_data["date"].nunique() if "date" in st.session_state.demo_data.columns else 0
-                    st.success(f"✅ デモデータロード済（{_demo_ward_count}病棟 × {_demo_day_count}日分）")
-                else:
-                    st.warning("デモデータが見つかりません")
-            with dm_demo_col2:
-                if st.button("🔄 ランダムデータで再生成（30日分）", key="dm_gen_sample",
-                             help="教育用デモの代わりにランダムなダミーデータを生成します"):
-                    _demo_5f = generate_sample_data(num_days=30, num_beds=get_ward_beds("5F"))
-                    _demo_5f["ward"] = "5F"
-                    _demo_6f = generate_sample_data(num_days=30, num_beds=get_ward_beds("6F"))
-                    _demo_6f["ward"] = "6F"
-                    st.session_state.demo_data = pd.concat([_demo_5f, _demo_6f], ignore_index=True).sort_values(["date", "ward"]).reset_index(drop=True)
-                    st.success("ランダムサンプルデータ（30日分）を生成しました。")
-                    _auto_save_to_db()
-                    st.rerun()
-
-            with dm_demo_col3:
-                if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
-                    _demo_csv_str = dm_export_to_csv(st.session_state.demo_data)
-                    _demo_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
-                    st.download_button(
-                        label="CSVダウンロード",
-                        data=_demo_csv_str.encode("utf-8-sig"),
-                        file_name=f"bed_daily_data_デモ_{_demo_date_str}.csv",
-                        mime="text/csv",
-                        key="dm_demo_csv_download",
-                    )
-                else:
-                    st.info("データなし")
+    # 認証成功時のみタブ内容を描画（st.stop()を使わず他タブへの影響を防ぐ）
+    if _dm_auth_ok:
+        with tabs[_dm_tab_daily_idx]:
+            # --- モード切替 ---
+            st.radio(
+                "データモード",
+                ["📊 実データ入力モード", "🎮 デモモード（サンプルデータ）"],
+                key="data_mode",
+            )
+            _is_demo_mode = st.session_state.data_mode == "🎮 デモモード（サンプルデータ）"
 
             st.markdown("---")
 
-            # --- デモデータ一覧（閲覧のみ） ---
-            st.markdown("#### デモデータ一覧（閲覧専用）")
-            if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
-                _demo_display = st.session_state.demo_data.copy()
-                _demo_display["date"] = pd.to_datetime(_demo_display["date"])
-                _demo_display = _demo_display.sort_values("date", ascending=False).reset_index(drop=True)
-                _demo_display["date_str"] = _demo_display["date"].dt.strftime("%Y-%m-%d")
+            if _is_demo_mode:
+                # ============================================================
+                # デモモード
+                # ============================================================
+                st.info("🎓 これは教育用デモデータです。5F（稼働率低下傾向）と6F（安定稼働）のシナリオが含まれています。")
 
-                _demo_cols_to_show = ["date_str", "total_patients", "new_admissions", "discharges",
-                                      "discharge_a", "discharge_b", "discharge_c",
-                                      "phase_a_count", "phase_b_count", "phase_c_count",
-                                      "notes"]
-                _demo_cols_available = [c for c in _demo_cols_to_show if c in _demo_display.columns]
-                st.dataframe(
-                    _demo_display[_demo_cols_available].rename(columns={
-                        "date_str": "日付",
-                        "total_patients": "在院患者数",
-                        "new_admissions": "新規入院",
-                        "discharges": "退院",
-                        "discharge_a": "A群退院",
-                        "discharge_b": "B群退院",
-                        "discharge_c": "C群退院",
-                        "phase_a_count": "A群（自動）",
-                        "phase_b_count": "B群（自動）",
-                        "phase_c_count": "C群（自動）",
-                        "notes": "備考",
-                    }),
-                    width="stretch",
-                    height=min(400, 50 + len(_demo_display) * 35),
-                    hide_index=True,
-                )
-                st.caption(f"合計 {len(st.session_state.demo_data)} 件のデモレコード")
-            else:
-                st.info("デモデータがありません。「サンプルデータ生成」ボタンを押してください。")
+                # デモデータが既にロード済みかチェック
+                _demo_loaded = isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0
 
-        else:
-            # ============================================================
-            # 実データ入力モード
-            # ============================================================
-
-            # --- データ管理セクション ---
-            st.markdown("#### データ管理")
-            dm_col1, dm_col2 = st.columns(2)
-
-            with dm_col1:
-                uploaded_file = st.file_uploader(
-                    "CSVアップロード", type=["csv"], key="dm_csv_upload",
-                    help="以前ダウンロードしたCSVファイルをアップロードしてデータを復元します"
-                )
-                if uploaded_file is not None:
-                    csv_content = uploaded_file.getvalue().decode("utf-8")
-                    imported_df, import_error = import_from_csv(csv_content)
-                    if import_error:
-                        st.warning(f"インポート警告: {import_error}")
-                    if len(imported_df) > 0:
-                        st.session_state.daily_data = imported_df
-                        st.success(f"{len(imported_df)}件のデータをインポートしました。")
-                        _auto_save_to_db()
-                    elif not import_error:
-                        st.info("CSVにデータがありません。")
-
-            with dm_col2:
-                if len(st.session_state.daily_data) > 0:
-                    csv_str = dm_export_to_csv(st.session_state.daily_data)
-                    _real_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
-                    st.download_button(
-                        label="CSVダウンロード",
-                        data=csv_str.encode("utf-8-sig"),
-                        file_name=f"bed_daily_data_実データ_{_real_date_str}.csv",
-                        mime="text/csv",
-                        key="dm_csv_download",
-                    )
-                else:
-                    st.info("データなし")
-
-            # --- 全データクリア ---
-            if len(st.session_state.daily_data) > 0:
-                with st.expander("⚠️ 全データ消去", expanded=False):
-                    st.warning(f"現在 {len(st.session_state.daily_data)} 件のデータがあります。この操作は取り消せません。")
-                    _confirm_text = st.text_input(
-                        "消去するには「全て消去」と入力してください",
-                        key="dm_clear_confirm",
-                    )
-                    if st.button("🗑️ 全データを消去", type="primary", disabled=(_confirm_text != "全て消去"), key="dm_clear_btn"):
-                        st.session_state.daily_data = dm_create_empty_dataframe()
-                        st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
-                        st.session_state.day_buckets = {k: 0 for k in DAY_BUCKET_KEYS}
-                        if "ward_abc_state" in st.session_state:
-                            del st.session_state.ward_abc_state
-                        if "ward_day_buckets" in st.session_state:
-                            del st.session_state.ward_day_buckets
-                        if _DB_AVAILABLE:
-                            db_clear_all()
-                        st.success("全データを消去しました。")
-                        st.rerun()
-
-            st.markdown("---")
-
-            # --- データ入力フォーム ---
-            st.markdown("#### 新しいデータを追加")
-
-            # 初回セットアップ: データがない場合、ベッドマップから初期値を設定
-            _has_data = len(st.session_state.daily_data) > 0
-            _abc_is_zero = (st.session_state.abc_state["A"] == 0
-                            and st.session_state.abc_state["B"] == 0
-                            and st.session_state.abc_state["C"] == 0)
-
-            if not _has_data and _abc_is_zero:
-                st.info("⚡ 初回セットアップ：病棟ベッドマップで各患者の在院日数を入力してください（初回のみ）")
-
-                if _BED_MAP_AVAILABLE:
-                    # 病棟選択タブ
-                    setup_tab_5f, setup_tab_6f = st.tabs(["5F病棟", "6F病棟"])
-
-                    with setup_tab_5f:
-                        bed_data_5f = render_bed_map("5F")
-                    with setup_tab_6f:
-                        bed_data_6f = render_bed_map("6F")
-
-                    st.markdown("---")
-
-                    # 両病棟の確認・確定
-                    st.markdown("### 確認・確定")
-                    confirm_col1, confirm_col2 = st.columns(2)
-                    with confirm_col1:
-                        confirmed_5f = render_confirmation("5F", bed_data_5f, WARD_CONFIG["5F"]["rooms"])
-                    with confirm_col2:
-                        confirmed_6f = render_confirmation("6F", bed_data_6f, WARD_CONFIG["6F"]["rooms"])
-
-                    if confirmed_5f and confirmed_6f:
-                        # 5Fのバケット計算
-                        buckets_5f = bed_data_to_buckets(bed_data_5f)
-                        a_5f, b_5f, c_5f = buckets_to_abc(buckets_5f)
-
-                        # 6Fのバケット計算
-                        buckets_6f = bed_data_to_buckets(bed_data_6f)
-                        a_6f, b_6f, c_6f = buckets_to_abc(buckets_6f)
-
-                        # 合計
-                        total_a = a_5f + a_6f
-                        total_b = b_5f + b_6f
-                        total_c = c_5f + c_6f
-
-                        # セッションステートに保存
-                        st.session_state.ward_abc_state = {
-                            "5F": {"A": a_5f, "B": b_5f, "C": c_5f},
-                            "6F": {"A": a_6f, "B": b_6f, "C": c_6f},
-                        }
-                        st.session_state.ward_day_buckets = {
-                            "5F": buckets_5f,
-                            "6F": buckets_6f,
-                        }
-                        st.session_state.abc_state = {"A": total_a, "B": total_b, "C": total_c}
-                        st.session_state.day_buckets = {k: buckets_5f[k] + buckets_6f[k] for k in DAY_BUCKET_KEYS}
-                        st.session_state.init_total_patients = sum(1 for v in bed_data_5f.values() if v > 0) + sum(1 for v in bed_data_6f.values() if v > 0)
-
-                        st.success(f"✅ 初期値を設定しました！ 5F: A{a_5f}/B{b_5f}/C{c_5f} | 6F: A{a_6f}/B{b_6f}/C{c_6f} | 合計: {total_a + total_b + total_c}名")
+                dm_demo_col1, dm_demo_col2, dm_demo_col3 = st.columns(3)
+                with dm_demo_col1:
+                    if _demo_loaded:
+                        _demo_ward_count = st.session_state.demo_data["ward"].nunique() if "ward" in st.session_state.demo_data.columns else 0
+                        _demo_day_count = st.session_state.demo_data["date"].nunique() if "date" in st.session_state.demo_data.columns else 0
+                        st.success(f"✅ デモデータロード済（{_demo_ward_count}病棟 × {_demo_day_count}日分）")
+                    else:
+                        st.warning("デモデータが見つかりません")
+                with dm_demo_col2:
+                    if st.button("🔄 ランダムデータで再生成（30日分）", key="dm_gen_sample",
+                                 help="教育用デモの代わりにランダムなダミーデータを生成します"):
+                        _demo_5f = generate_sample_data(num_days=30, num_beds=get_ward_beds("5F"))
+                        _demo_5f["ward"] = "5F"
+                        _demo_6f = generate_sample_data(num_days=30, num_beds=get_ward_beds("6F"))
+                        _demo_6f["ward"] = "6F"
+                        st.session_state.demo_data = pd.concat([_demo_5f, _demo_6f], ignore_index=True).sort_values(["date", "ward"]).reset_index(drop=True)
+                        st.success("ランダムサンプルデータ（30日分）を生成しました。")
                         _auto_save_to_db()
                         st.rerun()
-                    elif confirmed_5f or confirmed_6f:
-                        st.warning("両方の病棟を確定してください。")
-                else:
-                    st.warning("ベッドマップUIが利用できません。")
-                    if "_BED_MAP_ERROR" in dir():
-                        st.code(_BED_MAP_ERROR)
+
+                with dm_demo_col3:
+                    if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
+                        _demo_csv_str = dm_export_to_csv(st.session_state.demo_data)
+                        _demo_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+                        st.download_button(
+                            label="CSVダウンロード",
+                            data=_demo_csv_str.encode("utf-8-sig"),
+                            file_name=f"bed_daily_data_デモ_{_demo_date_str}.csv",
+                            mime="text/csv",
+                            key="dm_demo_csv_download",
+                        )
+                    else:
+                        st.info("データなし")
 
                 st.markdown("---")
 
-            # 現在のA/B/C群状態を表示
-            _ward_abc = st.session_state.get("ward_abc_state", {})
-            if _ward_abc:
-                st.markdown("**病棟別 A/B/C群**")
-                w_col1, w_col2, w_col3 = st.columns(3)
-                for _w_col, _w_name in zip([w_col1, w_col2, w_col3], ["5F", "6F", "合計"]):
-                    with _w_col:
-                        if _w_name == "合計":
-                            _w_abc = st.session_state.abc_state
-                        else:
-                            _w_abc = _ward_abc.get(_w_name, {"A": 0, "B": 0, "C": 0})
-                        _w_total = _w_abc["A"] + _w_abc["B"] + _w_abc["C"]
-                        st.markdown(f"**{_w_name}**: A:{_w_abc['A']} B:{_w_abc['B']} C:{_w_abc['C']} 計:{_w_total}")
-            else:
-                abc_col1, abc_col2, abc_col3, abc_col4 = st.columns(4)
-                with abc_col1:
-                    st.metric("A群（自動計算）", st.session_state.abc_state["A"])
-                with abc_col2:
-                    st.metric("B群（自動計算）", st.session_state.abc_state["B"])
-                with abc_col3:
-                    st.metric("C群（自動計算）", st.session_state.abc_state["C"])
-                with abc_col4:
-                    abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
-                    st.metric("合計", abc_total)
+                # --- デモデータ一覧（閲覧のみ） ---
+                st.markdown("#### デモデータ一覧（閲覧専用）")
+                if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
+                    _demo_display = st.session_state.demo_data.copy()
+                    _demo_display["date"] = pd.to_datetime(_demo_display["date"])
+                    _demo_display = _demo_display.sort_values("date", ascending=False).reset_index(drop=True)
+                    _demo_display["date_str"] = _demo_display["date"].dt.strftime("%Y-%m-%d")
 
-            # ============================================================
-            # 統合入力フォーム v3: 日次集計 + 医師別詳細 を1回で入力
-            # ============================================================
-            # 以前は「新しいデータを追加」と「入退院詳細（医師別）」が別々で
-            # 二度手間になっていたため、1つのフォームに統合。
-            # 送信時に daily_data と admission_details の両方に書き込む。
-            st.caption("🆕 入力UI v3 (統合版: 日次集計＋医師別詳細を1回で登録)")
-
-            # 送信後リセット用フラグ: ウィジェット生成前に session_state を初期化
-            if st.session_state.get("_dm_reset_inputs", False):
-                for _k in [
-                    "dm_discharge_count", "dm_admission_count",
-                    "dm_total_patients", "dm_notes",
-                ]:
-                    st.session_state.pop(_k, None)
-                for _i in range(8):
-                    # 退院スロット
-                    st.session_state.pop(f"dm_los_slot_slide_{_i}", None)
-                    st.session_state.pop(f"dm_los_slot_input_{_i}", None)
-                    st.session_state.pop(f"dm_los_manual_{_i}", None)
-                    st.session_state.pop(f"dm_dis_attending_{_i}", None)
-                    # 入院スロット
-                    st.session_state.pop(f"dm_adm_route_{_i}", None)
-                    st.session_state.pop(f"dm_adm_source_{_i}", None)
-                    st.session_state.pop(f"dm_adm_attending_{_i}", None)
-                    st.session_state.pop(f"dm_adm_short3_{_i}", None)  # 旧キー（後方互換）
-                    st.session_state.pop(f"dm_adm_short3_type_{_i}", None)
-                st.session_state["_dm_reset_inputs"] = False
-
-            # 医師・経路マスター読込
-            _active_doctors_ui = dm_doctor.get_active_doctors() if _DOCTOR_MASTER_AVAILABLE else []
-            _doctor_names_ui = [d["name"] for d in _active_doctors_ui]
-            _routes_ui = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else ["外来紹介", "救急", "下り搬送", "連携室", "ウォークイン"]
-            _source_options_ui = dm_doctor.get_admission_source_options() if _DOCTOR_MASTER_AVAILABLE else {}
-            _flat_source_list = ["（なし）"]
-            for _g_label, _names in _source_options_ui.items():
-                _flat_source_list.extend(_names)
-
-            form_col0, form_col1, form_col2 = st.columns(3)
-            with form_col0:
-                input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
-            with form_col1:
-                input_date = st.date_input("日付", value=pd.Timestamp.now().normalize(), key="dm_date")
-            with form_col2:
-                _ward_max_beds = 47
-                input_total = st.number_input(
-                    "在院患者総数", min_value=0, max_value=_ward_max_beds,
-                    value=40, step=1, key="dm_total_patients",
-                )
-
-            # --- 入院情報セクション ---
-            st.markdown("**🏥 入院情報**")
-            input_admissions = st.number_input(
-                "新規入院数（入院なしは0）",
-                min_value=0, max_value=8, value=0, step=1,
-                key="dm_admission_count",
-                help="本日の新規入院数を入力。下に入院人数分のスロットが展開されます。",
-            )
-
-            _adm_events = []  # [(route, source, attending, short3_type), ...]
-            # 短手3 種類の選択肢（該当なしを先頭）
-            _short3_type_options = [
-                SHORT3_TYPE_NONE,
-                SHORT3_TYPE_POLYP_S,
-                SHORT3_TYPE_POLYP_L,
-                SHORT3_TYPE_INGUINAL,
-                SHORT3_TYPE_PSG,
-                SHORT3_TYPE_OTHER,
-            ]
-            if input_admissions > 0:
-                st.caption(f"💡 {int(input_admissions)}名分の入院詳細を入力してください（経路・担当医は必須）")
-            for _a_slot_row in range(0, 8, 2):
-                _a_slot_cols = st.columns(2)
-                for _aci, _a_col in enumerate(_a_slot_cols):
-                    _asi = _a_slot_row + _aci
-                    if _asi >= input_admissions:
-                        continue
-                    with _a_col:
-                        with st.container(border=True):
-                            st.caption(f"✏️ 入院{_asi + 1}")
-                            _a_route = st.selectbox(
-                                "経路",
-                                _routes_ui,
-                                key=f"dm_adm_route_{_asi}",
-                            )
-                            _a_source = st.selectbox(
-                                "入院創出医（任意）",
-                                _flat_source_list,
-                                key=f"dm_adm_source_{_asi}",
-                            )
-                            _a_attending = st.selectbox(
-                                "入院担当医（必須）",
-                                [""] + _doctor_names_ui,
-                                key=f"dm_adm_attending_{_asi}",
-                            )
-                            _a_short3_type = st.selectbox(
-                                "🏃 短手3 種類",
-                                _short3_type_options,
-                                key=f"dm_adm_short3_type_{_asi}",
-                                help="短期滞在手術等基本料3（4泊5日以内）の算定対象。該当する場合は種類を選択。計算は種類別の包括点数で行われます。",
-                            )
-                            _adm_events.append((_a_route, _a_source, _a_attending, _a_short3_type))
-
-            # 短手3 内数を集計（「該当なし」以外を1件とカウント）
-            input_admissions_short3 = sum(
-                1 for ev in _adm_events if ev[3] and ev[3] != SHORT3_TYPE_NONE
-            )
-
-            # --- 退院情報セクション ---
-            st.markdown("**🚪 退院情報**")
-            st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
-            input_discharge_count = st.number_input(
-                "退院人数（退院なしは0）",
-                min_value=0, max_value=8, value=0, step=1,
-                key="dm_discharge_count",
-                help="本日の退院患者数を入力。下に退院人数分のスロットが展開されます。",
-            )
-
-            # 在院日数スライダー（通常1-90日、90日超は数値入力）
-            _los_options = list(range(1, 91))
-            if input_discharge_count > 0:
-                st.caption(f"💡 {int(input_discharge_count)}名分の退院詳細を入力してください（在院日数・担当医）")
-            _los_all = []
-            _dis_attendings = []
-            for _slot_row in range(0, 8, 2):
-                _slot_cols = st.columns(2)
-                for _ci, _col in enumerate(_slot_cols):
-                    _si = _slot_row + _ci
-                    if _si >= input_discharge_count:
-                        continue
-                    with _col:
-                        with st.container(border=True):
-                            st.caption(f"✏️ 退院{_si + 1}")
-                            _manual_key = f"dm_los_manual_{_si}"
-                            _is_manual = st.checkbox(
-                                "📝 90日超（数値入力）",
-                                key=_manual_key,
-                                help="91日以上の長期入院患者の場合にチェック。",
-                            )
-                            if _is_manual:
-                                _los_val = st.number_input(
-                                    "在院日数",
-                                    min_value=1, max_value=365, value=91, step=1,
-                                    key=f"dm_los_slot_input_{_si}",
-                                )
-                            else:
-                                _los_val = st.select_slider(
-                                    "在院日数",
-                                    options=_los_options,
-                                    value=10,
-                                    key=f"dm_los_slot_slide_{_si}",
-                                )
-                            _d_attending = st.selectbox(
-                                "担当医（必須）",
-                                [""] + _doctor_names_ui,
-                                key=f"dm_dis_attending_{_si}",
-                            )
-                            _los_all.append(_los_val)
-                            _dis_attendings.append(_d_attending)
-
-            # 退院人数分だけ有効値として集計
-            auto_discharges = int(input_discharge_count)
-            _los_active = _los_all[:auto_discharges]
-            _auto_da = sum(1 for x in _los_active if 1 <= x <= 5)
-            _auto_db = sum(1 for x in _los_active if 6 <= x <= 14)
-            _auto_dc = sum(1 for x in _los_active if x >= 15)
-
-            # --- サマリー情報ボックス ---
-            _summary_parts = []
-            if input_admissions > 0:
-                # 短手3 種類別の内訳と収入見込みを計算
-                _s3_revenue_total = 0
-                _s3_type_counts = {}
-                for (_r, _s, _att, _s3t) in _adm_events:
-                    if _s3t and _s3t != SHORT3_TYPE_NONE:
-                        _s3_type_counts[_s3t] = _s3_type_counts.get(_s3t, 0) + 1
-                        _s3_revenue_total += _short3_revenue_map.get(_s3t, 0)
-                if input_admissions_short3 > 0:
-                    _s3_breakdown = " / ".join(f"{_t}:{_c}" for _t, _c in _s3_type_counts.items())
-                    _s3_txt = f"（うち短手3: {input_admissions_short3}名 [{_s3_breakdown}] 包括収入見込 ¥{_s3_revenue_total:,}）"
-                else:
-                    _s3_txt = ""
-                _summary_parts.append(f"入院 **{int(input_admissions)}名**{_s3_txt}")
-            if auto_discharges > 0:
-                _avg_los_display = sum(_los_active) / len(_los_active)
-                _phase_badges = " ".join(
-                    f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _los_active
-                )
-                _summary_parts.append(
-                    f"退院 **{auto_discharges}名**: {_phase_badges}"
-                    f"（A:{_auto_da} B:{_auto_db} C:{_auto_dc}　平均LOS: **{_avg_los_display:.1f}日**）"
-                )
-            if _summary_parts:
-                st.info("💡 " + "\n\n".join(_summary_parts))
-            else:
-                st.info("💡 入院・退院なし（上で人数を設定するとスロットが展開されます）")
-
-            input_notes = st.text_input("備考（任意）", value="", key="dm_notes")
-
-            submitted = st.button("1日分を登録", type="primary", use_container_width=True, key="dm_add_btn")
-
-            if submitted:
-                # --- バリデーション: 全入院・全退院の担当医が入力されているか ---
-                _validation_errors = []
-                for _a_i, (_r, _s, _att, _s3) in enumerate(_adm_events):
-                    if not _att:
-                        _validation_errors.append(f"入院{_a_i + 1}: 担当医を選択してください")
-                for _d_i, _d_att in enumerate(_dis_attendings):
-                    if not _d_att:
-                        _validation_errors.append(f"退院{_d_i + 1}: 担当医を選択してください")
-
-                if _validation_errors:
-                    for _err in _validation_errors:
-                        st.error(f"⚠️ {_err}")
-                    st.stop()
-
-                # 在院日数リストからA/B/C退院数を算出
-                _active_los = list(_los_active)
-                _los_str = ",".join(str(v) for v in _active_los)
-                _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
-                import math
-                _avg_los_val = _calc_avg_los if not math.isnan(_calc_avg_los) else pd.NA
-
-                # A/B/C群を自動計算（日齢バケットモデル対応）
-                _prev_buckets = st.session_state.get("day_buckets", None)
-
-                new_abc, new_buckets = calculate_abc_groups(
-                    st.session_state.abc_state,
-                    int(input_admissions),
-                    input_discharge_a, input_discharge_b, input_discharge_c,
-                    prev_buckets=_prev_buckets,
-                )
-                new_a = new_abc["A"]
-                new_b = new_abc["B"]
-                new_c = new_abc["C"]
-
-                new_record = {
-                    "date": pd.Timestamp(input_date),
-                    "ward": input_ward,
-                    "total_patients": int(input_total),
-                    "new_admissions": int(input_admissions),
-                    "new_admissions_short3": int(input_admissions_short3),
-                    "discharges": int(auto_discharges),
-                    "discharge_a": int(input_discharge_a),
-                    "discharge_b": int(input_discharge_b),
-                    "discharge_c": int(input_discharge_c),
-                    "discharge_los_list": _los_str,
-                    "phase_a_count": new_a,
-                    "phase_b_count": new_b,
-                    "phase_c_count": new_c,
-                    "avg_los": _avg_los_val,
-                    "notes": input_notes,
-                    "data_source": "manual",
-                }
-                is_valid, error_msg = validate_record(
-                    new_record, existing_df=st.session_state.daily_data
-                )
-                if is_valid:
-                    st.session_state.daily_data = add_record(
-                        st.session_state.daily_data, new_record
+                    _demo_cols_to_show = ["date_str", "total_patients", "new_admissions", "discharges",
+                                          "discharge_a", "discharge_b", "discharge_c",
+                                          "phase_a_count", "phase_b_count", "phase_c_count",
+                                          "notes"]
+                    _demo_cols_available = [c for c in _demo_cols_to_show if c in _demo_display.columns]
+                    st.dataframe(
+                        _demo_display[_demo_cols_available].rename(columns={
+                            "date_str": "日付",
+                            "total_patients": "在院患者数",
+                            "new_admissions": "新規入院",
+                            "discharges": "退院",
+                            "discharge_a": "A群退院",
+                            "discharge_b": "B群退院",
+                            "discharge_c": "C群退院",
+                            "phase_a_count": "A群（自動）",
+                            "phase_b_count": "B群（自動）",
+                            "phase_c_count": "C群（自動）",
+                            "notes": "備考",
+                        }),
+                        width="stretch",
+                        height=min(400, 50 + len(_demo_display) * 35),
+                        hide_index=True,
                     )
-                    # ABC状態とバケットを更新
-                    st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
-                    if new_buckets is not None:
-                        st.session_state.day_buckets = new_buckets
-
-                    # --- 詳細データ (admission_details) にも同時書き込み ---
-                    # 統合フォームの核心: daily_data と admission_details を1回の操作で書く
-                    _detail_written_count = 0
-                    if _DETAIL_DATA_AVAILABLE:
-                        try:
-                            _details_df = st.session_state.admission_details
-                            _date_str = str(input_date)
-                            # 入院イベント（短手3 種類も記録 - Phase 3）
-                            for (_r, _s, _att, _s3t) in _adm_events:
-                                _source_name = _s if _s and _s != "（なし）" else ""
-                                # 短手3 種類: "該当なし" なら None として渡す
-                                _s3_type_to_store = _s3t if _s3t and _s3t != SHORT3_TYPE_NONE else None
-                                _details_df = add_admission_event(
-                                    _details_df, _date_str, input_ward,
-                                    _r, _source_name, _att,
-                                    short3_type=_s3_type_to_store,
-                                )
-                                _detail_written_count += 1
-                            # 退院イベント
-                            for _los_v, _d_att in zip(_active_los, _dis_attendings):
-                                _details_df = add_discharge_event(
-                                    _details_df, _date_str, input_ward,
-                                    _d_att, int(_los_v),
-                                )
-                                _detail_written_count += 1
-                            st.session_state.admission_details = _details_df
-                            save_details(_details_df)
-                        except Exception as _detail_err:
-                            st.warning(f"⚠️ 詳細データの保存で警告: {_detail_err}")
-
-                    _phase_detail = " ".join(
-                        f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
-                    ) if _active_los else "なし"
-                    _detail_note = f" / 医師別詳細 {_detail_written_count}件記録" if _detail_written_count > 0 else ""
-                    st.success(
-                        f"✅ {input_date} ({input_ward}) の 1日分を登録しました。"
-                        f"（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}{_detail_note}）"
-                    )
-                    _auto_save_to_db()
-                    # 次回再描画時に全入力フィールドを初期化する
-                    st.session_state["_dm_reset_inputs"] = True
-                    st.rerun()
+                    st.caption(f"合計 {len(st.session_state.demo_data)} 件のデモレコード")
                 else:
-                    st.error(f"入力エラー:\n{error_msg}")
+                    st.info("デモデータがありません。「サンプルデータ生成」ボタンを押してください。")
 
-            st.markdown("---")
+            else:
+                # ============================================================
+                # 実データ入力モード
+                # ============================================================
 
-            # --- データ一覧・編集 ---
-            st.markdown("#### 記録データ一覧")
-            if len(st.session_state.daily_data) > 0:
-                display_data = st.session_state.daily_data.copy()
-                display_data["date"] = pd.to_datetime(display_data["date"])
-                display_data = display_data.sort_values("date", ascending=False).reset_index(drop=True)
+                # --- データ管理セクション ---
+                st.markdown("#### データ管理")
+                dm_col1, dm_col2 = st.columns(2)
 
-                # 表示用にフォーマット
-                display_data["date_str"] = display_data["date"].dt.strftime("%Y-%m-%d")
+                with dm_col1:
+                    uploaded_file = st.file_uploader(
+                        "CSVアップロード", type=["csv"], key="dm_csv_upload",
+                        help="以前ダウンロードしたCSVファイルをアップロードしてデータを復元します"
+                    )
+                    if uploaded_file is not None:
+                        csv_content = uploaded_file.getvalue().decode("utf-8")
+                        imported_df, import_error = import_from_csv(csv_content)
+                        if import_error:
+                            st.warning(f"インポート警告: {import_error}")
+                        if len(imported_df) > 0:
+                            st.session_state.daily_data = imported_df
+                            st.success(f"{len(imported_df)}件のデータをインポートしました。")
+                            _auto_save_to_db()
+                        elif not import_error:
+                            st.info("CSVにデータがありません。")
 
-                # st.data_editor で編集可能テーブル（data_sourceカラムは非表示）
-                # ward 列を先頭付近に表示して、同一日付の 5F/6F を区別しやすくする
-                _display_cols = ["date_str", "ward", "total_patients", "new_admissions",
-                                  "new_admissions_short3",
-                                  "discharges",
-                                  "discharge_los_list",
-                                  "discharge_a", "discharge_b", "discharge_c",
-                                  "phase_a_count", "phase_b_count", "phase_c_count",
-                                  "avg_los", "notes"]
-                _display_cols_available = [c for c in _display_cols if c in display_data.columns]
-                edited_df = st.data_editor(
-                    display_data[_display_cols_available].rename(columns={
-                        "date_str": "日付",
-                        "ward": "病棟",
-                        "total_patients": "在院患者数",
-                        "new_admissions": "新規入院",
-                        "new_admissions_short3": "うち短手3",
-                        "discharges": "退院（自動）",
-                        "discharge_los_list": "退院LOS一覧",
-                        "discharge_a": "A群退院",
-                        "discharge_b": "B群退院",
-                        "discharge_c": "C群退院",
-                        "phase_a_count": "A群（自動）",
-                        "phase_b_count": "B群（自動）",
-                        "phase_c_count": "C群（自動）",
-                        "avg_los": "退院平均LOS",
-                        "notes": "備考",
-                    }),
-                    column_config={
-                        "日付": st.column_config.TextColumn(disabled=True),
-                        "病棟": st.column_config.TextColumn(disabled=True),
-                        "うち短手3": st.column_config.NumberColumn(help="短期滞在手術等基本料3の内数（Phase 1: 記録のみ）"),
-                        "退院（自動）": st.column_config.NumberColumn(disabled=True),
-                        "退院LOS一覧": st.column_config.TextColumn(disabled=True, help="退院患者の在院日数（カンマ区切り）"),
-                        "A群退院": st.column_config.NumberColumn(disabled=True),
-                        "B群退院": st.column_config.NumberColumn(disabled=True),
-                        "C群退院": st.column_config.NumberColumn(disabled=True),
-                        "A群（自動）": st.column_config.NumberColumn(disabled=True),
-                        "B群（自動）": st.column_config.NumberColumn(disabled=True),
-                        "C群（自動）": st.column_config.NumberColumn(disabled=True),
-                        "退院平均LOS": st.column_config.NumberColumn(disabled=True, format="%.1f"),
-                    },
-                    width="stretch",
-                    height=min(400, 50 + len(display_data) * 35),
-                    num_rows="fixed",
-                    key="dm_data_editor",
-                )
+                with dm_col2:
+                    if len(st.session_state.daily_data) > 0:
+                        csv_str = dm_export_to_csv(st.session_state.daily_data)
+                        _real_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+                        st.download_button(
+                            label="CSVダウンロード",
+                            data=csv_str.encode("utf-8-sig"),
+                            file_name=f"bed_daily_data_実データ_{_real_date_str}.csv",
+                            mime="text/csv",
+                            key="dm_csv_download",
+                        )
+                    else:
+                        st.info("データなし")
 
-                edit_col1, edit_col2 = st.columns(2)
-                with edit_col1:
-                    if st.button("変更を保存", key="dm_save_edits", type="primary"):
-                        # 編集内容を反映
-                        try:
-                            updated = st.session_state.daily_data.copy()
-                            updated = updated.sort_values("date", ascending=False).reset_index(drop=True)
-                            col_map_rev = {
-                                "在院患者数": "total_patients",
-                                "新規入院": "new_admissions",
-                                "A群退院": "discharge_a",
-                                "B群退院": "discharge_b",
-                                "C群退院": "discharge_c",
-                                "備考": "notes",
+                # --- 全データクリア ---
+                if len(st.session_state.daily_data) > 0:
+                    with st.expander("⚠️ 全データ消去", expanded=False):
+                        st.warning(f"現在 {len(st.session_state.daily_data)} 件のデータがあります。この操作は取り消せません。")
+                        _confirm_text = st.text_input(
+                            "消去するには「全て消去」と入力してください",
+                            key="dm_clear_confirm",
+                        )
+                        if st.button("🗑️ 全データを消去", type="primary", disabled=(_confirm_text != "全て消去"), key="dm_clear_btn"):
+                            st.session_state.daily_data = dm_create_empty_dataframe()
+                            st.session_state.abc_state = {"A": 0, "B": 0, "C": 0}
+                            st.session_state.day_buckets = {k: 0 for k in DAY_BUCKET_KEYS}
+                            if "ward_abc_state" in st.session_state:
+                                del st.session_state.ward_abc_state
+                            if "ward_day_buckets" in st.session_state:
+                                del st.session_state.ward_day_buckets
+                            if _DB_AVAILABLE:
+                                db_clear_all()
+                            st.success("全データを消去しました。")
+                            st.rerun()
+
+                st.markdown("---")
+
+                # --- データ入力フォーム ---
+                st.markdown("#### 新しいデータを追加")
+
+                # 初回セットアップ: データがない場合、ベッドマップから初期値を設定
+                _has_data = len(st.session_state.daily_data) > 0
+                _abc_is_zero = (st.session_state.abc_state["A"] == 0
+                                and st.session_state.abc_state["B"] == 0
+                                and st.session_state.abc_state["C"] == 0)
+
+                if not _has_data and _abc_is_zero:
+                    st.info("⚡ 初回セットアップ：病棟ベッドマップで各患者の在院日数を入力してください（初回のみ）")
+
+                    if _BED_MAP_AVAILABLE:
+                        # 病棟選択タブ
+                        setup_tab_5f, setup_tab_6f = st.tabs(["5F病棟", "6F病棟"])
+
+                        with setup_tab_5f:
+                            bed_data_5f = render_bed_map("5F")
+                        with setup_tab_6f:
+                            bed_data_6f = render_bed_map("6F")
+
+                        st.markdown("---")
+
+                        # 両病棟の確認・確定
+                        st.markdown("### 確認・確定")
+                        confirm_col1, confirm_col2 = st.columns(2)
+                        with confirm_col1:
+                            confirmed_5f = render_confirmation("5F", bed_data_5f, WARD_CONFIG["5F"]["rooms"])
+                        with confirm_col2:
+                            confirmed_6f = render_confirmation("6F", bed_data_6f, WARD_CONFIG["6F"]["rooms"])
+
+                        if confirmed_5f and confirmed_6f:
+                            # 5Fのバケット計算
+                            buckets_5f = bed_data_to_buckets(bed_data_5f)
+                            a_5f, b_5f, c_5f = buckets_to_abc(buckets_5f)
+
+                            # 6Fのバケット計算
+                            buckets_6f = bed_data_to_buckets(bed_data_6f)
+                            a_6f, b_6f, c_6f = buckets_to_abc(buckets_6f)
+
+                            # 合計
+                            total_a = a_5f + a_6f
+                            total_b = b_5f + b_6f
+                            total_c = c_5f + c_6f
+
+                            # セッションステートに保存
+                            st.session_state.ward_abc_state = {
+                                "5F": {"A": a_5f, "B": b_5f, "C": c_5f},
+                                "6F": {"A": a_6f, "B": b_6f, "C": c_6f},
                             }
-                            for ja_col, en_col in col_map_rev.items():
-                                if ja_col in edited_df.columns:
-                                    updated[en_col] = edited_df[ja_col].values
+                            st.session_state.ward_day_buckets = {
+                                "5F": buckets_5f,
+                                "6F": buckets_6f,
+                            }
+                            st.session_state.abc_state = {"A": total_a, "B": total_b, "C": total_c}
+                            st.session_state.day_buckets = {k: buckets_5f[k] + buckets_6f[k] for k in DAY_BUCKET_KEYS}
+                            st.session_state.init_total_patients = sum(1 for v in bed_data_5f.values() if v > 0) + sum(1 for v in bed_data_6f.values() if v > 0)
 
-                            # 退院数を内訳から再計算
-                            updated["discharges"] = (
-                                updated["discharge_a"].fillna(0).astype(int)
-                                + updated["discharge_b"].fillna(0).astype(int)
-                                + updated["discharge_c"].fillna(0).astype(int)
-                            )
+                            st.success(f"✅ 初期値を設定しました！ 5F: A{a_5f}/B{b_5f}/C{c_5f} | 6F: A{a_6f}/B{b_6f}/C{c_6f} | 合計: {total_a + total_b + total_c}名")
+                            _auto_save_to_db()
+                            st.rerun()
+                        elif confirmed_5f or confirmed_6f:
+                            st.warning("両方の病棟を確定してください。")
+                    else:
+                        st.warning("ベッドマップUIが利用できません。")
+                        if "_BED_MAP_ERROR" in dir():
+                            st.code(_BED_MAP_ERROR)
 
-                            # A/B/C群を時系列順に再計算（日齢バケットモデル対応）
-                            updated = updated.sort_values("date").reset_index(drop=True)
+                    st.markdown("---")
 
-                            # 初日のバケットを取得（session_stateに保存された初期バケット）
-                            _edit_buckets = st.session_state.get("day_buckets", None)
-                            _edit_abc = st.session_state.abc_state.copy()
+                # 現在のA/B/C群状態を表示
+                _ward_abc = st.session_state.get("ward_abc_state", {})
+                if _ward_abc:
+                    st.markdown("**病棟別 A/B/C群**")
+                    w_col1, w_col2, w_col3 = st.columns(3)
+                    for _w_col, _w_name in zip([w_col1, w_col2, w_col3], ["5F", "6F", "合計"]):
+                        with _w_col:
+                            if _w_name == "合計":
+                                _w_abc = st.session_state.abc_state
+                            else:
+                                _w_abc = _ward_abc.get(_w_name, {"A": 0, "B": 0, "C": 0})
+                            _w_total = _w_abc["A"] + _w_abc["B"] + _w_abc["C"]
+                            st.markdown(f"**{_w_name}**: A:{_w_abc['A']} B:{_w_abc['B']} C:{_w_abc['C']} 計:{_w_total}")
+                else:
+                    abc_col1, abc_col2, abc_col3, abc_col4 = st.columns(4)
+                    with abc_col1:
+                        st.metric("A群（自動計算）", st.session_state.abc_state["A"])
+                    with abc_col2:
+                        st.metric("B群（自動計算）", st.session_state.abc_state["B"])
+                    with abc_col3:
+                        st.metric("C群（自動計算）", st.session_state.abc_state["C"])
+                    with abc_col4:
+                        abc_total = st.session_state.abc_state["A"] + st.session_state.abc_state["B"] + st.session_state.abc_state["C"]
+                        st.metric("合計", abc_total)
 
-                            # 初期バケットがある場合は初期バケットから再構築
-                            # データの初日からバケットモデルで順次再計算
-                            if _edit_buckets is not None and _DATA_MANAGER_AVAILABLE:
-                                # 初期バケットを復元（init_total_patientsの時点のバケット）
-                                # 全レコードを初期状態から順に再計算
-                                _recalc_buckets = st.session_state.get("_initial_day_buckets", _edit_buckets)
-                                # _initial_day_bucketsが未保存なら現在のday_bucketsを初期として使う
-                                # ただし、初回設定時のバケットを保存しておく必要がある
-                                if "_initial_day_buckets" not in st.session_state and _edit_buckets is not None:
-                                    # 初期バケットがないので、バケットなしで再計算（簡易モデル）
-                                    pass
+                # ============================================================
+                # 統合入力フォーム v3: 日次集計 + 医師別詳細 を1回で入力
+                # ============================================================
+                # 以前は「新しいデータを追加」と「入退院詳細（医師別）」が別々で
+                # 二度手間になっていたため、1つのフォームに統合。
+                # 送信時に daily_data と admission_details の両方に書き込む。
+                st.caption("🆕 入力UI v3 (統合版: 日次集計＋医師別詳細を1回で登録)")
 
-                                _cur_buckets = st.session_state.get("_initial_day_buckets", None)
-                                if _cur_buckets is not None:
-                                    for idx in range(len(updated)):
-                                        row = updated.iloc[idx]
-                                        _new_buckets = advance_day_buckets(
-                                            _cur_buckets,
-                                            int(row.get("new_admissions", 0) or 0),
-                                            int(row.get("discharge_a", 0) or 0),
-                                            int(row.get("discharge_b", 0) or 0),
-                                            int(row.get("discharge_c", 0) or 0),
-                                        )
-                                        a, b, c = buckets_to_abc(_new_buckets)
-                                        updated.at[idx, "phase_a_count"] = a
-                                        updated.at[idx, "phase_b_count"] = b
-                                        updated.at[idx, "phase_c_count"] = c
-                                        _cur_buckets = _new_buckets
+                # 送信後リセット用フラグ: ウィジェット生成前に session_state を初期化
+                if st.session_state.get("_dm_reset_inputs", False):
+                    for _k in [
+                        "dm_discharge_count", "dm_admission_count",
+                        "dm_total_patients", "dm_notes",
+                    ]:
+                        st.session_state.pop(_k, None)
+                    for _i in range(8):
+                        # 退院スロット
+                        st.session_state.pop(f"dm_los_slot_slide_{_i}", None)
+                        st.session_state.pop(f"dm_los_slot_input_{_i}", None)
+                        st.session_state.pop(f"dm_los_manual_{_i}", None)
+                        st.session_state.pop(f"dm_dis_attending_{_i}", None)
+                        # 入院スロット
+                        st.session_state.pop(f"dm_adm_route_{_i}", None)
+                        st.session_state.pop(f"dm_adm_source_{_i}", None)
+                        st.session_state.pop(f"dm_adm_attending_{_i}", None)
+                        st.session_state.pop(f"dm_adm_short3_{_i}", None)  # 旧キー（後方互換）
+                        st.session_state.pop(f"dm_adm_short3_type_{_i}", None)
+                    st.session_state["_dm_reset_inputs"] = False
 
-                                    st.session_state.day_buckets = _cur_buckets
-                                    st.session_state.abc_state = {"A": a, "B": b, "C": c}
+                # 医師・経路マスター読込
+                _active_doctors_ui = dm_doctor.get_active_doctors() if _DOCTOR_MASTER_AVAILABLE else []
+                _doctor_names_ui = [d["name"] for d in _active_doctors_ui]
+                _routes_ui = dm_doctor.get_admission_routes() if _DOCTOR_MASTER_AVAILABLE else ["外来紹介", "救急", "下り搬送", "連携室", "ウォークイン"]
+                _source_options_ui = dm_doctor.get_admission_source_options() if _DOCTOR_MASTER_AVAILABLE else {}
+                _flat_source_list = ["（なし）"]
+                for _g_label, _names in _source_options_ui.items():
+                    _flat_source_list.extend(_names)
+
+                form_col0, form_col1, form_col2 = st.columns(3)
+                with form_col0:
+                    input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
+                with form_col1:
+                    input_date = st.date_input("日付", value=pd.Timestamp.now().normalize(), key="dm_date")
+                with form_col2:
+                    _ward_max_beds = 47
+                    input_total = st.number_input(
+                        "在院患者総数", min_value=0, max_value=_ward_max_beds,
+                        value=40, step=1, key="dm_total_patients",
+                    )
+
+                # --- 入院情報セクション ---
+                st.markdown("**🏥 入院情報**")
+                input_admissions = st.number_input(
+                    "新規入院数（入院なしは0）",
+                    min_value=0, max_value=8, value=0, step=1,
+                    key="dm_admission_count",
+                    help="本日の新規入院数を入力。下に入院人数分のスロットが展開されます。",
+                )
+
+                _adm_events = []  # [(route, source, attending, short3_type), ...]
+                # 短手3 種類の選択肢（該当なしを先頭）
+                _short3_type_options = [
+                    SHORT3_TYPE_NONE,
+                    SHORT3_TYPE_POLYP_S,
+                    SHORT3_TYPE_POLYP_L,
+                    SHORT3_TYPE_INGUINAL,
+                    SHORT3_TYPE_PSG,
+                    SHORT3_TYPE_OTHER,
+                ]
+                if input_admissions > 0:
+                    st.caption(f"💡 {int(input_admissions)}名分の入院詳細を入力してください（経路・担当医は必須）")
+                for _a_slot_row in range(0, 8, 2):
+                    _a_slot_cols = st.columns(2)
+                    for _aci, _a_col in enumerate(_a_slot_cols):
+                        _asi = _a_slot_row + _aci
+                        if _asi >= input_admissions:
+                            continue
+                        with _a_col:
+                            with st.container(border=True):
+                                st.caption(f"✏️ 入院{_asi + 1}")
+                                _a_route = st.selectbox(
+                                    "経路",
+                                    _routes_ui,
+                                    key=f"dm_adm_route_{_asi}",
+                                )
+                                _a_source = st.selectbox(
+                                    "入院創出医（任意）",
+                                    _flat_source_list,
+                                    key=f"dm_adm_source_{_asi}",
+                                )
+                                _a_attending = st.selectbox(
+                                    "入院担当医（必須）",
+                                    [""] + _doctor_names_ui,
+                                    key=f"dm_adm_attending_{_asi}",
+                                )
+                                _a_short3_type = st.selectbox(
+                                    "🏃 短手3 種類",
+                                    _short3_type_options,
+                                    key=f"dm_adm_short3_type_{_asi}",
+                                    help="短期滞在手術等基本料3（4泊5日以内）の算定対象。該当する場合は種類を選択。計算は種類別の包括点数で行われます。",
+                                )
+                                _adm_events.append((_a_route, _a_source, _a_attending, _a_short3_type))
+
+                # 短手3 内数を集計（「該当なし」以外を1件とカウント）
+                input_admissions_short3 = sum(
+                    1 for ev in _adm_events if ev[3] and ev[3] != SHORT3_TYPE_NONE
+                )
+
+                # --- 退院情報セクション ---
+                st.markdown("**🚪 退院情報**")
+                st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
+                input_discharge_count = st.number_input(
+                    "退院人数（退院なしは0）",
+                    min_value=0, max_value=8, value=0, step=1,
+                    key="dm_discharge_count",
+                    help="本日の退院患者数を入力。下に退院人数分のスロットが展開されます。",
+                )
+
+                # 在院日数スライダー（通常1-90日、90日超は数値入力）
+                _los_options = list(range(1, 91))
+                if input_discharge_count > 0:
+                    st.caption(f"💡 {int(input_discharge_count)}名分の退院詳細を入力してください（在院日数・担当医）")
+                _los_all = []
+                _dis_attendings = []
+                for _slot_row in range(0, 8, 2):
+                    _slot_cols = st.columns(2)
+                    for _ci, _col in enumerate(_slot_cols):
+                        _si = _slot_row + _ci
+                        if _si >= input_discharge_count:
+                            continue
+                        with _col:
+                            with st.container(border=True):
+                                st.caption(f"✏️ 退院{_si + 1}")
+                                _manual_key = f"dm_los_manual_{_si}"
+                                _is_manual = st.checkbox(
+                                    "📝 90日超（数値入力）",
+                                    key=_manual_key,
+                                    help="91日以上の長期入院患者の場合にチェック。",
+                                )
+                                if _is_manual:
+                                    _los_val = st.number_input(
+                                        "在院日数",
+                                        min_value=1, max_value=365, value=91, step=1,
+                                        key=f"dm_los_slot_input_{_si}",
+                                    )
                                 else:
-                                    # 簡易モデルでフォールバック
+                                    _los_val = st.select_slider(
+                                        "在院日数",
+                                        options=_los_options,
+                                        value=10,
+                                        key=f"dm_los_slot_slide_{_si}",
+                                    )
+                                _d_attending = st.selectbox(
+                                    "担当医（必須）",
+                                    [""] + _doctor_names_ui,
+                                    key=f"dm_dis_attending_{_si}",
+                                )
+                                _los_all.append(_los_val)
+                                _dis_attendings.append(_d_attending)
+
+                # 退院人数分だけ有効値として集計
+                auto_discharges = int(input_discharge_count)
+                _los_active = _los_all[:auto_discharges]
+                _auto_da = sum(1 for x in _los_active if 1 <= x <= 5)
+                _auto_db = sum(1 for x in _los_active if 6 <= x <= 14)
+                _auto_dc = sum(1 for x in _los_active if x >= 15)
+
+                # --- サマリー情報ボックス ---
+                _summary_parts = []
+                if input_admissions > 0:
+                    # 短手3 種類別の内訳と収入見込みを計算
+                    _s3_revenue_total = 0
+                    _s3_type_counts = {}
+                    for (_r, _s, _att, _s3t) in _adm_events:
+                        if _s3t and _s3t != SHORT3_TYPE_NONE:
+                            _s3_type_counts[_s3t] = _s3_type_counts.get(_s3t, 0) + 1
+                            _s3_revenue_total += _short3_revenue_map.get(_s3t, 0)
+                    if input_admissions_short3 > 0:
+                        _s3_breakdown = " / ".join(f"{_t}:{_c}" for _t, _c in _s3_type_counts.items())
+                        _s3_txt = f"（うち短手3: {input_admissions_short3}名 [{_s3_breakdown}] 包括収入見込 ¥{_s3_revenue_total:,}）"
+                    else:
+                        _s3_txt = ""
+                    _summary_parts.append(f"入院 **{int(input_admissions)}名**{_s3_txt}")
+                if auto_discharges > 0:
+                    _avg_los_display = sum(_los_active) / len(_los_active)
+                    _phase_badges = " ".join(
+                        f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _los_active
+                    )
+                    _summary_parts.append(
+                        f"退院 **{auto_discharges}名**: {_phase_badges}"
+                        f"（A:{_auto_da} B:{_auto_db} C:{_auto_dc}　平均LOS: **{_avg_los_display:.1f}日**）"
+                    )
+                if _summary_parts:
+                    st.info("💡 " + "\n\n".join(_summary_parts))
+                else:
+                    st.info("💡 入院・退院なし（上で人数を設定するとスロットが展開されます）")
+
+                input_notes = st.text_input("備考（任意）", value="", key="dm_notes")
+
+                submitted = st.button("1日分を登録", type="primary", use_container_width=True, key="dm_add_btn")
+
+                if submitted:
+                    # --- バリデーション: 全入院・全退院の担当医が入力されているか ---
+                    _validation_errors = []
+                    for _a_i, (_r, _s, _att, _s3) in enumerate(_adm_events):
+                        if not _att:
+                            _validation_errors.append(f"入院{_a_i + 1}: 担当医を選択してください")
+                    for _d_i, _d_att in enumerate(_dis_attendings):
+                        if not _d_att:
+                            _validation_errors.append(f"退院{_d_i + 1}: 担当医を選択してください")
+
+                    if _validation_errors:
+                        for _err in _validation_errors:
+                            st.error(f"⚠️ {_err}")
+                        st.stop()
+
+                    # 在院日数リストからA/B/C退院数を算出
+                    _active_los = list(_los_active)
+                    _los_str = ",".join(str(v) for v in _active_los)
+                    _, input_discharge_a, input_discharge_b, input_discharge_c, _calc_avg_los = parse_discharge_los_list(_los_str)
+                    import math
+                    _avg_los_val = _calc_avg_los if not math.isnan(_calc_avg_los) else pd.NA
+
+                    # A/B/C群を自動計算（日齢バケットモデル対応）
+                    _prev_buckets = st.session_state.get("day_buckets", None)
+
+                    new_abc, new_buckets = calculate_abc_groups(
+                        st.session_state.abc_state,
+                        int(input_admissions),
+                        input_discharge_a, input_discharge_b, input_discharge_c,
+                        prev_buckets=_prev_buckets,
+                    )
+                    new_a = new_abc["A"]
+                    new_b = new_abc["B"]
+                    new_c = new_abc["C"]
+
+                    new_record = {
+                        "date": pd.Timestamp(input_date),
+                        "ward": input_ward,
+                        "total_patients": int(input_total),
+                        "new_admissions": int(input_admissions),
+                        "new_admissions_short3": int(input_admissions_short3),
+                        "discharges": int(auto_discharges),
+                        "discharge_a": int(input_discharge_a),
+                        "discharge_b": int(input_discharge_b),
+                        "discharge_c": int(input_discharge_c),
+                        "discharge_los_list": _los_str,
+                        "phase_a_count": new_a,
+                        "phase_b_count": new_b,
+                        "phase_c_count": new_c,
+                        "avg_los": _avg_los_val,
+                        "notes": input_notes,
+                        "data_source": "manual",
+                    }
+                    is_valid, error_msg = validate_record(
+                        new_record, existing_df=st.session_state.daily_data
+                    )
+                    if is_valid:
+                        st.session_state.daily_data = add_record(
+                            st.session_state.daily_data, new_record
+                        )
+                        # ABC状態とバケットを更新
+                        st.session_state.abc_state = {"A": new_a, "B": new_b, "C": new_c}
+                        if new_buckets is not None:
+                            st.session_state.day_buckets = new_buckets
+
+                        # --- 詳細データ (admission_details) にも同時書き込み ---
+                        # 統合フォームの核心: daily_data と admission_details を1回の操作で書く
+                        _detail_written_count = 0
+                        if _DETAIL_DATA_AVAILABLE:
+                            try:
+                                _details_df = st.session_state.admission_details
+                                _date_str = str(input_date)
+                                # 入院イベント（短手3 種類も記録 - Phase 3）
+                                for (_r, _s, _att, _s3t) in _adm_events:
+                                    _source_name = _s if _s and _s != "（なし）" else ""
+                                    # 短手3 種類: "該当なし" なら None として渡す
+                                    _s3_type_to_store = _s3t if _s3t and _s3t != SHORT3_TYPE_NONE else None
+                                    _details_df = add_admission_event(
+                                        _details_df, _date_str, input_ward,
+                                        _r, _source_name, _att,
+                                        short3_type=_s3_type_to_store,
+                                    )
+                                    _detail_written_count += 1
+                                # 退院イベント
+                                for _los_v, _d_att in zip(_active_los, _dis_attendings):
+                                    _details_df = add_discharge_event(
+                                        _details_df, _date_str, input_ward,
+                                        _d_att, int(_los_v),
+                                    )
+                                    _detail_written_count += 1
+                                st.session_state.admission_details = _details_df
+                                save_details(_details_df)
+                            except Exception as _detail_err:
+                                st.warning(f"⚠️ 詳細データの保存で警告: {_detail_err}")
+
+                        _phase_detail = " ".join(
+                            f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
+                        ) if _active_los else "なし"
+                        _detail_note = f" / 医師別詳細 {_detail_written_count}件記録" if _detail_written_count > 0 else ""
+                        st.success(
+                            f"✅ {input_date} ({input_ward}) の 1日分を登録しました。"
+                            f"（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}{_detail_note}）"
+                        )
+                        _auto_save_to_db()
+                        # 次回再描画時に全入力フィールドを初期化する
+                        st.session_state["_dm_reset_inputs"] = True
+                        st.rerun()
+                    else:
+                        st.error(f"入力エラー:\n{error_msg}")
+
+                st.markdown("---")
+
+                # --- データ一覧・編集 ---
+                st.markdown("#### 記録データ一覧")
+                if len(st.session_state.daily_data) > 0:
+                    display_data = st.session_state.daily_data.copy()
+                    display_data["date"] = pd.to_datetime(display_data["date"])
+                    display_data = display_data.sort_values("date", ascending=False).reset_index(drop=True)
+
+                    # 表示用にフォーマット
+                    display_data["date_str"] = display_data["date"].dt.strftime("%Y-%m-%d")
+
+                    # st.data_editor で編集可能テーブル（data_sourceカラムは非表示）
+                    # ward 列を先頭付近に表示して、同一日付の 5F/6F を区別しやすくする
+                    _display_cols = ["date_str", "ward", "total_patients", "new_admissions",
+                                      "new_admissions_short3",
+                                      "discharges",
+                                      "discharge_los_list",
+                                      "discharge_a", "discharge_b", "discharge_c",
+                                      "phase_a_count", "phase_b_count", "phase_c_count",
+                                      "avg_los", "notes"]
+                    _display_cols_available = [c for c in _display_cols if c in display_data.columns]
+                    edited_df = st.data_editor(
+                        display_data[_display_cols_available].rename(columns={
+                            "date_str": "日付",
+                            "ward": "病棟",
+                            "total_patients": "在院患者数",
+                            "new_admissions": "新規入院",
+                            "new_admissions_short3": "うち短手3",
+                            "discharges": "退院（自動）",
+                            "discharge_los_list": "退院LOS一覧",
+                            "discharge_a": "A群退院",
+                            "discharge_b": "B群退院",
+                            "discharge_c": "C群退院",
+                            "phase_a_count": "A群（自動）",
+                            "phase_b_count": "B群（自動）",
+                            "phase_c_count": "C群（自動）",
+                            "avg_los": "退院平均LOS",
+                            "notes": "備考",
+                        }),
+                        column_config={
+                            "日付": st.column_config.TextColumn(disabled=True),
+                            "病棟": st.column_config.TextColumn(disabled=True),
+                            "うち短手3": st.column_config.NumberColumn(help="短期滞在手術等基本料3の内数（Phase 1: 記録のみ）"),
+                            "退院（自動）": st.column_config.NumberColumn(disabled=True),
+                            "退院LOS一覧": st.column_config.TextColumn(disabled=True, help="退院患者の在院日数（カンマ区切り）"),
+                            "A群退院": st.column_config.NumberColumn(disabled=True),
+                            "B群退院": st.column_config.NumberColumn(disabled=True),
+                            "C群退院": st.column_config.NumberColumn(disabled=True),
+                            "A群（自動）": st.column_config.NumberColumn(disabled=True),
+                            "B群（自動）": st.column_config.NumberColumn(disabled=True),
+                            "C群（自動）": st.column_config.NumberColumn(disabled=True),
+                            "退院平均LOS": st.column_config.NumberColumn(disabled=True, format="%.1f"),
+                        },
+                        width="stretch",
+                        height=min(400, 50 + len(display_data) * 35),
+                        num_rows="fixed",
+                        key="dm_data_editor",
+                    )
+
+                    edit_col1, edit_col2 = st.columns(2)
+                    with edit_col1:
+                        if st.button("変更を保存", key="dm_save_edits", type="primary"):
+                            # 編集内容を反映
+                            try:
+                                updated = st.session_state.daily_data.copy()
+                                updated = updated.sort_values("date", ascending=False).reset_index(drop=True)
+                                col_map_rev = {
+                                    "在院患者数": "total_patients",
+                                    "新規入院": "new_admissions",
+                                    "A群退院": "discharge_a",
+                                    "B群退院": "discharge_b",
+                                    "C群退院": "discharge_c",
+                                    "備考": "notes",
+                                }
+                                for ja_col, en_col in col_map_rev.items():
+                                    if ja_col in edited_df.columns:
+                                        updated[en_col] = edited_df[ja_col].values
+
+                                # 退院数を内訳から再計算
+                                updated["discharges"] = (
+                                    updated["discharge_a"].fillna(0).astype(int)
+                                    + updated["discharge_b"].fillna(0).astype(int)
+                                    + updated["discharge_c"].fillna(0).astype(int)
+                                )
+
+                                # A/B/C群を時系列順に再計算（日齢バケットモデル対応）
+                                updated = updated.sort_values("date").reset_index(drop=True)
+
+                                # 初日のバケットを取得（session_stateに保存された初期バケット）
+                                _edit_buckets = st.session_state.get("day_buckets", None)
+                                _edit_abc = st.session_state.abc_state.copy()
+
+                                # 初期バケットがある場合は初期バケットから再構築
+                                # データの初日からバケットモデルで順次再計算
+                                if _edit_buckets is not None and _DATA_MANAGER_AVAILABLE:
+                                    # 初期バケットを復元（init_total_patientsの時点のバケット）
+                                    # 全レコードを初期状態から順に再計算
+                                    _recalc_buckets = st.session_state.get("_initial_day_buckets", _edit_buckets)
+                                    # _initial_day_bucketsが未保存なら現在のday_bucketsを初期として使う
+                                    # ただし、初回設定時のバケットを保存しておく必要がある
+                                    if "_initial_day_buckets" not in st.session_state and _edit_buckets is not None:
+                                        # 初期バケットがないので、バケットなしで再計算（簡易モデル）
+                                        pass
+
+                                    _cur_buckets = st.session_state.get("_initial_day_buckets", None)
+                                    if _cur_buckets is not None:
+                                        for idx in range(len(updated)):
+                                            row = updated.iloc[idx]
+                                            _new_buckets = advance_day_buckets(
+                                                _cur_buckets,
+                                                int(row.get("new_admissions", 0) or 0),
+                                                int(row.get("discharge_a", 0) or 0),
+                                                int(row.get("discharge_b", 0) or 0),
+                                                int(row.get("discharge_c", 0) or 0),
+                                            )
+                                            a, b, c = buckets_to_abc(_new_buckets)
+                                            updated.at[idx, "phase_a_count"] = a
+                                            updated.at[idx, "phase_b_count"] = b
+                                            updated.at[idx, "phase_c_count"] = c
+                                            _cur_buckets = _new_buckets
+
+                                        st.session_state.day_buckets = _cur_buckets
+                                        st.session_state.abc_state = {"A": a, "B": b, "C": c}
+                                    else:
+                                        # 簡易モデルでフォールバック
+                                        _fb_abc = {"A": 0, "B": 0, "C": 0}
+                                        for idx in range(len(updated)):
+                                            row = updated.iloc[idx]
+                                            _fb_abc, _ = calculate_abc_groups(
+                                                _fb_abc,
+                                                int(row.get("new_admissions", 0) or 0),
+                                                int(row.get("discharge_a", 0) or 0),
+                                                int(row.get("discharge_b", 0) or 0),
+                                                int(row.get("discharge_c", 0) or 0),
+                                                prev_buckets=None,
+                                            )
+                                            updated.at[idx, "phase_a_count"] = _fb_abc["A"]
+                                            updated.at[idx, "phase_b_count"] = _fb_abc["B"]
+                                            updated.at[idx, "phase_c_count"] = _fb_abc["C"]
+                                        st.session_state.abc_state = _fb_abc
+                                else:
+                                    # バケットなし: 簡易モデルで再計算
                                     _fb_abc = {"A": 0, "B": 0, "C": 0}
                                     for idx in range(len(updated)):
                                         row = updated.iloc[idx]
@@ -3358,82 +3378,65 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                                         updated.at[idx, "phase_b_count"] = _fb_abc["B"]
                                         updated.at[idx, "phase_c_count"] = _fb_abc["C"]
                                     st.session_state.abc_state = _fb_abc
-                            else:
-                                # バケットなし: 簡易モデルで再計算
-                                _fb_abc = {"A": 0, "B": 0, "C": 0}
-                                for idx in range(len(updated)):
-                                    row = updated.iloc[idx]
-                                    _fb_abc, _ = calculate_abc_groups(
-                                        _fb_abc,
-                                        int(row.get("new_admissions", 0) or 0),
-                                        int(row.get("discharge_a", 0) or 0),
-                                        int(row.get("discharge_b", 0) or 0),
-                                        int(row.get("discharge_c", 0) or 0),
-                                        prev_buckets=None,
-                                    )
-                                    updated.at[idx, "phase_a_count"] = _fb_abc["A"]
-                                    updated.at[idx, "phase_b_count"] = _fb_abc["B"]
-                                    updated.at[idx, "phase_c_count"] = _fb_abc["C"]
-                                st.session_state.abc_state = _fb_abc
 
-                            st.session_state.daily_data = updated
-                            st.success("変更を保存しました。A/B/C群と退院数を再計算しました。")
-                            _auto_save_to_db()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"保存エラー: {e}")
+                                st.session_state.daily_data = updated
+                                st.success("変更を保存しました。A/B/C群と退院数を再計算しました。")
+                                _auto_save_to_db()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"保存エラー: {e}")
 
-                with edit_col2:
-                    # 削除用：日付 + 病棟 を選択（同一日付の5F/6Fを区別するため）
-                    _del_options = [
-                        (f"{row['date_str']} ({row.get('ward', 'all')})",
-                         row['date_str'],
-                         row.get('ward', None))
-                        for _, row in display_data.iterrows()
-                    ]
-                    if _del_options:
-                        _del_labels = [opt[0] for opt in _del_options]
-                        del_label = st.selectbox("削除する日付・病棟", _del_labels, key="dm_del_date")
-                        if st.button("選択した行を削除", key="dm_delete_btn"):
-                            # 選択ラベルから date と ward を復元
-                            _idx = _del_labels.index(del_label)
-                            _del_date_str = _del_options[_idx][1]
-                            _del_ward = _del_options[_idx][2]
-                            st.session_state.daily_data = delete_record(
-                                st.session_state.daily_data, _del_date_str, ward=_del_ward,
-                            )
-                            st.success(f"{del_label} のデータを削除しました。")
-                            _auto_save_to_db()
-                            st.rerun()
+                    with edit_col2:
+                        # 削除用：日付 + 病棟 を選択（同一日付の5F/6Fを区別するため）
+                        _del_options = [
+                            (f"{row['date_str']} ({row.get('ward', 'all')})",
+                             row['date_str'],
+                             row.get('ward', None))
+                            for _, row in display_data.iterrows()
+                        ]
+                        if _del_options:
+                            _del_labels = [opt[0] for opt in _del_options]
+                            del_label = st.selectbox("削除する日付・病棟", _del_labels, key="dm_del_date")
+                            if st.button("選択した行を削除", key="dm_delete_btn"):
+                                # 選択ラベルから date と ward を復元
+                                _idx = _del_labels.index(del_label)
+                                _del_date_str = _del_options[_idx][1]
+                                _del_ward = _del_options[_idx][2]
+                                st.session_state.daily_data = delete_record(
+                                    st.session_state.daily_data, _del_date_str, ward=_del_ward,
+                                )
+                                st.success(f"{del_label} のデータを削除しました。")
+                                _auto_save_to_db()
+                                st.rerun()
 
-                st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
-            else:
-                st.warning(
-                    "まずデータを入力してください。操作方法がわからない場合は"
-                    "「🎮 デモモード（サンプルデータ）」でお試しください。"
-                )
+                    st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
+                else:
+                    st.warning(
+                        "まずデータを入力してください。操作方法がわからない場合は"
+                        "「🎮 デモモード（サンプルデータ）」でお試しください。"
+                    )
 
-        # === 入退院詳細 表示のみ（入力は統合フォームに一本化） ===
-        # 旧「入退院詳細（医師別）」の入力セクションは統合フォームに移行済み。
-        # ここでは記録された直近のイベント一覧のみ表示する。
-        if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE:
-            if len(st.session_state.admission_details) > 0:
-                st.markdown("---")
-                st.markdown("#### 入退院詳細（医師別）— 直近の記録")
-                st.caption("入力は上の「新しいデータを追加」フォームで行います。医師別情報は1回の登録でまとめて記録されます。")
-                _recent = st.session_state.admission_details.sort_values("date", ascending=False).head(20).copy()
-                _display_cols = {
-                    "date": "日付", "ward": "病棟", "event_type": "種別",
-                    "route": "経路", "source_doctor": "入院創出医",
-                    "attending_doctor": "担当医", "los_days": "在院日数", "phase": "フェーズ"
-                }
-                _available_detail_cols = [c for c in _display_cols.keys() if c in _recent.columns]
-                _recent_display = _recent[_available_detail_cols].rename(
-                    columns={k: v for k, v in _display_cols.items() if k in _available_detail_cols}
-                )
-                if "種別" in _recent_display.columns:
-                    _recent_display["種別"] = _recent_display["種別"].map({"admission": "入院", "discharge": "退院"})
-                st.dataframe(_recent_display, use_container_width=True, hide_index=True)
+            # === 入退院詳細 表示のみ（入力は統合フォームに一本化） ===
+            # 旧「入退院詳細（医師別）」の入力セクションは統合フォームに移行済み。
+            # ここでは記録された直近のイベント一覧のみ表示する。
+            if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE:
+                if len(st.session_state.admission_details) > 0:
+                    st.markdown("---")
+                    st.markdown("#### 入退院詳細（医師別）— 直近の記録")
+                    st.caption("入力は上の「新しいデータを追加」フォームで行います。医師別情報は1回の登録でまとめて記録されます。")
+                    _recent = st.session_state.admission_details.sort_values("date", ascending=False).head(20).copy()
+                    _display_cols = {
+                        "date": "日付", "ward": "病棟", "event_type": "種別",
+                        "route": "経路", "source_doctor": "入院創出医",
+                        "attending_doctor": "担当医", "los_days": "在院日数", "phase": "フェーズ"
+                    }
+                    _available_detail_cols = [c for c in _display_cols.keys() if c in _recent.columns]
+                    _recent_display = _recent[_available_detail_cols].rename(
+                        columns={k: v for k, v in _display_cols.items() if k in _available_detail_cols}
+                    )
+                    if "種別" in _recent_display.columns:
+                        _recent_display["種別"] = _recent_display["種別"].map({"admission": "入院", "discharge": "退院"})
+                    st.dataframe(_recent_display, use_container_width=True, hide_index=True)
 
     with tabs[_dm_tab_analysis_idx]:
         st.subheader("🔮 実績分析・予測")
@@ -3696,6 +3699,8 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 # =====================================================================
 # データが必要なセクション（ダッシュボード・意思決定支援）かどうか
 _needs_sim_data = _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]
+# データ準備完了フラグ（st.stop()の代わりに各タブでガードに使用）
+_data_ready = False
 
 if _is_actual_data_mode:
     # 実績データモード
@@ -3706,14 +3711,14 @@ if _is_actual_data_mode:
                     "実績データがありません。「📋 日次データ入力」タブでデータを入力するか、"
                     "デモデータを生成してください。"
                 )
-            st.stop()
-        # データ不要セクション → ダミー値で続行
+        # データ不要セクション or データ未入力 → ダミー値で続行（st.stop()を使わず他タブへの影響を防ぐ）
         df = pd.DataFrame()
         summary = {}
         days_in_month = 30
         _active_raw_df = pd.DataFrame()
         _active_cli_params = {}
     else:
+        _data_ready = True
         df = st.session_state.actual_df
         summary = st.session_state.actual_summary
         _active_raw_df = st.session_state.actual_df_raw
@@ -3738,14 +3743,14 @@ else:
         if _needs_sim_data:
             with tabs[0]:
                 st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
-            st.stop()
-        # データ不要セクション（制度管理等）→ ダミー値で続行
+        # データ不要セクション or シミュレーション未実行 → ダミー値で続行（st.stop()を使わず他タブへの影響を防ぐ）
         df = pd.DataFrame()
         summary = {}
         days_in_month = 30
         _active_raw_df = pd.DataFrame()
         _active_cli_params = {}
     elif _selected_ward_key in ("5F", "6F") and st.session_state.sim_ward_dfs.get(_selected_ward_key) is not None:
+        _data_ready = True
         df = st.session_state.sim_ward_dfs[_selected_ward_key]
         summary = st.session_state.sim_ward_summaries[_selected_ward_key]
         _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
@@ -3758,6 +3763,7 @@ else:
         )
         _view_beds = get_ward_beds(_selected_ward_key)
     else:
+        _data_ready = True
         df = st.session_state.sim_df
         summary = st.session_state.sim_summary
         _active_raw_df = st.session_state.sim_df_raw
@@ -8883,84 +8889,87 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 # データエクスポートタブ
 # ---------------------------------------------------------------------------
 if "📥 データエクスポート" in _tab_idx:
+    _export_auth_ok = False
     with tabs[_tab_idx["📥 データエクスポート"]]:
         st.header("📥 データエクスポート")
         st.caption("入力済みデータをCSV形式でダウンロードできます。Excel等で解析にご利用ください。")
-        if not _require_data_auth("データエクスポート"):
-            st.stop()
+        _export_auth_ok = _require_data_auth("データエクスポート")
 
-        col1, col2 = st.columns(2)
+    # 認証成功時のみエクスポート内容を描画（st.stop()を使わず他タブへの影響を防ぐ）
+    if _export_auth_ok:
+        with tabs[_tab_idx["📥 データエクスポート"]]:
+            col1, col2 = st.columns(2)
 
-        with col1:
-            st.subheader("📋 病棟日次データ")
-            _export_ward_df = None
-            if _DATA_MANAGER_AVAILABLE:
-                try:
-                    from bed_data_manager import load_actual_data
-                    for _ward in ["5F", "6F"]:
-                        _wdf = load_actual_data(_ward)
-                        if _wdf is not None and not _wdf.empty:
-                            if _export_ward_df is None:
-                                _export_ward_df = _wdf.copy()
-                            else:
-                                _export_ward_df = pd.concat([_export_ward_df, _wdf], ignore_index=True)
-                except Exception:
-                    pass
+            with col1:
+                st.subheader("📋 病棟日次データ")
+                _export_ward_df = None
+                if _DATA_MANAGER_AVAILABLE:
+                    try:
+                        from bed_data_manager import load_actual_data
+                        for _ward in ["5F", "6F"]:
+                            _wdf = load_actual_data(_ward)
+                            if _wdf is not None and not _wdf.empty:
+                                if _export_ward_df is None:
+                                    _export_ward_df = _wdf.copy()
+                                else:
+                                    _export_ward_df = pd.concat([_export_ward_df, _wdf], ignore_index=True)
+                    except Exception:
+                        pass
 
-            if _export_ward_df is not None and not _export_ward_df.empty:
-                st.write(f"レコード数: {len(_export_ward_df)}件")
-                st.download_button(
-                    "⬇️ 病棟日次データ (CSV)",
-                    data=_export_ward_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="ward_daily_data.csv",
-                    mime="text/csv",
-                    key="dl_ward_data"
-                )
+                if _export_ward_df is not None and not _export_ward_df.empty:
+                    st.write(f"レコード数: {len(_export_ward_df)}件")
+                    st.download_button(
+                        "⬇️ 病棟日次データ (CSV)",
+                        data=_export_ward_df.to_csv(index=False).encode("utf-8-sig"),
+                        file_name="ward_daily_data.csv",
+                        mime="text/csv",
+                        key="dl_ward_data"
+                    )
+                else:
+                    st.info("病棟日次データがありません")
+
+            with col2:
+                st.subheader("📋 入退院詳細データ")
+                _export_detail_df = None
+                if _DATA_MANAGER_AVAILABLE:
+                    try:
+                        from bed_data_manager import load_admission_details
+                        _export_detail_df = load_admission_details()
+                    except Exception:
+                        pass
+
+                if _export_detail_df is not None and not _export_detail_df.empty:
+                    st.write(f"レコード数: {len(_export_detail_df)}件")
+                    st.download_button(
+                        "⬇️ 入退院詳細データ (CSV)",
+                        data=_export_detail_df.to_csv(index=False).encode("utf-8-sig"),
+                        file_name="admission_details.csv",
+                        mime="text/csv",
+                        key="dl_detail_data"
+                    )
+                else:
+                    st.info("入退院詳細データがありません")
+
+            # Scenario export
+            st.markdown("---")
+            st.subheader("💾 保存済みシナリオ")
+            if _SCENARIO_MANAGER_AVAILABLE:
+                _export_scenarios = list_scenarios()
+                if _export_scenarios:
+                    import json as _json_export
+                    _sc_json = _json_export.dumps(_export_scenarios, ensure_ascii=False, indent=2, default=str)
+                    st.write(f"シナリオ数: {len(_export_scenarios)}件")
+                    st.download_button(
+                        "⬇️ シナリオデータ (JSON)",
+                        data=_sc_json.encode("utf-8"),
+                        file_name="saved_scenarios.json",
+                        mime="application/json",
+                        key="dl_scenarios"
+                    )
+                else:
+                    st.info("保存済みシナリオがありません")
             else:
-                st.info("病棟日次データがありません")
-
-        with col2:
-            st.subheader("📋 入退院詳細データ")
-            _export_detail_df = None
-            if _DATA_MANAGER_AVAILABLE:
-                try:
-                    from bed_data_manager import load_admission_details
-                    _export_detail_df = load_admission_details()
-                except Exception:
-                    pass
-
-            if _export_detail_df is not None and not _export_detail_df.empty:
-                st.write(f"レコード数: {len(_export_detail_df)}件")
-                st.download_button(
-                    "⬇️ 入退院詳細データ (CSV)",
-                    data=_export_detail_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="admission_details.csv",
-                    mime="text/csv",
-                    key="dl_detail_data"
-                )
-            else:
-                st.info("入退院詳細データがありません")
-
-        # Scenario export
-        st.markdown("---")
-        st.subheader("💾 保存済みシナリオ")
-        if _SCENARIO_MANAGER_AVAILABLE:
-            _export_scenarios = list_scenarios()
-            if _export_scenarios:
-                import json as _json_export
-                _sc_json = _json_export.dumps(_export_scenarios, ensure_ascii=False, indent=2, default=str)
-                st.write(f"シナリオ数: {len(_export_scenarios)}件")
-                st.download_button(
-                    "⬇️ シナリオデータ (JSON)",
-                    data=_sc_json.encode("utf-8"),
-                    file_name="saved_scenarios.json",
-                    mime="application/json",
-                    key="dl_scenarios"
-                )
-            else:
-                st.info("保存済みシナリオがありません")
-        else:
-            st.info("シナリオマネージャーが利用できません")
+                st.info("シナリオマネージャーが利用できません")
 
 
 # ---------------------------------------------------------------------------
