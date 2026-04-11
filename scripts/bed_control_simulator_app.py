@@ -5553,7 +5553,7 @@ with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
             else:
                 _br_forecast_comment = "→ 目標レンジ内で推移する見込み"
 
-            _briefing_text = f"""━━━ 本日のブリーフィング ━━━
+            _briefing_text = f"""━━━ 本日の病床状況 ━━━
     **病棟状態: {_br_score_ja}（{_br_score_numeric}点）**
     在院 {_br_patients}名 / 空床 {_br_empty}床 / 稼働率 {_br_occ:.1f}%
     A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%) / C群 {_br_phase_c}名({_br_pct_c:.0f}%)
