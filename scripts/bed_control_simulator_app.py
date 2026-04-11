@@ -7443,6 +7443,126 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     )
 
         # =====================================================================
+        # 📊 空床マネジメント指標（週末空床コスト）
+        # 入退院セット調整の核心: 退院タイミングを整えて空床時間を最小化する
+        # 当院は土曜入院も1-2件程度のため、土日2日間を「谷」として計算
+        # =====================================================================
+        if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0:
+            _bed_mgmt_df = _daily_df.copy()
+            _bed_mgmt_df["date"] = pd.to_datetime(_bed_mgmt_df["date"])
+            # 病棟フィルタ
+            if "ward" in _bed_mgmt_df.columns:
+                if _selected_ward_key in ("5F", "6F"):
+                    _bed_mgmt_df = _bed_mgmt_df[_bed_mgmt_df["ward"] == _selected_ward_key]
+                else:
+                    _bed_mgmt_df = _bed_mgmt_df.groupby("date").agg({
+                        "total_patients": "sum",
+                        "new_admissions": "sum",
+                        "discharges": "sum",
+                    }).reset_index()
+            _bed_mgmt_df["dow"] = pd.to_datetime(_bed_mgmt_df["date"]).dt.dayofweek
+            _bed_mgmt_df["empty"] = _view_beds - _bed_mgmt_df["total_patients"].clip(upper=_view_beds)
+
+            # 曜日別の平均空床数
+            _dow_empty = _bed_mgmt_df.groupby("dow")["empty"].mean()
+            _fri_empty = _dow_empty.get(4, 0)
+            _sat_empty = _dow_empty.get(5, 0)
+            _sun_empty = _dow_empty.get(6, 0)
+            _weekend_empty = (_sat_empty + _sun_empty) / 2  # 土日平均
+
+            # 金曜退院数の平均
+            _fri_dis = _bed_mgmt_df[_bed_mgmt_df["dow"] == 4]["discharges"].mean() if 4 in _bed_mgmt_df["dow"].values else 0
+            # 月曜入院数の平均
+            _mon_adm = _bed_mgmt_df[_bed_mgmt_df["dow"] == 0]["new_admissions"].mean() if 0 in _bed_mgmt_df["dow"].values else 0
+            # 金曜退院→月曜充填率
+            _fill_rate = (_mon_adm / _fri_dis * 100) if _fri_dis > 0 else 0
+
+            # 退院翌日再利用率（全曜日）
+            _bed_mgmt_sorted = _bed_mgmt_df.sort_values("date").reset_index(drop=True)
+            _reuse_pairs = 0
+            _reuse_total = 0
+            for _ri in range(len(_bed_mgmt_sorted) - 1):
+                _today_dis = int(_bed_mgmt_sorted.iloc[_ri].get("discharges", 0) or 0)
+                _tomorrow_adm = int(_bed_mgmt_sorted.iloc[_ri + 1].get("new_admissions", 0) or 0)
+                if _today_dis > 0:
+                    _reuse_pairs += min(_today_dis, _tomorrow_adm)
+                    _reuse_total += _today_dis
+            _reuse_rate = (_reuse_pairs / _reuse_total * 100) if _reuse_total > 0 else 0
+
+            # 週末空床コスト
+            _weekend_cost_per_week = _weekend_empty * 2 * _UNIT_PRICE_PER_DAY
+            _weekend_cost_monthly = _weekend_cost_per_week * 4
+            _weekend_cost_annual = _weekend_cost_monthly * 12
+
+            if _weekend_empty > 2:  # 空床が目立つ場合にのみ表示
+                _hints_found = True
+                with st.expander("📊 週末空床コスト（入退院セット調整の指標）", expanded=True):
+                    st.markdown(f"""
+                    <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                        <strong style="color: #1E293B; font-size: 16px;">📊 空床マネジメント指標</strong><br>
+                        <span style="color: #475569;">入退院セット調整 = 退院タイミングを整えて、空いた床を遊ばせない</span><br>
+                        <span style="color: #64748B; font-size: 0.85em;">※ 当院は救急・予定外入院が8割。「誰が入るか」ではなく「空床時間」を減らすのが本質</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    _bm1, _bm2, _bm3, _bm4 = st.columns(4)
+                    _bm1.metric(
+                        "土日 平均空床数",
+                        f"{_weekend_empty:.1f}床",
+                        help="土日の平均空床数。当院は土曜入院も1-2件/日程度なので土日2日間が谷底",
+                    )
+                    _bm2.metric(
+                        "週末空床コスト",
+                        f"¥{_weekend_cost_per_week/10000:.0f}万/週",
+                        delta=f"年間 約{_weekend_cost_annual/10000:.0f}万",
+                        delta_color="inverse",
+                        help=f"空床{_weekend_empty:.0f}床 × 2日(土日) × ¥{_UNIT_PRICE_PER_DAY:,}/床日",
+                    )
+                    _bm3.metric(
+                        "退院翌日再利用率",
+                        f"{_reuse_rate:.0f}%",
+                        help="退院で空いた床が翌日の入院で埋まった割合。高いほど空床時間が短い",
+                    )
+                    _bm4.metric(
+                        "金→月 充填率",
+                        f"{_fill_rate:.0f}%",
+                        help=f"金曜退院 平均{_fri_dis:.1f}人 → 月曜入院 平均{_mon_adm:.1f}人",
+                    )
+
+                    # What-If: 金曜退院を何件木曜に前倒しするか
+                    st.markdown("##### 🔧 What-If: 退院前倒しシミュレーション")
+                    _bm_shift = st.slider(
+                        "金曜退院のうち木曜に前倒しする人数",
+                        min_value=0, max_value=max(1, int(_fri_dis)),
+                        value=min(3, max(1, int(_fri_dis // 2))),
+                        step=1,
+                        key="_hint_weekend_shift",
+                    )
+                    _bm_new_weekend_empty = max(0, _weekend_empty - _bm_shift)
+                    _bm_new_cost_weekly = _bm_new_weekend_empty * 2 * _UNIT_PRICE_PER_DAY
+                    _bm_saving_weekly = _weekend_cost_per_week - _bm_new_cost_weekly
+                    _bm_saving_annual = _bm_saving_weekly * 4 * 12
+
+                    _hint_savings["週末空床削減"] = _bm_saving_annual
+
+                    _bm_r1, _bm_r2 = st.columns(2)
+                    with _bm_r1:
+                        st.metric("改善前 土日空床", f"{_weekend_empty:.1f}床/日")
+                        st.metric("改善前 週末コスト", f"¥{_weekend_cost_per_week/10000:.0f}万/週")
+                    with _bm_r2:
+                        st.metric("改善後 土日空床", f"{_bm_new_weekend_empty:.1f}床/日",
+                                  delta=f"-{_bm_shift}床")
+                        st.metric("改善後 週末コスト", f"¥{_bm_new_cost_weekly/10000:.0f}万/週",
+                                  delta=f"年間 {_bm_saving_annual/10000:.0f}万円 改善")
+
+                    st.info(
+                        f"💡 金曜退院のうち **{_bm_shift}人を木曜に前倒し** すると → "
+                        f"土日空床が **{_weekend_empty:.0f}床 → {_bm_new_weekend_empty:.0f}床** に減り、"
+                        f"年間 **約{_bm_saving_annual/10000:.0f}万円** の改善。"
+                        f"入院患者を予測する必要はありません。退院のタイミングを1日前倒しするだけです。"
+                    )
+
+        # =====================================================================
         # Hint 2: 金曜退院の集中
         # =====================================================================
         if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
