@@ -3736,24 +3736,31 @@ if _is_actual_data_mode:
                     "デモデータを生成してください。"
                 )
             st.stop()
-    df = st.session_state.actual_df
-    summary = st.session_state.actual_summary
-    _active_raw_df = st.session_state.actual_df_raw
-    _active_cli_params = dict(st.session_state.actual_params)  # コピーして病棟別に上書き可能にする
-    if _selected_ward_key in ("5F", "6F"):
-        _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
-        # 月間入院数も病棟の病床比率で按分（全体150名→各病棟75名）
-        _bed_ratio = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
-        _active_cli_params["monthly_admissions"] = int(
-            _active_cli_params.get("monthly_admissions", 150) * _bed_ratio
-        )
-    # 実データモードでは days_in_month をデータ日数に合わせる
-    days_in_month = len(df)
-    # カレンダー上の月日数（目標計算用）
-    _data_month_ref = df["日付"].iloc[-1] if "日付" in df.columns else (df["date"].iloc[-1] if "date" in df.columns else pd.Timestamp.now())
-    if isinstance(_data_month_ref, str):
-        _data_month_ref = pd.to_datetime(_data_month_ref)
-    _calendar_month_days = calendar.monthrange(_data_month_ref.year, _data_month_ref.month)[1]
+        # データ不要セクション → ダミー値で続行
+        df = pd.DataFrame()
+        summary = {}
+        days_in_month = 30
+        _active_raw_df = pd.DataFrame()
+        _active_cli_params = {}
+    else:
+        df = st.session_state.actual_df
+        summary = st.session_state.actual_summary
+        _active_raw_df = st.session_state.actual_df_raw
+        _active_cli_params = dict(st.session_state.actual_params)  # コピーして病棟別に上書き可能にする
+        if _selected_ward_key in ("5F", "6F"):
+            _active_cli_params["num_beds"] = get_ward_beds(_selected_ward_key)
+            # 月間入院数も病棟の病床比率で按分（全体150名→各病棟75名）
+            _bed_ratio = get_ward_beds(_selected_ward_key) / _TOTAL_BEDS_METRIC
+            _active_cli_params["monthly_admissions"] = int(
+                _active_cli_params.get("monthly_admissions", 150) * _bed_ratio
+            )
+        # 実データモードでは days_in_month をデータ日数に合わせる
+        days_in_month = len(df)
+        # カレンダー上の月日数（目標計算用）
+        _data_month_ref = df["日付"].iloc[-1] if "日付" in df.columns else (df["date"].iloc[-1] if "date" in df.columns else pd.Timestamp.now())
+        if isinstance(_data_month_ref, str):
+            _data_month_ref = pd.to_datetime(_data_month_ref)
+        _calendar_month_days = calendar.monthrange(_data_month_ref.year, _data_month_ref.month)[1]
 else:
     # シミュレーションモード
     if not _simulation_available:
@@ -3761,7 +3768,13 @@ else:
             with tabs[0]:
                 st.info("サイドバーのパラメータを設定し「シミュレーション実行」ボタンを押してください。")
             st.stop()
-    if _selected_ward_key in ("5F", "6F") and st.session_state.sim_ward_dfs.get(_selected_ward_key) is not None:
+        # データ不要セクション（制度管理等）→ ダミー値で続行
+        df = pd.DataFrame()
+        summary = {}
+        days_in_month = 30
+        _active_raw_df = pd.DataFrame()
+        _active_cli_params = {}
+    elif _selected_ward_key in ("5F", "6F") and st.session_state.sim_ward_dfs.get(_selected_ward_key) is not None:
         df = st.session_state.sim_ward_dfs[_selected_ward_key]
         summary = st.session_state.sim_ward_summaries[_selected_ward_key]
         _active_raw_df = st.session_state.sim_ward_raw_dfs[_selected_ward_key]
