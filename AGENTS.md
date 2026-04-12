@@ -122,11 +122,13 @@
 - [clinical-safety.md](.Codex/rules/clinical-safety.md): 患者情報保護・文献引用ルール
 - [output-format.md](.Codex/rules/output-format.md): 日本語出力・エビデンス併記ルール
 - [orchestrator.md](.Codex/rules/orchestrator.md): subagent委託・PDCA構築ルール
-- [app-quality-assurance.md](.Codex/rules/app-quality-assurance.md): アプリ品質保証ルール（単一ソース・連動更新・スコープ安全性・全状態テスト）
+- [app-quality-assurance.md](.claude/rules/app-quality-assurance.md): Claude / Codex 常駐用の短い品質保証ルール
+- [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md): ベッドコントロールアプリの詳細QA運用ルール
 
 ## カスタムコマンド
 - `/qa [ファイルパス]`: アプリ品質保証3層チェック（数値一貫性・スコープ安全性・ドキュメント整合性）
 - `/pico-search`: 臨床疑問 → PubMed文献検索
 
 ## 運用ルール（必ず守ること）
-- **アプリ修正時の品質保証:** [app-quality-assurance.md](.Codex/rules/app-quality-assurance.md) に従い、連動更新・スコープ安全性・全状態テストを実施する。リリース前は `/qa` コマンドで最終確認を行う
+- **アプリ修正時の品質保証:** [app-quality-assurance.md](.claude/rules/app-quality-assurance.md) の固定ルールに従い、詳細手順は [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) を参照する。リリース前は `/qa` コマンドで最終確認を行う
+- **Claude Code でのベッドコントロール開発:** 実装は `scripts/` と `tests/` を優先し、可変の運用メモや教訓は [bed_control_claude_code_workflow.md](docs/admin/bed_control_claude_code_workflow.md) と [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) に集約する。`.claude` は固定ルールとコマンド定義を中心に保つ
