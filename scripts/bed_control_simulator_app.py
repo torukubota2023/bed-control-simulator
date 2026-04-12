@@ -2889,7 +2889,14 @@ elif _selected_section == "\U0001f4e8 HOPE連携":
 else:
     tab_names = ["\U0001f4ca 日次推移"]
 
-st.caption("\U0001f447 下のタブをクリックして各画面を切り替えてください")
+# タブナビゲーション（目立つヘッダー付き）
+st.markdown(
+    '<div style="background:linear-gradient(90deg,#1E88E5 0%,#42A5F5 100%);'
+    'padding:8px 16px;border-radius:8px;margin:8px 0 4px 0;">'
+    '<span style="color:white;font-weight:bold;font-size:0.95em;">'
+    '👇 タブを切り替えて各画面を表示</span></div>',
+    unsafe_allow_html=True,
+)
 
 # セクションの visible tabs だけを作成（hidden tab + CSS 方式を廃止）
 tabs = st.tabs(tab_names)
