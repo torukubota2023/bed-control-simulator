@@ -84,9 +84,24 @@ def render_guardrail_summary(guardrail_status: dict) -> None:
                     if ward_data.get("current_los") is not None:
                         st.metric(f"{ward_name} \u73fe\u5728LOS", f"{ward_data['current_los']:.1f}\u65e5")
                         headroom = ward_data["headroom_days"]
-                        st.metric(f"{ward_name} \u4f59\u529b", f"{headroom:.1f}\u65e5")
-                        if headroom < 2:
-                            st.caption(f"\u26a0 \u4f59\u529b {headroom:.1f}\u65e5")
+                        if headroom <= 0:
+                            # マイナス: 赤色で超過を強調
+                            st.metric(
+                                f"{ward_name} \u4f59\u529b",
+                                f"{headroom:.1f}\u65e5",
+                                delta=f"\u5236\u5ea6\u4e0a\u9650\u8d85\u904e",
+                                delta_color="inverse",
+                            )
+                        elif headroom < 2:
+                            # 2日未満: 黄色警告
+                            st.metric(
+                                f"{ward_name} \u4f59\u529b",
+                                f"{headroom:.1f}\u65e5",
+                                delta=f"\u4f59\u529b\u308f\u305a\u304b",
+                                delta_color="inverse",
+                            )
+                        else:
+                            st.metric(f"{ward_name} \u4f59\u529b", f"{headroom:.1f}\u65e5")
                     else:
                         st.metric(f"{ward_name} \u73fe\u5728LOS", "\u2014")
                         st.caption("\u30c7\u30fc\u30bf\u4e0d\u8db3")
