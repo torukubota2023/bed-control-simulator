@@ -96,7 +96,7 @@ def _check_emergency_risk(emergency_summary: Optional[dict]) -> Optional[dict]:
             "additional_needed": additional_needed,
         }
 
-        if overall == "danger" or additional_needed > 0:
+        if additional_needed > 0 or ratio_pct < 15.0:
             danger_wards.append(ward)
 
     if not danger_wards:
@@ -194,6 +194,11 @@ def _check_occupancy_risk(
     """稼働率の下振れリスクを評価する。"""
     current_rate = occupancy_rate
     projected_rate = _safe_get(monthly_kpi, "projected_occupancy")
+    if projected_rate is None:
+        projected_rate = _safe_get(monthly_kpi, "月末予想稼働率")
+    # 0-100 の百分率なら 0-1 に変換
+    if projected_rate is not None and projected_rate > 1.5:
+        projected_rate = projected_rate / 100.0
 
     # 判定する値がない場合はスキップ
     if current_rate is None and projected_rate is None:
@@ -271,7 +276,9 @@ def _check_los_headroom(los_headroom: Optional[dict]) -> Optional[dict]:
 
     if headroom_days < _LOS_HEADROOM_WARNING_DAYS:
         current_los = _safe_get(los_headroom, "current_los", default=None)
-        limit_los = _safe_get(los_headroom, "limit_los", default=None)
+        limit_los = _safe_get(los_headroom, "los_limit", default=None)
+        if limit_los is None:
+            limit_los = _safe_get(los_headroom, "limit_los", default=None)
 
         actions = [f"👉 LOS（在院日数）余力が残り{headroom_days:.1f}日 — C群の退院前倒しを検討"]
         if current_los is not None and limit_los is not None:
@@ -301,7 +308,11 @@ def _check_c_group_opportunity(
         return None
 
     can_delay = _safe_get(c_adjustment_capacity, "can_delay", default=False)
+    if not can_delay:
+        can_delay = _safe_get(c_adjustment_capacity, "can_delay_discharge", default=False)
     absorbable_beds = _safe_get(c_adjustment_capacity, "absorbable_beds", default=0)
+    if absorbable_beds <= 0:
+        absorbable_beds = _safe_get(c_adjustment_capacity, "max_delay_bed_days", default=0)
 
     if not can_delay or absorbable_beds <= 0:
         return None
@@ -313,7 +324,9 @@ def _check_c_group_opportunity(
     if not occupancy_low:
         return None
 
-    contribution = _safe_get(c_adjustment_capacity, "daily_contribution", default=28900)
+    contribution = _safe_get(c_adjustment_capacity, "daily_contribution", default=None)
+    if contribution is None:
+        contribution = _safe_get(c_adjustment_capacity, "delay_revenue_per_day", default=28900)
 
     actions = [
         f"👉 C群退院の後ろ倒しで最大{absorbable_beds}床の空床を補填可能（proxy推計）",
@@ -627,6 +640,11 @@ def generate_kpi_priority_list(
             status = "danger"
 
         projected = _safe_get(monthly_kpi, "projected_occupancy")
+        if projected is None:
+            projected = _safe_get(monthly_kpi, "月末予想稼働率")
+        # 0-100 の百分率なら 0-1 に変換
+        if projected is not None and projected > 1.5:
+            projected = projected / 100.0
         value = f"{rate_pct:.1f}%"
         if projected is not None:
             value += f"（月末予測: {projected * 100:.1f}%）"
@@ -702,7 +720,9 @@ def generate_kpi_priority_list(
             value = f"余力 {headroom:.1f}日"
 
             current = _safe_get(los_headroom, "current_los")
-            limit = _safe_get(los_headroom, "limit_los")
+            limit = _safe_get(los_headroom, "los_limit")
+            if limit is None:
+                limit = _safe_get(los_headroom, "limit_los")
             if current is not None and limit is not None:
                 explanation = f"現在 {current:.1f}日 / 上限 {limit:.1f}日"
             else:
@@ -732,7 +752,11 @@ def generate_kpi_priority_list(
     rank += 1
     if c_adjustment_capacity is not None:
         can_delay = _safe_get(c_adjustment_capacity, "can_delay", default=False)
+        if not can_delay:
+            can_delay = _safe_get(c_adjustment_capacity, "can_delay_discharge", default=False)
         absorbable = _safe_get(c_adjustment_capacity, "absorbable_beds", default=0)
+        if absorbable <= 0:
+            absorbable = _safe_get(c_adjustment_capacity, "max_delay_bed_days", default=0)
 
         if can_delay and absorbable > 0:
             status = "safe"
@@ -864,8 +888,14 @@ def generate_tradeoff_assessment(
     # --- C群調整余地の評価 ---
     if c_adjustment_capacity is not None:
         can_delay = _safe_get(c_adjustment_capacity, "can_delay", default=False)
+        if not can_delay:
+            can_delay = _safe_get(c_adjustment_capacity, "can_delay_discharge", default=False)
         absorbable = _safe_get(c_adjustment_capacity, "absorbable_beds", default=0)
-        contribution = _safe_get(c_adjustment_capacity, "daily_contribution", default=28900)
+        if absorbable <= 0:
+            absorbable = _safe_get(c_adjustment_capacity, "max_delay_bed_days", default=0)
+        contribution = _safe_get(c_adjustment_capacity, "daily_contribution", default=None)
+        if contribution is None:
+            contribution = _safe_get(c_adjustment_capacity, "delay_revenue_per_day", default=28900)
 
         if can_delay and absorbable > 0:
             impacts.append({
@@ -889,8 +919,10 @@ def generate_tradeoff_assessment(
             reasoning_parts.append("LOS余力が逼迫しているため、C群退院を推奨する")
     elif (
         c_adjustment_capacity is not None
-        and _safe_get(c_adjustment_capacity, "can_delay", default=False)
-        and _safe_get(c_adjustment_capacity, "absorbable_beds", default=0) > 0
+        and (_safe_get(c_adjustment_capacity, "can_delay", default=False)
+             or _safe_get(c_adjustment_capacity, "can_delay_discharge", default=False))
+        and ((_safe_get(c_adjustment_capacity, "absorbable_beds", default=0) > 0)
+             or (_safe_get(c_adjustment_capacity, "max_delay_bed_days", default=0) > 0))
     ):
         # 救急も LOS も安全で、C群で補填できる場合
         recommendation = "keep"
