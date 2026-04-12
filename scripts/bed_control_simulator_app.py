@@ -2687,6 +2687,10 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
 
         try:
             _ac_daily_df = _active_raw_df if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
+            # LOS計算には rolling 90日分が必要 → full データを使う
+            _ac_daily_df_full = _active_raw_df_full if isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0 else _ac_daily_df
+            # 翌朝受入余力「全体」は常に病院全体データで計算する（病棟選択に汚染されない）
+            _ac_overall_df = _daily_df if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0 else _ac_daily_df
             _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
             if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:
                 _ac_detail_df = None
@@ -2710,16 +2714,16 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 except Exception:
                     pass
 
-            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df_full is not None:
                 try:
-                    _ac_los_headroom = calculate_los_headroom(_ac_daily_df, _ac_config)
+                    _ac_los_headroom = calculate_los_headroom(_ac_daily_df_full, _ac_config)
                 except Exception:
                     pass
 
-            if _EMERGENCY_RATIO_AVAILABLE and _ac_daily_df is not None:
+            if _EMERGENCY_RATIO_AVAILABLE and _ac_overall_df is not None:
                 try:
                     _ac_morning_capacity = estimate_next_morning_capacity(
-                        _ac_daily_df, _ac_detail_df, ward=None, total_beds=94,
+                        _ac_overall_df, _ac_detail_df, ward=None, total_beds=94,
                     )
                 except Exception:
                     pass
@@ -2748,7 +2752,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
                 try:
                     _ac_c_summary = get_c_group_summary(_ac_daily_df)
-                    _ac_rolling = calculate_rolling_los(_ac_daily_df, window_days=90)
+                    _ac_rolling = calculate_rolling_los(_ac_daily_df_full, window_days=90)
                     _ac_los_limit = calculate_los_limit(_ac_config.get("age_85_ratio", 0.25))
                     _ac_c_capacity = calculate_c_adjustment_capacity(
                         _ac_rolling, _ac_los_limit,
@@ -2767,6 +2771,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             pass
 
         try:
+            _ac_selected = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
             _ac_card = generate_action_card(
                 emergency_summary=_ac_emergency_summary,
                 guardrail_status=_ac_guardrail_status,
@@ -2778,6 +2783,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 demand_classification=_ac_demand_class,
                 occupancy_rate=_ac_occupancy,
                 target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+                selected_ward=_ac_selected,
             )
             render_action_card(_ac_card)
 

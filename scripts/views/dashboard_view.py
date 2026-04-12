@@ -33,8 +33,10 @@ def render_action_card(card: dict) -> None:
     else:
         st.success(message)
 
-    # Show source as caption
-    st.caption(f"判定根拠: {card.get('priority_source', '—')}")
+    # Show ward scope and source as caption
+    _ward_label = card.get("selected_ward")
+    _scope = f"対象: {_ward_label}病棟" if _ward_label else "対象: 病院全体"
+    st.caption(f"{_scope} | 判定根拠: {card.get('priority_source', '—')}")
 
 
 def render_kpi_priority_strip(kpi_list: list[dict]) -> None:

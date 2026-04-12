@@ -374,6 +374,7 @@ def generate_action_card(
     demand_classification: Optional[dict] = None,
     occupancy_rate: Optional[float] = None,
     target_occupancy: float = _DEFAULT_TARGET_OCCUPANCY,
+    selected_ward: Optional[str] = None,
 ) -> dict:
     """優先順位に従い、最も重要なアクション推奨カードを1枚生成する。
 
@@ -401,46 +402,53 @@ def generate_action_card(
             - "priority_source": str（このレベルのトリガー）
             - "details": dict（補足数値）
     """
+    def _finalize(card: dict) -> dict:
+        """level meta を付与し、selected_ward があれば追加する。"""
+        c = _attach_level_meta(card)
+        if selected_ward:
+            c["selected_ward"] = selected_ward
+        return c
+
     # 優先順位 1: 制度リスク（救急搬送後患者割合）
     result = _check_emergency_risk(emergency_summary)
     if result is not None and result["level"] == "critical":
-        return _attach_level_meta(result)
+        return _finalize(result)
 
     # 優先順位 1: 制度リスク（施設基準チェック）
     result_gr = _check_guardrail_risk(guardrail_status)
     if result_gr is not None and result_gr["level"] == "critical":
-        return _attach_level_meta(result_gr)
+        return _finalize(result_gr)
 
     # 優先順位 2: 稼働率下振れ
     result_occ = _check_occupancy_risk(occupancy_rate, monthly_kpi, target_occupancy)
     if result_occ is not None:
-        return _attach_level_meta(result_occ)
+        return _finalize(result_occ)
 
     # 優先順位 3: 翌診療日朝受入余力不足
     result_mc = _check_morning_capacity(morning_capacity)
     if result_mc is not None:
-        return _attach_level_meta(result_mc)
+        return _finalize(result_mc)
 
     # 優先順位 4: LOS余力低下
     result_los = _check_los_headroom(los_headroom)
     if result_los is not None:
-        return _attach_level_meta(result_los)
+        return _finalize(result_los)
 
     # 優先順位 1 の warning（critical でないもの）も拾う
     if result is not None and result["level"] == "warning":
-        return _attach_level_meta(result)
+        return _finalize(result)
     if result_gr is not None and result_gr["level"] == "warning":
-        return _attach_level_meta(result_gr)
+        return _finalize(result_gr)
 
     # 優先順位 5: C群調整余地
     result_c = _check_c_group_opportunity(
         c_adjustment_capacity, occupancy_rate, target_occupancy
     )
     if result_c is not None:
-        return _attach_level_meta(result_c)
+        return _finalize(result_c)
 
     # 優先順位 6: 正常運用
-    return _attach_level_meta(_build_success_card())
+    return _finalize(_build_success_card())
 
 
 # ---------------------------------------------------------------------------
@@ -486,23 +494,29 @@ def generate_kpi_priority_list(
         status_map = {"danger": "danger", "warning": "warning", "safe": "safe", "incomplete": "unknown"}
         status = status_map.get(overall, "unknown")
 
-        # 各病棟の割合を表示用に組み立て
+        # 各病棟の割合を表示用に組み立て（operational優先、なければofficial）
         parts: list[str] = []
+        _er_mode_used = "official"
         for ward in ("5F", "6F"):
-            mode_data = _safe_get(emergency_summary, ward, "dual_ratio", "operational") or _safe_get(emergency_summary, ward, "dual_ratio", "official")
+            op_data = _safe_get(emergency_summary, ward, "dual_ratio", "operational")
+            of_data = _safe_get(emergency_summary, ward, "dual_ratio", "official")
+            mode_data = op_data or of_data
+            if op_data is not None:
+                _er_mode_used = "operational"
             if mode_data is not None:
                 ratio = _safe_get(mode_data, "ratio_pct", default=0.0)
                 parts.append(f"{ward}: {ratio:.1f}%")
 
         value = " / ".join(parts) if parts else "データなし"
+        _mode_label = "院内運用用" if _er_mode_used == "operational" else "届出確認用"
         explanation = (
-            f"施設基準: 各病棟 {_EMERGENCY_THRESHOLD_PCT:.0f}% 以上が必要"
+            f"施設基準: 各病棟 {_EMERGENCY_THRESHOLD_PCT:.0f}% 以上が必要（{_mode_label}）"
             if status != "unknown"
             else "データ不足のため判定不能"
         )
 
         items.append({
-            "name": "救急搬送後患者割合",
+            "name": f"救急搬送比率（{_mode_label}）",
             "value": value,
             "status": status,
             "rank": rank,
