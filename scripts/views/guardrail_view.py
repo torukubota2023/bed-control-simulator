@@ -69,6 +69,32 @@ def render_guardrail_summary(guardrail_status: dict) -> None:
         else:
             st.warning("\u65e5\u6b21\u30c7\u30fc\u30bf\u4e0d\u8db3\u306e\u305f\u3081\u5e73\u5747\u5728\u9662\u65e5\u6570\u306e\u4f59\u529b\u3092\u8a08\u7b97\u3067\u304d\u307e\u305b\u3093")
 
+        # 病棟別 LOS余力
+        los_5f = guardrail_status.get("los_headroom_5f")
+        los_6f = guardrail_status.get("los_headroom_6f")
+        if los_5f is not None and los_6f is not None:
+            st.markdown("---")
+            st.markdown("##### \u75c5\u68df\u5225 LOS\u4f59\u529b")
+            ward_col1, ward_col2 = st.columns(2)
+            for ward_col, ward_name, ward_data in [
+                (ward_col1, "5F", los_5f),
+                (ward_col2, "6F", los_6f),
+            ]:
+                with ward_col:
+                    if ward_data.get("current_los") is not None:
+                        st.metric(f"{ward_name} \u73fe\u5728LOS", f"{ward_data['current_los']:.1f}\u65e5")
+                        headroom = ward_data["headroom_days"]
+                        st.metric(f"{ward_name} \u4f59\u529b", f"{headroom:.1f}\u65e5")
+                        if headroom < 2:
+                            st.caption(f"\u26a0 \u4f59\u529b {headroom:.1f}\u65e5")
+                    else:
+                        st.metric(f"{ward_name} \u73fe\u5728LOS", "\u2014")
+                        st.caption("\u30c7\u30fc\u30bf\u4e0d\u8db3")
+            # 余力2日未満の病棟に警告
+            for ward_name, ward_data in [("5F", los_5f), ("6F", los_6f)]:
+                if ward_data.get("current_los") is not None and ward_data["headroom_days"] < 2:
+                    st.warning(f"\u26a0 {ward_name}\u306e LOS\u4f59\u529b\u304c {ward_data['headroom_days']:.1f}\u65e5\u3067\u3059\u3002\u9000\u9662\u8abf\u6574\u3092\u691c\u8a0e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
+
 
 def render_demand_wave_summary(demand_result: dict) -> None:
     """需要波ダッシュボードのトレンド・分類・スコアを描画する.

@@ -8376,12 +8376,29 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _gr_display = format_guardrail_display(_gr_results)
                 _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
 
+                # 病棟別LOS余力
+                _los_hr_5f = None
+                _los_hr_6f = None
+                _gr_ward_dfs = st.session_state.get("sim_ward_raw_dfs") or st.session_state.get("ward_raw_dfs") or {}
+                for _w_key in ("5F", "6F"):
+                    if _w_key in _gr_ward_dfs and isinstance(_gr_ward_dfs[_w_key], pd.DataFrame) and len(_gr_ward_dfs[_w_key]) > 0:
+                        try:
+                            _w_los = calculate_los_headroom(_gr_ward_dfs[_w_key], _gr_config)
+                            if _w_key == "5F":
+                                _los_hr_5f = _w_los
+                            else:
+                                _los_hr_6f = _w_los
+                        except Exception:
+                            pass
+
                 # 描画をviewモジュールに委譲
                 if _VIEWS_AVAILABLE:
                     render_guardrail_summary({
                         "results": _gr_results,
                         "display": _gr_display,
                         "los_headroom": _los_hr,
+                        "los_headroom_5f": _los_hr_5f,
+                        "los_headroom_6f": _los_hr_6f,
                     })
                 else:
                     st.warning("描画モジュール (views) の読み込みに失敗しました。制度余力の詳細表示は利用できません。")
