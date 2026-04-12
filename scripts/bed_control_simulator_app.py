@@ -899,8 +899,10 @@ _ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
 _selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
 _selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
 
-# _view_beds のデフォルト値（後で病棟選択に応じて上書きされる）
+# _view_beds / _active_raw_df のデフォルト値（後で病棟選択・データ読込に応じて上書きされる）
 _view_beds = total_beds
+_active_raw_df = pd.DataFrame()
+_active_raw_df_full = pd.DataFrame()
 
 target_lower = st.sidebar.slider("目標稼働率下限", 0.80, 1.00, 0.90, step=0.01, format="%.2f")
 target_upper = st.sidebar.slider("目標稼働率上限", 0.80, 1.00, 0.95, step=0.01, format="%.2f")
