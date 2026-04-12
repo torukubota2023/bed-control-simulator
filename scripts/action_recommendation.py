@@ -349,6 +349,53 @@ def _build_success_card() -> dict:
     }
 
 
+def _collect_cross_ward_alerts(
+    emergency_summary: Optional[dict],
+    selected_ward: Optional[str],
+) -> list:
+    """選択していない他病棟の重要アラートを収集する。"""
+    if not selected_ward or not emergency_summary:
+        return []
+
+    alerts: list = []
+    for ward in ("5F", "6F"):
+        if ward == selected_ward:
+            continue
+        ward_data = _safe_get(emergency_summary, ward)
+        if ward_data is None:
+            continue
+
+        # operational（短手3除外）があれば優先、なければ official
+        mode_data = _safe_get(ward_data, "dual_ratio", "operational") or _safe_get(
+            ward_data, "dual_ratio", "official"
+        )
+        if mode_data is None:
+            continue
+
+        ratio_pct = _safe_get(mode_data, "ratio_pct", default=0.0)
+        status = _safe_get(mode_data, "status", default="")
+        additional = _safe_get(
+            ward_data, "additional", "additional_needed", default=0
+        )
+
+        if status == "red" or additional > 0:
+            alerts.append({
+                "ward": ward,
+                "type": "emergency_ratio",
+                "level": "critical",
+                "message": f"{ward}の救急搬送比率が危険域（{ratio_pct:.1f}%）— あと{additional}件必要",
+            })
+        elif status == "yellow":
+            alerts.append({
+                "ward": ward,
+                "type": "emergency_ratio",
+                "level": "warning",
+                "message": f"{ward}の救急搬送比率が注意域（{ratio_pct:.1f}%）",
+            })
+
+    return alerts
+
+
 def _attach_level_meta(card: dict) -> dict:
     """level に基づいて color / emoji を付与する。"""
     level = card.get("level", "info")
@@ -407,6 +454,9 @@ def generate_action_card(
         c = _attach_level_meta(card)
         if selected_ward:
             c["selected_ward"] = selected_ward
+            c["cross_ward_alerts"] = _collect_cross_ward_alerts(
+                emergency_summary, selected_ward
+            )
         return c
 
     # 優先順位 1: 制度リスク（救急搬送後患者割合）

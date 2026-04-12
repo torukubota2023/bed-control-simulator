@@ -38,6 +38,21 @@ def render_action_card(card: dict) -> None:
     _scope = f"対象: {_ward_label}病棟" if _ward_label else "対象: 病院全体"
     st.caption(f"{_scope} | 判定根拠: {card.get('priority_source', '—')}")
 
+    # Cross-ward cooperation alerts
+    _cross_alerts = card.get("cross_ward_alerts", [])
+    if _cross_alerts:
+        with st.expander("🤝 他病棟の状況（協力体制）", expanded=True):
+            for _alert in _cross_alerts:
+                _alert_level = _alert.get("level", "info")
+                _alert_msg = f"**{_alert.get('ward', '')}**: {_alert.get('message', '')}"
+                if _alert_level == "critical":
+                    st.error(_alert_msg)
+                elif _alert_level == "warning":
+                    st.warning(_alert_msg)
+                else:
+                    st.info(_alert_msg)
+            st.caption("自病棟の問題でなくても、病院全体の施設基準達成に協力が必要です")
+
 
 def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
     """KPIを優先順位順に目立つ配置で描画する.

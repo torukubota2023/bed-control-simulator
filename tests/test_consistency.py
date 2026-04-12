@@ -274,6 +274,12 @@ class TestActionCardWardContext:
         )
         assert card["level"] == "critical"
         assert card.get("selected_ward") == "5F"
+        assert len(card.get("cross_ward_alerts", [])) > 0, "6F danger should appear in cross_ward_alerts"
+
+    def test_cross_ward_alerts_empty_when_no_other_ward_problem(self):
+        """他病棟に問題がないとき cross_ward_alerts は空。"""
+        card = generate_action_card(selected_ward="5F")
+        assert card.get("cross_ward_alerts", []) == []
 
 
 # ---------------------------------------------------------------------------

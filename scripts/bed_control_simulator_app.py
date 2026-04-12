@@ -8357,6 +8357,9 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
         # --- データ準備 ---
         # _daily_df は既存変数（日次データ）。存在しない場合のフォールバック
         _gr_daily_df = _daily_df if isinstance(_daily_df, pd.DataFrame) and len(_daily_df) > 0 else None
+        # Full data for LOS calculations (rolling 90日)
+        _gr_daily_df_full_src = st.session_state.get("actual_df_raw_full")
+        _gr_daily_df_full = _gr_daily_df_full_src if isinstance(_gr_daily_df_full_src, pd.DataFrame) and len(_gr_daily_df_full_src) > 0 else _gr_daily_df
         _gr_detail_df = None  # 詳細データがあれば使う
         # detail_data_manager から取得を試みる
         if _DETAIL_DATA_AVAILABLE:
@@ -8383,7 +8386,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
             if _gr_daily_df is not None:
                 _gr_results = calculate_guardrail_status(_gr_daily_df, _gr_detail_df, _gr_config)
                 _gr_display = format_guardrail_display(_gr_results)
-                _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
+                _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
 
                 # 病棟別LOS余力
                 _los_hr_5f = None
@@ -8542,11 +8545,11 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 
                 # C群調整キャパシティ
                 st.markdown("---")
-                _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
+                _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
                 _los_limit = _los_hr["los_limit"]
 
                 # rolling_los_result を取得
-                _cg_rolling = calculate_rolling_los(_gr_daily_df) if _gr_daily_df is not None else None
+                _cg_rolling = calculate_rolling_los(_gr_daily_df_full) if _gr_daily_df_full is not None else None
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
 
                 _cap_color = {"green": "🟢", "yellow": "🟡", "red": "🔴", "gray": "⚪"}.get(_cg_capacity["status_color"], "⚪")
