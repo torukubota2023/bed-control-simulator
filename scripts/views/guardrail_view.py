@@ -90,10 +90,20 @@ def render_guardrail_summary(guardrail_status: dict) -> None:
                     else:
                         st.metric(f"{ward_name} \u73fe\u5728LOS", "\u2014")
                         st.caption("\u30c7\u30fc\u30bf\u4e0d\u8db3")
-            # 余力2日未満の病棟に警告
+            # 余力不足の病棟に警告（マイナス=赤、2日未満=黄）
             for ward_name, ward_data in [("5F", los_5f), ("6F", los_6f)]:
-                if ward_data.get("current_los") is not None and ward_data["headroom_days"] < 2:
-                    st.warning(f"\u26a0 {ward_name}\u306e LOS\u4f59\u529b\u304c {ward_data['headroom_days']:.1f}\u65e5\u3067\u3059\u3002\u9000\u9662\u8abf\u6574\u3092\u691c\u8a0e\u3057\u3066\u304f\u3060\u3055\u3044\u3002")
+                if ward_data.get("current_los") is not None:
+                    headroom = ward_data["headroom_days"]
+                    if headroom <= 0:
+                        st.error(
+                            f"\U0001f6a8 **{ward_name}は制度上限を超過しています**（余力 {headroom:.1f}日）。"
+                            f"退院調整を最優先で進めてください。"
+                        )
+                    elif headroom < 2:
+                        st.warning(
+                            f"\u26a0 {ward_name}の LOS余力が {headroom:.1f}日です。"
+                            f"退院調整を検討してください。"
+                        )
 
 
 def render_demand_wave_summary(demand_result: dict) -> None:
