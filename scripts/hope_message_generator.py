@@ -428,7 +428,7 @@ def _build_alert_section(
             # 病棟情報は description から推定、なければ全体として表示
             los_parts.append(f"{current:.1f}日{icon}")
         if los_parts:
-            lines.append(f"[制度] LOS {' / '.join(los_parts)}")
+            lines.append(f"[制度] LOS（在院日数） {' / '.join(los_parts)}")
 
     # [救急] 行
     if emergency_summary:

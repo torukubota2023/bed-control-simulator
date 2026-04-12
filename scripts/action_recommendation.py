@@ -273,7 +273,7 @@ def _check_los_headroom(los_headroom: Optional[dict]) -> Optional[dict]:
         current_los = _safe_get(los_headroom, "current_los", default=None)
         limit_los = _safe_get(los_headroom, "limit_los", default=None)
 
-        actions = [f"👉 LOS余力が残り{headroom_days:.1f}日 — C群の退院前倒しを検討"]
+        actions = [f"👉 LOS（在院日数）余力が残り{headroom_days:.1f}日 — C群の退院前倒しを検討"]
         if current_los is not None and limit_los is not None:
             actions.append(
                 f"👉 現在の平均在院日数 {current_los:.1f}日（上限 {limit_los:.1f}日）"
@@ -284,7 +284,7 @@ def _check_los_headroom(los_headroom: Optional[dict]) -> Optional[dict]:
             "level": "warning",
             "title": f"平均在院日数の余力が低下（残り{headroom_days:.1f}日）",
             "actions": actions[:3],
-            "priority_source": "LOS余力低下",
+            "priority_source": "LOS（在院日数）余力低下",
             "details": {"headroom_days": headroom_days, "los_headroom": los_headroom},
         }
 
@@ -318,7 +318,7 @@ def _check_c_group_opportunity(
     actions = [
         f"👉 C群退院の後ろ倒しで最大{absorbable_beds}床の空床を補填可能（proxy推計）",
         f"👉 C群運営貢献額: {contribution:,.0f}円/日/床（proxy）",
-        "👉 LOS余力・救急搬送比率を確認の上で判断する",
+        "👉 LOS（在院日数）余力・救急搬送比率を確認の上で判断する",
     ]
 
     return {

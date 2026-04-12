@@ -216,7 +216,7 @@ def calculate_c_adjustment_capacity(
             "delay_revenue_per_day": C_CONTRIBUTION_PER_DAY,
             "status": "データなし",
             "status_color": "gray",
-            "warning_message": "⚠️ rolling LOS データがありません",
+            "warning_message": "⚠️ rolling LOS（在院日数）データがありません",
             "data_source": "proxy",
         }
 
@@ -532,7 +532,7 @@ def generate_c_group_alerts(
     if 0 <= headroom_days < 1 and demand_classification == "quiet":
         alerts.append({
             "level": "warning",
-            "message": "LOS余力わずか、需要閑散期のためC群延長は慎重に",
+            "message": "LOS（在院日数）余力わずか、需要閑散期のためC群延長は慎重に",
             "category": "c_group",
         })
 

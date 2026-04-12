@@ -3322,7 +3322,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     )
                     _summary_parts.append(
                         f"退院 **{auto_discharges}名**: {_phase_badges}"
-                        f"（A:{_auto_da} B:{_auto_db} C:{_auto_dc}　平均LOS: **{_avg_los_display:.1f}日**）"
+                        f"（A:{_auto_da} B:{_auto_db} C:{_auto_dc}　平均LOS（在院日数）: **{_avg_los_display:.1f}日**）"
                     )
                 if _summary_parts:
                     st.info("💡 " + "\n\n".join(_summary_parts))
@@ -3473,7 +3473,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             "new_admissions": "新規入院",
                             "new_admissions_short3": "うち短手3",
                             "discharges": "退院（自動）",
-                            "discharge_los_list": "退院LOS一覧",
+                            "discharge_los_list": "退院LOS（在院日数）一覧",
                             "discharge_a": "A群退院",
                             "discharge_b": "B群退院",
                             "discharge_c": "C群退院",
@@ -7498,7 +7498,7 @@ if "👨‍⚕️ 退院タイミング" in _tab_idx:
                                 "los_days": "在院日数",
                                 "attending_doctor": "担当医",
                                 "sunday_date": "日曜退院日",
-                                "los_margin": "LOS余裕",
+                                "los_margin": "LOS（在院日数）余裕",
                                 "recommendation": "推奨",
                             }
                             _dm_cand_show = _dm_cand_df[[c for c in _dm_display_cols.keys() if c in _dm_cand_df.columns]].copy()
