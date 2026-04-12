@@ -596,7 +596,7 @@ def analyze_scenarios(
     insights: List[Dict[str, Any]] = []
     scored_scenarios: List[Dict[str, Any]] = []
 
-    # --- LOS ガードレール情報の取得 ---
+    # --- LOS 施設基準チェック情報の取得 ---
     los_limit = None
     los_current = None
     los_status = None
@@ -651,7 +651,7 @@ def analyze_scenarios(
             if los > los_limit:
                 insights.append({
                     "type": "finding",
-                    "text": f"「{s.get('name', '')}」の平均在院日数{los:.1f}日はガードレール上限{los_limit:.0f}日を超過。"
+                    "text": f"「{s.get('name', '')}」の平均在院日数{los:.1f}日は施設基準上限{los_limit:.0f}日を超過。"
                             f"施設基準違反のリスクがあります。",
                     "priority": "high",
                 })
@@ -659,17 +659,17 @@ def analyze_scenarios(
             elif los > los_limit - 2.0:
                 insights.append({
                     "type": "finding",
-                    "text": f"「{s.get('name', '')}」の平均在院日数{los:.1f}日はガードレール上限{los_limit:.0f}日に接近。"
+                    "text": f"「{s.get('name', '')}」の平均在院日数{los:.1f}日は施設基準上限{los_limit:.0f}日に接近。"
                             f"余力{los_limit - los:.1f}日と薄いため注意が必要です。",
                     "priority": "medium",
                 })
                 penalty += 10.0
 
-        # LOS ガードレール warning/danger 時の追加インサイト
+        # LOS 施設基準チェック warning/danger 時の追加インサイト
         if los_status in ("warning", "danger"):
             insights.append({
                 "type": "finding",
-                "text": f"現在の在院日数がガードレール警告域です（現在値{los_current}日 / 上限{los_limit}日）。"
+                "text": f"現在の在院日数が施設基準チェック警告域です（現在値{los_current}日 / 上限{los_limit}日）。"
                         f"「{s.get('name', '')}」が在院日数に与える影響に注意してください。",
                 "priority": "high" if los_status == "danger" else "medium",
             })
@@ -734,7 +734,7 @@ def analyze_scenarios(
         if occ is not None and occ > TARGET_OCCUPANCY_UPPER:
             risk_parts.append(f"稼働率{occ:.1f}%で目標上限超過")
         if ss["los"] is not None and los_limit is not None and ss["los"] > los_limit - 2.0:
-            risk_parts.append(f"在院日数{ss['los']:.1f}日でガードレール接近")
+            risk_parts.append(f"在院日数{ss['los']:.1f}日で施設基準上限接近")
         if emergency_red_wards and occ is not None and occ > TARGET_OCCUPANCY_OPTIMAL:
             risk_parts.append("救急受入余力の低下")
         risk_text = "、".join(risk_parts) if risk_parts else "特になし"
@@ -767,7 +767,7 @@ def analyze_scenarios(
     # --- リスク評価 ---
     risk_items = []
     if los_status in ("warning", "danger"):
-        risk_items.append("在院日数がガードレール警告/危険域にあり、シナリオ実行時に施設基準違反のリスクがあります")
+        risk_items.append("在院日数が施設基準チェック警告/危険域にあり、シナリオ実行時に施設基準違反のリスクがあります")
     if emergency_red_wards:
         risk_items.append(f"{'・'.join(emergency_red_wards)}の救急搬送後患者割合が未達のため、空床を確保する必要があります")
     high_occ = [ss for ss in scored_scenarios if ss["occupancy_pct"] is not None and ss["occupancy_pct"] > TARGET_OCCUPANCY_UPPER]

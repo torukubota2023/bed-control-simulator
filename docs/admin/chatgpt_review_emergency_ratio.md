@@ -312,7 +312,7 @@ _gr_sub1, _gr_sub2, _gr_sub3, _gr_sub4 = st.tabs([
 - "meets_target" → 「達成」/「未達」
 - "conservative"/"standard"/"optimistic" → 「保守」/「標準」/「良好」
 - "per_remaining_calendar_day" → 「残り日数あたり」
-- "per_remaining_business_day" → 「営業日あたり」
+- "per_remaining_business_day" → 「診療日あたり」
 - "this_week_needed" → 「今週中に必要」
 - 各アラートメッセージを日本語化
 - グラフの軸ラベル・タイトルを日本語化

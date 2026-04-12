@@ -336,7 +336,7 @@ def generate_action_items(
     """
     items: List[str] = []
 
-    # 1. 制度ガードレール: LOS warning/danger
+    # 1. 施設基準チェック: LOS warning/danger
     if guardrail_results:
         for item in guardrail_results:
             name = item.get("name", "")
@@ -509,7 +509,7 @@ def generate_enhanced_summary_message(
     rolling_los_limit : int, optional
         施設基準の上限日数
     guardrail_results : list of dict, optional
-        制度ガードレール結果
+        施設基準チェック結果
     emergency_summary : dict, optional
         救急搬送サマリー
     c_group_alerts : list of dict, optional
@@ -768,7 +768,7 @@ def render_hope_tab(
             "アラート付きメッセージを生成",
             value=False,
             key="hope_enable_alerts",
-            help="制度ガードレール・救急搬送・C群のアラート情報を含むメッセージを追加生成します",
+            help="施設基準チェック・救急搬送・C群のアラート情報を含むメッセージを追加生成します",
         )
 
         if enable_alerts:

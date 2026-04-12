@@ -1,7 +1,7 @@
-# CLAUDE.md - おもろまちメディカルセンター AI ワークスペース
+# AGENTS.md - おもろまちメディカルセンター AI ワークスペース
 
 ## プロジェクト概要
-おもろまちメディカルセンター（総病床数94床、月間入院数約150件）の臨床・教育・経営業務を支援するワークスペース。副院長・内科/呼吸器内科医としての実務をClaude Codeで効率化する。
+おもろまちメディカルセンター（総病床数94床、月間入院数約150件）の臨床・教育・経営業務を支援するワークスペース。副院長・内科/呼吸器内科医としての実務をCodexで効率化する。
 
 ## ✅ 解決済みの課題
 - [x] 週末空床コスト What-If の論理修正 — 「前倒し人数 × 充填確率」の2スライダー方式に修正済み（2026-04-11）
@@ -66,15 +66,6 @@
     - テスト: `tests/test_hope_message.py`（8件）、`tests/test_scenario_manager.py`（10件）、全118テスト通過
     - 改善仮説の第2層: What-Ifシナリオの名前付き保存、複数シナリオ比較、ルールベースAI分析（稼働率最適化・LOS準拠・収益ランキング・実行容易性）
     - データエクスポート: 病棟日次データ・入退院詳細（CSV）、シナリオデータ（JSON）
-  - **結論カード・KPI優先表示・views分離（v3.5, 2026-04-12追加）**
-    - 新規モジュール: `scripts/action_recommendation.py`（優先アクション推薦、pure function）、`scripts/c_group_candidates.py`（C群候補一覧・トレードオフ評価、pure function）
-    - 表示ロジック分離: `scripts/views/dashboard_view.py`、`scripts/views/c_group_view.py`（app.pyからの段階的分離）
-    - テスト: `tests/test_action_recommendation.py`（14件）、`tests/test_c_group_candidates.py`（10件）、全167テスト通過
-    - 結論カード（今日の一手）: ダッシュボード最上部に優先アクション推薦カードを表示。制度・稼働率・受入余力・C群を横断評価し、最も重要な1手を提示
-    - KPI優先表示: 救急搬送比率 → 稼働率 → 翌朝受入余力 → LOS → C群の優先順でKPIを並べ替え
-    - 翌診療日朝受入余力の主役化: 翌朝の空床予測をメインKPIに昇格、色分けステータス表示（安全/注意/危険）
-    - C群候補一覧（lite版）: C群退院調整候補を患者レベルで一覧表示（C群は院内運用ラベルであり制度上の公式区分ではない）
-    - C群/制度/受入余力トレードオフ評価: C群の延長（稼働率下支え） vs 退院（空床確保）のトレードオフを制度余力・受入余力と合わせて可視化
 - **将来構想（未実装）:**
   - **短期滞在手術等基本料3（短手3）の組み込み** — [リサーチ・設計案](docs/admin/short3_integration_research.md)
     - A群期間（1-5日）と短手3期間（5日以内）が完全一致する点を活用し、A群の内数として管理
@@ -90,15 +81,6 @@
   - ~~第2層: 改善仮説の保存・比較~~ → **v3.4で実装済み**（シナリオ保存・比較・AI分析）
   - 第3層: 提案書ドラフト自動生成（経営会議向け）
   - 立場別ビュー（医師・看護師・経営者）
-  - **院内LAN展開準備（v3.5 hardening, 2026-04-12追加）**
-    - 院内端末 Edge 90（Chromium 90）制約の調査・対応方針策定
-    - ブラウザ互換性3案比較: A（古いStreamlit固定）/ B（ポータブルブラウザ・推奨）/ C（Flask書き換え・最後の手段）
-    - `tools/browser_probe.html`: Streamlit非依存のブラウザ互換性確認ページ（JS API 12項目チェック）
-    - `deploy/`: サーバー起動・ポータブルFirefox起動スクリプト（bat/ps1テンプレート）
-    - `docs/admin/`: 院内LAN展開計画・ブラウザ互換性方針・検証マトリクス・ポータブルブラウザ運用ガイド
-    - `requirements-edge90.txt`: Edge 90互換を目指す固定バージョン（検証前提）
-    - `scripts/views/guardrail_view.py`: 施設基準チェック・需要波の表示ロジック分離
-    - テスト: `tests/test_deployment_assets.py`（19件）、全186テスト通過
 
 ## 教育資料ドラフト
 - 次回レジデント勉強会テーマ：未定
@@ -119,8 +101,8 @@
 ## フォルダ構成
 ```
 /
-├── CLAUDE.md          ← このファイル（プロジェクトメモリ）
-├── .claude/           ← Claude Code設定
+├── AGENTS.md          ← このファイル（プロジェクトメモリ）
+├── .Codex/           ← Codex設定
 │   ├── commands/      ← カスタムコマンド
 │   ├── rules/         ← ルール集（臨床安全性・出力形式・オーケストレーター）
 │   └── settings.json  ← Hooks・共有設定
@@ -132,22 +114,19 @@
 ├── data/              ← KPI・入院統計・分析用データ
 ├── templates/         ← 診療情報提供書・退院サマリーのテンプレート
 └── scripts/           ← 自動化スクリプト
-    ├── views/         ← 表示ロジック（dashboard_view.py, c_group_view.py, guardrail_view.py）
     └── hooks/         ← セキュリティHooksスクリプト
-├── tools/             ← ブラウザ互換性チェック（browser_probe.html）
-└── deploy/            ← 院内LAN起動スクリプト（bat, ps1）
 ```
 
 ## ルール
-詳細は `.claude/rules/` を参照：
-- [clinical-safety.md](.claude/rules/clinical-safety.md): 患者情報保護・文献引用ルール
-- [output-format.md](.claude/rules/output-format.md): 日本語出力・エビデンス併記ルール
-- [orchestrator.md](.claude/rules/orchestrator.md): subagent委託・PDCA構築ルール
-- [app-quality-assurance.md](.claude/rules/app-quality-assurance.md): アプリ品質保証ルール（単一ソース・連動更新・スコープ安全性・全状態テスト・同一パターン横展開）
+詳細は `.Codex/rules/` を参照：
+- [clinical-safety.md](.Codex/rules/clinical-safety.md): 患者情報保護・文献引用ルール
+- [output-format.md](.Codex/rules/output-format.md): 日本語出力・エビデンス併記ルール
+- [orchestrator.md](.Codex/rules/orchestrator.md): subagent委託・PDCA構築ルール
+- [app-quality-assurance.md](.Codex/rules/app-quality-assurance.md): アプリ品質保証ルール（単一ソース・連動更新・スコープ安全性・全状態テスト）
 
 ## カスタムコマンド
 - `/qa [ファイルパス]`: アプリ品質保証3層チェック（数値一貫性・スコープ安全性・ドキュメント整合性）
 - `/pico-search`: 臨床疑問 → PubMed文献検索
 
 ## 運用ルール（必ず守ること）
-- **アプリ修正時の品質保証:** [app-quality-assurance.md](.claude/rules/app-quality-assurance.md) に従い、連動更新・スコープ安全性・全状態テストを実施する。リリース前は `/qa` コマンドで最終確認を行う
+- **アプリ修正時の品質保証:** [app-quality-assurance.md](.Codex/rules/app-quality-assurance.md) に従い、連動更新・スコープ安全性・全状態テストを実施する。リリース前は `/qa` コマンドで最終確認を行う

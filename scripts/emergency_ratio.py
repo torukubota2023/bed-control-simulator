@@ -703,7 +703,7 @@ def get_cumulative_progress(
 
 
 def _next_business_date(d: date) -> date:
-    """次の営業日（土日をスキップ）を返す。祝日は未対応。"""
+    """次の診療日（土日をスキップ）を返す。祝日は未対応。"""
     nxt = d + timedelta(days=1)
     while nxt.weekday() >= 5:  # 5=Sat, 6=Sun
         nxt += timedelta(days=1)
@@ -718,9 +718,9 @@ def estimate_next_morning_capacity(
     total_beds: int = 94,
     ward_beds: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """翌営業日朝の救急受入余力をproxy推計する。
+    """翌診療日朝の救急受入余力をproxy推計する。
 
-    直近のデータから、翌営業日朝の時点で何床空いているかを推計する。
+    直近のデータから、翌診療日朝の時点で何床空いているかを推計する。
     推計値はproxyであり、実際の空床数とは異なる可能性がある。
 
     Args:
@@ -784,7 +784,7 @@ def estimate_next_morning_capacity(
     # --- 退院推計 ---
     planned_discharges: float = 0.0
 
-    # detail_dfから翌営業日の退院予定を取得
+    # detail_dfから翌診療日の退院予定を取得
     if detail_df is not None and isinstance(detail_df, pd.DataFrame) and len(detail_df) > 0:
         det = detail_df.copy()
         if "event_type" in det.columns:
@@ -818,7 +818,7 @@ def estimate_next_morning_capacity(
     net_capacity = current_empty + planned_discharges - expected_admissions
     emergency_slots = max(int(round(net_capacity)), 0)
 
-    # --- 3営業日の最小受入余力 ---
+    # --- 3診療日の最小受入余力 ---
     min_slots = emergency_slots
     cumulative_empty = float(current_empty)
 

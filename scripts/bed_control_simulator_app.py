@@ -200,7 +200,7 @@ except Exception as _bmm_err:
     _BED_MGMT_METRICS_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
-# 制度ガードレール・需要波・C群コントロール
+# 施設基準チェック・需要波・C群コントロール
 # ---------------------------------------------------------------------------
 _GUARDRAIL_AVAILABLE = False
 try:
@@ -668,7 +668,7 @@ if not _BED_MGMT_METRICS_AVAILABLE and "_BED_MGMT_METRICS_ERROR" in dir():
     st.sidebar.warning(f"⚠️ 空床マネジメント指標モジュールのインポートに失敗しました\n\n{_BED_MGMT_METRICS_ERROR}")
 
 if not _GUARDRAIL_AVAILABLE and "_GUARDRAIL_ERROR" in dir():
-    st.sidebar.warning(f"⚠️ 制度ガードレールモジュールのインポートに失敗しました\n\n{_GUARDRAIL_ERROR}")
+    st.sidebar.warning(f"⚠️ 施設基準チェックモジュールのインポートに失敗しました\n\n{_GUARDRAIL_ERROR}")
 
 st.title("🏥 ベッドコントロールシミュレーター")
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
@@ -8319,11 +8319,11 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             st.success("現時点で特に改善が必要なヒントはありません。データが蓄積されると自動で検出されます。")
 
 # =====================================================================
-# 制度ガードレール・需要波・C群コントロール タブ
+# 施設基準チェック・需要波・C群コントロール タブ
 # =====================================================================
 if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要・C群" in _tab_idx:
     with tabs[_tab_idx["🛡️ 制度・需要・C群"]]:
-        st.header("🛡️ 制度ガードレール・需要波・C群コントロール")
+        st.header("🛡️ 施設基準チェック・需要波・C群コントロール")
         st.caption("⚠️ C群（退院準備期）は院内運用上のラベルであり、制度上の公式区分ではありません。推計値は参考値です。")
 
         # --- データ準備 ---
@@ -8370,10 +8370,10 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     _status_ja = {"safe": "安全", "warning": "注意", "danger": "危険", "incomplete": "未完（データ不足）"}.get(_gr_display["overall_status"], "不明")
                     st.markdown(f"### {_status_emoji} 総合判定: **{_status_ja}**")
 
-                # 翌営業日朝の受入余力
+                # 翌診療日朝の受入余力
                 if _EMERGENCY_RATIO_AVAILABLE:
                     st.markdown("---")
-                    st.subheader("🌅 翌営業日朝の救急受入余力（推計）")
+                    st.subheader("🌅 翌診療日朝の救急受入余力（推計）")
                     try:
                         _morning_cap = estimate_next_morning_capacity(
                             _gr_daily_df, _gr_detail_df,
@@ -8388,7 +8388,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                             st.metric("明朝の受入可能枠", f"{_morning_cap['estimated_emergency_slots']}床",
                                       delta="推計")
                         with _mc_cols[2]:
-                            st.metric("3営業日の最小受入余力", f"{_morning_cap['three_day_min_slots']}床",
+                            st.metric("3診療日の最小受入余力", f"{_morning_cap['three_day_min_slots']}床",
                                       delta="最悪ケース")
                         st.caption("⚠️ 推計値です。予定入院・退院の変動により実際とは異なります。")
                     except Exception:
@@ -8755,7 +8755,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 
                         st.caption(
                             f"経過日数: {_er_proj['current']['elapsed_days']}日 / "
-                            f"残り: {_er_proj['remaining_calendar_days']}日（営業日 {_er_proj['remaining_business_days']}日）"
+                            f"残り: {_er_proj['remaining_calendar_days']}日（診療日 {_er_proj['remaining_business_days']}日）"
                         )
 
                         # 3シナリオ表示
@@ -8824,7 +8824,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                             )
                             st.caption(
                                 f"残り日数あたり: {_er_need['per_remaining_calendar_day']:.1f}件/日 "
-                                f"（営業日あたり: {_er_need['per_remaining_business_day']:.1f}件/日）"
+                                f"（診療日あたり: {_er_need['per_remaining_business_day']:.1f}件/日）"
                             )
                             if _er_need["this_week_needed"] > 0:
                                 st.caption(f"今週中に必要: {_er_need['this_week_needed']}件")

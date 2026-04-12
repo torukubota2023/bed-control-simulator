@@ -149,7 +149,7 @@ def test_generate_action_items_emergency_red():
 # ---------------------------------------------------------------------------
 
 def test_generate_action_items_guardrail_warning():
-    """制度ガードレールがwarningの場合、退院調整アクションが生成される。"""
+    """施設基準チェックがwarningの場合、退院調整アクションが生成される。"""
     guardrail = _make_guardrail_results(los_status="warning", los_value=20.5, los_threshold=21.0)
     items = generate_action_items(guardrail_results=guardrail)
     assert len(items) > 0

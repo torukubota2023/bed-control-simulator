@@ -75,7 +75,7 @@ def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
 
 
 def render_morning_capacity_card(morning_capacity: dict) -> None:
-    """翌営業日朝の受入余力を主要KPIとして描画する.
+    """翌診療日朝の受入余力を主要KPIとして描画する.
 
     morning_capacity from estimate_next_morning_capacity():
     - "estimated_emergency_slots": int
@@ -107,13 +107,13 @@ def render_morning_capacity_card(morning_capacity: dict) -> None:
         status_label = "\U0001f534 不足"
         box_func = st.error  # noqa: F841
 
-    st.subheader(f"\U0001f305 翌営業日朝の受入余力{proxy_label}")
+    st.subheader(f"\U0001f305 翌診療日朝の受入余力{proxy_label}")
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("翌朝受入余力", f"{slots}床", help="翌営業日朝の救急受入可能床数（推計）")
+        st.metric("翌朝受入余力", f"{slots}床", help="翌診療日朝の救急受入可能床数（推計）")
     with col2:
-        st.metric("3営業日最小", f"{three_day_min}床", help="直近3営業日の最小受入余力")
+        st.metric("3診療日最小", f"{three_day_min}床", help="直近3診療日の最小受入余力")
     with col3:
         st.metric("退院予定", f"{planned_dc:.0f}名", help="翌日の退院予定人数（推計）")
     with col4:

@@ -63,13 +63,13 @@ class TestGenerateActionCard:
         assert card["level"] in ("warning", "critical")
 
     def test_guardrail_danger_returns_critical(self):
-        """ガードレール status='danger' → level='critical'"""
+        """施設基準チェック status='danger' → level='critical'"""
         guardrail = [
             {"name": "平均在院日数", "status": "danger", "value": 25.0},
         ]
         card = generate_action_card(guardrail_status=guardrail)
         assert card["level"] == "critical"
-        assert "制度" in card["priority_source"]
+        assert "施設基準チェック" in card["priority_source"]
 
     def test_occupancy_below_target_returns_warning(self):
         """稼働率 0.85 < 目標 0.90 → level='warning'"""

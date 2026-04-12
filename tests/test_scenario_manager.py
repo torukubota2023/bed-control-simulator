@@ -284,7 +284,7 @@ class TestScenarioManager(unittest.TestCase):
     # 7. test_analyze_with_guardrail
     # ------------------------------------------------------------------
     def test_analyze_with_guardrail(self):
-        """ガードレール warning 時に LOS リスクが検出されることを検証する。"""
+        """施設基準チェック warning 時に LOS リスクが検出されることを検証する。"""
         scenarios = [
             {
                 "id": "test-los",
@@ -310,19 +310,19 @@ class TestScenarioManager(unittest.TestCase):
 
         result = analyze_scenarios(scenarios, guardrail_status=guardrail_status)
 
-        # ガードレール warning に関する insight が含まれること
+        # 施設基準チェック warning に関する insight が含まれること
         warning_insights = [
             i for i in result["insights"]
-            if "ガードレール" in i["text"] and "警告" in i["text"]
+            if "施設基準チェック" in i["text"] and "警告" in i["text"]
         ]
         if not warning_insights:
             # "警告域" の表現もチェック
             warning_insights = [
                 i for i in result["insights"]
-                if "ガードレール" in i["text"]
+                if "施設基準チェック" in i["text"]
             ]
         self.assertTrue(len(warning_insights) > 0,
-                        f"ガードレール警告に関するインサイトが見つかりません。insights={result['insights']}")
+                        f"施設基準チェック警告に関するインサイトが見つかりません。insights={result['insights']}")
 
     # ------------------------------------------------------------------
     # 8. test_analyze_with_emergency

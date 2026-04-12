@@ -1,14 +1,14 @@
 """
 結論カード（今日の一手）生成モジュール — ダッシュボード用アクション推奨
 
-病棟運営における複数KPI（救急搬送後患者割合・制度ガードレール・稼働率・
+病棟運営における複数KPI（救急搬送後患者割合・施設基準チェック・稼働率・
 LOS余力・C群調整余地）を優先順位に従い評価し、「今日の一手」として
 1枚の結論カードを生成する pure function モジュール。
 
 優先順位（上ほど優先）:
     1. 制度リスク（救急搬送後患者割合 15% 未達・LOS上限超過リスク）
     2. 稼働率下振れ（月間稼働率 90% 未達見込み）
-    3. 翌営業日朝受入余力不足
+    3. 翌診療日朝受入余力不足
     4. LOS余力低下
     5. C群調整余地
     6. 正常運用
@@ -143,7 +143,7 @@ def _check_emergency_risk(emergency_summary: Optional[dict]) -> Optional[dict]:
 
 
 def _check_guardrail_risk(guardrail_status: Optional[list]) -> Optional[dict]:
-    """制度ガードレール（LOS上限等）のリスクを評価する。"""
+    """施設基準チェック（LOS上限等）のリスクを評価する。"""
     if not guardrail_status:
         return None
 
@@ -164,9 +164,9 @@ def _check_guardrail_risk(guardrail_status: Optional[list]) -> Optional[dict]:
             actions.append(f"👉 {name}: 基準逸脱の恐れ — 是正措置を検討")
         return {
             "level": "critical",
-            "title": "制度ガードレール違反リスク — 是正措置が必要",
+            "title": "施設基準チェック違反リスク — 是正措置が必要",
             "actions": actions[:3],
-            "priority_source": "制度ガードレール（danger）",
+            "priority_source": "施設基準チェック（danger）",
             "details": {"danger_count": len(danger_items), "items": danger_items},
         }
 
@@ -177,9 +177,9 @@ def _check_guardrail_risk(guardrail_status: Optional[list]) -> Optional[dict]:
             actions.append(f"👉 {name}: 注意域に接近中")
         return {
             "level": "warning",
-            "title": "制度ガードレール注意域 — 推移を監視",
+            "title": "施設基準チェック注意域 — 推移を監視",
             "actions": actions[:3],
-            "priority_source": "制度ガードレール（warning）",
+            "priority_source": "施設基準チェック（warning）",
             "details": {"warning_count": len(warning_items), "items": warning_items},
         }
 
@@ -232,7 +232,7 @@ def _check_occupancy_risk(
 
 
 def _check_morning_capacity(morning_capacity: Optional[dict]) -> Optional[dict]:
-    """翌営業日朝の救急受入余力を評価する。"""
+    """翌診療日朝の救急受入余力を評価する。"""
     if morning_capacity is None:
         return None
 
@@ -253,7 +253,7 @@ def _check_morning_capacity(morning_capacity: Optional[dict]) -> Optional[dict]:
             "level": "warning",
             "title": f"翌朝の救急受入余力が不足（推計{slots}床）",
             "actions": actions[:3],
-            "priority_source": "翌営業日朝受入余力不足",
+            "priority_source": "翌診療日朝受入余力不足",
             "details": {"estimated_emergency_slots": slots, "morning_capacity": morning_capacity},
         }
 
@@ -381,9 +381,9 @@ def generate_action_card(
 
     Args:
         emergency_summary: get_ward_emergency_summary() の戻り値
-        guardrail_status: ガードレールエンジンの判定結果リスト
+        guardrail_status: 施設基準チェックエンジンの判定結果リスト
         los_headroom: LOS余力情報 {"headroom_days", "current_los", "limit_los"}
-        morning_capacity: 翌営業日朝の受入余力 {"estimated_emergency_slots", ...}
+        morning_capacity: 翌診療日朝の受入余力 {"estimated_emergency_slots", ...}
         monthly_kpi: 月次KPI {"projected_occupancy", ...}
         c_group_summary: C群サマリー
         c_adjustment_capacity: C群調整余地 {"can_delay", "absorbable_beds", ...}
@@ -406,7 +406,7 @@ def generate_action_card(
     if result is not None and result["level"] == "critical":
         return _attach_level_meta(result)
 
-    # 優先順位 1: 制度リスク（ガードレール）
+    # 優先順位 1: 制度リスク（施設基準チェック）
     result_gr = _check_guardrail_risk(guardrail_status)
     if result_gr is not None and result_gr["level"] == "critical":
         return _attach_level_meta(result_gr)
@@ -416,7 +416,7 @@ def generate_action_card(
     if result_occ is not None:
         return _attach_level_meta(result_occ)
 
-    # 優先順位 3: 翌営業日朝受入余力不足
+    # 優先順位 3: 翌診療日朝受入余力不足
     result_mc = _check_morning_capacity(morning_capacity)
     if result_mc is not None:
         return _attach_level_meta(result_mc)
@@ -515,7 +515,7 @@ def generate_kpi_priority_list(
             "explanation": "データが入力されていません",
         })
 
-    # --- 2. 制度ガードレール ---
+    # --- 2. 施設基準チェック ---
     rank += 1
     if guardrail_status:
         danger_count = sum(1 for g in guardrail_status if _safe_get(g, "status") == "danger")
@@ -533,7 +533,7 @@ def generate_kpi_priority_list(
             value = f"全{safe_count}項目 正常"
 
         items.append({
-            "name": "制度ガードレール",
+            "name": "施設基準チェック",
             "value": value,
             "status": status,
             "rank": rank,
@@ -541,7 +541,7 @@ def generate_kpi_priority_list(
         })
     else:
         items.append({
-            "name": "制度ガードレール",
+            "name": "施設基準チェック",
             "value": "未取得",
             "status": "unknown",
             "rank": rank,
@@ -709,7 +709,7 @@ def generate_tradeoff_assessment(
     Args:
         c_adjustment_capacity: C群調整余地の情報
         emergency_summary: 救急搬送後患者割合のサマリー
-        morning_capacity: 翌営業日朝の受入余力
+        morning_capacity: 翌診療日朝の受入余力
         los_headroom: LOS余力情報
 
     Returns:
