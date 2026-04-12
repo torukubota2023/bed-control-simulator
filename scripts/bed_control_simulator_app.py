@@ -5520,9 +5520,11 @@ if "💰 運営分析" in _tab_idx and _data_ready:
 
 
 # ===== タブ4: 運営改善アラート =====
+# TODO: views/alerts_view.py に描画ロジックを分離する（依存変数が多いため段階的に実施）
 if "🚨 運営改善アラート" in _tab_idx and _data_ready:
     with tabs[_tab_idx["🚨 運営改善アラート"]]:
         st.subheader("運営改善アラート")
+        st.caption("※ このタブの平均在院日数は**当月実績**です。制度管理タブの rolling 90日 LOS とは算出期間が異なります。")
         if _HELP_AVAILABLE and "tab_flags" in HELP_TEXTS:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_flags"])
@@ -5767,6 +5769,7 @@ if "🚨 運営改善アラート" in _tab_idx and _data_ready:
             _action_items.append(f"🔴 空床{_last_empty}床（空床の影響額 約{_last_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_last_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円）→ 外来へ予定入院前倒し依頼 / 連携室へ紹介元への空床発信依頼 / 外来担当医へ入院閾値引き下げ相談")
             _action_items.append("🔴 C群患者の戦略的在院調整 — 在院継続で運営貢献額確保し稼働率維持を優先")
         # 平均在院日数超過時のアクション（病棟別判定 — クリア計画は上のセクションに表示済み）
+        # ※ ここでは「当月実績LOS」で判定する（制度管理タブのrolling 90日LOSとは異なる）
         # 各病棟ごとに判定し、超過していれば該当病棟のアクションを追加
         _alert_action_added = False
         if _calendar_month_days > days_in_month:
@@ -5775,7 +5778,7 @@ if "🚨 運営改善アラート" in _tab_idx and _data_ready:
             _view_los_over = _view_avg_los - _max_avg_los
             if _view_los_over > 0 and _selected_ward_key in ("5F", "6F"):
                 _action_items.append(
-                    f"🚨 **{_selected_ward_key}病棟 平均在院日数{_view_avg_los}日（基準{_max_avg_los}日超過）** → C群退院調整を今週中に実施（クリア計画参照）"
+                    f"🚨 **{_selected_ward_key}病棟 当月平均在院日数{_view_avg_los}日（基準{_max_avg_los}日超過）** → C群退院調整を今週中に実施（クリア計画参照）"
                 )
                 _alert_action_added = True
             elif _selected_ward_key == "全体" and globals().get("_ward_data_available", False):
@@ -5792,7 +5795,7 @@ if "🚨 運営改善アラート" in _tab_idx and _data_ready:
                     _w_los_a = round(_w_pd_a / _w_denom_a, 1) if _w_denom_a > 0 else 0
                     if _w_los_a > _max_avg_los:
                         _action_items.append(
-                            f"🚨 **{_w_act}病棟 平均在院日数{_w_los_a}日（基準{_max_avg_los}日超過）** → C群退院調整を今週中に実施（クリア計画参照）"
+                            f"🚨 **{_w_act}病棟 当月平均在院日数{_w_los_a}日（基準{_max_avg_los}日超過）** → C群退院調整を今週中に実施（クリア計画参照）"
                         )
                         _alert_action_added = True
         if "稼働率超過" in _last_flags:
