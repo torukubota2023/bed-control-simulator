@@ -149,11 +149,34 @@ def render_morning_capacity_card(morning_capacity: dict, morning_5f: dict = None
             planned_6f = morning_6f.get("planned_discharges_tomorrow", 0)
             st.caption(f"判定: {emoji_6f} | 退院予定: {planned_6f:.0f}名")
 
+    # 病棟別 3診療日最小
+    if morning_5f is not None and morning_6f is not None:
+        three_day_5f = morning_5f.get("three_day_min_slots", 0)
+        three_day_6f = morning_6f.get("three_day_min_slots", 0)
+        w3_col1, w3_col2 = st.columns(2)
+        with w3_col1:
+            st.caption(f"3診療日最小: {three_day_5f}床")
+        with w3_col2:
+            st.caption(f"3診療日最小: {three_day_6f}床")
+
     st.caption(
         f"対象日: {next_date} | "
         f"推計方法: 過去7日の曜日別パターンに基づく proxy | "
         f"翌朝に昼間の救急搬送を何床受けられるかの目安"
     )
+
+    # 3診療日最小の解説
+    with st.expander("💡 「3診療日最小」とは？", expanded=False):
+        st.markdown(
+            "翌朝の空床数だけでは、**数日後に空床が急減するリスク**を見落とします。\n\n"
+            "「3診療日最小」は、**向こう3営業日の中で最も空床が少なくなる日の予測値**です。"
+            "過去の同じ曜日の入退院パターンから、日ごとの退院数・入院数を推計し、"
+            "累積の空床数を追跡して最小値を取っています。\n\n"
+            "**読み方の例:**\n"
+            "- 翌朝10床 / 3日最小9床 → 向こう3日間おおむね安定\n"
+            "- 翌朝10床 / 3日最小3床 → **明後日以降に急激に詰まる予兆**。今日のうちに退院調整を前倒しすべき\n\n"
+            "つまり「翌朝」は今日の判断、「3日最小」は**先手を打つための判断材料**です。"
+        )
 
 
 def render_tradeoff_card(tradeoff: dict) -> None:
