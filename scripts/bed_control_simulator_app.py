@@ -2725,13 +2725,17 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                     pass
                 _ac_morning_5f = None
                 _ac_morning_6f = None
+                # 病棟別の受入余力は病棟別データを使う（全体合算データではward="5F"が見つからない）
+                _ac_ward_dfs = st.session_state.get("sim_ward_raw_dfs") or st.session_state.get("ward_raw_dfs") or {}
                 try:
-                    _ac_morning_5f = estimate_next_morning_capacity(
-                        _ac_daily_df, _ac_detail_df, ward="5F", ward_beds=47,
-                    )
-                    _ac_morning_6f = estimate_next_morning_capacity(
-                        _ac_daily_df, _ac_detail_df, ward="6F", ward_beds=47,
-                    )
+                    if "5F" in _ac_ward_dfs and isinstance(_ac_ward_dfs["5F"], pd.DataFrame) and len(_ac_ward_dfs["5F"]) > 0:
+                        _ac_morning_5f = estimate_next_morning_capacity(
+                            _ac_ward_dfs["5F"], _ac_detail_df, ward="5F", ward_beds=47,
+                        )
+                    if "6F" in _ac_ward_dfs and isinstance(_ac_ward_dfs["6F"], pd.DataFrame) and len(_ac_ward_dfs["6F"]) > 0:
+                        _ac_morning_6f = estimate_next_morning_capacity(
+                            _ac_ward_dfs["6F"], _ac_detail_df, ward="6F", ward_beds=47,
+                        )
                 except Exception:
                     pass
 
