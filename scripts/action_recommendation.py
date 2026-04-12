@@ -603,10 +603,12 @@ def generate_kpi_priority_list(
 
         if danger_count > 0:
             status = "danger"
-            value = f"逸脱リスク {danger_count}件"
+            _danger_names = [_safe_get(g, "name", default="?") for g in guardrail_status if _safe_get(g, "status") == "danger"]
+            value = f"逸脱リスク {danger_count}件（{', '.join(_danger_names)}）"
         elif warning_count > 0:
             status = "warning"
-            value = f"注意 {warning_count}件"
+            _warning_names = [_safe_get(g, "name", default="?") for g in guardrail_status if _safe_get(g, "status") == "warning"]
+            value = f"注意 {warning_count}件（{', '.join(_warning_names)}）"
         else:
             status = "safe"
             value = f"全{safe_count}項目 正常"
