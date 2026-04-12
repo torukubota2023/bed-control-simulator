@@ -8379,7 +8379,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # 病棟別LOS余力
                 _los_hr_5f = None
                 _los_hr_6f = None
-                _gr_ward_dfs = st.session_state.get("sim_ward_raw_dfs") or st.session_state.get("ward_raw_dfs") or {}
+                _gr_ward_dfs = st.session_state.get("sim_ward_raw_dfs_full") or st.session_state.get("ward_raw_dfs_full") or {}
                 for _w_key in ("5F", "6F"):
                     if _w_key in _gr_ward_dfs and isinstance(_gr_ward_dfs[_w_key], pd.DataFrame) and len(_gr_ward_dfs[_w_key]) > 0:
                         try:
