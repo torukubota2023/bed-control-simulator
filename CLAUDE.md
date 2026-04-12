@@ -132,7 +132,7 @@
 - [clinical-safety.md](.claude/rules/clinical-safety.md): 患者情報保護・文献引用ルール
 - [output-format.md](.claude/rules/output-format.md): 日本語出力・エビデンス併記ルール
 - [orchestrator.md](.claude/rules/orchestrator.md): subagent委託・PDCA構築ルール
-- [app-quality-assurance.md](.claude/rules/app-quality-assurance.md): アプリ品質保証ルール（単一ソース・連動更新・スコープ安全性・全状態テスト）
+- [app-quality-assurance.md](.claude/rules/app-quality-assurance.md): アプリ品質保証ルール（単一ソース・連動更新・スコープ安全性・全状態テスト・同一パターン横展開）
 
 ## カスタムコマンド
 - `/qa [ファイルパス]`: アプリ品質保証3層チェック（数値一貫性・スコープ安全性・ドキュメント整合性）

@@ -2652,6 +2652,181 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                         unsafe_allow_html=True,
                     )
 
+# ---------------------------------------------------------------------------
+# 結論カード（今日の一手）— タブの上に固定表示
+# ---------------------------------------------------------------------------
+_ac_has_data = isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0
+if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+    if not (_ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE):
+        _missing = []
+        if not _ACTION_CARD_AVAILABLE:
+            _missing.append(f"action_recommendation: {_ACTION_CARD_ERROR}")
+        if not _VIEWS_AVAILABLE:
+            _missing.append(f"views: {_VIEWS_ERROR}")
+        with st.expander("⚙️ 結論カード モジュール読み込み状況", expanded=False):
+            for _m in _missing:
+                st.code(_m)
+
+    if _ac_has_data and _ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE:
+        _ac_emergency_summary = None
+        _ac_guardrail_status = None
+        _ac_los_headroom = None
+        _ac_morning_capacity = None
+        _ac_monthly_kpi = None
+        _ac_c_summary = None
+        _ac_c_capacity = None
+        _ac_demand_class = None
+        _ac_occupancy = None
+
+        try:
+            _ac_daily_df = _active_raw_df if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
+            _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
+            if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:
+                _ac_detail_df = None
+            _ac_config = {"age_85_ratio": 0.25}
+
+            if _ac_daily_df is not None:
+                _ac_occ_key = "occupancy_rate" if "occupancy_rate" in _ac_daily_df.columns else "稼働率"
+                _ac_occ_val = _ac_daily_df.iloc[-1].get(_ac_occ_key, None)
+                if _ac_occ_val is not None and pd.notna(_ac_occ_val):
+                    _ac_occupancy = float(_ac_occ_val)
+
+            if _EMERGENCY_RATIO_AVAILABLE and _ac_detail_df is not None:
+                try:
+                    _ac_emergency_summary = get_ward_emergency_summary(_ac_detail_df)
+                except Exception:
+                    pass
+
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_guardrail_status = calculate_guardrail_status(_ac_daily_df, _ac_detail_df, _ac_config)
+                except Exception:
+                    pass
+
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_los_headroom = calculate_los_headroom(_ac_daily_df, _ac_config)
+                except Exception:
+                    pass
+
+            if _EMERGENCY_RATIO_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_morning_capacity = estimate_next_morning_capacity(
+                        _ac_daily_df, _ac_detail_df, ward=None, total_beds=94,
+                    )
+                except Exception:
+                    pass
+
+            if _ac_daily_df is not None:
+                try:
+                    _ac_monthly_kpi = predict_monthly_kpi(_ac_daily_df, num_beds=_view_beds)
+                except Exception:
+                    pass
+
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_c_summary = get_c_group_summary(_ac_daily_df)
+                    _ac_rolling = calculate_rolling_los(_ac_daily_df, window_days=90)
+                    _ac_los_limit = calculate_los_limit(_ac_config.get("age_85_ratio", 0.25))
+                    _ac_c_capacity = calculate_c_adjustment_capacity(
+                        _ac_rolling, _ac_los_limit,
+                        _ac_c_summary.get("c_count") if _ac_c_summary else None,
+                    )
+                except Exception:
+                    pass
+
+            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
+                try:
+                    _ac_demand_class = classify_demand_period(_ac_daily_df)
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        try:
+            _ac_card = generate_action_card(
+                emergency_summary=_ac_emergency_summary,
+                guardrail_status=_ac_guardrail_status,
+                los_headroom=_ac_los_headroom,
+                morning_capacity=_ac_morning_capacity,
+                monthly_kpi=_ac_monthly_kpi,
+                c_group_summary=_ac_c_summary,
+                c_adjustment_capacity=_ac_c_capacity,
+                demand_classification=_ac_demand_class,
+                occupancy_rate=_ac_occupancy,
+                target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+            )
+            render_action_card(_ac_card)
+
+            _ac_kpi_list = generate_kpi_priority_list(
+                emergency_summary=_ac_emergency_summary,
+                guardrail_status=_ac_guardrail_status,
+                los_headroom=_ac_los_headroom,
+                morning_capacity=_ac_morning_capacity,
+                monthly_kpi=_ac_monthly_kpi,
+                c_group_summary=_ac_c_summary,
+                c_adjustment_capacity=_ac_c_capacity,
+                occupancy_rate=_ac_occupancy,
+                target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+            )
+            render_kpi_priority_strip(_ac_kpi_list)
+
+            if _ac_morning_capacity is not None:
+                render_morning_capacity_card(_ac_morning_capacity)
+
+            if _ac_c_capacity is not None:
+                _ac_tradeoff = generate_tradeoff_assessment(
+                    c_adjustment_capacity=_ac_c_capacity,
+                    emergency_summary=_ac_emergency_summary,
+                    morning_capacity=_ac_morning_capacity,
+                    los_headroom=_ac_los_headroom,
+                )
+                render_tradeoff_card(_ac_tradeoff)
+
+            st.markdown("---")
+        except Exception as _render_err:
+            st.error(f"結論カード描画エラー: {_render_err}")
+            import traceback
+            st.code(traceback.format_exc())
+
+
+# ---------------------------------------------------------------------------
+# セクション共通ヘッダー（タブの上に表示）
+# ---------------------------------------------------------------------------
+if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+    # 病棟選択キャプション
+    if _selected_ward_key != "全体":
+        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
+    # 病棟KPIアラート
+    if _selected_ward_key != "全体":
+        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
+    # 全体稼働率低下アラート（実績データモード）
+    if _is_actual_data_mode:
+        if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
+            _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
+            _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
+            _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
+            _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
+            if _total_last_occ < target_lower * 100:
+                _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
+                _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
+                _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
+                st.error(
+                    f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
+                    f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
+                    "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
+                )
+        # 比較ストリップ
+        if _ward_data_available:
+            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
+
+# 意思決定支援セクション: 機能チェックをタブの外に表示
+if _selected_section == "🎯 意思決定支援" and not _DECISION_SUPPORT_AVAILABLE:
+    st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
+    if "_DECISION_SUPPORT_ERROR" in dir():
+        st.code(_DECISION_SUPPORT_ERROR)
 
 # ---------------------------------------------------------------------------
 # セクション別タブ構成（_selected_section はサイドバー上部で定義済み）
@@ -3860,195 +4035,6 @@ if _active_cli_params:
         _active_cli_params["monthly_admissions"] = int(
             _active_cli_params["monthly_admissions"] * _bed_ratio_sync
         )
-
-# ---------------------------------------------------------------------------
-# セクション共通ヘッダー（タブの外に1回だけ表示）
-# ---------------------------------------------------------------------------
-if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
-    # ---------------------------------------------------------------
-    # 結論カード（今日の一手）— 最上段に固定表示
-    # データ収集 → pure function で判定 → view で描画
-    # ---------------------------------------------------------------
-    if not (_ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE):
-        # デバッグ: import失敗の詳細を表示
-        _missing = []
-        if not _ACTION_CARD_AVAILABLE:
-            _missing.append(f"action_recommendation: {_ACTION_CARD_ERROR}")
-        if not _VIEWS_AVAILABLE:
-            _missing.append(f"views: {_VIEWS_ERROR}")
-        with st.expander("⚙️ 結論カード モジュール読み込み状況", expanded=False):
-            for _m in _missing:
-                st.code(_m)
-
-    if _data_ready and _ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE:
-        # --- データ収集（app.py はデータを集めて渡すだけ） ---
-        _ac_emergency_summary = None
-        _ac_guardrail_status = None
-        _ac_los_headroom = None
-        _ac_morning_capacity = None
-        _ac_monthly_kpi = None
-        _ac_c_summary = None
-        _ac_c_capacity = None
-        _ac_demand_class = None
-        _ac_occupancy = None
-
-        try:
-            # 日次データ・詳細データの取得
-            _ac_daily_df = _active_raw_df if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else None
-            _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
-            if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:
-                _ac_detail_df = None
-            _ac_config = {"age_85_ratio": 0.25}
-
-            # 稼働率
-            if _ac_daily_df is not None:
-                _ac_occ_key = "occupancy_rate" if "occupancy_rate" in _ac_daily_df.columns else "稼働率"
-                _ac_occ_val = _ac_daily_df.iloc[-1].get(_ac_occ_key, None)
-                if _ac_occ_val is not None and pd.notna(_ac_occ_val):
-                    _ac_occupancy = float(_ac_occ_val)
-
-            # 救急搬送後患者割合
-            if _EMERGENCY_RATIO_AVAILABLE and _ac_detail_df is not None:
-                try:
-                    _ac_emergency_summary = get_ward_emergency_summary(_ac_detail_df)
-                except Exception:
-                    pass
-
-            # 制度ガードレール
-            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
-                try:
-                    _ac_guardrail_status = calculate_guardrail_status(_ac_daily_df, _ac_detail_df, _ac_config)
-                except Exception:
-                    pass
-
-            # LOS余力
-            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
-                try:
-                    _ac_los_headroom = calculate_los_headroom(_ac_daily_df, _ac_config)
-                except Exception:
-                    pass
-
-            # 翌営業日朝受入余力
-            if _EMERGENCY_RATIO_AVAILABLE and _ac_daily_df is not None:
-                try:
-                    _ac_morning_capacity = estimate_next_morning_capacity(
-                        _ac_daily_df, _ac_detail_df, ward=None, total_beds=94,
-                    )
-                except Exception:
-                    pass
-
-            # 月次KPI予測
-            if _ac_daily_df is not None:
-                try:
-                    _ac_monthly_kpi = predict_monthly_kpi(_ac_daily_df, num_beds=_view_beds)
-                except Exception:
-                    pass
-
-            # C群サマリー・調整余地
-            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
-                try:
-                    _ac_c_summary = get_c_group_summary(_ac_daily_df)
-                    _ac_rolling = calculate_rolling_los(_ac_daily_df, window_days=90)
-                    _ac_los_limit = calculate_los_limit(_ac_config.get("age_85_ratio", 0.25))
-                    _ac_c_capacity = calculate_c_adjustment_capacity(
-                        _ac_rolling, _ac_los_limit,
-                        _ac_c_summary.get("c_count") if _ac_c_summary else None,
-                    )
-                except Exception:
-                    pass
-
-            # 需要波分類
-            if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
-                try:
-                    _ac_demand_class = classify_demand_period(_ac_daily_df)
-                except Exception:
-                    pass
-
-        except Exception:
-            pass  # データ収集失敗時もアプリは続行
-
-        # --- 結論カード生成 & 描画 ---
-        try:
-            _ac_card = generate_action_card(
-                emergency_summary=_ac_emergency_summary,
-                guardrail_status=_ac_guardrail_status,
-                los_headroom=_ac_los_headroom,
-                morning_capacity=_ac_morning_capacity,
-                monthly_kpi=_ac_monthly_kpi,
-                c_group_summary=_ac_c_summary,
-                c_adjustment_capacity=_ac_c_capacity,
-                demand_classification=_ac_demand_class,
-                occupancy_rate=_ac_occupancy,
-                target_occupancy=target_lower if "target_lower" in dir() else 0.90,
-            )
-            render_action_card(_ac_card)
-
-            # --- KPI優先表示 ---
-            _ac_kpi_list = generate_kpi_priority_list(
-                emergency_summary=_ac_emergency_summary,
-                guardrail_status=_ac_guardrail_status,
-                los_headroom=_ac_los_headroom,
-                morning_capacity=_ac_morning_capacity,
-                monthly_kpi=_ac_monthly_kpi,
-                c_group_summary=_ac_c_summary,
-                c_adjustment_capacity=_ac_c_capacity,
-                occupancy_rate=_ac_occupancy,
-                target_occupancy=target_lower if "target_lower" in dir() else 0.90,
-            )
-            render_kpi_priority_strip(_ac_kpi_list)
-
-            # --- 翌営業日朝受入余力（主役級表示） ---
-            if _ac_morning_capacity is not None:
-                render_morning_capacity_card(_ac_morning_capacity)
-
-            # --- C群トレードオフ評価 ---
-            if _ac_c_capacity is not None:
-                _ac_tradeoff = generate_tradeoff_assessment(
-                    c_adjustment_capacity=_ac_c_capacity,
-                    emergency_summary=_ac_emergency_summary,
-                    morning_capacity=_ac_morning_capacity,
-                    los_headroom=_ac_los_headroom,
-                )
-                render_tradeoff_card(_ac_tradeoff)
-
-            st.markdown("---")
-        except Exception as _render_err:
-            st.error(f"結論カード描画エラー: {_render_err}")
-            import traceback
-            st.code(traceback.format_exc())
-
-    # 病棟選択キャプション
-    if _selected_ward_key != "全体":
-        st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
-    # 病棟KPIアラート
-    if _selected_ward_key != "全体":
-        if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-            _render_ward_kpi_with_alert(_active_raw_df, target_lower, target_upper, _view_beds)
-    # 全体稼働率低下アラート（実績データモード）
-    if _is_actual_data_mode:
-        if _selected_ward_key == "全体" and isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
-            _occ_key = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
-            _tp_key = "total_patients" if "total_patients" in _active_raw_df.columns else "在院患者数"
-            _total_last_occ_val = _active_raw_df.iloc[-1].get(_occ_key, 0)
-            _total_last_occ = float(_total_last_occ_val) * 100 if pd.notna(_total_last_occ_val) else 0.0
-            if _total_last_occ < target_lower * 100:
-                _total_tp_val = _active_raw_df.iloc[-1].get(_tp_key, 0)
-                _total_empty = _view_beds - (int(_total_tp_val) if pd.notna(_total_tp_val) else 0)
-                _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
-                st.error(
-                    f"🔴 **全体稼働率低下**: {_total_last_occ:.1f}% が目標下限{target_lower*100:.0f}%未満 "
-                    f"（空床{_total_empty}床 = 空床の影響額 約{_total_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・**今月残り{_remaining_days}日で約{_total_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円**）\n\n"
-                    "**対策:** ① 外来へ予定入院の前倒しを依頼 ② 連携室へ紹介元への空床発信を依頼 ③ 外来担当医に入院閾値の引き下げを相談 + C群の戦略的在院調整で稼働率維持"
-                )
-        # 比較ストリップ
-        if _ward_data_available:
-            _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
-
-# 意思決定支援セクション: 機能チェックをタブの外に表示
-if _selected_section == "🎯 意思決定支援" and not _DECISION_SUPPORT_AVAILABLE:
-    st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
-    if "_DECISION_SUPPORT_ERROR" in dir():
-        st.code(_DECISION_SUPPORT_ERROR)
 
 # ===== タブ1: 日次推移 =====
 if "📊 日次推移" in _tab_idx and _data_ready:
