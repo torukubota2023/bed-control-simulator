@@ -7158,461 +7158,461 @@ if "👨‍⚕️ 退院タイミング" in _tab_idx:
 💡 **GW・年末年始などの長期連休は、祝日判定＋連休谷間判定で自動的に「入院≒0」パターンが適用されます。**
 """)
 
-        # ---- 判定メッセージ（予測ベース） ----
-        _pred_7d_adm = float(_pred_df["pred_admissions"].sum())
-        _pred_7d_dis = float(_pred_df["pred_discharges"].sum())
-        _pred_7d_net = _pred_7d_adm - _pred_7d_dis
-        _pred_last_occ = float(_pred_df.iloc[-1]["pred_occupancy"])
+            # ---- 判定メッセージ（予測ベース） ----
+            _pred_7d_adm = float(_pred_df["pred_admissions"].sum())
+            _pred_7d_dis = float(_pred_df["pred_discharges"].sum())
+            _pred_7d_net = _pred_7d_adm - _pred_7d_dis
+            _pred_last_occ = float(_pred_df.iloc[-1]["pred_occupancy"])
 
-        if _pred_7d_net > 0:
-            if _pred_last_occ >= target_lower:
-                st.success(f"✅ 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＞ 退院 **{_pred_7d_dis:.0f}名**"
-                           f"（純増 {_pred_7d_net:+.0f}名）。"
-                           f"稼働率は **{_pred_last_occ*100:.1f}%** に回復見込み。"
-                           f"**臨床的に適切な退院を進めて問題ありません。**")
+            if _pred_7d_net > 0:
+                if _pred_last_occ >= target_lower:
+                    st.success(f"✅ 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＞ 退院 **{_pred_7d_dis:.0f}名**"
+                               f"（純増 {_pred_7d_net:+.0f}名）。"
+                               f"稼働率は **{_pred_last_occ*100:.1f}%** に回復見込み。"
+                               f"**臨床的に適切な退院を進めて問題ありません。**")
+                else:
+                    st.info(f"📈 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＞ 退院 **{_pred_7d_dis:.0f}名**"
+                            f"（純増 {_pred_7d_net:+.0f}名）。"
+                            f"ただし7日後の予測稼働率 **{_pred_last_occ*100:.1f}%** は"
+                            f"目標 {target_lower*100:.0f}% に未到達。入院ペースの維持・強化が必要です。")
+            elif _pred_7d_net == 0:
+                st.warning(f"⚠️ 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ≒ 退院 **{_pred_7d_dis:.0f}名**。"
+                           "稼働率は横ばいの見込み。空床を埋めるには**新規入院の促進**が必要です。")
             else:
-                st.info(f"📈 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＞ 退院 **{_pred_7d_dis:.0f}名**"
-                        f"（純増 {_pred_7d_net:+.0f}名）。"
-                        f"ただし7日後の予測稼働率 **{_pred_last_occ*100:.1f}%** は"
-                        f"目標 {target_lower*100:.0f}% に未到達。入院ペースの維持・強化が必要です。")
-        elif _pred_7d_net == 0:
-            st.warning(f"⚠️ 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ≒ 退院 **{_pred_7d_dis:.0f}名**。"
-                       "稼働率は横ばいの見込み。空床を埋めるには**新規入院の促進**が必要です。")
-        else:
-            st.error(f"🔴 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＜ 退院 **{_pred_7d_dis:.0f}名**"
-                     f"（純減 {_pred_7d_net:+.0f}名）。"
-                     f"稼働率は **{_pred_last_occ*100:.1f}%** まで低下する見込みです。  \n"
-                     f"**対策:** 紹介元への空床案内の発信、地域連携室との入院促進協議を検討してください。")
+                st.error(f"🔴 7日間の予測: 入院 **{_pred_7d_adm:.0f}名** ＜ 退院 **{_pred_7d_dis:.0f}名**"
+                         f"（純減 {_pred_7d_net:+.0f}名）。"
+                         f"稼働率は **{_pred_last_occ*100:.1f}%** まで低下する見込みです。  \n"
+                         f"**対策:** 紹介元への空床案内の発信、地域連携室との入院促進協議を検討してください。")
 
-        # ============================================================
-        # ② 入退院バランスダッシュボード
-        # ============================================================
-        st.markdown("**📊 入退院バランスダッシュボード**")
+            # ============================================================
+            # ② 入退院バランスダッシュボード
+            # ============================================================
+            st.markdown("**📊 入退院バランスダッシュボード**")
 
-        # ---- 日次バランスサマリー ----
-        _bal1, _bal2, _bal3, _bal4 = st.columns(4)
-        with _bal1:
-            st.metric("直近日 入院", f"{_adm_today}名",
-                      delta=f"7日平均 {_adm_7d:.1f}名")
-        with _bal2:
-            st.metric("直近日 退院", f"{_dis_today}名",
-                      delta=f"7日平均 {_dis_7d:.1f}名")
-        with _bal3:
-            _net_icon = "🟢" if _net_today >= 0 else "🔴"
-            st.metric("直近日 純増減", f"{_net_icon} {_net_today:+d}名",
-                      delta=f"7日平均 {_net_7d:+.1f}名")
-        with _bal4:
-            # 入退院比率（入院/退院）
-            _ratio = _adm_7d / max(_dis_7d, 0.1)
-            _ratio_icon = "🟢" if _ratio >= 1.0 else "🔴"
-            st.metric("入退院比率（7日）", f"{_ratio_icon} {_ratio:.2f}",
-                      delta="1.0以上なら稼働率↑")
+            # ---- 日次バランスサマリー ----
+            _bal1, _bal2, _bal3, _bal4 = st.columns(4)
+            with _bal1:
+                st.metric("直近日 入院", f"{_adm_today}名",
+                          delta=f"7日平均 {_adm_7d:.1f}名")
+            with _bal2:
+                st.metric("直近日 退院", f"{_dis_today}名",
+                          delta=f"7日平均 {_dis_7d:.1f}名")
+            with _bal3:
+                _net_icon = "🟢" if _net_today >= 0 else "🔴"
+                st.metric("直近日 純増減", f"{_net_icon} {_net_today:+d}名",
+                          delta=f"7日平均 {_net_7d:+.1f}名")
+            with _bal4:
+                # 入退院比率（入院/退院）
+                _ratio = _adm_7d / max(_dis_7d, 0.1)
+                _ratio_icon = "🟢" if _ratio >= 1.0 else "🔴"
+                st.metric("入退院比率（7日）", f"{_ratio_icon} {_ratio:.2f}",
+                          delta="1.0以上なら稼働率↑")
 
-        # ---- グラフ: 入退院トレンド ----
-        if len(_dt_plot) >= 3:
-            _fig_bal, (_ax_bal1, _ax_bal2) = plt.subplots(2, 1, figsize=(10, 5), gridspec_kw={"height_ratios": [3, 2]})
+            # ---- グラフ: 入退院トレンド ----
+            if len(_dt_plot) >= 3:
+                _fig_bal, (_ax_bal1, _ax_bal2) = plt.subplots(2, 1, figsize=(10, 5), gridspec_kw={"height_ratios": [3, 2]})
 
-            _dates = _dt_plot["date"]
+                _dates = _dt_plot["date"]
 
-            # 上段: 入院数 vs 退院数（棒グラフ + 移動平均線）
-            _bar_width = 0.35
-            _x_idx = np.arange(len(_dates))
+                # 上段: 入院数 vs 退院数（棒グラフ + 移動平均線）
+                _bar_width = 0.35
+                _x_idx = np.arange(len(_dates))
 
-            # 棒が多すぎる場合は直近30日に絞る
-            _show_n = min(len(_dt_plot), 30)
-            _dp = _dt_plot.tail(_show_n).reset_index(drop=True)
-            _x_show = np.arange(_show_n)
-            _dates_show = _dp["date"]
+                # 棒が多すぎる場合は直近30日に絞る
+                _show_n = min(len(_dt_plot), 30)
+                _dp = _dt_plot.tail(_show_n).reset_index(drop=True)
+                _x_show = np.arange(_show_n)
+                _dates_show = _dp["date"]
 
-            _ax_bal1.bar(_x_show - _bar_width/2, _dp["new_admissions"], _bar_width,
-                        label="入院", color="#42A5F5", alpha=0.7, edgecolor="#1565C0")
-            _ax_bal1.bar(_x_show + _bar_width/2, _dp["discharges"], _bar_width,
-                        label="退院", color="#EF5350", alpha=0.7, edgecolor="#C62828")
-            _ax_bal1.plot(_x_show, _dp["admission_7d_ma"], "-", color="#1565C0",
-                         linewidth=2, label="入院 7日MA")
-            _ax_bal1.plot(_x_show, _dp["discharge_7d_ma"], "-", color="#C62828",
-                         linewidth=2, label="退院 7日MA")
-            _ax_bal1.set_ylabel("人数", fontsize=10)
-            _ax_bal1.set_title("入院数 vs 退院数（直近最大30日）", fontsize=11, fontweight="bold")
-            _ax_bal1.legend(fontsize=8, loc="upper left")
-            # X軸ラベル（日付）
-            _tick_step = max(1, _show_n // 10)
-            _ax_bal1.set_xticks(_x_show[::_tick_step])
-            _ax_bal1.set_xticklabels([d.strftime("%m/%d") for d in _dates_show.iloc[::_tick_step]], fontsize=8, rotation=45)
+                _ax_bal1.bar(_x_show - _bar_width/2, _dp["new_admissions"], _bar_width,
+                            label="入院", color="#42A5F5", alpha=0.7, edgecolor="#1565C0")
+                _ax_bal1.bar(_x_show + _bar_width/2, _dp["discharges"], _bar_width,
+                            label="退院", color="#EF5350", alpha=0.7, edgecolor="#C62828")
+                _ax_bal1.plot(_x_show, _dp["admission_7d_ma"], "-", color="#1565C0",
+                             linewidth=2, label="入院 7日MA")
+                _ax_bal1.plot(_x_show, _dp["discharge_7d_ma"], "-", color="#C62828",
+                             linewidth=2, label="退院 7日MA")
+                _ax_bal1.set_ylabel("人数", fontsize=10)
+                _ax_bal1.set_title("入院数 vs 退院数（直近最大30日）", fontsize=11, fontweight="bold")
+                _ax_bal1.legend(fontsize=8, loc="upper left")
+                # X軸ラベル（日付）
+                _tick_step = max(1, _show_n // 10)
+                _ax_bal1.set_xticks(_x_show[::_tick_step])
+                _ax_bal1.set_xticklabels([d.strftime("%m/%d") for d in _dates_show.iloc[::_tick_step]], fontsize=8, rotation=45)
 
-            # 下段: 日次純増減（ウォーターフォール風）
-            _net_vals = _dp["daily_net_change"].values
-            _colors_net = ["#42A5F5" if v >= 0 else "#EF5350" for v in _net_vals]
-            _ax_bal2.bar(_x_show, _net_vals, color=_colors_net, alpha=0.8, edgecolor="none")
-            _ax_bal2.axhline(y=0, color="#333", linewidth=0.8)
-            _ax_bal2.set_ylabel("純増減（名）", fontsize=10)
-            _ax_bal2.set_title("日次純増減（入院 − 退院）", fontsize=11, fontweight="bold")
-            _ax_bal2.set_xticks(_x_show[::_tick_step])
-            _ax_bal2.set_xticklabels([d.strftime("%m/%d") for d in _dates_show.iloc[::_tick_step]], fontsize=8, rotation=45)
+                # 下段: 日次純増減（ウォーターフォール風）
+                _net_vals = _dp["daily_net_change"].values
+                _colors_net = ["#42A5F5" if v >= 0 else "#EF5350" for v in _net_vals]
+                _ax_bal2.bar(_x_show, _net_vals, color=_colors_net, alpha=0.8, edgecolor="none")
+                _ax_bal2.axhline(y=0, color="#333", linewidth=0.8)
+                _ax_bal2.set_ylabel("純増減（名）", fontsize=10)
+                _ax_bal2.set_title("日次純増減（入院 − 退院）", fontsize=11, fontweight="bold")
+                _ax_bal2.set_xticks(_x_show[::_tick_step])
+                _ax_bal2.set_xticklabels([d.strftime("%m/%d") for d in _dates_show.iloc[::_tick_step]], fontsize=8, rotation=45)
 
-            # 純増減がマイナス続きなら背景に薄い赤
-            _neg_streak = sum(1 for v in _net_vals[-7:] if v < 0)
-            if _neg_streak >= 5:
-                _ax_bal2.set_facecolor("#FFF3E0")
+                # 純増減がマイナス続きなら背景に薄い赤
+                _neg_streak = sum(1 for v in _net_vals[-7:] if v < 0)
+                if _neg_streak >= 5:
+                    _ax_bal2.set_facecolor("#FFF3E0")
 
-            _fig_bal.tight_layout()
-            st.pyplot(_fig_bal)
-            plt.close(_fig_bal)
+                _fig_bal.tight_layout()
+                st.pyplot(_fig_bal)
+                plt.close(_fig_bal)
 
-        # ---- 曜日別パターン分析 ----
-        if len(_dt_plot) >= 7:
-            st.markdown("#### 📅 曜日別 入退院パターン")
-            _dow = _dt_plot.copy()
-            _dow["weekday"] = _dow["date"].dt.dayofweek  # 0=月, 6=日
-            _dow_names = ["月", "火", "水", "木", "金", "土", "日"]
-            _dow_adm = _dow.groupby("weekday")["new_admissions"].mean()
-            _dow_dis = _dow.groupby("weekday")["discharges"].mean()
+            # ---- 曜日別パターン分析 ----
+            if len(_dt_plot) >= 7:
+                st.markdown("#### 📅 曜日別 入退院パターン")
+                _dow = _dt_plot.copy()
+                _dow["weekday"] = _dow["date"].dt.dayofweek  # 0=月, 6=日
+                _dow_names = ["月", "火", "水", "木", "金", "土", "日"]
+                _dow_adm = _dow.groupby("weekday")["new_admissions"].mean()
+                _dow_dis = _dow.groupby("weekday")["discharges"].mean()
 
-            _fig_dow, _ax_dow = plt.subplots(figsize=(8, 3.5))
-            _x_dow = np.arange(7)
-            _ax_dow.bar(_x_dow - 0.2, [_dow_adm.get(i, 0) for i in range(7)], 0.4,
-                       label="入院（平均）", color="#42A5F5", alpha=0.8)
-            _ax_dow.bar(_x_dow + 0.2, [_dow_dis.get(i, 0) for i in range(7)], 0.4,
-                       label="退院（平均）", color="#EF5350", alpha=0.8)
-            _ax_dow.set_xticks(_x_dow)
-            _ax_dow.set_xticklabels(_dow_names, fontsize=10)
-            _ax_dow.set_ylabel("平均人数", fontsize=10)
-            _ax_dow.set_title("曜日別の入退院パターン", fontsize=11, fontweight="bold")
-            _ax_dow.legend(fontsize=9)
-            _fig_dow.tight_layout()
-            st.pyplot(_fig_dow)
-            plt.close(_fig_dow)
+                _fig_dow, _ax_dow = plt.subplots(figsize=(8, 3.5))
+                _x_dow = np.arange(7)
+                _ax_dow.bar(_x_dow - 0.2, [_dow_adm.get(i, 0) for i in range(7)], 0.4,
+                           label="入院（平均）", color="#42A5F5", alpha=0.8)
+                _ax_dow.bar(_x_dow + 0.2, [_dow_dis.get(i, 0) for i in range(7)], 0.4,
+                           label="退院（平均）", color="#EF5350", alpha=0.8)
+                _ax_dow.set_xticks(_x_dow)
+                _ax_dow.set_xticklabels(_dow_names, fontsize=10)
+                _ax_dow.set_ylabel("平均人数", fontsize=10)
+                _ax_dow.set_title("曜日別の入退院パターン", fontsize=11, fontweight="bold")
+                _ax_dow.legend(fontsize=9)
+                _fig_dow.tight_layout()
+                st.pyplot(_fig_dow)
+                plt.close(_fig_dow)
 
-            # 曜日別のギャップ分析
-            _dow_gap = {d: _dow_adm.get(d, 0) - _dow_dis.get(d, 0) for d in range(7)}
-            _worst_days = sorted(_dow_gap.items(), key=lambda x: x[1])[:2]
-            _best_days = sorted(_dow_gap.items(), key=lambda x: x[1], reverse=True)[:2]
+                # 曜日別のギャップ分析
+                _dow_gap = {d: _dow_adm.get(d, 0) - _dow_dis.get(d, 0) for d in range(7)}
+                _worst_days = sorted(_dow_gap.items(), key=lambda x: x[1])[:2]
+                _best_days = sorted(_dow_gap.items(), key=lambda x: x[1], reverse=True)[:2]
 
-            _gc1, _gc2 = st.columns(2)
-            with _gc1:
-                _worst_txt = "、".join([f"**{_dow_names[d]}**（{v:+.1f}名）" for d, v in _worst_days])
+                _gc1, _gc2 = st.columns(2)
+                with _gc1:
+                    _worst_txt = "、".join([f"**{_dow_names[d]}**（{v:+.1f}名）" for d, v in _worst_days])
+                    st.markdown(f"""
+    <div style="background:#ffebee;border-radius:8px;padding:8px;border-left:4px solid #E74C3C;">
+    <strong>🔴 退院超過が多い曜日:</strong> {_worst_txt}<br>
+    → この曜日に新規入院を集中させる工夫が効果的
+    </div>""", unsafe_allow_html=True)
+                with _gc2:
+                    _best_txt = "、".join([f"**{_dow_names[d]}**（{v:+.1f}名）" for d, v in _best_days])
+                    st.markdown(f"""
+    <div style="background:#e8f5e9;border-radius:8px;padding:8px;border-left:4px solid #27AE60;">
+    <strong>🟢 入院超過が多い曜日:</strong> {_best_txt}<br>
+    → この曜日のベッド確保を優先
+    </div>""", unsafe_allow_html=True)
+
+            # ============================================================
+            # ③ アクションガイド
+            # ============================================================
+            st.markdown("**📋 状況別アクションガイド**")
+
+            _actions = []
+            # 入退院バランスに基づく判定
+            if _net_7d >= 0.5:
+                _actions.append(("🟢", "入院ペース良好",
+                                 f"直近7日の純増 {_net_7d:+.1f}名/日。入院が退院を上回っており、稼働率は改善傾向です。"
+                                 "臨床的に適切なタイミングでの退院を進めてください。"))
+            elif _net_7d >= -0.5:
+                _actions.append(("🟡", "入退院が均衡",
+                                 f"直近7日の純増減 {_net_7d:+.1f}名/日。稼働率は横ばいです。"
+                                 "目標稼働率を下回っている場合は、紹介元への連携を少し強化してください。"))
+            else:
+                _actions.append(("🔴", "退院超過が続いています",
+                                 f"直近7日の純増減 {_net_7d:+.1f}名/日。入院が退院に追いついていません。  \n"
+                                 "**入院促進策:** 紹介元への空床情報の発信、救急受入枠の拡大、地域連携室との退院調整日の見直し"))
+
+            # 空床数に基づく判定
+            if _empty_beds <= 3:
+                _actions.append(("🟢", f"空床わずか（{_empty_beds}床）",
+                                 "ほぼ満床です。退院調整を計画的に進め、新規入院の受入枠を確保してください。"))
+            elif _empty_beds <= round(_view_beds * (1 - target_lower)):
+                _actions.append(("🟡", f"空床 {_empty_beds}床（目標範囲内）",
+                                 f"入院ペース {_adm_7d:.1f}名/日が維持されれば問題ありません。"))
+            else:
+                _need_extra = _empty_beds - round(_view_beds * (1 - target_lower))
+                _actions.append(("🔴", f"空床 {_empty_beds}床（目標超過）",
+                                 f"目標稼働率を達成するにはあと **{_need_extra}名** の入院が必要です。  \n"
+                                 "**対策:** 紹介元への積極的な空床案内、地域連携室との連携強化"))
+
+            # 入退院比率に基づく判定
+            _ratio_7d = _adm_7d / max(_dis_7d, 0.1)
+            if _ratio_7d < 0.8:
+                _actions.append(("🔴", f"入退院比率 {_ratio_7d:.2f}（入院不足）",
+                                 "退院10名に対して入院8名未満。入院の「入口」に課題があります。  \n"
+                                 "紹介元別の入院数を確認し、減少している紹介元をフォローしてください。"))
+            elif _ratio_7d < 1.0:
+                _actions.append(("🟡", f"入退院比率 {_ratio_7d:.2f}（やや入院不足）",
+                                 "入院がわずかに退院を下回っています。トレンドの推移を注視してください。"))
+
+            for icon, title, msg in _actions:
+                bg = "#e8f5e9" if icon == "🟢" else "#fff3e0" if icon == "🟡" else "#ffebee"
+                border = "#27AE60" if icon == "🟢" else "#F39C12" if icon == "🟡" else "#E74C3C"
                 st.markdown(f"""
-<div style="background:#ffebee;border-radius:8px;padding:8px;border-left:4px solid #E74C3C;">
-<strong>🔴 退院超過が多い曜日:</strong> {_worst_txt}<br>
-→ この曜日に新規入院を集中させる工夫が効果的
-</div>""", unsafe_allow_html=True)
-            with _gc2:
-                _best_txt = "、".join([f"**{_dow_names[d]}**（{v:+.1f}名）" for d, v in _best_days])
-                st.markdown(f"""
-<div style="background:#e8f5e9;border-radius:8px;padding:8px;border-left:4px solid #27AE60;">
-<strong>🟢 入院超過が多い曜日:</strong> {_best_txt}<br>
-→ この曜日のベッド確保を優先
-</div>""", unsafe_allow_html=True)
+    <div style="background:{bg};border-radius:8px;padding:8px;margin-bottom:6px;border-left:4px solid {border};">
+    <strong>{icon} {title}</strong><br>{msg}
+    </div>""", unsafe_allow_html=True)
 
-        # ============================================================
-        # ③ アクションガイド
-        # ============================================================
-        st.markdown("**📋 状況別アクションガイド**")
+            # ============================================================
+            # ④ 退院マネジメント（家族目線の退院調整）
+            # ============================================================
+            _dm_detail_df = st.session_state.get("admission_details", pd.DataFrame())
+            if not isinstance(_dm_detail_df, pd.DataFrame) or len(_dm_detail_df) == 0:
+                st.info("入退院詳細データが必要です")
+            else:
+                # --- セクション1: 📊 退院曜日分布（グラフ） ---
+                try:
+                    _dm_stats = get_discharge_weekday_stats(_dm_detail_df)
+                    st.markdown("### 📊 退院曜日分布")
 
-        _actions = []
-        # 入退院バランスに基づく判定
-        if _net_7d >= 0.5:
-            _actions.append(("🟢", "入院ペース良好",
-                             f"直近7日の純増 {_net_7d:+.1f}名/日。入院が退院を上回っており、稼働率は改善傾向です。"
-                             "臨床的に適切なタイミングでの退院を進めてください。"))
-        elif _net_7d >= -0.5:
-            _actions.append(("🟡", "入退院が均衡",
-                             f"直近7日の純増減 {_net_7d:+.1f}名/日。稼働率は横ばいです。"
-                             "目標稼働率を下回っている場合は、紹介元への連携を少し強化してください。"))
-        else:
-            _actions.append(("🔴", "退院超過が続いています",
-                             f"直近7日の純増減 {_net_7d:+.1f}名/日。入院が退院に追いついていません。  \n"
-                             "**入院促進策:** 紹介元への空床情報の発信、救急受入枠の拡大、地域連携室との退院調整日の見直し"))
+                    _dm_dist = _dm_stats["distribution"]
+                    _dm_labels = _dm_stats["labels"]
+                    _dm_total = _dm_stats["total"]
+                    _dm_fri_pct = _dm_stats["friday_pct"]
 
-        # 空床数に基づく判定
-        if _empty_beds <= 3:
-            _actions.append(("🟢", f"空床わずか（{_empty_beds}床）",
-                             "ほぼ満床です。退院調整を計画的に進め、新規入院の受入枠を確保してください。"))
-        elif _empty_beds <= round(_view_beds * (1 - target_lower)):
-            _actions.append(("🟡", f"空床 {_empty_beds}床（目標範囲内）",
-                             f"入院ペース {_adm_7d:.1f}名/日が維持されれば問題ありません。"))
-        else:
-            _need_extra = _empty_beds - round(_view_beds * (1 - target_lower))
-            _actions.append(("🔴", f"空床 {_empty_beds}床（目標超過）",
-                             f"目標稼働率を達成するにはあと **{_need_extra}名** の入院が必要です。  \n"
-                             "**対策:** 紹介元への積極的な空床案内、地域連携室との連携強化"))
+                    if _dm_total > 0:
+                        st.metric("金曜退院率", f"{_dm_fri_pct}%",
+                                  delta=f"金曜集中度 {_dm_stats['concentration_index']:.1f}倍",
+                                  delta_color="inverse")
 
-        # 入退院比率に基づく判定
-        _ratio_7d = _adm_7d / max(_dis_7d, 0.1)
-        if _ratio_7d < 0.8:
-            _actions.append(("🔴", f"入退院比率 {_ratio_7d:.2f}（入院不足）",
-                             "退院10名に対して入院8名未満。入院の「入口」に課題があります。  \n"
-                             "紹介元別の入院数を確認し、減少している紹介元をフォローしてください。"))
-        elif _ratio_7d < 1.0:
-            _actions.append(("🟡", f"入退院比率 {_ratio_7d:.2f}（やや入院不足）",
-                             "入院がわずかに退院を下回っています。トレンドの推移を注視してください。"))
+                        _dm_counts = [_dm_dist.get(i, 0) for i in range(7)]
+                        _dm_colors = ["#e74c3c" if i == 4 else "#3498db" for i in range(7)]
+                        _dm_avg_line = _dm_total / 7.0
 
-        for icon, title, msg in _actions:
-            bg = "#e8f5e9" if icon == "🟢" else "#fff3e0" if icon == "🟡" else "#ffebee"
-            border = "#27AE60" if icon == "🟢" else "#F39C12" if icon == "🟡" else "#E74C3C"
-            st.markdown(f"""
-<div style="background:{bg};border-radius:8px;padding:8px;margin-bottom:6px;border-left:4px solid {border};">
-<strong>{icon} {title}</strong><br>{msg}
-</div>""", unsafe_allow_html=True)
+                        _dm_fig, _dm_ax = plt.subplots(figsize=(10, 3))
+                        _dm_ax.bar(_dm_labels, _dm_counts, color=_dm_colors, edgecolor="white")
+                        _dm_ax.axhline(y=_dm_avg_line, color="gray", linestyle="--", linewidth=1, label=f"均等分布 ({_dm_avg_line:.1f}件)")
+                        _dm_ax.set_ylabel("退院件数")
+                        _dm_ax.set_title("曜日別退院件数")
+                        _dm_ax.legend()
+                        for idx_bar, cnt in enumerate(_dm_counts):
+                            if cnt > 0:
+                                _dm_ax.text(idx_bar, cnt + 0.3, str(cnt), ha="center", fontsize=10)
+                        _dm_fig.tight_layout()
+                        st.pyplot(_dm_fig)
+                        plt.close(_dm_fig)
 
-        # ============================================================
-        # ④ 退院マネジメント（家族目線の退院調整）
-        # ============================================================
-        _dm_detail_df = st.session_state.get("admission_details", pd.DataFrame())
-        if not isinstance(_dm_detail_df, pd.DataFrame) or len(_dm_detail_df) == 0:
-            st.info("入退院詳細データが必要です")
-        else:
-            # --- セクション1: 📊 退院曜日分布（グラフ） ---
-            try:
-                _dm_stats = get_discharge_weekday_stats(_dm_detail_df)
-                st.markdown("### 📊 退院曜日分布")
-
-                _dm_dist = _dm_stats["distribution"]
-                _dm_labels = _dm_stats["labels"]
-                _dm_total = _dm_stats["total"]
-                _dm_fri_pct = _dm_stats["friday_pct"]
-
-                if _dm_total > 0:
-                    st.metric("金曜退院率", f"{_dm_fri_pct}%",
-                              delta=f"金曜集中度 {_dm_stats['concentration_index']:.1f}倍",
-                              delta_color="inverse")
-
-                    _dm_counts = [_dm_dist.get(i, 0) for i in range(7)]
-                    _dm_colors = ["#e74c3c" if i == 4 else "#3498db" for i in range(7)]
-                    _dm_avg_line = _dm_total / 7.0
-
-                    _dm_fig, _dm_ax = plt.subplots(figsize=(10, 3))
-                    _dm_ax.bar(_dm_labels, _dm_counts, color=_dm_colors, edgecolor="white")
-                    _dm_ax.axhline(y=_dm_avg_line, color="gray", linestyle="--", linewidth=1, label=f"均等分布 ({_dm_avg_line:.1f}件)")
-                    _dm_ax.set_ylabel("退院件数")
-                    _dm_ax.set_title("曜日別退院件数")
-                    _dm_ax.legend()
-                    for idx_bar, cnt in enumerate(_dm_counts):
-                        if cnt > 0:
-                            _dm_ax.text(idx_bar, cnt + 0.3, str(cnt), ha="center", fontsize=10)
-                    _dm_fig.tight_layout()
-                    st.pyplot(_dm_fig)
-                    plt.close(_dm_fig)
-
-                    st.caption("金曜に退院が集中すると、土日に空床が増えます")
-                else:
-                    st.info("退院データがありません")
-            except Exception as _dm_e1:
-                st.warning(f"退院曜日分布の表示でエラーが発生しました: {_dm_e1}")
-
-            # --- セクション2: 👨‍👩‍👧 日曜退院候補リスト ---
-            try:
-                st.markdown("### 👨‍👩‍👧 ご家族の都合に合わせた日曜退院候補")
-
-                _dm_daily_src = st.session_state.get("daily_data")
-                if isinstance(_dm_daily_src, pd.DataFrame) and len(_dm_daily_src) > 0:
-                    _dm_daily_df = aggregate_wards(_dm_daily_src) if "ward" in _dm_daily_src.columns else _dm_daily_src
-                elif _dt_raw is not None and len(_dt_raw) > 0:
-                    _dm_daily_df = _dt_raw
-                else:
-                    _dm_daily_df = pd.DataFrame()
-
-                _dm_ward_beds = {"5F": 47, "6F": 47}
-
-                if len(_dm_daily_df) == 0:
-                    st.info("日次データが必要です")
-                else:
-                    _dm_candidates = get_sunday_discharge_candidates(
-                        _dm_detail_df, _dm_daily_df, ward_beds=_dm_ward_beds
-                    )
-
-                    # --- パターンB「早める」条件付き表示ロジック ---
-                    # 現在の稼働率・LOSを計算
-                    if "total_patients" in _dm_daily_df.columns:
-                        _dm_current_occ = _dm_daily_df["total_patients"].tail(7).mean() / 94 * 100
+                        st.caption("金曜に退院が集中すると、土日に空床が増えます")
                     else:
-                        _dm_current_occ = 0.0
-                    if "avg_los" in _dm_daily_df.columns:
-                        _dm_current_los = _dm_daily_df["avg_los"].tail(7).mean()
+                        st.info("退院データがありません")
+                except Exception as _dm_e1:
+                    st.warning(f"退院曜日分布の表示でエラーが発生しました: {_dm_e1}")
+
+                # --- セクション2: 👨‍👩‍👧 日曜退院候補リスト ---
+                try:
+                    st.markdown("### 👨‍👩‍👧 ご家族の都合に合わせた日曜退院候補")
+
+                    _dm_daily_src = st.session_state.get("daily_data")
+                    if isinstance(_dm_daily_src, pd.DataFrame) and len(_dm_daily_src) > 0:
+                        _dm_daily_df = aggregate_wards(_dm_daily_src) if "ward" in _dm_daily_src.columns else _dm_daily_src
+                    elif _dt_raw is not None and len(_dt_raw) > 0:
+                        _dm_daily_df = _dt_raw
                     else:
-                        _dm_current_los = 0.0
+                        _dm_daily_df = pd.DataFrame()
 
-                    _dm_target_occ_pct = target_lower * 100  # 目標稼働率（%）
-                    _dm_los_threshold = _max_avg_los - 1.0   # 施設基準-1日（迫るライン）
+                    _dm_ward_beds = {"5F": 47, "6F": 47}
 
-                    _dm_show_pattern_b = (_dm_current_occ >= _dm_target_occ_pct) or (_dm_current_los >= _dm_los_threshold)
-
-                    # パターンB非表示の場合はフィルタリング
-                    if not _dm_show_pattern_b:
-                        _dm_candidates = [c for c in _dm_candidates if c.get("shift_type") != "早める"]
-
-                    # --- ガイダンスメッセージ ---
-                    if not _dm_show_pattern_b:
-                        st.info(
-                            f"💡 稼働率{_dm_current_occ:.1f}%・在院日数{_dm_current_los:.1f}日 — "
-                            "C群在院継続で貢献額確保が有利。「早める」候補は稼働率目標到達時に表示。"
+                    if len(_dm_daily_df) == 0:
+                        st.info("日次データが必要です")
+                    else:
+                        _dm_candidates = get_sunday_discharge_candidates(
+                            _dm_detail_df, _dm_daily_df, ward_beds=_dm_ward_beds
                         )
-                    else:
-                        if _dm_current_los >= _dm_los_threshold:
-                            st.warning(
-                                f"⚠️ 平均在院日数 {_dm_current_los:.1f}日 — "
-                                f"施設基準{_max_avg_los}日に迫っています。"
-                                "在院日数短縮のため「早める」退院調整を検討してください。"
-                            )
-                        elif _dm_current_occ >= _dm_target_occ_pct:
-                            st.success(
-                                f"✅ 稼働率 {_dm_current_occ:.1f}% — 目標圏内です。"
-                                "月曜の新規入院枠確保のため「早める」退院調整も有効です。"
-                            )
 
-                    if len(_dm_candidates) == 0:
-                        st.info("現在、日曜退院の調整候補はありません")
-                    else:
-                        _dm_cand_df = pd.DataFrame(_dm_candidates)
-
-                        # 調整方向カラムを生成
-                        _dm_weekday_names = {0: "月", 1: "火", 4: "金", 5: "土"}
-                        def _dm_format_direction(row):
-                            _orig_date = pd.to_datetime(row["date"])
-                            _orig_wd = _orig_date.dayofweek
-                            _wd_name = _dm_weekday_names.get(_orig_wd, "?")
-                            _days = row["additional_days"]
-                            if row["shift_type"] == "延ばす":
-                                return f"\U0001f7e2 {_wd_name}\u2192日（+{_days}日）"
-                            else:
-                                return f"\U0001f535 {_wd_name}\u2192日（{_days}日）"
-                        if "shift_type" in _dm_cand_df.columns:
-                            _dm_cand_df["direction_label"] = _dm_cand_df.apply(_dm_format_direction, axis=1)
+                        # --- パターンB「早める」条件付き表示ロジック ---
+                        # 現在の稼働率・LOSを計算
+                        if "total_patients" in _dm_daily_df.columns:
+                            _dm_current_occ = _dm_daily_df["total_patients"].tail(7).mean() / 94 * 100
                         else:
-                            _dm_cand_df["direction_label"] = ""
+                            _dm_current_occ = 0.0
+                        if "avg_los" in _dm_daily_df.columns:
+                            _dm_current_los = _dm_daily_df["avg_los"].tail(7).mean()
+                        else:
+                            _dm_current_los = 0.0
 
-                        # LOS余裕を見やすくフォーマット
-                        if "los_margin" in _dm_cand_df.columns:
-                            _dm_cand_df["los_margin"] = _dm_cand_df["los_margin"].apply(
-                                lambda x: f"+{x:.1f}日" if x >= 0 else f"{x:.1f}日"
+                        _dm_target_occ_pct = target_lower * 100  # 目標稼働率（%）
+                        _dm_los_threshold = _max_avg_los - 1.0   # 施設基準-1日（迫るライン）
+
+                        _dm_show_pattern_b = (_dm_current_occ >= _dm_target_occ_pct) or (_dm_current_los >= _dm_los_threshold)
+
+                        # パターンB非表示の場合はフィルタリング
+                        if not _dm_show_pattern_b:
+                            _dm_candidates = [c for c in _dm_candidates if c.get("shift_type") != "早める"]
+
+                        # --- ガイダンスメッセージ ---
+                        if not _dm_show_pattern_b:
+                            st.info(
+                                f"💡 稼働率{_dm_current_occ:.1f}%・在院日数{_dm_current_los:.1f}日 — "
+                                "C群在院継続で貢献額確保が有利。「早める」候補は稼働率目標到達時に表示。"
+                            )
+                        else:
+                            if _dm_current_los >= _dm_los_threshold:
+                                st.warning(
+                                    f"⚠️ 平均在院日数 {_dm_current_los:.1f}日 — "
+                                    f"施設基準{_max_avg_los}日に迫っています。"
+                                    "在院日数短縮のため「早める」退院調整を検討してください。"
+                                )
+                            elif _dm_current_occ >= _dm_target_occ_pct:
+                                st.success(
+                                    f"✅ 稼働率 {_dm_current_occ:.1f}% — 目標圏内です。"
+                                    "月曜の新規入院枠確保のため「早める」退院調整も有効です。"
+                                )
+
+                        if len(_dm_candidates) == 0:
+                            st.info("現在、日曜退院の調整候補はありません")
+                        else:
+                            _dm_cand_df = pd.DataFrame(_dm_candidates)
+
+                            # 調整方向カラムを生成
+                            _dm_weekday_names = {0: "月", 1: "火", 4: "金", 5: "土"}
+                            def _dm_format_direction(row):
+                                _orig_date = pd.to_datetime(row["date"])
+                                _orig_wd = _orig_date.dayofweek
+                                _wd_name = _dm_weekday_names.get(_orig_wd, "?")
+                                _days = row["additional_days"]
+                                if row["shift_type"] == "延ばす":
+                                    return f"\U0001f7e2 {_wd_name}\u2192日（+{_days}日）"
+                                else:
+                                    return f"\U0001f535 {_wd_name}\u2192日（{_days}日）"
+                            if "shift_type" in _dm_cand_df.columns:
+                                _dm_cand_df["direction_label"] = _dm_cand_df.apply(_dm_format_direction, axis=1)
+                            else:
+                                _dm_cand_df["direction_label"] = ""
+
+                            # LOS余裕を見やすくフォーマット
+                            if "los_margin" in _dm_cand_df.columns:
+                                _dm_cand_df["los_margin"] = _dm_cand_df["los_margin"].apply(
+                                    lambda x: f"+{x:.1f}日" if x >= 0 else f"{x:.1f}日"
+                                )
+
+                            _dm_display_cols = {
+                                "ward": "病棟",
+                                "date": "退院予定日",
+                                "direction_label": "調整方向",
+                                "phase": "フェーズ",
+                                "los_days": "在院日数",
+                                "attending_doctor": "担当医",
+                                "sunday_date": "日曜退院日",
+                                "los_margin": "LOS余裕",
+                                "recommendation": "推奨",
+                            }
+                            _dm_cand_show = _dm_cand_df[[c for c in _dm_display_cols.keys() if c in _dm_cand_df.columns]].copy()
+                            _dm_cand_show.rename(columns=_dm_display_cols, inplace=True)
+
+                            def _dm_highlight_recommend(row):
+                                if row.get("推奨") == "◎":
+                                    return ["background-color: #e8f5e9"] * len(row)
+                                return [""] * len(row)
+
+                            st.dataframe(
+                                _dm_cand_show.style.apply(_dm_highlight_recommend, axis=1),
+                                use_container_width=True,
+                                hide_index=True,
                             )
 
-                        _dm_display_cols = {
-                            "ward": "病棟",
-                            "date": "退院予定日",
-                            "direction_label": "調整方向",
-                            "phase": "フェーズ",
-                            "los_days": "在院日数",
-                            "attending_doctor": "担当医",
-                            "sunday_date": "日曜退院日",
-                            "los_margin": "LOS余裕",
-                            "recommendation": "推奨",
-                        }
-                        _dm_cand_show = _dm_cand_df[[c for c in _dm_display_cols.keys() if c in _dm_cand_df.columns]].copy()
-                        _dm_cand_show.rename(columns=_dm_display_cols, inplace=True)
+                        st.caption("働き世代のご家族にとって、日曜はお迎えしやすい日です。"
+                                   "🟢延ばす＝週末稼働率UP、🔵早める＝在院日数短縮＋月曜入院枠確保。"
+                                   "家族目線の退院調整が運営改善にもつながります。")
+                except Exception as _dm_e2:
+                    st.warning(f"日曜退院候補リストの表示でエラーが発生しました: {_dm_e2}")
 
-                        def _dm_highlight_recommend(row):
-                            if row.get("推奨") == "◎":
-                                return ["background-color: #e8f5e9"] * len(row)
-                            return [""] * len(row)
+                # --- セクション3: 🔮 退院調整シミュレーション ---
+                try:
+                    st.markdown("### 🔮 退院調整シミュレーション")
 
-                        st.dataframe(
-                            _dm_cand_show.style.apply(_dm_highlight_recommend, axis=1),
-                            use_container_width=True,
-                            hide_index=True,
+                    # スライダーの最大値は候補者数（候補がいなければ5をデフォルト）
+                    _dm_max_shifts = len(_dm_candidates) if "_dm_candidates" in dir() and len(_dm_candidates) > 0 else 5
+                    _dm_n_shifts = st.slider(
+                        "日曜退院に調整する人数",
+                        min_value=0,
+                        max_value=max(_dm_max_shifts, 1),
+                        value=0,
+                        key="dm_shift_slider",
+                    )
+
+                    _dm_result = simulate_discharge_shift(
+                        daily_df=_dm_daily_df if "_dm_daily_df" in dir() and isinstance(_dm_daily_df, pd.DataFrame) and len(_dm_daily_df) > 0 else pd.DataFrame(),
+                        detail_df=_dm_detail_df,
+                        n_shifts=_dm_n_shifts,
+                        beds_total=_view_beds,
+                    )
+
+                    _dm_before = _dm_result["before"]
+                    _dm_after = _dm_result["after"]
+                    _dm_impact = _dm_result["impact"]
+
+                    _dm_col1, _dm_col2, _dm_col3 = st.columns(3)
+                    with _dm_col1:
+                        st.metric(
+                            "週末稼働率",
+                            f"{_dm_after['weekend_avg_occ']:.1f}%",
+                            delta=f"{_dm_impact['weekend_occ_change_pt']:+.1f}pt" if _dm_n_shifts > 0 else None,
+                        )
+                    with _dm_col2:
+                        _dm_monthly_man = _dm_impact["additional_contribution_per_month"]
+                        st.metric(
+                            "月間追加運営貢献額",
+                            f"{_dm_monthly_man // 10000}万円" if _dm_monthly_man >= 10000 else f"{_dm_monthly_man:,}円",
+                        )
+                    with _dm_col3:
+                        st.metric(
+                            "在院日数への影響",
+                            f"+{_dm_impact['los_impact_days']:.2f}日",
                         )
 
-                    st.caption("働き世代のご家族にとって、日曜はお迎えしやすい日です。"
-                               "🟢延ばす＝週末稼働率UP、🔵早める＝在院日数短縮＋月曜入院枠確保。"
-                               "家族目線の退院調整が運営改善にもつながります。")
-            except Exception as _dm_e2:
-                st.warning(f"日曜退院候補リストの表示でエラーが発生しました: {_dm_e2}")
+                    # 曜日別稼働率の週間パターン（グループ棒グラフ）
+                    _dm_day_labels = ["月", "火", "水", "木", "金", "土", "日"]
+                    _dm_before_vals = [_dm_before["weekday_occ"].get(i, 0) for i in range(7)]
+                    _dm_after_vals = [_dm_after["weekday_occ"].get(i, 0) for i in range(7)]
 
-            # --- セクション3: 🔮 退院調整シミュレーション ---
-            try:
-                st.markdown("### 🔮 退院調整シミュレーション")
+                    _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 3))
+                    _dm_x = np.arange(len(_dm_day_labels))
+                    _dm_width = 0.35
 
-                # スライダーの最大値は候補者数（候補がいなければ5をデフォルト）
-                _dm_max_shifts = len(_dm_candidates) if "_dm_candidates" in dir() and len(_dm_candidates) > 0 else 5
-                _dm_n_shifts = st.slider(
-                    "日曜退院に調整する人数",
-                    min_value=0,
-                    max_value=max(_dm_max_shifts, 1),
-                    value=0,
-                    key="dm_shift_slider",
-                )
+                    # 目標レンジ（棒の背面に描画）
+                    _dm_ax2.axhspan(90, 95, alpha=0.1, color='gold', label='目標レンジ (90-95%)')
 
-                _dm_result = simulate_discharge_shift(
-                    daily_df=_dm_daily_df if "_dm_daily_df" in dir() and isinstance(_dm_daily_df, pd.DataFrame) and len(_dm_daily_df) > 0 else pd.DataFrame(),
-                    detail_df=_dm_detail_df,
-                    n_shifts=_dm_n_shifts,
-                    beds_total=_view_beds,
-                )
+                    # 棒グラフ描画
+                    _dm_bars1 = _dm_ax2.bar(_dm_x - _dm_width / 2, _dm_before_vals, _dm_width, label='現状', color='#95a5a6', alpha=0.8)
+                    if _dm_n_shifts > 0:
+                        _dm_bars2 = _dm_ax2.bar(_dm_x + _dm_width / 2, _dm_after_vals, _dm_width, label='調整後', color='#27ae60', alpha=0.8)
 
-                _dm_before = _dm_result["before"]
-                _dm_after = _dm_result["after"]
-                _dm_impact = _dm_result["impact"]
-
-                _dm_col1, _dm_col2, _dm_col3 = st.columns(3)
-                with _dm_col1:
-                    st.metric(
-                        "週末稼働率",
-                        f"{_dm_after['weekend_avg_occ']:.1f}%",
-                        delta=f"{_dm_impact['weekend_occ_change_pt']:+.1f}pt" if _dm_n_shifts > 0 else None,
-                    )
-                with _dm_col2:
-                    _dm_monthly_man = _dm_impact["additional_contribution_per_month"]
-                    st.metric(
-                        "月間追加運営貢献額",
-                        f"{_dm_monthly_man // 10000}万円" if _dm_monthly_man >= 10000 else f"{_dm_monthly_man:,}円",
-                    )
-                with _dm_col3:
-                    st.metric(
-                        "在院日数への影響",
-                        f"+{_dm_impact['los_impact_days']:.2f}日",
-                    )
-
-                # 曜日別稼働率の週間パターン（グループ棒グラフ）
-                _dm_day_labels = ["月", "火", "水", "木", "金", "土", "日"]
-                _dm_before_vals = [_dm_before["weekday_occ"].get(i, 0) for i in range(7)]
-                _dm_after_vals = [_dm_after["weekday_occ"].get(i, 0) for i in range(7)]
-
-                _dm_fig2, _dm_ax2 = plt.subplots(figsize=(10, 3))
-                _dm_x = np.arange(len(_dm_day_labels))
-                _dm_width = 0.35
-
-                # 目標レンジ（棒の背面に描画）
-                _dm_ax2.axhspan(90, 95, alpha=0.1, color='gold', label='目標レンジ (90-95%)')
-
-                # 棒グラフ描画
-                _dm_bars1 = _dm_ax2.bar(_dm_x - _dm_width / 2, _dm_before_vals, _dm_width, label='現状', color='#95a5a6', alpha=0.8)
-                if _dm_n_shifts > 0:
-                    _dm_bars2 = _dm_ax2.bar(_dm_x + _dm_width / 2, _dm_after_vals, _dm_width, label='調整後', color='#27ae60', alpha=0.8)
-
-                # 値ラベル（現状）
-                for _dm_bar in _dm_bars1:
-                    _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
-                                 f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#666')
-                # 値ラベル（調整後）
-                if _dm_n_shifts > 0:
-                    for _dm_bar in _dm_bars2:
+                    # 値ラベル（現状）
+                    for _dm_bar in _dm_bars1:
                         _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
-                                     f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#27ae60')
+                                     f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#666')
+                    # 値ラベル（調整後）
+                    if _dm_n_shifts > 0:
+                        for _dm_bar in _dm_bars2:
+                            _dm_ax2.text(_dm_bar.get_x() + _dm_bar.get_width() / 2., _dm_bar.get_height() + 0.3,
+                                         f'{_dm_bar.get_height():.1f}%', ha='center', va='bottom', fontsize=8, color='#27ae60')
 
-                _dm_ax2.set_xticks(_dm_x)
-                _dm_ax2.set_xticklabels(_dm_day_labels)
-                _dm_ax2.set_ylabel("稼働率 (%)")
-                _dm_ax2.set_title("曜日別稼働率の変化（週間パターン）")
-                _dm_ax2.legend()
+                    _dm_ax2.set_xticks(_dm_x)
+                    _dm_ax2.set_xticklabels(_dm_day_labels)
+                    _dm_ax2.set_ylabel("稼働率 (%)")
+                    _dm_ax2.set_title("曜日別稼働率の変化（週間パターン）")
+                    _dm_ax2.legend()
 
-                # Y軸範囲を自動調整（差が見えるように）
-                _dm_all_vals = _dm_before_vals + (_dm_after_vals if _dm_n_shifts > 0 else [])
-                _dm_y_min = max(0, min(_dm_all_vals) - 3)
-                _dm_y_max = min(100, max(_dm_all_vals) + 3)
-                _dm_ax2.set_ylim(_dm_y_min, _dm_y_max)
+                    # Y軸範囲を自動調整（差が見えるように）
+                    _dm_all_vals = _dm_before_vals + (_dm_after_vals if _dm_n_shifts > 0 else [])
+                    _dm_y_min = max(0, min(_dm_all_vals) - 3)
+                    _dm_y_max = min(100, max(_dm_all_vals) + 3)
+                    _dm_ax2.set_ylim(_dm_y_min, _dm_y_max)
 
-                _dm_ax2.grid(axis='y', alpha=0.3)
-                _dm_fig2.tight_layout()
-                st.pyplot(_dm_fig2)
-                plt.close(_dm_fig2)
+                    _dm_ax2.grid(axis='y', alpha=0.3)
+                    _dm_fig2.tight_layout()
+                    st.pyplot(_dm_fig2)
+                    plt.close(_dm_fig2)
 
-                st.caption("家族目線の退院調整が運営改善にもつながります。")
-            except Exception as _dm_e3:
-                st.warning(f"退院調整シミュレーションの表示でエラーが発生しました: {_dm_e3}")
+                    st.caption("家族目線の退院調整が運営改善にもつながります。")
+                except Exception as _dm_e3:
+                    st.warning(f"退院調整シミュレーションの表示でエラーが発生しました: {_dm_e3}")
 
 
 # ===== タブ: データ =====
-if "データ" in _tab_idx:
+if "データ" in _tab_idx and _data_ready:
     with tabs[_tab_idx["データ"]]:
         st.subheader("日次データ")
         if _HELP_AVAILABLE and "tab_data" in HELP_TEXTS:
