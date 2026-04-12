@@ -84,7 +84,7 @@ def _check_emergency_risk(emergency_summary: Optional[dict]) -> Optional[dict]:
             continue
 
         # operational（短手3除外）があれば優先、なければ official
-        mode_data = _safe_get(ward_data, "operational") or _safe_get(ward_data, "official")
+        mode_data = _safe_get(ward_data, "dual_ratio", "operational") or _safe_get(ward_data, "dual_ratio", "official")
         if mode_data is None:
             continue
 
@@ -487,7 +487,7 @@ def generate_kpi_priority_list(
         # 各病棟の割合を表示用に組み立て
         parts: list[str] = []
         for ward in ("5F", "6F"):
-            mode_data = _safe_get(emergency_summary, ward, "operational") or _safe_get(emergency_summary, ward, "official")
+            mode_data = _safe_get(emergency_summary, ward, "dual_ratio", "operational") or _safe_get(emergency_summary, ward, "dual_ratio", "official")
             if mode_data is not None:
                 ratio = _safe_get(mode_data, "ratio_pct", default=0.0)
                 parts.append(f"{ward}: {ratio:.1f}%")

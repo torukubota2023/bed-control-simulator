@@ -40,7 +40,7 @@ class TestGenerateActionCard:
             "overall_status": "danger",
             "alerts": [],
             "5F": {
-                "operational": {"ratio_pct": 10.0},
+                "dual_ratio": {"operational": {"ratio_pct": 10.0}, "official": {"ratio_pct": 10.0, "status": "red"}},
                 "additional": {"additional_needed": 5},
             },
         }
@@ -55,7 +55,7 @@ class TestGenerateActionCard:
             "overall_status": "warning",
             "alerts": [],
             "5F": {
-                "operational": {"ratio_pct": 14.0},
+                "dual_ratio": {"operational": {"ratio_pct": 14.0}, "official": {"ratio_pct": 14.0, "status": "yellow"}},
                 "additional": {"additional_needed": 2},
             },
         }
@@ -100,7 +100,7 @@ class TestGenerateActionCard:
             "overall_status": "danger",
             "alerts": [],
             "5F": {
-                "operational": {"ratio_pct": 8.0},
+                "dual_ratio": {"operational": {"ratio_pct": 8.0}, "official": {"ratio_pct": 8.0, "status": "red"}},
                 "additional": {"additional_needed": 10},
             },
         }

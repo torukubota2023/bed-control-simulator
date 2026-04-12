@@ -28,6 +28,16 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 
 EMERGENCY_THRESHOLD_PCT: float = 15.0
+
+
+def _safe_nested(d: Optional[dict], *keys: str) -> Any:
+    """ネストされた dict から安全に値を取得する。"""
+    current = d
+    for k in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(k)
+    return current
 EMERGENCY_MARGIN_PCT: float = 17.0  # green 閾値（2pt マージン）
 EMERGENCY_ROUTES: list[str] = ["救急", "下り搬送"]
 SHORT3_DEFAULT_LABEL: str = "該当なし"
@@ -591,6 +601,21 @@ def get_ward_emergency_summary(
     result["alerts"] = alerts
     result["target_date"] = td
     result["year_month"] = ym
+
+    # overall_status: 両病棟の最悪値を採用
+    statuses = []
+    for w in ("5F", "6F"):
+        s = _safe_nested(result, w, "dual_ratio", "official", "status")
+        if s:
+            statuses.append(s)
+    if not statuses:
+        result["overall_status"] = "incomplete"
+    elif "red" in statuses:
+        result["overall_status"] = "danger"
+    elif "yellow" in statuses:
+        result["overall_status"] = "warning"
+    else:
+        result["overall_status"] = "safe"
 
     return result
 
