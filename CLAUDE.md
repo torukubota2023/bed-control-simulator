@@ -90,6 +90,15 @@
   - ~~第2層: 改善仮説の保存・比較~~ → **v3.4で実装済み**（シナリオ保存・比較・AI分析）
   - 第3層: 提案書ドラフト自動生成（経営会議向け）
   - 立場別ビュー（医師・看護師・経営者）
+  - **院内LAN展開準備（v3.5 hardening, 2026-04-12追加）**
+    - 院内端末 Edge 90（Chromium 90）制約の調査・対応方針策定
+    - ブラウザ互換性3案比較: A（古いStreamlit固定）/ B（ポータブルブラウザ・推奨）/ C（Flask書き換え・最後の手段）
+    - `tools/browser_probe.html`: Streamlit非依存のブラウザ互換性確認ページ（JS API 12項目チェック）
+    - `deploy/`: サーバー起動・ポータブルFirefox起動スクリプト（bat/ps1テンプレート）
+    - `docs/admin/`: 院内LAN展開計画・ブラウザ互換性方針・検証マトリクス・ポータブルブラウザ運用ガイド
+    - `requirements-edge90.txt`: Edge 90互換を目指す固定バージョン（検証前提）
+    - `scripts/views/guardrail_view.py`: 制度ガードレール・需要波の表示ロジック分離
+    - テスト: `tests/test_deployment_assets.py`（19件）、全186テスト通過
 
 ## 教育資料ドラフト
 - 次回レジデント勉強会テーマ：未定
@@ -123,8 +132,10 @@
 ├── data/              ← KPI・入院統計・分析用データ
 ├── templates/         ← 診療情報提供書・退院サマリーのテンプレート
 └── scripts/           ← 自動化スクリプト
-    ├── views/         ← 表示ロジック（dashboard_view.py, c_group_view.py）
+    ├── views/         ← 表示ロジック（dashboard_view.py, c_group_view.py, guardrail_view.py）
     └── hooks/         ← セキュリティHooksスクリプト
+├── tools/             ← ブラウザ互換性チェック（browser_probe.html）
+└── deploy/            ← 院内LAN起動スクリプト（bat, ps1）
 ```
 
 ## ルール

@@ -52,12 +52,27 @@
 
 ```bash
 # ローカル起動
-pip install streamlit pandas numpy plotly matplotlib
+pip install -r requirements.txt
 streamlit run scripts/bed_control_simulator_app.py
 
-# デプロイ版
+# 院内LAN公開（サーバーPC）
+streamlit run scripts/bed_control_simulator_app.py --server.address 0.0.0.0 --server.port 8501
+
+# デプロイ版（Streamlit Cloud）
 # https://bed-control-simulator.streamlit.app
 ```
+
+## 院内LAN展開
+
+院内LANへの展開手順は以下を参照してください。
+
+- **設置手順**: [lan_setup_guide.md](docs/admin/lan_setup_guide.md)
+- **展開計画**: [intranet_deployment_plan.md](docs/admin/intranet_deployment_plan.md)
+- **ブラウザ互換性**: [intranet_browser_compatibility_plan.md](docs/admin/intranet_browser_compatibility_plan.md)
+- **ポータブルブラウザ**: [portable_browser_operation_guide.md](docs/admin/portable_browser_operation_guide.md)
+
+> ⚠️ 院内端末の Edge 90 では Streamlit が正常動作しない可能性があります。
+> 詳細は [ブラウザ検証マトリクス](docs/admin/browser_validation_matrix.md) を参照してください。
 
 ## データの前提
 
@@ -92,8 +107,9 @@ scripts/
   action_recommendation.py       # 結論カード・優先アクション推薦（pure function）
   c_group_candidates.py          # C群候補一覧・トレードオフ評価（pure function）
   views/                         # 表示ロジック分離
-    dashboard_view.py            # ダッシュボード表示
-    c_group_view.py              # C群表示
+    dashboard_view.py            # ダッシュボード表示（結論カード・KPI・翌朝余力）
+    c_group_view.py              # C群候補一覧表示
+    guardrail_view.py            # 制度ガードレール・需要波表示
 tests/
   test_bed_data_manager.py       # データ管理のテスト（18件）
   test_db_manager.py             # SQLite永続化のテスト（8件）
@@ -107,8 +123,23 @@ tests/
   test_action_recommendation.py  # 結論カード・優先アクションのテスト（14件）
   test_c_group_candidates.py     # C群候補一覧・トレードオフのテスト（10件）
   test_app_integration.py        # アプリ統合テスト・状態遷移安全性（25件）
-  （テスト総数は pytest 実行結果を参照 — 現在167件）
+  test_deployment_assets.py      # 配布資材・views存在確認（19件）
+  （テスト総数は pytest 実行結果を参照 — 現在186件）
+tools/
+  browser_probe.html             # ブラウザ互換性チェック（Streamlit非依存・単体HTML）
+deploy/
+  launch_bed_control.bat         # サーバー起動スクリプト（Windows）
+  launch_portable_firefox.bat    # ポータブルFirefox起動テンプレート
+  open_bed_control.ps1           # PowerShellアクセススクリプト
+docs/admin/
+  intranet_deployment_plan.md    # 院内LAN展開計画（A/B/C方針比較）
+  intranet_browser_compatibility_plan.md  # ブラウザ互換性対応方針
+  browser_validation_matrix.md   # ブラウザ検証マトリクス
+  portable_browser_operation_guide.md     # ポータブルブラウザ運用ガイド
+  lan_setup_guide.md             # 院内SE向け設置手順書
 pyproject.toml                   # ruff 設定
+requirements.txt                 # 本番依存関係
+requirements-edge90.txt          # Edge 90互換を目指す固定バージョン（検証前提）
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）
 ```

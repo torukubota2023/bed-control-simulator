@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ベッドコントロールシミュレーター ブラウザ互換性チェック</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Yu Gothic", "Meiryo", "Hiragino Sans", sans-serif;
+    background: #f0f4f8;
+    color: #1a2332;
+    line-height: 1.6;
+    padding: 20px;
+  }
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #1e3a5f, #2d5a87);
+    color: #fff;
+    padding: 28px 32px;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .header p {
+    font-size: 14px;
+    opacity: 0.85;
+  }
+  .content { padding: 28px 32px; }
+  .ua-box {
+    background: #f7f9fc;
+    border: 1px solid #d0d7e0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .ua-box .label {
+    font-weight: 700;
+    color: #4a5568;
+    margin-bottom: 4px;
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+  .check-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+  }
+  .check-table th {
+    text-align: left;
+    padding: 10px 14px;
+    background: #edf2f7;
+    font-size: 13px;
+    font-weight: 700;
+    color: #4a5568;
+    border-bottom: 2px solid #cbd5e0;
+  }
+  .check-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 14px;
+  }
+  .check-table tr:last-child td { border-bottom: none; }
+  .check-table .api-name { font-family: "Consolas", "Courier New", monospace; font-size: 13px; }
+  .check-table .version { color: #718096; font-size: 12px; }
+  .status-ok { color: #22863a; font-weight: 700; }
+  .status-ng { color: #cb2431; font-weight: 700; }
+  .summary-box {
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-top: 20px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .summary-high {
+    background: #e6ffed;
+    border: 2px solid #34d058;
+    color: #22863a;
+  }
+  .summary-low {
+    background: #ffeef0;
+    border: 2px solid #d73a49;
+    color: #cb2431;
+  }
+  .summary-sub {
+    font-size: 13px;
+    font-weight: 400;
+    color: #586069;
+    margin-top: 8px;
+  }
+  .footer {
+    text-align: center;
+    padding: 16px;
+    font-size: 12px;
+    color: #a0aec0;
+    border-top: 1px solid #e2e8f0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>ベッドコントロールシミュレーター ブラウザ互換性チェック</h1>
+    <p>Streamlit 1.28+ の動作に必要なJavaScript APIを検証します</p>
+  </div>
+  <div class="content">
+    <div class="ua-box">
+      <div class="label">User-Agent</div>
+      <div id="ua-string"></div>
+    </div>
+    <table class="check-table">
+      <thead>
+        <tr>
+          <th>結果</th>
+          <th>API / 機能</th>
+          <th>必要バージョン</th>
+        </tr>
+      </thead>
+      <tbody id="check-results"></tbody>
+    </table>
+    <div id="summary"></div>
+  </div>
+  <div class="footer">
+    おもろまちメディカルセンター IT基盤検証ツール
+  </div>
+</div>
+
+<script>
+(function() {
+  // Display User-Agent
+  document.getElementById('ua-string').textContent = navigator.userAgent;
+
+  // Define checks
+  var checks = [
+    {
+      name: 'Array.prototype.at',
+      version: 'Chrome 92+',
+      test: function() { return typeof Array.prototype.at === 'function'; }
+    },
+    {
+      name: 'Object.hasOwn',
+      version: 'Chrome 93+',
+      test: function() { return typeof Object.hasOwn === 'function'; }
+    },
+    {
+      name: 'structuredClone',
+      version: 'Chrome 98+',
+      test: function() { return typeof structuredClone === 'function'; }
+    },
+    {
+      name: 'Array.prototype.findLast',
+      version: 'Chrome 97+',
+      test: function() { return typeof Array.prototype.findLast === 'function'; }
+    },
+    {
+      name: 'crypto.randomUUID',
+      version: 'Chrome 92+',
+      test: function() { return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'; }
+    },
+    {
+      name: 'AbortSignal.timeout',
+      version: 'Chrome 103+',
+      test: function() { return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'; }
+    },
+    {
+      name: 'CSS @layer',
+      version: 'Chrome 99+',
+      test: function() {
+        try {
+          // Check if CSS.supports exists and test @layer
+          if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function') {
+            // Try creating a style element with @layer
+            var style = document.createElement('style');
+            style.textContent = '@layer test { }';
+            document.head.appendChild(style);
+            var supported = style.sheet && style.sheet.cssRules.length > 0;
+            document.head.removeChild(style);
+            return supported;
+          }
+          return false;
+        } catch(e) { return false; }
+      }
+    },
+    {
+      name: 'String.prototype.replaceAll',
+      version: 'Chrome 85+',
+      test: function() { return typeof String.prototype.replaceAll === 'function'; }
+    },
+    {
+      name: 'Promise.any',
+      version: 'Chrome 85+',
+      test: function() { return typeof Promise.any === 'function'; }
+    },
+    {
+      name: 'globalThis',
+      version: 'Chrome 71+',
+      test: function() { return typeof globalThis !== 'undefined'; }
+    },
+    {
+      name: 'WebSocket',
+      version: 'Chrome 4+ (広くサポート)',
+      test: function() { return typeof WebSocket !== 'undefined'; }
+    },
+    {
+      name: 'Optional Chaining (?.)',
+      version: 'ES2020 / Chrome 80+',
+      test: function() {
+        try { return eval('var o = {a:{b:1}}; o?.a?.b === 1'); } catch(e) { return false; }
+      }
+    },
+    {
+      name: 'Nullish Coalescing (??)',
+      version: 'ES2020 / Chrome 80+',
+      test: function() {
+        try { return eval('var x = null ?? 42; x === 42'); } catch(e) { return false; }
+      }
+    }
+  ];
+
+  // Run checks
+  var tbody = document.getElementById('check-results');
+  var passed = 0;
+  var total = checks.length;
+
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    var ok = false;
+    try { ok = c.test(); } catch(e) { ok = false; }
+    if (ok) passed++;
+
+    var tr = document.createElement('tr');
+    var tdStatus = document.createElement('td');
+    tdStatus.className = ok ? 'status-ok' : 'status-ng';
+    tdStatus.textContent = ok ? '\u2705' : '\u274C';
+
+    var tdName = document.createElement('td');
+    tdName.className = 'api-name';
+    tdName.textContent = c.name;
+
+    var tdVersion = document.createElement('td');
+    tdVersion.className = 'version';
+    tdVersion.textContent = c.version;
+
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdName);
+    tr.appendChild(tdVersion);
+    tbody.appendChild(tr);
+  }
+
+  // Summary
+  var summaryDiv = document.getElementById('summary');
+  // Critical APIs that Streamlit 1.28+ likely requires (Chrome 92+)
+  var criticalFail = !checks[0].test() || !checks[1].test() || !checks[2].test();
+  var highCompat = passed >= total - 1 && !criticalFail;
+
+  var box = document.createElement('div');
+  box.className = 'summary-box ' + (highCompat ? 'summary-high' : 'summary-low');
+  box.innerHTML = 'このブラウザでStreamlit 1.28+は動作する可能性が ' +
+    (highCompat
+      ? '<span style="font-size:24px">高い</span>'
+      : '<span style="font-size:24px">低い</span>') +
+    '<div class="summary-sub">' + passed + ' / ' + total + ' 項目が対応済み' +
+    (highCompat ? '' : '<br>推奨: ポータブルFirefox（最新版）の利用を検討してください') +
+    '</div>';
+  summaryDiv.appendChild(box);
+})();
+</script>
+</body>
+</html>

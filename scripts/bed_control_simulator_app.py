@@ -154,8 +154,9 @@ try:
         compare_scenarios, analyze_scenarios
     )
     _SCENARIO_MANAGER_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as _sm_err:
+    import traceback as _sm_tb
+    _SCENARIO_MANAGER_ERROR = f"{_sm_err}\n{_sm_tb.format_exc()}"
 
 # 入退院詳細データ
 try:
@@ -268,8 +269,9 @@ try:
         summarize_candidates_for_display,
     )
     _C_GROUP_CANDIDATES_AVAILABLE = True
-except Exception:
-    pass
+except Exception as _cgc_err:
+    import traceback as _cgc_tb
+    _C_GROUP_CANDIDATES_ERROR = f"{_cgc_err}\n{_cgc_tb.format_exc()}"
 
 # views（描画ロジック分離）
 _VIEWS_AVAILABLE = False
@@ -282,6 +284,7 @@ try:
         render_tradeoff_card,
     )
     from views.c_group_view import render_c_group_candidates_lite
+    from views.guardrail_view import render_guardrail_summary, render_demand_wave_summary
     _VIEWS_AVAILABLE = True
 except Exception as _v_err:
     import traceback as _v_tb
@@ -8352,51 +8355,20 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
             if _gr_daily_df is not None:
                 _gr_results = calculate_guardrail_status(_gr_daily_df, _gr_detail_df, _gr_config)
                 _gr_display = format_guardrail_display(_gr_results)
-
-                # 全体ステータス
-                _status_emoji = {"safe": "🟢", "warning": "🟡", "danger": "🔴", "incomplete": "🟠"}.get(_gr_display["overall_status"], "⚪")
-                _status_ja = {"safe": "安全", "warning": "注意", "danger": "危険", "incomplete": "未完（データ不足）"}.get(_gr_display["overall_status"], "不明")
-                st.markdown(f"### {_status_emoji} 総合判定: **{_status_ja}**")
-
-                # 指標カード
-                for _item in _gr_results:
-                    _ds_label = {"measured": "実測", "proxy": "推計", "manual_input": "手動入力", "not_available": "未取得"}.get(_item["data_source"], "")
-                    _status_icon = {"safe": "🟢", "warning": "🟡", "danger": "🔴", "not_available": "⚪"}.get(_item["status"], "⚪")
-
-                    if _item["current_value"] is not None:
-                        _val_str = f"{_item['current_value']}"
-                        _margin_str = f"余力: {_item['margin']:+.1f}" if _item["margin"] is not None else ""
-                        st.markdown(
-                            f"{_status_icon} **{_item['name']}**: {_val_str} "
-                            f"（基準 {_item['operator']} {_item['threshold']}）{_margin_str} "
-                            f"<small style='color:gray'>({_ds_label})</small>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown(
-                            f"{_status_icon} **{_item['name']}**: — "
-                            f"<small style='color:gray'>({_ds_label}: {_item['description']})</small>",
-                            unsafe_allow_html=True,
-                        )
-
-                # LOS余力の詳細
-                st.markdown("---")
-                st.subheader("📏 平均在院日数の余力")
                 _los_hr = calculate_los_headroom(_gr_daily_df, _gr_config)
-                if _los_hr["current_los"] is not None:
-                    _hr_col1, _hr_col2, _hr_col3 = st.columns(3)
-                    with _hr_col1:
-                        st.metric("現在の平均在院日数", f"{_los_hr['current_los']:.1f}日")
-                    with _hr_col2:
-                        st.metric("制度上限", f"{_los_hr['los_limit']:.0f}日")
-                    with _hr_col3:
-                        _hr_delta = _los_hr['headroom_days']
-                        st.metric("余力", f"{_hr_delta:.1f}日", delta=f"C群延長{'可' if _los_hr['can_extend_c_group'] else '不可'}")
 
-                    if _los_hr.get("headroom_patient_days") is not None:
-                        st.info(f"📊 延べ入院日数換算の余力: 約 {_los_hr['headroom_patient_days']:.0f} 日分（推計）")
+                # 描画をviewモジュールに委譲
+                if _VIEWS_AVAILABLE:
+                    render_guardrail_summary({
+                        "results": _gr_results,
+                        "display": _gr_display,
+                        "los_headroom": _los_hr,
+                    })
                 else:
-                    st.warning("日次データ不足のため平均在院日数の余力を計算できません")
+                    st.warning("描画モジュール (views) の読み込みに失敗しました。制度余力の詳細表示は利用できません。")
+                    _status_emoji = {"safe": "🟢", "warning": "🟡", "danger": "🔴", "incomplete": "🟠"}.get(_gr_display["overall_status"], "⚪")
+                    _status_ja = {"safe": "安全", "warning": "注意", "danger": "危険", "incomplete": "未完（データ不足）"}.get(_gr_display["overall_status"], "不明")
+                    st.markdown(f"### {_status_emoji} 総合判定: **{_status_ja}**")
 
                 # 翌営業日朝の受入余力
                 if _EMERGENCY_RATIO_AVAILABLE:
@@ -8434,33 +8406,21 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # 病棟選択
                 _dw_ward = st.selectbox("病棟", [None, "5F", "6F"], format_func=lambda x: "全体" if x is None else x, key="dw_ward_select")
 
-                # トレンド
+                # トレンド・分類・スコア
                 _dw_trend = calculate_demand_trend(_gr_daily_df, _dw_ward)
-                _trend_emoji = {"increasing": "📈", "decreasing": "📉", "stable": "➡️"}.get(_dw_trend["trend_label"], "➡️")
-                st.markdown(f"### {_trend_emoji} {_dw_trend['trend_description']}")
-
-                _tr_col1, _tr_col2, _tr_col3 = st.columns(3)
-                with _tr_col1:
-                    st.metric("前2週間 平均入院", f"{_dw_trend['prev_2w_avg_admissions']:.1f}件/日")
-                with _tr_col2:
-                    st.metric("直近1週間 平均入院", f"{_dw_trend['last_1w_avg_admissions']:.1f}件/日")
-                with _tr_col3:
-                    _ratio_pct = round(_dw_trend["trend_ratio"] * 100)
-                    st.metric("前2週比", f"{_ratio_pct}%")
-
-                # 閑散/繁忙判定
-                st.markdown("---")
                 _dw_class = classify_demand_period(_gr_daily_df, _dw_ward)
-                _class_emoji = {"quiet": "🔵", "normal": "🟢", "busy": "🔴"}.get(_dw_class["classification"], "⚪")
-                st.markdown(f"**需要分類**: {_class_emoji} {_dw_class['classification_ja']} （パーセンタイル: {_dw_class['percentile']:.0f}%、信頼度: {_dw_class['confidence']}）")
-
-                # 需要スコア
                 _dw_score = calculate_demand_score(_gr_daily_df, _dw_ward)
-                _sc_col1, _sc_col2 = st.columns(2)
-                with _sc_col1:
-                    st.metric("14日需要スコア", f"{_dw_score['score_14d']:.0f}/100", delta=_dw_score["label_14d"])
-                with _sc_col2:
-                    st.metric("30日需要スコア", f"{_dw_score['score_30d']:.0f}/100", delta=_dw_score["label_30d"])
+
+                if _VIEWS_AVAILABLE:
+                    render_demand_wave_summary({
+                        "trend": _dw_trend,
+                        "classification": _dw_class,
+                        "score": _dw_score,
+                    })
+                else:
+                    _trend_emoji = {"increasing": "\U0001f4c8", "decreasing": "\U0001f4c9", "stable": "\u27a1\ufe0f"}.get(_dw_trend["trend_label"], "\u27a1\ufe0f")
+                    st.markdown(f"### {_trend_emoji} {_dw_trend['trend_description']}")
+                    st.info("\u63cf\u753b\u30e2\u30b8\u30e5\u30fc\u30eb (views) \u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002\u8a73\u7d30\u8868\u793a\u306f\u5229\u7528\u3067\u304d\u307e\u305b\u3093\u3002")
 
                 # 曜日別パターン
                 st.markdown("---")
