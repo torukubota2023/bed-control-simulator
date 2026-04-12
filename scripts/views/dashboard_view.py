@@ -74,7 +74,7 @@ def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
                 st.caption(kpi["explanation"])
 
 
-def render_morning_capacity_card(morning_capacity: dict) -> None:
+def render_morning_capacity_card(morning_capacity: dict, morning_5f: dict = None, morning_6f: dict = None) -> None:
     """翌診療日朝の受入余力を主要KPIとして描画する.
 
     morning_capacity from estimate_next_morning_capacity():
@@ -84,6 +84,8 @@ def render_morning_capacity_card(morning_capacity: dict) -> None:
     - "planned_discharges_tomorrow": float
     - "is_proxy": bool
     - "next_business_date": str
+
+    morning_5f / morning_6f: 病棟別の同構造データ（Optional）
     """
     if not morning_capacity:
         return
@@ -111,13 +113,41 @@ def render_morning_capacity_card(morning_capacity: dict) -> None:
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("翌朝受入余力", f"{slots}床", help="翌診療日朝の救急受入可能床数（推計）")
+        st.metric("翌朝受入余力（全体）", f"{slots}床", help="翌診療日朝の救急受入可能床数（推計）")
     with col2:
         st.metric("3診療日最小", f"{three_day_min}床", help="直近3診療日の最小受入余力")
     with col3:
         st.metric("退院予定", f"{planned_dc:.0f}名", help="翌日の退院予定人数（推計）")
     with col4:
         st.metric("判定", status_label)
+
+    # 病棟別 受入余力
+    if morning_5f is not None and morning_6f is not None:
+        st.markdown("---")
+        st.markdown("##### 病棟別 受入余力")
+        w_col1, w_col2 = st.columns(2)
+        with w_col1:
+            slots_5f = morning_5f.get("estimated_emergency_slots", 0)
+            if slots_5f >= 5:
+                emoji_5f = "\U0001f7e2"
+            elif slots_5f >= 3:
+                emoji_5f = "\U0001f7e1"
+            else:
+                emoji_5f = "\U0001f534"
+            st.metric("5F 翌朝受入余力", f"{slots_5f}床")
+            planned_5f = morning_5f.get("planned_discharges_tomorrow", 0)
+            st.caption(f"判定: {emoji_5f} | 退院予定: {planned_5f:.0f}名")
+        with w_col2:
+            slots_6f = morning_6f.get("estimated_emergency_slots", 0)
+            if slots_6f >= 5:
+                emoji_6f = "\U0001f7e2"
+            elif slots_6f >= 3:
+                emoji_6f = "\U0001f7e1"
+            else:
+                emoji_6f = "\U0001f534"
+            st.metric("6F 翌朝受入余力", f"{slots_6f}床")
+            planned_6f = morning_6f.get("planned_discharges_tomorrow", 0)
+            st.caption(f"判定: {emoji_6f} | 退院予定: {planned_6f:.0f}名")
 
     st.caption(
         f"対象日: {next_date} | "

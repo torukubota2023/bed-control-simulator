@@ -2677,6 +2677,8 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
         _ac_guardrail_status = None
         _ac_los_headroom = None
         _ac_morning_capacity = None
+        _ac_morning_5f = None
+        _ac_morning_6f = None
         _ac_monthly_kpi = None
         _ac_c_summary = None
         _ac_c_capacity = None
@@ -2718,6 +2720,17 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 try:
                     _ac_morning_capacity = estimate_next_morning_capacity(
                         _ac_daily_df, _ac_detail_df, ward=None, total_beds=94,
+                    )
+                except Exception:
+                    pass
+                _ac_morning_5f = None
+                _ac_morning_6f = None
+                try:
+                    _ac_morning_5f = estimate_next_morning_capacity(
+                        _ac_daily_df, _ac_detail_df, ward="5F", ward_beds=47,
+                    )
+                    _ac_morning_6f = estimate_next_morning_capacity(
+                        _ac_daily_df, _ac_detail_df, ward="6F", ward_beds=47,
                     )
                 except Exception:
                     pass
@@ -2769,6 +2782,8 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 guardrail_status=_ac_guardrail_status,
                 los_headroom=_ac_los_headroom,
                 morning_capacity=_ac_morning_capacity,
+                morning_capacity_5f=_ac_morning_5f,
+                morning_capacity_6f=_ac_morning_6f,
                 monthly_kpi=_ac_monthly_kpi,
                 c_group_summary=_ac_c_summary,
                 c_adjustment_capacity=_ac_c_capacity,
@@ -2778,7 +2793,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             render_kpi_priority_strip(_ac_kpi_list)
 
             if _ac_morning_capacity is not None:
-                render_morning_capacity_card(_ac_morning_capacity)
+                render_morning_capacity_card(_ac_morning_capacity, morning_5f=_ac_morning_5f, morning_6f=_ac_morning_6f)
 
             if _ac_c_capacity is not None:
                 _ac_tradeoff = generate_tradeoff_assessment(

@@ -453,6 +453,8 @@ def generate_kpi_priority_list(
     guardrail_status: Optional[list] = None,
     los_headroom: Optional[dict] = None,
     morning_capacity: Optional[dict] = None,
+    morning_capacity_5f: Optional[dict] = None,
+    morning_capacity_6f: Optional[dict] = None,
     monthly_kpi: Optional[dict] = None,
     c_group_summary: Optional[dict] = None,
     c_adjustment_capacity: Optional[dict] = None,
@@ -586,9 +588,23 @@ def generate_kpi_priority_list(
     if morning_capacity is not None:
         slots = _safe_get(morning_capacity, "estimated_emergency_slots", default=None)
         if slots is not None:
-            status = "safe" if slots >= _MIN_EMERGENCY_SLOTS else "warning"
-            value = f"推計 {slots}床"
-            explanation = f"救急受入に最低{_MIN_EMERGENCY_SLOTS}床の余力を推奨"
+            # 病棟別データがあれば病棟別表示に切替
+            if morning_capacity_5f is not None and morning_capacity_6f is not None:
+                slots_5f = _safe_get(morning_capacity_5f, "estimated_emergency_slots", default=0)
+                slots_6f = _safe_get(morning_capacity_6f, "estimated_emergency_slots", default=0)
+                value = f"5F: {slots_5f}床 / 6F: {slots_6f}床"
+                min_slots = min(slots_5f, slots_6f)
+                if min_slots >= 5:
+                    status = "safe"
+                elif min_slots >= _MIN_EMERGENCY_SLOTS:
+                    status = "warning"
+                else:
+                    status = "danger"
+                explanation = f"各病棟で最低{_MIN_EMERGENCY_SLOTS}床の余力を推奨（全体: {slots}床）"
+            else:
+                status = "safe" if slots >= _MIN_EMERGENCY_SLOTS else "warning"
+                value = f"推計 {slots}床"
+                explanation = f"救急受入に最低{_MIN_EMERGENCY_SLOTS}床の余力を推奨"
         else:
             status = "unknown"
             value = "算出不能"
