@@ -122,9 +122,9 @@ tests/
   test_scenario_manager.py       # シナリオマネージャーのテスト（10件）
   test_action_recommendation.py  # 結論カード・優先アクションのテスト（14件）
   test_c_group_candidates.py     # C群候補一覧・トレードオフのテスト（10件）
-  test_app_integration.py        # アプリ統合テスト・状態遷移安全性（25件）
+  test_app_integration.py        # アプリ統合テスト・状態遷移安全性（29件）
   test_deployment_assets.py      # 配布資材・views存在確認（19件）
-  （テスト総数は pytest 実行結果を参照 — 現在186件）
+  （テスト総数は pytest 実行結果を参照 — 現在190件）
 tools/
   browser_probe.html             # ブラウザ互換性チェック（Streamlit非依存・単体HTML）
 deploy/

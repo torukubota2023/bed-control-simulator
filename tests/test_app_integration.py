@@ -630,3 +630,147 @@ class TestNeedsSimDataLogic:
         assert "制度管理" not in sections_in_check, "制度管理が _needs_sim_data に誤って含まれている"
         assert "データ管理" not in sections_in_check, "データ管理が _needs_sim_data に誤って含まれている"
         assert "HOPE" not in sections_in_check, "HOPE連携が _needs_sim_data に誤って含まれている"
+
+
+# =====================================================================
+# テスト: Streamlit描画順序の安全性
+# =====================================================================
+
+class TestStreamlitDrawingOrder:
+    """st.tabs() の後にセクションヘッダー等が描画されていないか検出
+
+    背景: st.tabs() の後に st.header / st.markdown / st.error 等を
+    呼ぶと、タブコンテンツの下部に埋もれてユーザーに見えなくなる。
+    ヘッダー・アラート等は st.tabs() の前に配置すべき。
+    """
+
+    def _find_tabs_and_post_draws(self) -> list[str]:
+        """st.tabs() 呼び出し後、次の with tabs[] までの間に
+        トップレベル（タブ外）の st.* 描画コールがないか検出"""
+        violations = []
+        # 描画系コール（タブ外に置くと埋もれるもの）
+        draw_calls = [
+            "st.header(", "st.subheader(", "st.title(",
+            "st.error(", "st.warning(", "st.info(", "st.success(",
+        ]
+        # st.caption は許容（タブ切替の案内テキスト等で使用）
+        in_post_tabs_zone = False
+        tabs_line = 0
+
+        for i, line in enumerate(APP_LINES, start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+
+            # tabs = st.tabs(...) を検出
+            if "= st.tabs(" in line:
+                in_post_tabs_zone = True
+                tabs_line = i
+                continue
+
+            # with tabs[...] に到達したらゾーン終了
+            if in_post_tabs_zone and "with tabs[" in line:
+                in_post_tabs_zone = False
+                continue
+
+            # ゾーン内の描画コール検出
+            if in_post_tabs_zone:
+                indent = len(line) - len(line.lstrip())
+                # インデントが浅い（タブ外）場合のみ検出
+                if indent <= 4:
+                    for call in draw_calls:
+                        if call in stripped:
+                            violations.append(
+                                f"  L{i}: {stripped[:80]} — st.tabs() (L{tabs_line}) の後にタブ外描画"
+                            )
+                            break
+
+        return violations
+
+    def test_タブ外描画がst_tabs後に存在しないこと(self):
+        """st.tabs() の後、with tabs[] の前にタブ外の描画コールがないこと"""
+        violations = self._find_tabs_and_post_draws()
+        assert not violations, (
+            "st.tabs() の後にタブ外の描画コールが検出された — "
+            "タブコンテンツの下に埋もれる可能性あり:\n"
+            + "\n".join(violations)
+        )
+
+
+# =====================================================================
+# テスト: 空DataFrame・欠損キーへの防御
+# =====================================================================
+
+class TestEmptyDataDefense:
+    """データが空またはキーが欠損する場合の防御コードの存在を確認
+
+    背景: 実績データ未投入・デモデータ未ロード時に、空のDataFrameや
+    辞書に対してキーアクセスするとKeyError/IndexErrorが発生する。
+    """
+
+    def test_ward_dfs_アクセスにガードがあること(self):
+        """_ward_dfs["5F"] 等のアクセス前に存在チェックがあること"""
+        # _ward_dfs["5F"] or _ward_dfs["6F"] のアクセスを検出
+        pattern = r'_ward_dfs\["[56]F"\]'
+        accesses = []
+        for i, line in enumerate(APP_LINES, start=1):
+            if line.lstrip().startswith("#"):
+                continue
+            if re.search(pattern, line):
+                accesses.append(i)
+
+        # 各アクセスの上方20行以内に if "5F" in _ward_dfs / _ward_dfs.get 等のガードがあるか
+        unguarded = []
+        for ln in accesses:
+            context_start = max(0, ln - 21)
+            context = "\n".join(APP_LINES[context_start:ln - 1])
+            has_guard = (
+                '"5F" in _ward_dfs' in context
+                or '"6F" in _ward_dfs' in context
+                or '_ward_dfs.get' in context
+                or 'if _ward_dfs' in context
+                or '_ward_dfs and' in context
+                or 'for _ward' in context
+                or 'for ward' in context
+                or '.items()' in context
+            )
+            if not has_guard:
+                unguarded.append(f"  L{ln}: {APP_LINES[ln-1].strip()[:80]}")
+
+        # 3箇所以上のガードなしアクセスがあれば警告
+        assert len(unguarded) <= 2, (
+            f"_ward_dfs へのガードなしアクセスが {len(unguarded)} 箇所:\n"
+            + "\n".join(unguarded[:10])
+        )
+
+    def test_data_ready_フラグが定義されていること(self):
+        """_data_ready フラグが定義され、データ依存タブのガードに使用されていること"""
+        # _data_ready の定義を確認
+        has_definition = "_data_ready" in APP_SOURCE
+        assert has_definition, "_data_ready フラグが定義されていない"
+
+        # _data_ready の使用箇所をカウント（and _data_ready / if _data_ready 両方）
+        guard_count = (
+            APP_SOURCE.count("and _data_ready")
+            + APP_SOURCE.count("if _data_ready")
+            + APP_SOURCE.count("if not _data_ready")
+        )
+        assert guard_count >= 3, (
+            f"_data_ready がガードとして {guard_count} 箇所しか使用されていない — "
+            f"データ依存タブのガード不足の可能性あり"
+        )
+
+    def test_empty_df_チェックパターンが存在すること(self):
+        """DataFrame が空でないかのチェック（len(df) > 0 or not df.empty）が
+        データ依存処理の前に存在すること"""
+        # 空チェックパターン
+        empty_checks = (
+            APP_SOURCE.count("df.empty")
+            + APP_SOURCE.count("len(df)")
+            + APP_SOURCE.count("df is not None")
+            + APP_SOURCE.count("if df is None")
+        )
+        assert empty_checks >= 3, (
+            f"DataFrame の空チェックが {empty_checks} 箇所しかない — "
+            f"空データ時のエラー防御が不十分な可能性あり"
+        )
