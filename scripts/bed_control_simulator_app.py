@@ -2453,9 +2453,8 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
 _sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
 if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.session_state.get("demo_data"), pd.DataFrame) and len(st.session_state.get("demo_data", pd.DataFrame())) > 0):
-    # 本日の病床状況（常時表示エリア）— 枠で囲んでモード別コンテンツとの境界を明確にする
-    with st.container(border=True):
-        st.markdown("#### ☀️ 本日の病床状況")
+    # 本日の病床状況（折りたたみ可能）— 朝確認後は畳んでモード別コンテンツに集中
+    with st.expander("☀️ 本日の病床状況", expanded=True):
         _brief_cols = st.columns([1, 1, 1, 2])
 
         # 稼働率ゲージ（plotly gauge chart）
