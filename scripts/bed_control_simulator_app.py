@@ -2453,7 +2453,8 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
 _sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
 if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.session_state.get("demo_data"), pd.DataFrame) and len(st.session_state.get("demo_data", pd.DataFrame())) > 0):
-    with st.container():
+    # 本日の病床状況（常時表示エリア）— 枠で囲んでモード別コンテンツとの境界を明確にする
+    with st.container(border=True):
         st.markdown("#### ☀️ 本日の病床状況")
         _brief_cols = st.columns([1, 1, 1, 2])
 
@@ -2889,12 +2890,15 @@ elif _selected_section == "\U0001f4e8 HOPE連携":
 else:
     tab_names = ["\U0001f4ca 日次推移"]
 
-# タブナビゲーション（目立つヘッダー付き）
+# タブナビゲーション（モード名 + 区切りバー）
+_section_label = _selected_section if "_selected_section" in dir() else "📊 ダッシュボード"
 st.markdown(
-    '<div style="background:linear-gradient(90deg,#1E88E5 0%,#42A5F5 100%);'
-    'padding:8px 16px;border-radius:8px;margin:8px 0 4px 0;">'
-    '<span style="color:white;font-weight:bold;font-size:0.95em;">'
-    '👇 タブを切り替えて各画面を表示</span></div>',
+    f'<div style="background:linear-gradient(90deg,#1E88E5 0%,#42A5F5 100%);'
+    f'padding:8px 16px;border-radius:8px;margin:12px 0 4px 0;">'
+    f'<span style="color:white;font-weight:bold;font-size:1.0em;">'
+    f'{_section_label}</span>'
+    f'<span style="color:rgba(255,255,255,0.7);font-size:0.85em;margin-left:12px;">'
+    f'👇 タブで切り替え</span></div>',
     unsafe_allow_html=True,
 )
 
