@@ -1,0 +1,100 @@
+{
+  "scenarios": [
+    {
+      "id": "normal_balanced",
+      "name": "正常ケース：バランス戦略",
+      "description": "標準パラメータでのシミュレーション実行",
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 150,
+        "avg_los": 18,
+        "discharge_adj": 2,
+        "admission_var": 1.0,
+        "strategy": "バランス戦略"
+      },
+      "expectations": {
+        "occupancy_rate_min": 70,
+        "occupancy_rate_max": 100,
+        "avg_los_min": 14,
+        "avg_los_max": 24,
+        "phase_sum_approx": 100,
+        "action_card_exists": true
+      }
+    },
+    {
+      "id": "boundary_high_occupancy",
+      "name": "境界ケース：高稼働率",
+      "description": "入院数が多く稼働率が95%を超える状況",
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 250,
+        "avg_los": 20,
+        "discharge_adj": 1,
+        "admission_var": 1.0,
+        "strategy": "安定維持戦略"
+      },
+      "expectations": {
+        "occupancy_rate_min": 85,
+        "occupancy_rate_max": 100,
+        "avg_los_min": 16,
+        "avg_los_max": 26,
+        "action_card_exists": true
+      }
+    },
+    {
+      "id": "boundary_long_los",
+      "name": "境界ケース：長期在院日数",
+      "description": "平均在院日数が制度上限に近い状況",
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 120,
+        "avg_los": 24,
+        "discharge_adj": 3,
+        "admission_var": 0.8,
+        "strategy": "バランス戦略"
+      },
+      "expectations": {
+        "occupancy_rate_min": 60,
+        "occupancy_rate_max": 100,
+        "avg_los_min": 18,
+        "avg_los_max": 30,
+        "los_headroom_warning": true,
+        "action_card_exists": true
+      }
+    },
+    {
+      "id": "boundary_low_admissions",
+      "name": "境界ケース：低入院数",
+      "description": "入院数が極端に少ない状況",
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 60,
+        "avg_los": 15,
+        "discharge_adj": 2,
+        "admission_var": 1.5,
+        "strategy": "回転重視戦略"
+      },
+      "expectations": {
+        "occupancy_rate_min": 30,
+        "occupancy_rate_max": 80,
+        "action_card_exists": true
+      }
+    },
+    {
+      "id": "actual_data_mode",
+      "name": "実績データモード：CSVデータ読み込み",
+      "description": "実績データモードに切り替え、サンプルCSVが読み込まれている前提",
+      "params": {
+        "mode": "actual_data",
+        "ward": "全体"
+      },
+      "expectations": {
+        "occupancy_rate_min": 70,
+        "occupancy_rate_max": 100,
+        "kpi_strip_visible": true,
+        "morning_capacity_visible": true,
+        "action_card_exists": true
+      }
+    }
+  ]
+}

@@ -34,3 +34,8 @@ pubmed-cache/
 
 # SQLite database (院内LAN環境で生成される実データ)
 data/*.db
+
+# Playwright
+playwright/screenshots/*.png
+playwright-report/
+test-results/
