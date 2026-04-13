@@ -2448,13 +2448,16 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 
 
 # ---------------------------------------------------------------------------
-# 朝のブリーフィング（常時表示・タブ外最上部）
+# 本日のサマリー（折りたたみ可能・タブ外最上部）
+# 本日の病床状況 + 今日の一手 + KPI + アラートをまとめて1つの expander に
+# 朝の確認後は折りたたんで、モード別タブコンテンツに集中できる
 # ---------------------------------------------------------------------------
+_summary_expander = st.expander("☀️ 本日のサマリー（クリックで折りたたみ）", expanded=True)
+
 _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
 _sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
 if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.session_state.get("demo_data"), pd.DataFrame) and len(st.session_state.get("demo_data", pd.DataFrame())) > 0):
-    # 本日の病床状況（折りたたみ可能）— 朝確認後は畳んでモード別コンテンツに集中
-    with st.expander("☀️ 本日の病床状況", expanded=True):
+    with _summary_expander:
         _brief_cols = st.columns([1, 1, 1, 2])
 
         # 稼働率ゲージ（plotly gauge chart）
@@ -2658,7 +2661,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     )
 
 # ---------------------------------------------------------------------------
-# 結論カード（今日の一手）— タブの上に固定表示
+# 結論カード（今日の一手）— サマリー expander 内に表示
 # ---------------------------------------------------------------------------
 _ac_has_data = isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0
 if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
@@ -2788,7 +2791,8 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 target_occupancy=target_lower if "target_lower" in dir() else 0.90,
                 selected_ward=_ac_selected,
             )
-            render_action_card(_ac_card)
+            with _summary_expander:
+                render_action_card(_ac_card)
 
             _ac_kpi_list = generate_kpi_priority_list(
                 emergency_summary=_ac_emergency_summary,
@@ -2803,21 +2807,20 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 occupancy_rate=_ac_occupancy,
                 target_occupancy=target_lower if "target_lower" in dir() else 0.90,
             )
-            render_kpi_priority_strip(_ac_kpi_list)
+            with _summary_expander:
+                render_kpi_priority_strip(_ac_kpi_list)
 
-            if _ac_morning_capacity is not None:
-                render_morning_capacity_card(_ac_morning_capacity, morning_5f=_ac_morning_5f, morning_6f=_ac_morning_6f)
+                if _ac_morning_capacity is not None:
+                    render_morning_capacity_card(_ac_morning_capacity, morning_5f=_ac_morning_5f, morning_6f=_ac_morning_6f)
 
-            if _ac_c_capacity is not None:
-                _ac_tradeoff = generate_tradeoff_assessment(
-                    c_adjustment_capacity=_ac_c_capacity,
-                    emergency_summary=_ac_emergency_summary,
-                    morning_capacity=_ac_morning_capacity,
-                    los_headroom=_ac_los_headroom,
-                )
-                render_tradeoff_card(_ac_tradeoff)
-
-            st.markdown("---")
+                if _ac_c_capacity is not None:
+                    _ac_tradeoff = generate_tradeoff_assessment(
+                        c_adjustment_capacity=_ac_c_capacity,
+                        emergency_summary=_ac_emergency_summary,
+                        morning_capacity=_ac_morning_capacity,
+                        los_headroom=_ac_los_headroom,
+                    )
+                    render_tradeoff_card(_ac_tradeoff)
         except Exception as _render_err:
             st.error(f"結論カード描画エラー: {_render_err}")
             import traceback
@@ -2825,9 +2828,10 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
 
 
 # ---------------------------------------------------------------------------
-# セクション共通ヘッダー（タブの上に表示）
+# セクション共通ヘッダー（サマリー expander 内に表示）
 # ---------------------------------------------------------------------------
 if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+  with _summary_expander:
     # 病棟選択キャプション
     if _selected_ward_key != "全体":
         st.caption(f"📍 {_selected_ward_key} ({_view_beds}床) のデータを表示中")
