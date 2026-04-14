@@ -202,7 +202,7 @@ class TestSummarizeCandidatesForDisplay:
             los_limit=24.0,
         )
         assert len(summary["table_data"]) > 0
-        expected_columns = {"入院日", "推定在院日数", "病棟", "経路", "退院近接度", "調整余地(日)", "判定", "推計"}
+        expected_columns = {"入院日", "在院日数", "病棟", "経路", "退院近接度", "調整余地(日)", "判定"}
         for row in summary["table_data"]:
             assert expected_columns.issubset(row.keys()), (
                 f"Missing columns: {expected_columns - row.keys()}"

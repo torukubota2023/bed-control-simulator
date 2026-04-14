@@ -8450,7 +8450,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要・C群" in _tab_idx:
     with tabs[_tab_idx["🛡️ 制度・需要・C群"]]:
         st.header("🛡️ 施設基準チェック・需要波・C群コントロール")
-        st.caption("⚠️ C群（退院準備期）は院内運用上のラベルであり、制度上の公式区分ではありません。推計値は参考値です。")
+        st.caption("⚠️ C群（退院準備期）は院内運用上のラベルであり、制度上の公式区分ではありません。")
 
         # --- データ準備 ---
         # _daily_df は既存変数（日次データ）。存在しない場合のフォールバック
@@ -8714,7 +8714,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         st.metric("余力", f"{_cg_capacity['headroom_days']:.1f}日")
 
                     if _cg_capacity["can_delay_discharge"]:
-                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} 延べベッド日数、推計）")
+                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} 延べベッド日数）")
                     else:
                         st.error("❌ C群退院の後ろ倒し不可（平均在院日数の余力不足）")
 

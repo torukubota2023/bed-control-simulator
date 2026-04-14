@@ -13,10 +13,10 @@ def render_c_group_candidates_lite(
     candidates_summary from summarize_candidates_for_display()
     candidates_result from generate_c_group_candidate_list()
     """
-    st.subheader("\U0001f465 C群調整候補一覧（lite版・推計）")
+    st.subheader("\U0001f465 C群調整候補一覧（lite版）")
     st.caption(
         "C群（在院15日目以降）は院内運用ラベルです。制度上の正式区分ではありません。"
-        "以下は入退院イベントからの推計であり、実際の在院状況と異なる場合があります。"
+        "以下は入退院イベントから算出したデータであり、実際の在院状況と異なる場合があります。"
     )
 
     # Warning if exists
