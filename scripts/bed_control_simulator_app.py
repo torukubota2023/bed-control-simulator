@@ -1133,7 +1133,7 @@ if not _is_actual_data_mode:
     compare_all = st.sidebar.checkbox("全戦略比較", value=False)
 
     # --- 実行ボタン ---
-    run_button = st.sidebar.button("シミュレーション実行", type="primary", width="stretch")
+    run_button = st.sidebar.button("シミュレーション実行", type="primary", use_container_width=True)
 else:
     strategy = "バランス戦略"
     compare_all = False
@@ -3008,7 +3008,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             "phase_c_count": "C群（自動）",
                             "notes": "備考",
                         }),
-                        width="stretch",
+                        use_container_width=True,
                         height=min(400, 50 + len(_demo_display) * 35),
                         hide_index=True,
                     )
@@ -3539,7 +3539,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             "C群（自動）": st.column_config.NumberColumn(disabled=True),
                             "退院平均LOS": st.column_config.NumberColumn(disabled=True, format="%.1f"),
                         },
-                        width="stretch",
+                        use_container_width=True,
                         height=min(400, 50 + len(display_data) * 35),
                         num_rows="fixed",
                         key="dm_data_editor",
@@ -3893,7 +3893,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     "predicted_occupancy": "予測稼働率(%)",
                     "confidence": "信頼度",
                 })
-                st.dataframe(pred_display, width="stretch", hide_index=True)
+                st.dataframe(pred_display, use_container_width=True, hide_index=True)
             else:
                 st.info("予測に十分なデータがありません。")
 
@@ -3953,7 +3953,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 
                 st.dataframe(
                     pd.DataFrame(weekly_display),
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                 )
             else:
@@ -5564,7 +5564,7 @@ if "🚨 運営改善アラート" in _tab_idx and _data_ready:
             return [""] * len(row)
 
         styled = flag_df.style.apply(highlight_flags, axis=1)
-        st.dataframe(styled, width="stretch", height=400)
+        st.dataframe(styled, use_container_width=True, height=400)
 
         # --- 目標レンジ内日数 ---
         col1, col2 = st.columns(2)
@@ -6233,7 +6233,7 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                     })
 
                 _demand_df = pd.DataFrame(_demand_results)
-                st.dataframe(_demand_df, width="stretch", hide_index=True)
+                st.dataframe(_demand_df, use_container_width=True, hide_index=True)
 
                 # C群退院が発生する閾値を見つける
                 _threshold = None
@@ -6386,7 +6386,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                     _preset_cols = st.columns(len(_presets))
                     for _pi, (_pname, _pvals) in enumerate(_presets.items()):
                         with _preset_cols[_pi]:
-                            if st.button(_pname, key=f"preset_{_pi}", width="stretch"):
+                            if st.button(_pname, key=f"preset_{_pi}", use_container_width=True):
                                 # pending フラグで保存 → 次回 rerun 時に
                                 # ウィジェット作成前に適用される
                                 st.session_state["_wi_pending_preset"] = _pvals
@@ -6542,7 +6542,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                             "C群退院": st.column_config.NumberColumn("C群退院", min_value=0, max_value=30, step=1),
                             "新規入院": st.column_config.NumberColumn("新規入院", min_value=0, max_value=20, step=1),
                         },
-                        width="stretch",
+                        use_container_width=True,
                         hide_index=True,
                         key="weekly_plan_editor",
                     )
@@ -6588,7 +6588,7 @@ if "\U0001f52e What-if分析" in _tab_idx:
                                     "稼働率": f"{_wr['occupancy']*100:.1f}%",
                                     "日次運営貢献額": fmt_yen(_wr["daily_profit"]),
                                 })
-                            st.dataframe(pd.DataFrame(_result_table), width="stretch", hide_index=True)
+                            st.dataframe(pd.DataFrame(_result_table), use_container_width=True, hide_index=True)
 
                             # 稼働率・運営貢献額推移グラフ
                             st.markdown("### 📊 稼働率・運営貢献額推移")
@@ -6852,7 +6852,7 @@ if "\U0001f4c8 トレンド分析" in _tab_idx:
                 for col in ["平均稼働率", "目標レンジ内率", "A群平均構成比", "B群平均構成比", "C群平均構成比"]:
                     compare_df[col] = compare_df[col].apply(lambda x: f"{x}%")
 
-                st.dataframe(compare_df, width="stretch")
+                st.dataframe(compare_df, use_container_width=True)
 
                 # --- 主要指標の棒グラフ比較 ---
                 strategies_list = list(comparison.keys())
@@ -7670,7 +7670,7 @@ if "データ" in _tab_idx and _data_ready:
         # データ表示
         display_df = df.copy()
         display_df["稼働率"] = (display_df["稼働率"] * 100).round(1)
-        st.dataframe(display_df, width="stretch", height=500)
+        st.dataframe(display_df, use_container_width=True, height=500)
 
         # CSVダウンロード
         csv_buffer = io.StringIO()

@@ -31,7 +31,7 @@ def render_c_group_candidates_lite(
     table_data = candidates_summary.get("table_data", [])
     if table_data:
         df = pd.DataFrame(table_data)
-        st.dataframe(df, width="stretch", hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("該当する候補はありません。")
 
