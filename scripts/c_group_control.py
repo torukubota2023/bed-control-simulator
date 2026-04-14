@@ -454,16 +454,35 @@ def calculate_demand_absorption(
 
     absorption_rate = (absorbable_by_c / demand_gap_beds * 100) if demand_gap_beds > 0 else 0.0
 
-    # 推奨の判定
-    if demand_trend == "decreasing" and demand_gap > 0:
-        # 需要減少 + 稼働率不足 → C群キープ推奨
+    # --- LOS制約チェック（施設基準が最優先）---
+    headroom_days = c_adjustment_capacity.get("headroom_days")
+    los_exceeded = headroom_days is not None and headroom_days < 0
+    los_tight = headroom_days is not None and 0 <= headroom_days < 1.0
+
+    # 推奨の判定（LOS制約 > 需要トレンド）
+    if los_exceeded:
+        # LOS超過 → 需要トレンドに関わらずC群前倒し推奨
+        recommendation = "C群前倒し推奨"
+        recommendation_reason = (
+            f"平均在院日数が制度上限を超過しています（余力: {headroom_days:.1f}日）。"
+            "C群の退院を進めて平均在院日数を制度上限以下に戻してください"
+        )
+    elif los_tight:
+        # LOS余力わずか → 前倒し推奨
+        recommendation = "C群前倒し推奨"
+        recommendation_reason = (
+            f"平均在院日数の余力が{headroom_days:.1f}日とわずかです。"
+            "C群の退院を進めて制度余力を確保してください"
+        )
+    elif demand_trend == "decreasing" and demand_gap > 0:
+        # 需要減少 + 稼働率不足（LOS余力あり）→ C群キープ推奨
         recommendation = "C群キープ推奨"
         recommendation_reason = (
             f"需要減少トレンドかつ稼働率が目標を {demand_gap*100:.1f}pt 下回っています。"
             "C群の退院を急がず、制度余力の範囲内で在院を維持することで稼働率を下支えできます"
         )
     elif demand_trend == "increasing" and occupancy_rate >= target_occupancy:
-        # 需要増加 + 稼働率十分 → C群前倒し推奨
+        # 需要増加 + 稼働率十分（LOS余力あり）→ C群前倒し推奨
         recommendation = "C群前倒し推奨"
         recommendation_reason = (
             "需要増加トレンドかつ稼働率は目標以上です。"
