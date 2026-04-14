@@ -148,17 +148,16 @@ class TestClassifyDischargeUrgency:
         result = classify_discharge_urgency(candidates, los_limit=21.0)
         assert result == ["urgent", "urgent", "stay_ok", "stay_ok"]
 
-    def test_over_limit_but_avg_ok(self):
-        """平均≤21だが個別にlos_limit超の人がいる → release"""
+    def test_ward_los_within_limit_all_stay_ok(self):
+        """病棟全体LOS≤21なら個別LOS>21でも全員stay_ok（稼働率維持）"""
         candidates = [
             {"estimated_los": 25},
             {"estimated_los": 18},
             {"estimated_los": 16},
         ]
-        # 平均 = (25+18+16)/3 = 19.7 ≤ 21
-        # でも25は21超 → release
-        result = classify_discharge_urgency(candidates, los_limit=21.0)
-        assert result == ["release", "stay_ok", "stay_ok"]
+        # 病棟全体LOS=19.7 ≤ 21 → 全員stay_ok（個別のLOSに関わらず）
+        result = classify_discharge_urgency(candidates, los_limit=21.0, current_ward_los=19.7)
+        assert result == ["stay_ok", "stay_ok", "stay_ok"]
 
     def test_single_candidate_above(self):
         """候補1人でlos超過 → urgent"""

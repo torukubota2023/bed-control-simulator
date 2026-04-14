@@ -335,12 +335,10 @@ def classify_discharge_urgency(
     reference_los = current_ward_los if current_ward_los is not None else (sum(all_los) / total)
 
     if reference_los <= los_limit:
-        # 病棟全体の平均は基準内 → 急ぎ退院は不要
-        # 個別にlos_limit超の人は「退院必要」
-        return [
-            "release" if los > los_limit else "stay_ok"
-            for los in all_los
-        ]
+        # 病棟全体の平均は基準内 → 全員「まだ在留可能」
+        # 個別にLOS>21日でも、全体平均が基準内なら退院を急ぐ理由はない
+        # （稼働率維持の観点からもC群キープが合理的）
+        return ["stay_ok"] * total
 
     # 病棟全体の平均がlos_limitを超過 → 長い順に退院シミュレーション
     # C群候補の平均で代替している場合のシミュレーション
@@ -423,19 +421,11 @@ def summarize_candidates_for_display(
                 "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
             )
         else:
-            release_count = sum(1 for u in urgency_labels if u == "release")
-            if release_count > 0:
-                summary_text = (
-                    f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
-                    f"病棟全体の平均在院日数は基準内です。在院日数{los_limit:.0f}日超の{release_count}名は退院調整を進めてください。\n"
-                    "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
-                )
-            else:
-                summary_text = (
-                    f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
-                    f"病棟全体の平均在院日数は基準内です。\n"
-                    "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
-                )
+            summary_text = (
+                f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
+                f"病棟全体の平均在院日数は基準内です。稼働率維持のため急ぎの退院調整は不要です。\n"
+                "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
+            )
 
     # --- テーブルデータ ---
     table_data: list[dict] = []
