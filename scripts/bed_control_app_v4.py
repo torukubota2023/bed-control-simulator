@@ -58,7 +58,7 @@ def _combine_ward_dfs(df_5f: pd.DataFrame, df_6f: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data
-def _load_data() -> dict:
+def _load_demo_data() -> dict:
     """デモCSVからデータを読み込む。"""
     # --- 病棟別日次データ ---
     ward_csv = os.path.join(_DATA_DIR, "sample_actual_data_ward_202603.csv")
@@ -97,6 +97,42 @@ def _load_data() -> dict:
     return {
         "daily_all": df_all,
         "ward_dfs": {"5F": df_5f, "6F": df_6f},
+        "detail": detail,
+    }
+
+
+def _get_active_data() -> dict:
+    """ユーザーデータがあればそれを、なければデモデータを返す。"""
+    demo = _load_demo_data()
+
+    user_daily = st.session_state.get("v4_daily_data")
+    user_detail = st.session_state.get("v4_detail_data")
+
+    if user_daily is not None and len(user_daily) > 0:
+        # ユーザー日次データを病棟別に分割
+        ward_dfs = {}
+        for w in ("5F", "6F"):
+            wdf = user_daily[user_daily["ward"] == w].copy().reset_index(drop=True)
+            if len(wdf) > 0:
+                ward_dfs[w] = wdf
+        if ward_dfs:
+            dfs = list(ward_dfs.values())
+            daily_all = _combine_ward_dfs(
+                ward_dfs.get("5F", dfs[0]),
+                ward_dfs.get("6F", dfs[-1]),
+            ) if len(ward_dfs) == 2 else dfs[0].copy()
+        else:
+            daily_all = user_daily
+            ward_dfs = demo["ward_dfs"]
+    else:
+        daily_all = demo["daily_all"]
+        ward_dfs = demo["ward_dfs"]
+
+    detail = user_detail if user_detail is not None and len(user_detail) > 0 else demo["detail"]
+
+    return {
+        "daily_all": daily_all,
+        "ward_dfs": ward_dfs,
         "detail": detail,
     }
 
@@ -144,7 +180,7 @@ def _render_sidebar() -> dict:
 
 def main():
     config = _render_sidebar()
-    data = _load_data()
+    data = _get_active_data()
 
     # --- タブ ---
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
