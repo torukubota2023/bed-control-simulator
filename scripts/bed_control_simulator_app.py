@@ -8482,6 +8482,13 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
         with _gr_sub1:
             st.subheader("制度余力ダッシュボード")
 
+            # 現在の表示病棟を明示
+            if _selected_ward_key in ("5F", "6F"):
+                _gr_ward_beds = get_ward_beds(_selected_ward_key) if _DATA_MANAGER_AVAILABLE else 47
+                st.markdown(f"**\U0001f4cc 表示中: {_selected_ward_key}病棟（{_gr_ward_beds}床）**")
+            else:
+                st.markdown(f"**\U0001f4cc 表示中: 全体（{total_beds}床）**")
+
             if _gr_daily_df is not None:
                 _gr_results = calculate_guardrail_status(_gr_daily_df, _gr_detail_df, _gr_config)
                 _gr_display = format_guardrail_display(_gr_results)
@@ -8522,11 +8529,13 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     st.markdown("---")
                     st.subheader("🌅 翌診療日朝の救急受入余力（推計）")
                     try:
+                        _morning_ward = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
+                        _morning_beds = 47 if _morning_ward else 94
                         _morning_cap = estimate_next_morning_capacity(
                             _gr_daily_df, _gr_detail_df,
-                            ward=None,  # always show hospital-wide
+                            ward=_morning_ward,
                             target_date=None,
-                            total_beds=94,
+                            total_beds=_morning_beds,
                         )
                         _mc_cols = st.columns(3)
                         with _mc_cols[0]:
@@ -8628,6 +8637,14 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
             st.subheader("C群コントロールパネル")
             st.caption("C群（在院15日目以降）は院内運用ラベルです。制度上の公式区分ではありません。")
 
+            # 現在の表示病棟を明示
+            _cg_ward_filter_label = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
+            if _cg_ward_filter_label:
+                _cg_ward_beds = get_ward_beds(_cg_ward_filter_label) if _DATA_MANAGER_AVAILABLE else 47
+                st.markdown(f"**\U0001f4cc 表示中: {_cg_ward_filter_label}病棟（{_cg_ward_beds}床）**")
+            else:
+                st.markdown(f"**\U0001f4cc 表示中: 全体（{total_beds}床）**")
+
             if _gr_daily_df is not None:
                 # ============================================================
                 # 計算フェーズ（表示前にすべての値を準備する）
@@ -8638,8 +8655,8 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _los_limit = _los_hr["los_limit"]
                 _cg_rolling = calculate_rolling_los(_gr_daily_df_full, monthly_summary=st.session_state.get("monthly_summary"), ward=_cg_ward_filter) if _gr_daily_df_full is not None else None
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
-                _dw_class_cg = classify_demand_period(_gr_daily_df)
-                _dw_trend_cg = calculate_demand_trend(_gr_daily_df)
+                _dw_class_cg = classify_demand_period(_gr_daily_df, ward=_cg_ward_filter)
+                _dw_trend_cg = calculate_demand_trend(_gr_daily_df, ward=_cg_ward_filter)
 
                 # 救急搬送比率リスク（C群アラート・候補一覧で使用）
                 _er_risk_for_cg = None
