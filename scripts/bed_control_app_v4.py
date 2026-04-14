@@ -1,0 +1,175 @@
+"""ベッドコントロールアプリ v4.0 — シンプル・数字で語る
+
+ベテランの主任・師長が毎朝見る画面。
+判断に必要な5つの数字を1画面で。詳細は別タブで。
+"""
+
+import streamlit as st
+import pandas as pd
+import sys
+import os
+
+# --- パス設定 ---
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
+# --- ページ設定 ---
+st.set_page_config(
+    page_title="ベッドコントロール",
+    page_icon="🏥",
+    layout="wide",
+)
+
+# --- モジュール読み込み ---
+from bed_data_manager import (
+    generate_sample_data,
+    TOTAL_BEDS,
+    get_ward_beds,
+)
+from tabs import main_tab, detail_tab, regulation_tab, data_input_tab, settings_tab
+
+
+# ============================================================
+# データ読み込み
+# ============================================================
+
+_DATA_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "data")
+
+
+def _combine_ward_dfs(df_5f: pd.DataFrame, df_6f: pd.DataFrame) -> pd.DataFrame:
+    """5Fと6Fの日次データを全体に合算する。"""
+    sum_cols = [
+        "total_patients", "new_admissions", "new_admissions_short3",
+        "discharges", "discharge_a", "discharge_b", "discharge_c",
+        "phase_a_count", "phase_b_count", "phase_c_count",
+    ]
+    dfs = []
+    for df in [df_5f, df_6f]:
+        cols = ["date"] + [c for c in sum_cols if c in df.columns]
+        dfs.append(df[cols].copy())
+
+    combined = pd.concat(dfs).groupby("date", as_index=False).sum()
+    combined["ward"] = "all"
+    combined["data_source"] = "sample"
+    combined["notes"] = ""
+    combined["avg_los"] = 0.0
+    return combined.sort_values("date").reset_index(drop=True)
+
+
+@st.cache_data
+def _load_data() -> dict:
+    """デモCSVからデータを読み込む。"""
+    # --- 病棟別日次データ ---
+    ward_csv = os.path.join(_DATA_DIR, "sample_actual_data_ward_202603.csv")
+    if os.path.exists(ward_csv):
+        ward_df = pd.read_csv(ward_csv)
+        df_5f = ward_df[ward_df["ward"] == "5F"].copy().reset_index(drop=True)
+        df_6f = ward_df[ward_df["ward"] == "6F"].copy().reset_index(drop=True)
+    else:
+        # CSVがない場合はサンプル生成（稼働率が高めになる）
+        df_5f = generate_sample_data(num_days=30, ward="5F", seed=42)
+        df_6f = generate_sample_data(num_days=30, ward="6F", seed=43)
+
+    df_all = _combine_ward_dfs(df_5f, df_6f)
+
+    # --- 入退院詳細データ ---
+    detail_csv = os.path.join(_DATA_DIR, "admission_details.csv")
+    if os.path.exists(detail_csv):
+        detail = pd.read_csv(detail_csv)
+        # 日本語カラムを追加（c_group_candidates.py が参照）
+        if "date" in detail.columns and "日付" not in detail.columns:
+            detail["日付"] = detail["date"]
+        if "ward" in detail.columns and "病棟" not in detail.columns:
+            detail["病棟"] = detail["ward"]
+        if "event_type" in detail.columns and "入退院区分" not in detail.columns:
+            detail["入退院区分"] = detail["event_type"].map(
+                {"admission": "入院", "discharge": "退院"}
+            ).fillna(detail["event_type"])
+        if "route" in detail.columns and "経路" not in detail.columns:
+            detail["経路"] = detail["route"]
+    else:
+        detail = pd.DataFrame(columns=[
+            "date", "ward", "event_type", "route",
+            "日付", "病棟", "入退院区分", "経路", "los_days",
+        ])
+
+    return {
+        "daily_all": df_all,
+        "ward_dfs": {"5F": df_5f, "6F": df_6f},
+        "detail": detail,
+    }
+
+
+# ============================================================
+# サイドバー
+# ============================================================
+
+def _render_sidebar() -> dict:
+    """サイドバーを描画し設定を返す。"""
+    with st.sidebar:
+        st.title("🏥 ベッドコントロール")
+        st.caption("v4.0")
+
+        st.markdown("---")
+
+        # 病棟選択
+        ward_sel = st.radio("表示病棟", ["全体", "5F", "6F"], horizontal=True)
+        ward = ward_sel if ward_sel in ("5F", "6F") else None
+
+        st.markdown("---")
+
+        # 目標設定（折りたたみ）
+        with st.expander("⚙ 目標設定", expanded=False):
+            target_occ = st.slider("目標稼働率 (%)", 80, 100, 90) / 100
+            los_limit = st.number_input("在院日数上限 (日)", 14, 30, 21, step=1)
+
+        # 病床数と1%の価値
+        ward_beds = get_ward_beds(ward) if ward else TOTAL_BEDS
+        marginal_yearly = int(ward_beds * 0.01 * 36000 * 365 / 10000)  # 万円
+
+    return {
+        "ward": ward,
+        "target_occ": target_occ,
+        "los_limit": float(los_limit),
+        "total_beds": TOTAL_BEDS,
+        "ward_beds": ward_beds,
+        "marginal_value": marginal_yearly,
+    }
+
+
+# ============================================================
+# メイン
+# ============================================================
+
+def main():
+    config = _render_sidebar()
+    data = _load_data()
+
+    # --- タブ ---
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 メイン",
+        "🔍 詳細分析",
+        "📋 制度確認",
+        "📝 データ入力",
+        "⚙ 設定",
+    ])
+
+    with tab1:
+        main_tab.render(data, config["ward"], config)
+
+    with tab2:
+        detail_tab.render(data, config["ward"], config)
+
+    with tab3:
+        regulation_tab.render(data, config)
+
+    with tab4:
+        data_input_tab.render()
+
+    with tab5:
+        settings_tab.render()
+
+
+if __name__ == "__main__":
+    main()
