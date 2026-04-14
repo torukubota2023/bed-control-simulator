@@ -2760,7 +2760,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
 
             if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
                 try:
-                    _ac_c_summary = get_c_group_summary(_ac_daily_df)
+                    _ac_c_summary = get_c_group_summary(_ac_daily_df, ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None)
                     _ac_rolling = calculate_rolling_los(_ac_daily_df_full, window_days=90, monthly_summary=st.session_state.get("monthly_summary"), ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None)
                     _ac_los_limit = calculate_los_limit(_ac_config.get("age_85_ratio", 0.25))
                     _ac_c_capacity = calculate_c_adjustment_capacity(
@@ -8468,9 +8468,11 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
             except Exception:
                 _gr_detail_df = st.session_state.get("admission_details")
 
+        _gr_ward_selected = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
         _gr_config = {
             "age_85_ratio": 0.25,  # HOSPITAL_DEFAULTS参照
             "monthly_summary": st.session_state.get("monthly_summary", {}),
+            "ward": _gr_ward_selected,
         }
 
         # --- 3つのサブセクション ---
@@ -8490,14 +8492,22 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 st.markdown(f"**\U0001f4cc 表示中: 全体（{total_beds}床）**")
 
             if _gr_daily_df is not None:
-                _gr_results = calculate_guardrail_status(_gr_daily_df, _gr_detail_df, _gr_config)
-                _gr_display = format_guardrail_display(_gr_results)
-                _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
+                # 病棟別データの準備
+                _gr_ward_dfs = st.session_state.get("sim_ward_raw_dfs_full") or st.session_state.get("ward_raw_dfs_full") or {}
 
-                # 病棟別LOS余力
+                # 病棟選択時は病棟フィルタ済みデータで計算
+                if _gr_ward_selected and _gr_ward_selected in _gr_ward_dfs:
+                    _gr_daily_df_ward = _gr_ward_dfs[_gr_ward_selected]
+                    _gr_results = calculate_guardrail_status(_gr_daily_df_ward, _gr_detail_df, _gr_config)
+                    _los_hr = calculate_los_headroom(_gr_daily_df_ward, _gr_config)
+                else:
+                    _gr_results = calculate_guardrail_status(_gr_daily_df, _gr_detail_df, _gr_config)
+                    _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
+                _gr_display = format_guardrail_display(_gr_results)
+
+                # 病棟別LOS余力（比較表示用）
                 _los_hr_5f = None
                 _los_hr_6f = None
-                _gr_ward_dfs = st.session_state.get("sim_ward_raw_dfs_full") or st.session_state.get("ward_raw_dfs_full") or {}
                 for _w_key in ("5F", "6F"):
                     if _w_key in _gr_ward_dfs and isinstance(_gr_ward_dfs[_w_key], pd.DataFrame) and len(_gr_ward_dfs[_w_key]) > 0:
                         try:
@@ -8651,9 +8661,12 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # ============================================================
                 _cg_ward_filter = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
                 _cg_summary = get_c_group_summary(_gr_daily_df, ward=_cg_ward_filter)
-                _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
+                # 病棟選択時は病棟フィルタ済みデータでLOS計算
+                _cg_ward_dfs = _gr_ward_dfs if "_gr_ward_dfs" in dir() else (st.session_state.get("sim_ward_raw_dfs_full") or st.session_state.get("ward_raw_dfs_full") or {})
+                _cg_los_df = _cg_ward_dfs.get(_cg_ward_filter, _gr_daily_df_full) if _cg_ward_filter and _cg_ward_dfs else _gr_daily_df_full
+                _los_hr = calculate_los_headroom(_cg_los_df, _gr_config)
                 _los_limit = _los_hr["los_limit"]
-                _cg_rolling = calculate_rolling_los(_gr_daily_df_full, monthly_summary=st.session_state.get("monthly_summary"), ward=_cg_ward_filter) if _gr_daily_df_full is not None else None
+                _cg_rolling = calculate_rolling_los(_cg_los_df, monthly_summary=st.session_state.get("monthly_summary"), ward=_cg_ward_filter) if _cg_los_df is not None else None
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
                 _dw_class_cg = classify_demand_period(_gr_daily_df, ward=_cg_ward_filter)
                 _dw_trend_cg = calculate_demand_trend(_gr_daily_df, ward=_cg_ward_filter)
