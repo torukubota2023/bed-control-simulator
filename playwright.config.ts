@@ -1,4 +1,7 @@
 import { defineConfig } from '@playwright/test';
+import { config } from 'dotenv';
+
+config({ override: true });
 
 export default defineConfig({
   testDir: './playwright',
