@@ -162,11 +162,14 @@ def calculate_emergency_ratio(
 ) -> Dict[str, Any]:
     """指定病棟・月の救急搬送後患者割合を計算する。
 
+    2026年改定により、短手3は救急搬送率の計算に含める（除外しない）。
+    exclude_short3 引数は後方互換のため残すが無視される。
+
     Args:
         detail_df: 入退院詳細データ
         ward: 病棟 ("5F"/"6F")。None なら全体
         year_month: 対象月 ("2026-04")。None なら target_date から導出
-        exclude_short3: True なら短手3を分母から除外
+        exclude_short3: 非推奨。2026年改定で短手3は常に含めるため無視される
         target_date: 基準日。None なら今日
 
     Returns:
@@ -175,17 +178,9 @@ def calculate_emergency_ratio(
     ym = _resolve_year_month(year_month, target_date)
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
 
-    # 短手3 除外
-    excluded_count = 0
-    if exclude_short3 and not adm_df.empty and "short3_type" in adm_df.columns:
-        short3_mask = adm_df["short3_type"].apply(_is_short3)
-        excluded_count = int(short3_mask.sum())
-        adm_df = adm_df[~short3_mask]
-
-    # 内訳
-    breakdown = _build_breakdown(adm_df, exclude_short3)
-    if exclude_short3:
-        breakdown["excluded_short3"] = excluded_count
+    # 2026年改定: 短手3は救急搬送率の計算に含める（除外しない）
+    # exclude_short3 引数は後方互換のため残すが無視する
+    breakdown = _build_breakdown(adm_df, False)
 
     denominator = len(adm_df)
     numerator = 0
@@ -219,20 +214,147 @@ def calculate_dual_ratio(
     year_month: Optional[str] = None,
     target_date: Optional[date] = None,
 ) -> Dict[str, Any]:
-    """公式割合と運用割合（短手3除外）の両方を返す。"""
+    """公式割合と運用割合の両方を返す。
+
+    .. deprecated:: 2026年改定対応
+        短手3は救急搬送率に含めて計算するため、2系統管理は不要。
+        calculate_rolling_emergency_ratio() を使用してください。
+    """
     ym = _resolve_year_month(year_month, target_date)
     return {
         "official": calculate_emergency_ratio(
             detail_df, ward=ward, year_month=ym, exclude_short3=False
         ),
         "operational": calculate_emergency_ratio(
-            detail_df, ward=ward, year_month=ym, exclude_short3=True
+            detail_df, ward=ward, year_month=ym, exclude_short3=False
         ),
     }
 
 
 # ---------------------------------------------------------------------------
-# 3. project_month_end
+# 3. calculate_rolling_emergency_ratio（3ヶ月rolling平均）
+# ---------------------------------------------------------------------------
+
+
+def calculate_rolling_emergency_ratio(
+    detail_df: pd.DataFrame,
+    ward: Optional[str] = None,
+    target_date: Optional[date] = None,
+    window_months: int = 3,
+    monthly_summary: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """直近3ヶ月の救急搬送後患者割合をrolling平均で計算する。
+
+    3ヶ月分の入院件数と救急搬送件数を合算してから割り算する
+    （比率の単純平均ではなく、厚労省公式の計算方法）。
+
+    運用開始時は monthly_summary で過去月のサマリーデータを補完可能。
+
+    Args:
+        detail_df: 入退院詳細データ
+        ward: 病棟 ("5F"/"6F")。None なら全体
+        target_date: 基準日。None なら今日
+        window_months: rolling window 月数（デフォルト3）
+        monthly_summary: 過去月サマリー dict（任意）
+            {
+                "2026-02": {"5F": {"admissions": 70, "emergency": 11, ...}, "6F": {...}},
+                "2026-03": {"5F": {...}, "6F": {...}},
+            }
+
+    Returns:
+        dict: {
+            "ratio_pct": 3ヶ月平均の割合,
+            "numerator": 3ヶ月合計の救急搬送数,
+            "denominator": 3ヶ月合計の入院数,
+            "status": "green"/"yellow"/"red",
+            "monthly_breakdown": [{month, numerator, denominator, ratio_pct}, ...],
+            "ward": ward,
+            "window_months": window_months,
+        }
+    """
+    d = target_date if target_date is not None else date.today()
+
+    # 対象月リストを生成（当月含む過去window_months分）
+    target_months: list[str] = []
+    for i in range(window_months - 1, -1, -1):
+        # i ヶ月前
+        y = d.year
+        m = d.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        target_months.append(f"{y:04d}-{m:02d}")
+
+    monthly_breakdown: list[dict] = []
+    total_numerator = 0
+    total_denominator = 0
+
+    for ym in target_months:
+        # まず detail_df から計算を試みる
+        month_result = calculate_emergency_ratio(
+            detail_df, ward=ward, year_month=ym
+        )
+
+        if month_result["denominator"] > 0:
+            # 日次データがある月
+            monthly_breakdown.append({
+                "year_month": ym,
+                "numerator": month_result["numerator"],
+                "denominator": month_result["denominator"],
+                "ratio_pct": month_result["ratio_pct"],
+                "source": "daily",
+            })
+            total_numerator += month_result["numerator"]
+            total_denominator += month_result["denominator"]
+        elif monthly_summary and ym in monthly_summary:
+            # 過去月サマリーから補完
+            ward_key = ward if ward else "all"
+            summary = monthly_summary[ym].get(ward_key, {})
+            s_adm = summary.get("admissions", 0)
+            s_emg = summary.get("emergency", 0)
+            if s_adm > 0:
+                monthly_breakdown.append({
+                    "year_month": ym,
+                    "numerator": s_emg,
+                    "denominator": s_adm,
+                    "ratio_pct": round(s_emg / s_adm * 100, 2),
+                    "source": "summary",
+                })
+                total_numerator += s_emg
+                total_denominator += s_adm
+            else:
+                monthly_breakdown.append({
+                    "year_month": ym,
+                    "numerator": 0,
+                    "denominator": 0,
+                    "ratio_pct": 0.0,
+                    "source": "no_data",
+                })
+        else:
+            monthly_breakdown.append({
+                "year_month": ym,
+                "numerator": 0,
+                "denominator": 0,
+                "ratio_pct": 0.0,
+                "source": "no_data",
+            })
+
+    ratio_pct = (total_numerator / total_denominator * 100.0) if total_denominator > 0 else 0.0
+
+    return {
+        "numerator": total_numerator,
+        "denominator": total_denominator,
+        "ratio_pct": round(ratio_pct, 2),
+        "gap_to_target_pt": round(ratio_pct - EMERGENCY_THRESHOLD_PCT, 2),
+        "status": _status_from_ratio(ratio_pct),
+        "ward": ward,
+        "window_months": window_months,
+        "monthly_breakdown": monthly_breakdown,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4. project_month_end
 # ---------------------------------------------------------------------------
 
 
@@ -259,9 +381,7 @@ def project_month_end(
 
     # 現在までの入院
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
-    # 短手3除外
-    if exclude_short3 and not adm_df.empty and "short3_type" in adm_df.columns:
-        adm_df = adm_df[~adm_df["short3_type"].apply(_is_short3)]
+    # 2026年改定: 短手3は常に含める（exclude_short3は無視）
     current_total = len(adm_df)
     current_emergency = 0
     if not adm_df.empty and "route" in adm_df.columns:
@@ -277,8 +397,7 @@ def project_month_end(
     # 過去14日間のデータで曜日別パターンを算出
     lookback_start = td - timedelta(days=13)
     all_adm = _filter_admissions(detail_df, ward=ward)
-    if exclude_short3 and not all_adm.empty and "short3_type" in all_adm.columns:
-        all_adm = all_adm[~all_adm["short3_type"].apply(_is_short3)]
+    # 2026年改定: 短手3は常に含める
 
     if not all_adm.empty:
         all_adm = all_adm.copy()
@@ -683,9 +802,7 @@ def get_cumulative_progress(
     # 当月入院データ取得
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
 
-    if exclude_short3 and not adm_df.empty and "short3_type" in adm_df.columns:
-        short3_mask = adm_df["short3_type"].apply(_is_short3)
-        adm_df = adm_df[~short3_mask]
+    # 2026年改定: 短手3は常に含める（exclude_short3は無視）
 
     if adm_df.empty:
         return []

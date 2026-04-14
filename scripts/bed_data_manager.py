@@ -25,6 +25,10 @@ import pandas as pd
 # 出典: 研究ノート docs/admin/short3_integration_research.md
 SHORT3_AVG_LOS_DAYS = 2.0
 
+# 短手3オーバーフロー患者（6日以上入院）の入院料日額
+# 地域包括医療病棟入院料1 Tier3（予定入院+手術あり）= 3,117点 × 10円
+SHORT3_OVERFLOW_DAILY_RATE = 31170
+
 # 日齢バケット: 1日目〜14日目は個別、15日目以上はまとめる
 DAY_BUCKET_KEYS = [f"day_{i}" for i in range(1, 15)] + ["day_15plus"]
 # DAY_BUCKET_KEYS = ["day_1", "day_2", ..., "day_14", "day_15plus"]
@@ -34,6 +38,8 @@ DAILY_RECORD_COLUMNS = [
     "total_patients",    # 在院患者数
     "new_admissions",    # 新規入院数
     "new_admissions_short3",  # うち短期滞在手術等基本料3 算定（内数, 内訳記録のみ Phase 1）
+    "short3_overflow_count",     # 短手3→通常入院 切替患者数（6日目以降も入院継続）
+    "short3_overflow_avg_los",   # 切替患者の入院初日からの平均在院日数
     "discharges",        # 退院数
     "discharge_a",       # A群相当退院数（1-5日目退院）
     "discharge_b",       # B群相当退院数（6-14日目退院）
@@ -151,11 +157,13 @@ def create_empty_dataframe() -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     df["ward"] = df["ward"].astype("string")
     for col in ["total_patients", "new_admissions", "new_admissions_short3",
+                 "short3_overflow_count",
                  "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         df[col] = df[col].astype("Int64")  # nullable int
     df["avg_los"] = df["avg_los"].astype("Float64")  # nullable float
+    df["short3_overflow_avg_los"] = df["short3_overflow_avg_los"].astype("Float64")
     df["notes"] = df["notes"].astype("string")
     df["discharge_los_list"] = df["discharge_los_list"].astype("string")
     return df
@@ -209,6 +217,16 @@ def validate_record(record, existing_df=None):
         if isinstance(adm_val, (int, np.integer)) and s3 > adm_val:
             errors.append("短手3（内数）は新規入院数以下で入力してください。")
 
+    # 短手3オーバーフロー チェック
+    s3_ov = record.get("short3_overflow_count", 0) or 0
+    if isinstance(s3_ov, (int, np.integer)):
+        if s3_ov < 0:
+            errors.append("短手3切替患者数は0以上で入力してください。")
+        if s3_ov > 0:
+            s3_ov_los = record.get("short3_overflow_avg_los")
+            if s3_ov_los is not None and s3_ov_los < 6:
+                errors.append("短手3切替患者の在院日数は6日以上で入力してください。")
+
     # 退院内訳チェック
     da = record.get("discharge_a", 0) or 0
     db = record.get("discharge_b", 0) or 0
@@ -253,6 +271,11 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
     # 短手3（内数）デフォルト 0
     if "new_admissions_short3" not in record_copy or record_copy["new_admissions_short3"] is None:
         record_copy["new_admissions_short3"] = 0
+    # 短手3オーバーフロー デフォルト値
+    if "short3_overflow_count" not in record_copy or record_copy["short3_overflow_count"] is None:
+        record_copy["short3_overflow_count"] = 0
+    if "short3_overflow_avg_los" not in record_copy or record_copy["short3_overflow_avg_los"] is None:
+        record_copy["short3_overflow_avg_los"] = pd.NA
     # phase_a/b/c_count はオプション（自動計算される場合がある）
     for col in ["phase_a_count", "phase_b_count", "phase_c_count"]:
         if col not in record_copy:
@@ -262,12 +285,14 @@ def add_record(df: pd.DataFrame, record: dict) -> pd.DataFrame:
     new_row = pd.DataFrame([record_copy])
     # カラム型を合わせる
     for col in ["total_patients", "new_admissions", "new_admissions_short3",
+                 "short3_overflow_count",
                  "discharges",
                  "discharge_a", "discharge_b", "discharge_c",
                  "phase_a_count", "phase_b_count", "phase_c_count"]:
         if col in new_row.columns:
             new_row[col] = new_row[col].astype("Int64")
     new_row["avg_los"] = new_row["avg_los"].astype("Float64")
+    new_row["short3_overflow_avg_los"] = new_row["short3_overflow_avg_los"].astype("Float64")
     new_row["notes"] = new_row["notes"].astype("string")
     if "discharge_los_list" in new_row.columns:
         new_row["discharge_los_list"] = new_row["discharge_los_list"].fillna("").astype("string")
@@ -734,7 +759,7 @@ def calculate_ideal_phase_ratios(
 # ---------------------------------------------------------------------------
 # 過去3ヶ月rolling 平均在院日数（2026年改定対応）
 # ---------------------------------------------------------------------------
-def calculate_rolling_los(df, window_days=90):
+def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
     """
     過去window_days日間の厚労省公式rolling平均在院日数を計算する。
 
@@ -745,17 +770,26 @@ def calculate_rolling_los(df, window_days=90):
     2026年度改定対応: 地域包括医療病棟入院料1の施設基準判定は
     過去3ヶ月rolling平均で行われる。
 
+    monthly_summary を渡すと、日次データがない過去月のサマリーデータを
+    合算して3ヶ月rolling平均を計算できる（運用開始時の補完用）。
+
     短手3（短期滞在手術等基本料3）除外後の値も同時に返す:
-        - 分子: 在院延日数 − (短手3新入院数 × SHORT3_AVG_LOS_DAYS)
-        - 分母: ((新入院数 − 短手3新入院数) + (退院数 − 短手3新入院数)) ÷ 2
-          ※ 短手3は4泊5日以内なので当月内に入退院が完結すると仮定
-        - new_admissions_short3 列がない or 全て0なら通常値と同じ
+        - 5日以内退院の短手3のみ除外（6日以上入院のオーバーフローは算入）
+        - 分子: 在院延日数 − (5日以内退院の短手3数 × SHORT3_AVG_LOS_DAYS)
+        - 分母: ((新入院数 − 除外数) + (退院数 − 除外数)) ÷ 2
+        - short3_overflow_count 列がない場合は後方互換で全短手3を除外
 
     Args:
         df: 日次データ（date, total_patients, new_admissions, discharges列必須
             + new_admissions_short3列があれば除外計算も実施）
             全体 or 病棟フィルタ済みのものを渡す
         window_days: rolling window 日数（デフォルト90日=3ヶ月）
+        monthly_summary: 過去月サマリー dict（任意）
+            {
+                "2026-02": {"5F": {"admissions": 70, "discharges": 68,
+                                    "emergency": 11, "patient_days": 1300}, ...},
+            }
+        ward: 病棟 ("5F"/"6F")。monthly_summary からデータ取得時に使用
 
     Returns:
         dict or None: {
@@ -766,6 +800,8 @@ def calculate_rolling_los(df, window_days=90):
             "total_admissions": float,              # 期間内新入院数
             "total_discharges": float,              # 期間内退院数
             "total_short3": float,                  # 期間内短手3新入院数
+            "total_short3_overflow": float,        # 期間内短手3オーバーフロー数
+            "short3_5day_excluded": float,          # 5日以内退院の短手3除外数
             "is_partial": bool,                     # window_daysに満たないか
             "end_date": Timestamp or None,          # 計算対象期間の最終日
             "start_date": Timestamp or None,        # 計算対象期間の開始日
@@ -805,6 +841,34 @@ def calculate_rolling_los(df, window_days=90):
     total_discharges = float(window_df[dis_col].sum())
     total_short3 = float(window_df[s3_col].fillna(0).sum()) if s3_col else 0.0
 
+    # --- 過去月サマリーの合算（運用開始時の補完） ---
+    # 日次データがカバーしていない過去月のサマリーを加算する
+    summary_months_used = []
+    if monthly_summary and actual_days > 0:
+        daily_start = window_df[date_col].iloc[0]
+        ward_key = ward if ward else "all"
+        for ym_str, ym_data in monthly_summary.items():
+            try:
+                ym_first_day = pd.to_datetime(ym_str + "-01")
+            except (ValueError, TypeError):
+                continue
+            # 日次データの開始日より前の月のみ合算（重複防止）
+            if ym_first_day < daily_start:
+                s = ym_data.get(ward_key, {})
+                if not s:
+                    # ward_key="all" の場合、5F+6Fを合算
+                    for _w in ["5F", "6F"]:
+                        _ws = ym_data.get(_w, {})
+                        total_patient_days += _ws.get("patient_days", 0)
+                        total_admissions += _ws.get("admissions", 0)
+                        total_discharges += _ws.get("discharges", 0)
+                    summary_months_used.append(ym_str)
+                else:
+                    total_patient_days += s.get("patient_days", 0)
+                    total_admissions += s.get("admissions", 0)
+                    total_discharges += s.get("discharges", 0)
+                    summary_months_used.append(ym_str)
+
     denominator = (total_admissions + total_discharges) / 2
 
     result = {
@@ -813,6 +877,7 @@ def calculate_rolling_los(df, window_days=90):
         "total_admissions": total_admissions,
         "total_discharges": total_discharges,
         "total_short3": total_short3,
+        "summary_months_used": summary_months_used,
         "is_partial": actual_days < window_days,
         "end_date": window_df[date_col].iloc[-1] if actual_days > 0 else None,
         "start_date": window_df[date_col].iloc[0] if actual_days > 0 else None,
@@ -823,20 +888,27 @@ def calculate_rolling_los(df, window_days=90):
     else:
         result["rolling_los"] = round(total_patient_days / denominator, 1)
 
-    # 短手3 除外版（2026年改定: 施設基準判定では短手3算定患者を除外）
-    # 短手3 がゼロなら通常値と同じ
-    if total_short3 > 0:
-        adj_patient_days = total_patient_days - (total_short3 * SHORT3_AVG_LOS_DAYS)
-        # 当月内に入退院完結と仮定 → 新入院・退院の両方から短手3を引く
-        adj_admissions = total_admissions - total_short3
-        adj_discharges = total_discharges - total_short3
+    # --- 短手3 除外版（2026年改定対応） ---
+    # 5日以内退院の短手3のみ除外。6日以上入院（オーバーフロー）は通常患者として算入。
+    # short3_overflow_count 列がある場合: 除外数 = 短手3総数 - オーバーフロー数
+    # short3_overflow_count 列がない場合: 後方互換のため全短手3を除外（従来動作）
+    s3_ov_col = "short3_overflow_count" if "short3_overflow_count" in window_df.columns else None
+    total_overflow = float(window_df[s3_ov_col].fillna(0).sum()) if s3_ov_col else 0.0
+    short3_5day_only = max(total_short3 - total_overflow, 0.0)
+
+    result["total_short3_overflow"] = total_overflow
+    result["short3_5day_excluded"] = short3_5day_only
+
+    if short3_5day_only > 0:
+        adj_patient_days = total_patient_days - (short3_5day_only * SHORT3_AVG_LOS_DAYS)
+        adj_admissions = total_admissions - short3_5day_only
+        adj_discharges = total_discharges - short3_5day_only
         adj_denominator = (adj_admissions + adj_discharges) / 2
         if adj_denominator > 0 and adj_patient_days > 0:
             result["rolling_los_ex_short3"] = round(adj_patient_days / adj_denominator, 1)
         else:
             result["rolling_los_ex_short3"] = None
     else:
-        # 短手3 がゼロ → 通常値と同じ
         result["rolling_los_ex_short3"] = result["rolling_los"]
 
     return result

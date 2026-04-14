@@ -44,6 +44,16 @@ except ImportError:
     except ImportError:
         _HAS_BED_DATA_MANAGER = False
 
+try:
+    from scripts.emergency_ratio import calculate_rolling_emergency_ratio
+    _HAS_ROLLING_EMG = True
+except ImportError:
+    try:
+        from emergency_ratio import calculate_rolling_emergency_ratio
+        _HAS_ROLLING_EMG = True
+    except ImportError:
+        _HAS_ROLLING_EMG = False
+
         def calculate_rolling_los(df, window_days=90):
             """フォールバック: bed_data_manager が読み込めない場合の代替実装。
 
@@ -252,33 +262,67 @@ def calculate_guardrail_status(
         ))
 
     # ---------------------------------------------------------------
-    # 2. 救急搬送後患者割合
+    # 2. 救急搬送後患者割合（直近3ヶ月rolling平均）
     # ---------------------------------------------------------------
     emg_threshold = DEFAULT_GUARDRAIL_THRESHOLDS["emergency_ratio"]["threshold"]
-    if detail_df is not None and len(detail_df) > 0 and "route" in detail_df.columns:
-        # 入院イベントのみを分母とする（退院イベントを含めない）
-        admissions_df = detail_df[detail_df["event_type"] == "admission"]
-        total_admissions = len(admissions_df)
-        # 救急・下り搬送の両方をカウント
-        emergency_count = int(admissions_df["route"].isin(["救急", "下り搬送"]).sum())
-        current_emg = (emergency_count / total_admissions * 100) if total_admissions > 0 else 0.0
-        margin = current_emg - emg_threshold
-        status = _margin_to_status(margin, safe_threshold=5.0)
-        results.append({
-            "name": "救急搬送後患者割合",
-            "current_value": round(current_emg, 1),
-            "threshold": emg_threshold,
-            "operator": ">=",
-            "margin": round(margin, 1),
-            "status": status,
-            "data_source": "measured",
-            "description": f"救急・下り搬送後入院 {emergency_count}/{total_admissions}件",
-        })
-    else:
-        results.append(_not_available_item(
-            "救急搬送後患者割合", emg_threshold, ">=",
-            "入退院詳細データなし",
-        ))
+    monthly_summary = config.get("monthly_summary") if config else None
+    _emg_calculated = False
+
+    if _HAS_ROLLING_EMG and detail_df is not None and len(detail_df) > 0 and "route" in detail_df.columns:
+        rolling_emg = calculate_rolling_emergency_ratio(
+            detail_df, ward=config.get("ward") if config else None,
+            monthly_summary=monthly_summary,
+        )
+        if rolling_emg["denominator"] > 0:
+            current_emg = rolling_emg["ratio_pct"]
+            margin = current_emg - emg_threshold
+            status = _margin_to_status(margin, safe_threshold=5.0)
+            # 月別内訳テキスト
+            months_info = " / ".join(
+                f"{mb['year_month']}:{mb['numerator']}/{mb['denominator']}"
+                for mb in rolling_emg["monthly_breakdown"]
+                if mb["denominator"] > 0
+            )
+            results.append({
+                "name": "救急搬送後患者割合",
+                "current_value": round(current_emg, 1),
+                "threshold": emg_threshold,
+                "operator": ">=",
+                "margin": round(margin, 1),
+                "status": status,
+                "data_source": "measured",
+                "description": (
+                    f"直近3ヶ月rolling平均 "
+                    f"{rolling_emg['numerator']}/{rolling_emg['denominator']}件"
+                    f"（{months_info}）"
+                ),
+            })
+            _emg_calculated = True
+
+    if not _emg_calculated:
+        # フォールバック: rolling関数が使えない場合は従来の単月計算
+        if detail_df is not None and len(detail_df) > 0 and "route" in detail_df.columns:
+            admissions_df = detail_df[detail_df["event_type"] == "admission"]
+            total_admissions = len(admissions_df)
+            emergency_count = int(admissions_df["route"].isin(["救急", "下り搬送"]).sum())
+            current_emg = (emergency_count / total_admissions * 100) if total_admissions > 0 else 0.0
+            margin = current_emg - emg_threshold
+            status = _margin_to_status(margin, safe_threshold=5.0)
+            results.append({
+                "name": "救急搬送後患者割合",
+                "current_value": round(current_emg, 1),
+                "threshold": emg_threshold,
+                "operator": ">=",
+                "margin": round(margin, 1),
+                "status": status,
+                "data_source": "measured",
+                "description": f"救急・下り搬送後入院 {emergency_count}/{total_admissions}件",
+            })
+        else:
+            results.append(_not_available_item(
+                "救急搬送後患者割合", emg_threshold, ">=",
+                "入退院詳細データなし",
+            ))
 
     # ---------------------------------------------------------------
     # 3. 同一医療機関一般病棟からの転棟割合

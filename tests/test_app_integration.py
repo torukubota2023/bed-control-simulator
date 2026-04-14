@@ -479,16 +479,18 @@ class TestSectionTabMapping:
 
     def test_elseブランチにフォールバックタブがある(self):
         """セクション判定の else ブランチにフォールバック tab_names があること"""
-        # セクション条件分岐ブロック内に else: tab_names = [...] があること
+        # セクション条件分岐ブロック内の トップレベル else: tab_names = [...] を確認
+        # st.tabs(tab_names) 呼び出しの直前までを対象にする
         block_start = APP_SOURCE.find('if _selected_section == "')
-        block_end = APP_SOURCE.find("st.caption(", block_start)
+        block_end = APP_SOURCE.find("st.tabs(tab_names)", block_start)
         block = APP_SOURCE[block_start:block_end]
 
         assert "else:" in block, "セクション判定に else フォールバックがない"
-        # else の後に tab_names 定義があること
-        else_pos = block.rfind("else:")
-        after_else = block[else_pos:]
-        assert "tab_names" in after_else, "else フォールバックに tab_names 定義がない"
+        # インデントなし（トップレベル）の else: を探す
+        import re
+        # セクション分岐は行頭の else: （インデント0〜1レベル）
+        match = re.search(r'^else:\s*\n\s+tab_names\s*=', block, re.MULTILINE)
+        assert match, "else フォールバックに tab_names 定義がない"
 
 
 # =====================================================================

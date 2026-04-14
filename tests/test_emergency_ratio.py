@@ -27,6 +27,7 @@ from scripts.emergency_ratio import (
     calculate_additional_needed,
     calculate_dual_ratio,
     calculate_emergency_ratio,
+    calculate_rolling_emergency_ratio,
     estimate_next_morning_capacity,
     generate_emergency_alerts,
     get_cumulative_progress,
@@ -169,14 +170,14 @@ def test_short3_exclusion_mode():
     assert r_incl["numerator"] == 1
     assert r_incl["ratio_pct"] == 25.0
 
-    # With exclusion: short3 removed from denominator => 1 emergency out of 2 = 50%
+    # 2026年改定: exclude_short3 は無視され、常に短手3を含む（denominator=4）
     r_excl = calculate_emergency_ratio(df, ward="5F", year_month="2026-04", exclude_short3=True)
-    assert r_excl["denominator"] == 2
+    assert r_excl["denominator"] == 4  # 短手3は除外されない
     assert r_excl["numerator"] == 1
-    assert r_excl["ratio_pct"] == 50.0
+    assert r_excl["ratio_pct"] == 25.0
 
-    # Ratio should change
-    assert r_excl["ratio_pct"] > r_incl["ratio_pct"]
+    # Both should return identical results now
+    assert r_excl["ratio_pct"] == r_incl["ratio_pct"]
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +429,7 @@ def test_unknown_route_no_crash():
 
 
 def test_dual_ratio_both_modes():
-    """公式割合と運用割合（短手3除外）で分母が異なる。"""
+    """2026年改定: 公式・運用ともに短手3を含む（同一値）。"""
     records = [
         {"date": "2026-04-01", "ward": "5F", "route": "救急", "short3_type": "該当なし"},
         {"date": "2026-04-01", "ward": "5F", "route": "外来紹介", "short3_type": "該当なし"},
@@ -438,12 +439,11 @@ def test_dual_ratio_both_modes():
 
     dual = calculate_dual_ratio(df, ward="5F", year_month="2026-04")
 
-    # official includes short3 in denominator
+    # 2026年改定: both official and operational include short3
     assert dual["official"]["denominator"] == 3
-    # operational excludes short3 from denominator
-    assert dual["operational"]["denominator"] == 2
-    # official denominator > operational denominator
-    assert dual["official"]["denominator"] > dual["operational"]["denominator"]
+    assert dual["operational"]["denominator"] == 3
+    # Both should be identical now
+    assert dual["official"]["denominator"] == dual["operational"]["denominator"]
 
 
 # ---------------------------------------------------------------------------
@@ -603,11 +603,9 @@ def test_project_month_end_exclude_short3():
     proj_official = project_month_end(df, "5F", "2026-04", date(2026, 4, 11))
     proj_operational = project_month_end(df, "5F", "2026-04", date(2026, 4, 11), exclude_short3=True)
 
-    # Official includes all 20 in current total, operational excludes 5 short3
+    # 2026年改定: exclude_short3は無視、both include all 20
     assert proj_official["current"]["total_count"] == 20
-    assert proj_operational["current"]["total_count"] == 15  # 20 - 5 short3
-    assert proj_official["exclude_short3"] is False
-    assert proj_operational["exclude_short3"] is True
+    assert proj_operational["current"]["total_count"] == 20  # short3 no longer excluded
 
 
 # ---------------------------------------------------------------------------
@@ -706,35 +704,282 @@ def test_official_operational_consistency():
     ym = "2026-04"
     td = date(2026, 4, 10)
 
-    # 1) calculate_emergency_ratio: 分母が異なる
+    # 2026年改定: exclude_short3 は無視、常に短手3を含む → 同一結果
     r_off = calculate_emergency_ratio(df, ward="5F", year_month=ym, exclude_short3=False)
     r_op = calculate_emergency_ratio(df, ward="5F", year_month=ym, exclude_short3=True)
     assert r_off["denominator"] == 30  # all included
-    assert r_op["denominator"] == 20   # short3 excluded
-    assert r_off["denominator"] != r_op["denominator"]
+    assert r_op["denominator"] == 30   # short3 no longer excluded
+    assert r_off["denominator"] == r_op["denominator"]
 
-    # 2) project_month_end: current.total_count が異なる
+    # 2) project_month_end: both should return same total_count
     p_off = project_month_end(df, ward="5F", year_month=ym, target_date=td, exclude_short3=False)
     p_op = project_month_end(df, ward="5F", year_month=ym, target_date=td, exclude_short3=True)
-    assert p_off["current"]["total_count"] != p_op["current"]["total_count"]
+    assert p_off["current"]["total_count"] == p_op["current"]["total_count"]
 
-    # 3) calculate_additional_needed: projected_total_at_month_end が異なる可能性
+    # 3) calculate_additional_needed: both should return same projected_total
     a_off = calculate_additional_needed(df, ward="5F", year_month=ym, target_date=td, exclude_short3=False)
     a_op = calculate_additional_needed(df, ward="5F", year_month=ym, target_date=td, exclude_short3=True)
-    # 分母が異なるので projected_total も異なるはず
-    assert a_off["projected_total_at_month_end"] != a_op["projected_total_at_month_end"]
+    assert a_off["projected_total_at_month_end"] == a_op["projected_total_at_month_end"]
 
-    # 4) get_cumulative_progress: cumulative_total が異なる
+    # 4) get_cumulative_progress: 2026年改定で同一結果
     cp_off = get_cumulative_progress(df, ward="5F", year_month=ym, target_date=td, exclude_short3=False)
     cp_op = get_cumulative_progress(df, ward="5F", year_month=ym, target_date=td, exclude_short3=True)
     assert len(cp_off) > 0
     assert len(cp_op) > 0
-    # 最終日の累積件数が異なる
-    assert cp_off[-1]["cumulative_total"] != cp_op[-1]["cumulative_total"]
+    assert cp_off[-1]["cumulative_total"] == cp_op[-1]["cumulative_total"]
 
-    # 5) get_monthly_history: ratio_pct が異なる
+    # 5) get_monthly_history: 2026年改定で同一結果
     h_off = get_monthly_history(df, ward="5F", n_months=1, target_date=td, exclude_short3=False)
     h_op = get_monthly_history(df, ward="5F", n_months=1, target_date=td, exclude_short3=True)
     assert len(h_off) == 1
     assert len(h_op) == 1
-    assert h_off[0]["ratio_pct"] != h_op[0]["ratio_pct"]
+    assert h_off[0]["ratio_pct"] == h_op[0]["ratio_pct"]
+
+
+# ---------------------------------------------------------------------------
+# Feature 2: 3-month rolling emergency ratio
+# ---------------------------------------------------------------------------
+
+
+class TestRollingEmergencyRatio:
+    """calculate_rolling_emergency_ratio のテスト。
+
+    3ヶ月分の分子・分母を合算してから割る（Simpson's paradox 回避）。
+    """
+
+    def test_basic_3month_rolling(self):
+        """3ヶ月分のデータで正しくrolling比率を計算する。"""
+        records = []
+        # Feb: 10 admissions, 2 emergency = 20%
+        for _ in range(8):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(2):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "救急"})
+        # Mar: 20 admissions, 4 emergency = 20%
+        for _ in range(16):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(4):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "救急"})
+        # Apr: 30 admissions, 3 emergency = 10%
+        for _ in range(27):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(3):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+
+        df = _make_detail_df(records)
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=3,
+        )
+
+        # 合算: 9/60 = 15%（単純平均 (20+20+10)/3 = 16.67% とは異なる）
+        assert result["numerator"] == 9
+        assert result["denominator"] == 60
+        assert result["ratio_pct"] == 15.0
+
+    def test_no_simpsons_paradox(self):
+        """分子・分母を合算するため Simpson's paradox が起きない。
+
+        月別比率の単純平均とは異なる結果になることを確認。
+        """
+        records = []
+        # Feb: 100 admissions, 5 emergency = 5%
+        for _ in range(95):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(5):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "救急"})
+        # Mar: 10 admissions, 5 emergency = 50%
+        for _ in range(5):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(5):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "救急"})
+        # Apr: 10 admissions, 5 emergency = 50%
+        for _ in range(5):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(5):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+
+        df = _make_detail_df(records)
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=3,
+        )
+
+        # 合算: 15/120 = 12.5%
+        assert result["numerator"] == 15
+        assert result["denominator"] == 120
+        assert result["ratio_pct"] == 12.5
+
+        # 単純平均なら (5+50+50)/3 = 35% → 全然違う
+        simple_avg = (5.0 + 50.0 + 50.0) / 3
+        assert abs(result["ratio_pct"] - simple_avg) > 10
+
+    def test_monthly_breakdown_returned(self):
+        """monthly_breakdown に各月の詳細が含まれる。"""
+        records = [
+            {"date": "2026-02-10", "ward": "5F", "route": "救急"},
+            {"date": "2026-03-10", "ward": "5F", "route": "外来紹介"},
+            {"date": "2026-04-10", "ward": "5F", "route": "救急"},
+        ]
+        df = _make_detail_df(records)
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=3,
+        )
+
+        assert "monthly_breakdown" in result
+        assert len(result["monthly_breakdown"]) == 3
+        months = [mb["year_month"] for mb in result["monthly_breakdown"]]
+        assert "2026-02" in months
+        assert "2026-03" in months
+        assert "2026-04" in months
+
+    def test_status_green_when_above_threshold(self):
+        """15%以上 → status が green"""
+        records = []
+        for _ in range(8):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(4):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+
+        df = _make_detail_df(records)
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=1,
+        )
+
+        # 4/12 ≈ 33.33% → green
+        assert result["status"] == "green"
+
+    def test_status_red_when_below_threshold(self):
+        """15%未満 → status が red"""
+        records = []
+        for _ in range(19):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(1):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+
+        df = _make_detail_df(records)
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=1,
+        )
+
+        # 1/20 = 5% → red
+        assert result["status"] == "red"
+
+    def test_ward_filter(self):
+        """病棟フィルタが正しく動作する。"""
+        records = [
+            {"date": "2026-04-10", "ward": "5F", "route": "救急"},
+            {"date": "2026-04-10", "ward": "5F", "route": "外来紹介"},
+            {"date": "2026-04-10", "ward": "6F", "route": "救急"},
+            {"date": "2026-04-10", "ward": "6F", "route": "救急"},
+            {"date": "2026-04-10", "ward": "6F", "route": "外来紹介"},
+        ]
+        df = _make_detail_df(records)
+
+        r5 = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=1,
+        )
+        r6 = calculate_rolling_emergency_ratio(
+            df, ward="6F", target_date=date(2026, 4, 15), window_months=1,
+        )
+
+        assert r5["denominator"] == 2  # 5F: 2件
+        assert r5["numerator"] == 1
+        assert r6["denominator"] == 3  # 6F: 3件
+        assert r6["numerator"] == 2
+
+    def test_ward_none_includes_all(self):
+        """ward=None → 全病棟を含む。"""
+        records = [
+            {"date": "2026-04-10", "ward": "5F", "route": "救急"},
+            {"date": "2026-04-10", "ward": "6F", "route": "外来紹介"},
+        ]
+        df = _make_detail_df(records)
+
+        result = calculate_rolling_emergency_ratio(
+            df, ward=None, target_date=date(2026, 4, 15), window_months=1,
+        )
+
+        assert result["denominator"] == 2
+        assert result["numerator"] == 1
+
+    def test_monthly_summary_fallback(self):
+        """daily dataがない月をmonthly_summaryで補完する。"""
+        # 4月のみdaily data
+        records = [
+            {"date": "2026-04-10", "ward": "5F", "route": "救急"},
+            {"date": "2026-04-10", "ward": "5F", "route": "外来紹介"},
+        ]
+        df = _make_detail_df(records)
+
+        summary = {
+            "2026-02": {
+                "5F": {"admissions": 50, "emergency": 8},
+            },
+            "2026-03": {
+                "5F": {"admissions": 60, "emergency": 10},
+            },
+        }
+
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15),
+            window_months=3, monthly_summary=summary,
+        )
+
+        # Feb(8/50) + Mar(10/60) + Apr(1/2) = 19/112
+        assert result["numerator"] == 19
+        assert result["denominator"] == 112
+
+        # monthly_breakdownのsource確認
+        breakdown = {mb["year_month"]: mb for mb in result["monthly_breakdown"]}
+        assert breakdown["2026-02"]["source"] == "summary"
+        assert breakdown["2026-03"]["source"] == "summary"
+        assert breakdown["2026-04"]["source"] == "daily"
+
+    def test_empty_dataframe_no_crash(self):
+        """空DataFrame → ratio_pct=0.0、クラッシュしない。"""
+        df = _make_empty_df()
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=3,
+        )
+
+        assert result["ratio_pct"] == 0.0
+        assert result["numerator"] == 0
+        assert result["denominator"] == 0
+        assert result["status"] == "red"
+        assert len(result["monthly_breakdown"]) == 3
+
+    def test_empty_dataframe_with_summary(self):
+        """daily dataなし + summaryあり → summaryのみで計算。"""
+        df = _make_empty_df()
+        summary = {
+            "2026-02": {"5F": {"admissions": 50, "emergency": 10}},
+            "2026-03": {"5F": {"admissions": 40, "emergency": 5}},
+        }
+
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15),
+            window_months=3, monthly_summary=summary,
+        )
+
+        # Feb(10/50) + Mar(5/40) + Apr(0/0) = 15/90
+        assert result["numerator"] == 15
+        assert result["denominator"] == 90
+        assert abs(result["ratio_pct"] - 16.67) < 0.1
+
+    def test_window_months_1(self):
+        """window_months=1 → 当月のみ。"""
+        records = [
+            {"date": "2026-02-10", "ward": "5F", "route": "救急"},
+            {"date": "2026-04-10", "ward": "5F", "route": "外来紹介"},
+            {"date": "2026-04-10", "ward": "5F", "route": "救急"},
+        ]
+        df = _make_detail_df(records)
+
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15), window_months=1,
+        )
+
+        # 4月のみ: 1/2 = 50%
+        assert result["denominator"] == 2
+        assert result["numerator"] == 1
+        assert result["ratio_pct"] == 50.0
+        assert len(result["monthly_breakdown"]) == 1

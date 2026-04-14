@@ -1192,6 +1192,9 @@ if "sim_params" not in st.session_state:
     st.session_state.sim_params = None
 
 # 日次データ管理用セッション状態（SQLiteから自動復元）
+if "monthly_summary" not in st.session_state:
+    st.session_state.monthly_summary = {}
+
 if "daily_data" not in st.session_state:
     _loaded_from_db = False
     # 1) SQLiteから復元を試みる
@@ -2624,7 +2627,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     else:
                         continue
                 try:
-                    _ward_rolling_results[_w] = calculate_rolling_los(_wdf, window_days=90)
+                    _ward_rolling_results[_w] = calculate_rolling_los(_wdf, window_days=90, monthly_summary=st.session_state.get("monthly_summary"), ward=_w)
                 except Exception:
                     pass
 
@@ -2699,7 +2702,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
             if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:
                 _ac_detail_df = None
-            _ac_config = {"age_85_ratio": 0.25}
+            _ac_config = {"age_85_ratio": 0.25, "monthly_summary": st.session_state.get("monthly_summary", {})}
 
             if _ac_daily_df is not None:
                 _ac_occ_key = "occupancy_rate" if "occupancy_rate" in _ac_daily_df.columns else "稼働率"
@@ -2757,7 +2760,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             if _GUARDRAIL_AVAILABLE and _ac_daily_df is not None:
                 try:
                     _ac_c_summary = get_c_group_summary(_ac_daily_df)
-                    _ac_rolling = calculate_rolling_los(_ac_daily_df_full, window_days=90)
+                    _ac_rolling = calculate_rolling_los(_ac_daily_df_full, window_days=90, monthly_summary=st.session_state.get("monthly_summary"), ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None)
                     _ac_los_limit = calculate_los_limit(_ac_config.get("age_85_ratio", 0.25))
                     _ac_c_capacity = calculate_c_adjustment_capacity(
                         _ac_rolling, _ac_los_limit,
@@ -3056,6 +3059,63 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     else:
                         st.info("データなし")
 
+                # --- 運用開始時：過去月サマリー入力 ---
+                with st.expander("📋 過去月サマリー入力（運用開始時）", expanded=False):
+                    st.caption("運用開始時に先月・先々月のデータを入力すると、初日から3ヶ月rolling平均を計算できます。")
+
+                    _summary_months = []
+                    _today = date.today()
+                    for _i in range(1, 3):
+                        _y = _today.year
+                        _m = _today.month - _i
+                        while _m <= 0:
+                            _m += 12
+                            _y -= 1
+                        _summary_months.append(f"{_y:04d}-{_m:02d}")
+
+                    _summary_data = st.session_state.monthly_summary.copy()
+
+                    for _sm in _summary_months:
+                        st.markdown(f"**{_sm}**")
+                        for _ward in ["5F", "6F"]:
+                            _key_prefix = f"summary_{_sm}_{_ward}"
+                            _existing = _summary_data.get(_sm, {}).get(_ward, {})
+
+                            _cols = st.columns(4)
+                            with _cols[0]:
+                                _s_adm = st.number_input(
+                                    f"{_ward} 入院件数", min_value=0, value=int(_existing.get("admissions", 0)),
+                                    key=f"{_key_prefix}_adm", label_visibility="visible"
+                                )
+                            with _cols[1]:
+                                _s_dis = st.number_input(
+                                    f"{_ward} 退院件数", min_value=0, value=int(_existing.get("discharges", 0)),
+                                    key=f"{_key_prefix}_dis", label_visibility="visible"
+                                )
+                            with _cols[2]:
+                                _s_emg = st.number_input(
+                                    f"{_ward} 救急+下り搬送", min_value=0, value=int(_existing.get("emergency", 0)),
+                                    key=f"{_key_prefix}_emg", label_visibility="visible"
+                                )
+                            with _cols[3]:
+                                _s_pd = st.number_input(
+                                    f"{_ward} 在院延日数", min_value=0, value=int(_existing.get("patient_days", 0)),
+                                    key=f"{_key_prefix}_pd", label_visibility="visible"
+                                )
+
+                            if _sm not in _summary_data:
+                                _summary_data[_sm] = {}
+                            _summary_data[_sm][_ward] = {
+                                "admissions": _s_adm,
+                                "discharges": _s_dis,
+                                "emergency": _s_emg,
+                                "patient_days": _s_pd,
+                            }
+
+                    if st.button("サマリーデータを保存", key="save_monthly_summary"):
+                        st.session_state.monthly_summary = _summary_data
+                        st.success("過去月サマリーデータを保存しました。")
+
                 # --- 全データクリア ---
                 if len(st.session_state.daily_data) > 0:
                     with st.expander("⚠️ 全データ消去", expanded=False):
@@ -3282,6 +3342,22 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     1 for ev in _adm_events if ev[3] and ev[3] != SHORT3_TYPE_NONE
                 )
 
+                # --- 短手3 → 通常入院 切替 ---
+                input_short3_overflow = st.number_input(
+                    "短手3→通常切替（6日以上入院継続）",
+                    min_value=0, max_value=10, value=0, step=1,
+                    help="短手3患者が6日目以降も入院継続した場合の切替患者数",
+                    key="input_short3_overflow",
+                )
+                input_short3_overflow_los = None
+                if input_short3_overflow > 0:
+                    input_short3_overflow_los = st.number_input(
+                        "切替患者の入院初日からの在院日数",
+                        min_value=6, max_value=90, value=6, step=1,
+                        help="入院料: Tier3 ¥31,170/日（予定入院+手術あり）",
+                        key="input_short3_overflow_los",
+                    )
+
                 # --- 退院情報セクション ---
                 st.markdown("**🚪 退院情報**")
                 st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
@@ -3416,6 +3492,8 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         "total_patients": int(input_total),
                         "new_admissions": int(input_admissions),
                         "new_admissions_short3": int(input_admissions_short3),
+                        "short3_overflow_count": int(input_short3_overflow),
+                        "short3_overflow_avg_los": float(input_short3_overflow_los) if input_short3_overflow_los is not None else pd.NA,
                         "discharges": int(auto_discharges),
                         "discharge_a": int(input_discharge_a),
                         "discharge_b": int(input_discharge_b),
@@ -3501,6 +3579,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     # ward 列を先頭付近に表示して、同一日付の 5F/6F を区別しやすくする
                     _display_cols = ["date_str", "ward", "total_patients", "new_admissions",
                                       "new_admissions_short3",
+                                      "short3_overflow_count",
                                       "discharges",
                                       "discharge_los_list",
                                       "discharge_a", "discharge_b", "discharge_c",
@@ -3514,6 +3593,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             "total_patients": "在院患者数",
                             "new_admissions": "新規入院",
                             "new_admissions_short3": "うち短手3",
+                            "short3_overflow_count": "短手3切替",
                             "discharges": "退院（自動）",
                             "discharge_los_list": "退院LOS（在院日数）一覧",
                             "discharge_a": "A群退院",
@@ -5040,7 +5120,7 @@ if "💰 運営分析" in _tab_idx and _data_ready:
         _rolling_is_partial_ds = False
         if _DATA_MANAGER_AVAILABLE and isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0:
             try:
-                _rolling_ds = calculate_rolling_los(_active_raw_df_full, window_days=90)
+                _rolling_ds = calculate_rolling_los(_active_raw_df_full, window_days=90, monthly_summary=st.session_state.get("monthly_summary"), ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None)
                 if _rolling_ds:
                     _rolling_los_ds = _rolling_ds.get("rolling_los")
                     _rolling_los_ex_ds = _rolling_ds.get("rolling_los_ex_short3")
@@ -5062,7 +5142,7 @@ if "💰 運営分析" in _tab_idx and _data_ready:
                     _wdf_ds = _active_raw_df_full
                 if _wdf_ds is not None and isinstance(_wdf_ds, pd.DataFrame) and len(_wdf_ds) > 0:
                     try:
-                        _ward_rolling_ds[_w] = calculate_rolling_los(_wdf_ds, window_days=90)
+                        _ward_rolling_ds[_w] = calculate_rolling_los(_wdf_ds, window_days=90, monthly_summary=st.session_state.get("monthly_summary"), ward=_w)
                     except Exception:
                         pass
 
@@ -8389,6 +8469,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
 
         _gr_config = {
             "age_85_ratio": 0.25,  # HOSPITAL_DEFAULTS参照
+            "monthly_summary": st.session_state.get("monthly_summary", {}),
         }
 
         # --- 3つのサブセクション ---
@@ -8566,7 +8647,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _los_limit = _los_hr["los_limit"]
 
                 # rolling_los_result を取得
-                _cg_rolling = calculate_rolling_los(_gr_daily_df_full) if _gr_daily_df_full is not None else None
+                _cg_rolling = calculate_rolling_los(_gr_daily_df_full, monthly_summary=st.session_state.get("monthly_summary"), ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None) if _gr_daily_df_full is not None else None
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
 
                 _cap_color = {"green": "🟢", "yellow": "🟡", "red": "🔴", "gray": "⚪"}.get(_cg_capacity["status_color"], "⚪")
