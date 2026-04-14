@@ -8629,110 +8629,18 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
             st.caption("C群（在院15日目以降）は院内運用ラベルです。制度上の公式区分ではありません。")
 
             if _gr_daily_df is not None:
-                # C群サマリー
+                # ============================================================
+                # 計算フェーズ（表示前にすべての値を準備する）
+                # ============================================================
                 _cg_summary = get_c_group_summary(_gr_daily_df)
-                _cg_col1, _cg_col2, _cg_col3 = st.columns(3)
-                with _cg_col1:
-                    _ds_ja_map = {"measured": "実測", "proxy": "推計", "manual_input": "手動", "not_available": ""}
-                    _ds_tag = f"({_ds_ja_map.get(_cg_summary['data_source'], '')})" if _cg_summary['data_source'] != "not_available" else ""
-                    st.metric("C群患者数", f"{_cg_summary['c_count']}名 {_ds_tag}")
-                with _cg_col2:
-                    st.metric("C群構成比", f"{_cg_summary['c_ratio']:.1f}%")
-                with _cg_col3:
-                    _contrib = _cg_summary['c_daily_contribution']
-                    st.metric("C群 日次貢献額", f"¥{_contrib:,.0f}")
-
-                # C群調整キャパシティ
-                st.markdown("---")
                 _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
                 _los_limit = _los_hr["los_limit"]
-
-                # rolling_los_result を取得
                 _cg_rolling = calculate_rolling_los(_gr_daily_df_full, monthly_summary=st.session_state.get("monthly_summary"), ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None) if _gr_daily_df_full is not None else None
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
-
-                _cap_color = {"green": "🟢", "yellow": "🟡", "red": "🔴", "gray": "⚪"}.get(_cg_capacity["status_color"], "⚪")
-                st.markdown(f"### {_cap_color} 平均在院日数の余力: **{_cg_capacity['status']}**")
-
-                if _cg_capacity["current_los"] is not None:
-                    _cap_col1, _cap_col2, _cap_col3 = st.columns(3)
-                    with _cap_col1:
-                        st.metric("現在の平均在院日数", f"{_cg_capacity['current_los']:.1f}日")
-                    with _cap_col2:
-                        st.metric("制度上限", f"{_cg_capacity['los_limit']:.0f}日")
-                    with _cap_col3:
-                        st.metric("余力", f"{_cg_capacity['headroom_days']:.1f}日")
-
-                    if _cg_capacity["can_delay_discharge"]:
-                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} 延べベッド日数、推計）")
-                    else:
-                        st.error("❌ C群退院の後ろ倒し不可（平均在院日数の余力不足）")
-
-                    if _cg_capacity["warning_message"]:
-                        st.warning(_cg_capacity["warning_message"])
-
-                # 需要吸収
-                st.markdown("---")
-                st.subheader("🌊 需要吸収シミュレーション")
-
-                _dw_trend_cg = calculate_demand_trend(_gr_daily_df)
-                # 稼働率を取得（_occ_now が既存変数として存在するか確認）
-                _cg_occ = globals().get("_occ_now")
-                if _cg_occ is None:
-                    # 直近の稼働率を計算
-                    _latest = _gr_daily_df.iloc[-1] if len(_gr_daily_df) > 0 else None
-                    if _latest is not None:
-                        _tp = float(_latest.get("total_patients", 0))
-                        _ds = float(_latest.get("discharges", 0))
-                        _cg_occ = (_tp + _ds) / 94 if 94 > 0 else 0.0
-                    else:
-                        _cg_occ = 0.0
-
-                _cg_absorption = calculate_demand_absorption(
-                    _cg_capacity,
-                    _dw_trend_cg["trend_label"],
-                    _cg_occ,
-                    target_occupancy=target_lower if "target_lower" in dir() else 0.90,
-                )
-
-                _rec_emoji = {"C群キープ推奨": "🔵", "C群前倒し推奨": "🟠", "現状維持": "🟢"}.get(_cg_absorption["recommendation"], "⚪")
-                st.markdown(f"### {_rec_emoji} {_cg_absorption['recommendation']}")
-                st.markdown(_cg_absorption["recommendation_reason"])
-                st.info(_cg_absorption["absorption_description"])
-
-                # C群シナリオシミュレーション
-                st.markdown("---")
-                st.subheader("🔮 C群 What-If シミュレーション")
-
-                _sim_col1, _sim_col2 = st.columns(2)
-                with _sim_col1:
-                    st.markdown("**退院後ろ倒し**")
-                    _sim_n_delay = st.slider("後ろ倒し人数", 0, 10, 0, key="cg_n_delay")
-                    _sim_delay_days = st.slider("後ろ倒し日数", 0, 7, 2, key="cg_delay_days")
-                with _sim_col2:
-                    st.markdown("**退院前倒し**")
-                    _sim_n_accel = st.slider("前倒し人数", 0, 10, 0, key="cg_n_accel")
-                    _sim_accel_days = st.slider("前倒し日数", 0, 7, 1, key="cg_accel_days")
-
-                if _sim_n_delay > 0 or _sim_n_accel > 0:
-                    _sim_result = simulate_c_group_scenario(
-                        _cg_rolling, _los_limit,
-                        n_delay=_sim_n_delay, delay_days=_sim_delay_days,
-                        n_accelerate=_sim_n_accel, accelerate_days=_sim_accel_days,
-                    )
-
-                    if _sim_result["simulated_los"] is not None:
-                        _guardrail_icon = "✅" if _sim_result["within_guardrail"] else "❌"
-                        st.markdown(f"**{_guardrail_icon} {_sim_result['description']}**")
-
-                        if not _sim_result["within_guardrail"]:
-                            st.error("⚠️ このシナリオでは平均在院日数が制度上限を超過します。実行は推奨しません。")
-                    else:
-                        st.warning(_sim_result["description"])
-
-                # C群アラート
                 _dw_class_cg = classify_demand_period(_gr_daily_df)
-                # 救急搬送比率リスクをC群アラートに連携
+                _dw_trend_cg = calculate_demand_trend(_gr_daily_df)
+
+                # 救急搬送比率リスク（C群アラート・候補一覧で使用）
                 _er_risk_for_cg = None
                 if _EMERGENCY_RATIO_AVAILABLE and _gr_detail_df is not None and len(_gr_detail_df) > 0:
                     try:
@@ -8761,6 +8669,24 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     _cg_summary, _cg_capacity, _dw_class_cg["classification"],
                     emergency_ratio_risk=_er_risk_for_cg,
                 )
+
+                # ============================================================
+                # 表示フェーズ: アラート → 根拠 → アクション → 分析
+                # ============================================================
+
+                # --- 1. C群メトリクス（現状把握）---
+                _cg_col1, _cg_col2, _cg_col3 = st.columns(3)
+                with _cg_col1:
+                    _ds_ja_map = {"measured": "実測", "proxy": "推計", "manual_input": "手動", "not_available": ""}
+                    _ds_tag = f"({_ds_ja_map.get(_cg_summary['data_source'], '')})" if _cg_summary['data_source'] != "not_available" else ""
+                    st.metric("C群患者数", f"{_cg_summary['c_count']}名 {_ds_tag}")
+                with _cg_col2:
+                    st.metric("C群構成比", f"{_cg_summary['c_ratio']:.1f}%")
+                with _cg_col3:
+                    _contrib = _cg_summary['c_daily_contribution']
+                    st.metric("C群 日次貢献額", f"¥{_contrib:,.0f}")
+
+                # --- 2. C群アラート（今日何をすべきか）---
                 if _cg_alerts:
                     st.markdown("---")
                     st.subheader("⚡ C群アラート")
@@ -8772,7 +8698,30 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                             st.warning(f"{_alert_emoji} {_alert['message']}")
                         else:
                             st.info(f"{_alert_emoji} {_alert['message']}")
-                # --- C群候補一覧（lite版・推計） ---
+
+                # --- 3. 平均在院日数の余力（アラートの根拠）---
+                st.markdown("---")
+                _cap_color = {"green": "🟢", "yellow": "🟡", "red": "🔴", "gray": "⚪"}.get(_cg_capacity["status_color"], "⚪")
+                st.markdown(f"### {_cap_color} 平均在院日数の余力: **{_cg_capacity['status']}**")
+
+                if _cg_capacity["current_los"] is not None:
+                    _cap_col1, _cap_col2, _cap_col3 = st.columns(3)
+                    with _cap_col1:
+                        st.metric("現在の平均在院日数", f"{_cg_capacity['current_los']:.1f}日")
+                    with _cap_col2:
+                        st.metric("制度上限", f"{_cg_capacity['los_limit']:.0f}日")
+                    with _cap_col3:
+                        st.metric("余力", f"{_cg_capacity['headroom_days']:.1f}日")
+
+                    if _cg_capacity["can_delay_discharge"]:
+                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} 延べベッド日数、推計）")
+                    else:
+                        st.error("❌ C群退院の後ろ倒し不可（平均在院日数の余力不足）")
+
+                    if _cg_capacity["warning_message"]:
+                        st.warning(_cg_capacity["warning_message"])
+
+                # --- 4. C群調整候補一覧（具体的なアクション対象）---
                 if _C_GROUP_CANDIDATES_AVAILABLE and _VIEWS_AVAILABLE:
                     st.markdown("---")
                     _cg_er_risk = False
@@ -8804,6 +8753,62 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         morning_capacity_slots=_cg_morning_slots,
                     )
                     render_c_group_candidates_lite(_cg_display_summary, _cg_candidates_result)
+
+                # --- 5. 需要吸収シミュレーション（分析・検討用）---
+                st.markdown("---")
+                st.subheader("🌊 需要吸収シミュレーション")
+
+                _cg_occ = globals().get("_occ_now")
+                if _cg_occ is None:
+                    _latest = _gr_daily_df.iloc[-1] if len(_gr_daily_df) > 0 else None
+                    if _latest is not None:
+                        _tp = float(_latest.get("total_patients", 0))
+                        _ds = float(_latest.get("discharges", 0))
+                        _cg_occ = (_tp + _ds) / 94 if 94 > 0 else 0.0
+                    else:
+                        _cg_occ = 0.0
+
+                _cg_absorption = calculate_demand_absorption(
+                    _cg_capacity,
+                    _dw_trend_cg["trend_label"],
+                    _cg_occ,
+                    target_occupancy=target_lower if "target_lower" in dir() else 0.90,
+                )
+
+                _rec_emoji = {"C群キープ推奨": "🔵", "C群前倒し推奨": "🟠", "現状維持": "🟢"}.get(_cg_absorption["recommendation"], "⚪")
+                st.markdown(f"### {_rec_emoji} {_cg_absorption['recommendation']}")
+                st.markdown(_cg_absorption["recommendation_reason"])
+                st.info(_cg_absorption["absorption_description"])
+
+                # --- 6. C群 What-If シミュレーション（詳細分析用）---
+                st.markdown("---")
+                st.subheader("🔮 C群 What-If シミュレーション")
+
+                _sim_col1, _sim_col2 = st.columns(2)
+                with _sim_col1:
+                    st.markdown("**退院後ろ倒し**")
+                    _sim_n_delay = st.slider("後ろ倒し人数", 0, 10, 0, key="cg_n_delay")
+                    _sim_delay_days = st.slider("後ろ倒し日数", 0, 7, 2, key="cg_delay_days")
+                with _sim_col2:
+                    st.markdown("**退院前倒し**")
+                    _sim_n_accel = st.slider("前倒し人数", 0, 10, 0, key="cg_n_accel")
+                    _sim_accel_days = st.slider("前倒し日数", 0, 7, 1, key="cg_accel_days")
+
+                if _sim_n_delay > 0 or _sim_n_accel > 0:
+                    _sim_result = simulate_c_group_scenario(
+                        _cg_rolling, _los_limit,
+                        n_delay=_sim_n_delay, delay_days=_sim_delay_days,
+                        n_accelerate=_sim_n_accel, accelerate_days=_sim_accel_days,
+                    )
+
+                    if _sim_result["simulated_los"] is not None:
+                        _guardrail_icon = "✅" if _sim_result["within_guardrail"] else "❌"
+                        st.markdown(f"**{_guardrail_icon} {_sim_result['description']}**")
+
+                        if not _sim_result["within_guardrail"]:
+                            st.error("⚠️ このシナリオでは平均在院日数が制度上限を超過します。実行は推奨しません。")
+                    else:
+                        st.warning(_sim_result["description"])
             else:
                 st.info("日次データを入力するとC群コントロールパネルが表示されます")
 
