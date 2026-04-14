@@ -15,6 +15,7 @@
 - UI モード・タブ・選択肢の全状態を確認し、構文チェック（`py_compile` / `ast.parse`）を通す
 - [scripts/bed_control_simulator_app.py](/Users/torukubota/ai-management/scripts/bed_control_simulator_app.py) を変更したら [tests/test_app_integration.py](/Users/torukubota/ai-management/tests/test_app_integration.py) と `python3 scripts/hooks/smoke_test.py` を実行する
 - 1つのバグを直したら同一パターンを全体検索し、横展開チェックの結果を報告する
+- **セクション間整合性チェック（必須）**: 判定ロジックや表示内容を変更したら、同じデータを参照する他セクションと矛盾しないか確認し、結果を報告する（詳細は [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) §7 参照）
 - リリース前は `/qa [ファイルパス]` を実行する
 
 ## 運用メモ
