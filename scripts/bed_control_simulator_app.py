@@ -8632,10 +8632,11 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # ============================================================
                 # 計算フェーズ（表示前にすべての値を準備する）
                 # ============================================================
-                _cg_summary = get_c_group_summary(_gr_daily_df)
+                _cg_ward_filter = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
+                _cg_summary = get_c_group_summary(_gr_daily_df, ward=_cg_ward_filter)
                 _los_hr = calculate_los_headroom(_gr_daily_df_full, _gr_config)
                 _los_limit = _los_hr["los_limit"]
-                _cg_rolling = calculate_rolling_los(_gr_daily_df_full, monthly_summary=st.session_state.get("monthly_summary"), ward=_selected_ward_key if _selected_ward_key in ("5F", "6F") else None) if _gr_daily_df_full is not None else None
+                _cg_rolling = calculate_rolling_los(_gr_daily_df_full, monthly_summary=st.session_state.get("monthly_summary"), ward=_cg_ward_filter) if _gr_daily_df_full is not None else None
                 _cg_capacity = calculate_c_adjustment_capacity(_cg_rolling, _los_limit, _cg_summary["c_count"])
                 _dw_class_cg = classify_demand_period(_gr_daily_df)
                 _dw_trend_cg = calculate_demand_trend(_gr_daily_df)
@@ -8734,7 +8735,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     if _EMERGENCY_RATIO_AVAILABLE:
                         try:
                             _cg_mc = estimate_next_morning_capacity(
-                                _gr_daily_df, _gr_detail_df, ward=None, total_beds=94,
+                                _gr_daily_df, _gr_detail_df, ward=_cg_ward_filter, total_beds=47 if _cg_ward_filter else 94,
                             )
                             _cg_morning_slots = _cg_mc.get("estimated_emergency_slots")
                         except Exception:
@@ -8742,7 +8743,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     _cg_candidates_result = generate_c_group_candidate_list(
                         detail_df=_gr_detail_df,
                         daily_df=_gr_daily_df,
-                        ward=None,
+                        ward=_cg_ward_filter,
                         target_date=None,
                         los_threshold=15,
                     )
@@ -8759,13 +8760,14 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 st.markdown("---")
                 st.subheader("🌊 需要吸収シミュレーション")
 
+                _cg_total_beds = 47 if _cg_ward_filter else 94
                 _cg_occ = globals().get("_occ_now")
                 if _cg_occ is None:
                     _latest = _gr_daily_df.iloc[-1] if len(_gr_daily_df) > 0 else None
                     if _latest is not None:
                         _tp = float(_latest.get("total_patients", 0))
                         _ds = float(_latest.get("discharges", 0))
-                        _cg_occ = (_tp + _ds) / 94 if 94 > 0 else 0.0
+                        _cg_occ = (_tp + _ds) / _cg_total_beds if _cg_total_beds > 0 else 0.0
                     else:
                         _cg_occ = 0.0
 
