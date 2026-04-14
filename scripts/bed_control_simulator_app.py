@@ -1,4 +1,5 @@
 # 実行方法: streamlit run scripts/bed_control_simulator_app.py
+# v3.5.1 — 2026年改定対応（施設基準計算）
 """
 地域包括医療病棟 ベッドコントロールシミュレーター（Streamlit版）
 
