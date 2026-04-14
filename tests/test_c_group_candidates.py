@@ -183,6 +183,33 @@ class TestClassifyDischargeUrgency:
         result = classify_discharge_urgency(candidates, los_limit=21.0)
         assert result == ["urgent", "urgent", "urgent"]
 
+    def test_emergency_ratio_risk_overrides_stay_ok(self):
+        """病棟LOS≤21でも救急搬送比率リスクあり → 全員release"""
+        candidates = [
+            {"estimated_los": 25},
+            {"estimated_los": 18},
+            {"estimated_los": 16},
+        ]
+        # 病棟LOS=19.7 ≤ 21 だが rescue ratio risk あり → 全員release
+        result = classify_discharge_urgency(
+            candidates, los_limit=21.0, current_ward_los=19.7,
+            emergency_ratio_risk=True,
+        )
+        assert result == ["release", "release", "release"]
+
+    def test_emergency_ratio_risk_no_effect_when_los_exceeded(self):
+        """LOS超過時は救急リスクに関係なくurgentが優先"""
+        candidates = [
+            {"estimated_los": 50},
+            {"estimated_los": 18},
+        ]
+        # LOS超過 → urgent判定が優先（emergency_ratio_riskは関係なし）
+        result = classify_discharge_urgency(
+            candidates, los_limit=21.0,
+            emergency_ratio_risk=True,
+        )
+        assert result[0] == "urgent"
+
 
 # ===================================================================
 # summarize_candidates_for_display

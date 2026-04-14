@@ -297,32 +297,27 @@ def classify_discharge_urgency(
     candidates: list[dict],
     los_limit: float = 21.0,
     current_ward_los: Optional[float] = None,
+    emergency_ratio_risk: bool = False,
 ) -> list[str]:
-    """C群候補を病棟全体の平均在院日数に基づいて退院緊急度を分類する。
+    """C群候補を病棟全体の平均在院日数と救急搬送比率リスクに基づいて退院緊急度を分類する。
 
     candidates は estimated_los 降順でソート済みであること。
 
-    判定基準:
-    - current_ward_los（病棟全体のrolling平均在院日数）を基準にする
-    - current_ward_los が不明の場合はC群候補の平均で代替する
-
-    アルゴリズム:
-    1. 病棟全体の平均在院日数が ≤ los_limit なら「急ぎ」はなし
-       → 個別にlos_limit超の人は「退院必要」、以下は「まだ在留可能」
-    2. 病棟全体の平均在院日数が > los_limit なら、
-       C群候補を在院日数の長い順に退院させるシミュレーションで
-       何人退院すれば全体平均が ≤ los_limit になるかを算出
-    3. その上位N人 = 「急ぎ退院必要」
+    判定基準（優先順位）:
+    1. 救急搬送比率の未達リスクがある場合 → 退院必要（ベッド確保のため）
+    2. 病棟全体LOS > los_limit → 退院シミュレーションで急ぎ度を算出
+    3. 病棟全体LOS ≤ los_limit かつ救急リスクなし → 全員まだ在留可能
 
     Args:
         candidates: C群候補リスト（estimated_los降順）
         los_limit: 平均在院日数の制度上限（日）
         current_ward_los: 病棟全体のrolling平均在院日数。Noneの場合はC群平均で代替
+        emergency_ratio_risk: 救急搬送後患者割合の未達リスクがあるか
 
     Returns:
         list[str]: 各候補に対応するurgencyラベル
             "urgent" = 急ぎ退院必要
-            "release" = 退院必要
+            "release" = 退院必要（救急受入枠確保のため）
             "stay_ok" = まだ在留可能
     """
     if not candidates:
@@ -335,9 +330,11 @@ def classify_discharge_urgency(
     reference_los = current_ward_los if current_ward_los is not None else (sum(all_los) / total)
 
     if reference_los <= los_limit:
-        # 病棟全体の平均は基準内 → 全員「まだ在留可能」
-        # 個別にLOS>21日でも、全体平均が基準内なら退院を急ぐ理由はない
-        # （稼働率維持の観点からもC群キープが合理的）
+        if emergency_ratio_risk:
+            # LOS基準内だが救急搬送比率が未達リスク
+            # → 在院日数の長い順に「退院必要」（ベッドを空けて救急受入枠を確保）
+            return ["release"] * total
+        # LOS基準内かつ救急リスクなし → 全員在留可能
         return ["stay_ok"] * total
 
     # 病棟全体の平均がlos_limitを超過 → 長い順に退院シミュレーション
@@ -403,7 +400,9 @@ def summarize_candidates_for_display(
     ward_label = f"（{ward}）" if ward else "（全体）"
 
     # --- 判定（urgency分類）---
-    urgency_labels = classify_discharge_urgency(candidates, los_limit, current_ward_los)
+    urgency_labels = classify_discharge_urgency(
+        candidates, los_limit, current_ward_los, emergency_ratio_risk,
+    )
 
     # --- サマリーテキスト ---
     if total == 0:
@@ -414,10 +413,17 @@ def summarize_candidates_for_display(
     else:
         # urgency分類で急ぎ退院必要の人数を出す
         urgent_count = sum(1 for u in urgency_labels if u == "urgent")
+        release_count = sum(1 for u in urgency_labels if u == "release")
         if urgent_count > 0:
             summary_text = (
                 f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
                 f"平均在院日数を{los_limit:.0f}日以下にするには、あと{urgent_count}名の退院が必要です。\n"
+                "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
+            )
+        elif release_count > 0 and emergency_ratio_risk:
+            summary_text = (
+                f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
+                f"救急搬送比率の未達リスクがあります。C群退院を進めてベッドを確保し、救急受入を優先してください。\n"
                 "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
             )
         else:

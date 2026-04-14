@@ -8683,6 +8683,20 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         }
                     except Exception:
                         pass
+
+                # 救急搬送比率リスクの要約フラグ（病棟フィルタ対応）
+                _cg_er_risk = False
+                if _er_risk_for_cg is not None:
+                    if _cg_ward_filter:
+                        # 特定病棟表示時はその病棟のみ判定
+                        _cg_er_risk = _er_risk_for_cg.get(_cg_ward_filter, {}).get("additional_needed", 0) > 0
+                    else:
+                        # 全体表示時はいずれかの病棟にリスクがあればTrue
+                        for _w_key in ("5F", "6F"):
+                            if _er_risk_for_cg.get(_w_key, {}).get("additional_needed", 0) > 0:
+                                _cg_er_risk = True
+                                break
+
                 _cg_alerts = generate_c_group_alerts(
                     _cg_summary, _cg_capacity, _dw_class_cg["classification"],
                     emergency_ratio_risk=_er_risk_for_cg,
@@ -8731,8 +8745,12 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     with _cap_col3:
                         st.metric("余力", f"{_cg_capacity['headroom_days']:.1f}日")
 
-                    if _cg_capacity["can_delay_discharge"]:
-                        st.success(f"✅ C群退院の後ろ倒し可能（最大 {_cg_capacity['max_delay_bed_days']:.0f} 延べベッド日数）")
+                    if _cg_er_risk:
+                        # 救急搬送比率リスクがある → LOS余力があっても後ろ倒しは推奨しない
+                        st.warning("⚠ 救急搬送比率に未達リスクあり — C群退院を進めてベッドを確保してください")
+                    elif _cg_capacity["can_delay_discharge"]:
+                        _delay_days = _cg_capacity['max_delay_bed_days']
+                        st.success(f"✅ C群退院の後ろ倒し可能（最大約{_delay_days:.0f}日分の余地あり）")
                     else:
                         st.error("❌ C群退院の後ろ倒し不可（平均在院日数の余力不足）")
 
@@ -8742,12 +8760,6 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # --- 4. C群調整候補一覧（具体的なアクション対象）---
                 if _C_GROUP_CANDIDATES_AVAILABLE and _VIEWS_AVAILABLE:
                     st.markdown("---")
-                    _cg_er_risk = False
-                    if _er_risk_for_cg is not None:
-                        for _w_key in ("5F", "6F"):
-                            if _er_risk_for_cg.get(_w_key, {}).get("additional_needed", 0) > 0:
-                                _cg_er_risk = True
-                                break
                     _cg_morning_slots = None
                     if _EMERGENCY_RATIO_AVAILABLE:
                         try:
