@@ -266,7 +266,7 @@ _C_GROUP_CANDIDATES_AVAILABLE = False
 try:
     from c_group_candidates import (
         generate_c_group_candidate_list,
-        assess_candidate_adjustability,
+        classify_discharge_urgency,
         summarize_candidates_for_display,
     )
     _C_GROUP_CANDIDATES_AVAILABLE = True

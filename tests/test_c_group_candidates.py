@@ -1,7 +1,7 @@
 """
-テスト: c_group_candidates モジュール — C群候補リスト生成・調整可能性評価・表示サマリー
+テスト: c_group_candidates モジュール — C群候補リスト生成・退院緊急度分類・表示サマリー
 
-generate_c_group_candidate_list / assess_candidate_adjustability /
+generate_c_group_candidate_list / classify_discharge_urgency /
 summarize_candidates_for_display の入出力を検証する。
 """
 
@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from c_group_candidates import (
     generate_c_group_candidate_list,
-    assess_candidate_adjustability,
+    classify_discharge_urgency,
     summarize_candidates_for_display,
 )
 
@@ -112,55 +112,77 @@ class TestGenerateCGroupCandidateList:
 
 
 # ===================================================================
-# assess_candidate_adjustability
+# classify_discharge_urgency
 # ===================================================================
 
 
-class TestAssessCandidateAdjustability:
-    """assess_candidate_adjustability の制約条件評価を検証する。"""
+class TestClassifyDischargeUrgency:
+    """classify_discharge_urgency のテスト"""
 
-    def test_assess_emergency_risk_release_required(self):
-        """emergency_ratio_risk=True → release_required"""
-        candidate = {
-            "estimated_los": 18,
-            "adjustable_days_proxy": 10,
-        }
-        result = assess_candidate_adjustability(
-            candidate=candidate,
-            los_limit=24.0,
-            emergency_ratio_risk=True,
-        )
-        assert result["recommendation"] == "release_required"
-        assert result["can_extend"] is False
+    def test_empty_candidates(self):
+        """空リスト → 空リスト"""
+        assert classify_discharge_urgency([]) == []
 
-    def test_assess_within_los_limit(self):
-        """LOS が上限内で余裕あり → can_extend=True"""
-        candidate = {
-            "estimated_los": 16,
-            "adjustable_days_proxy": 10,
-        }
-        result = assess_candidate_adjustability(
-            candidate=candidate,
-            los_limit=24.0,
-            emergency_ratio_risk=False,
-        )
-        assert result["can_extend"] is True
-        assert result["max_extend_days"] > 0
-        assert result["recommendation"] in ("extend_ok", "release_preferred")
+    def test_all_below_limit(self):
+        """全員がlos_limit以下 → 全員stay_ok"""
+        candidates = [
+            {"estimated_los": 20},
+            {"estimated_los": 18},
+            {"estimated_los": 16},
+        ]
+        result = classify_discharge_urgency(candidates, los_limit=21.0)
+        assert result == ["stay_ok", "stay_ok", "stay_ok"]
 
-    def test_assess_exceeds_los_limit(self):
-        """LOS が上限超過 → can_extend=False"""
-        candidate = {
-            "estimated_los": 25,
-            "adjustable_days_proxy": 0,
-        }
-        result = assess_candidate_adjustability(
-            candidate=candidate,
-            los_limit=24.0,
-            emergency_ratio_risk=False,
-        )
-        assert result["can_extend"] is False
-        assert result["recommendation"] in ("release_required", "release_preferred")
+    def test_average_above_limit_urgent_needed(self):
+        """平均>21、長い順に抜いて21以下にする"""
+        candidates = [
+            {"estimated_los": 50},
+            {"estimated_los": 40},
+            {"estimated_los": 18},
+            {"estimated_los": 16},
+        ]
+        # 平均 = (50+40+18+16)/4 = 31 > 21
+        # 50を抜く → (40+18+16)/3 = 24.7 > 21
+        # 40を抜く → (18+16)/2 = 17 ≤ 21 ✓
+        # → 50, 40 が urgent、残りは stay_ok
+        result = classify_discharge_urgency(candidates, los_limit=21.0)
+        assert result == ["urgent", "urgent", "stay_ok", "stay_ok"]
+
+    def test_over_limit_but_avg_ok(self):
+        """平均≤21だが個別にlos_limit超の人がいる → release"""
+        candidates = [
+            {"estimated_los": 25},
+            {"estimated_los": 18},
+            {"estimated_los": 16},
+        ]
+        # 平均 = (25+18+16)/3 = 19.7 ≤ 21
+        # でも25は21超 → release
+        result = classify_discharge_urgency(candidates, los_limit=21.0)
+        assert result == ["release", "stay_ok", "stay_ok"]
+
+    def test_single_candidate_above(self):
+        """候補1人でlos超過 → urgent"""
+        candidates = [{"estimated_los": 30}]
+        # 平均=30 > 21 → urgent
+        result = classify_discharge_urgency(candidates, los_limit=21.0)
+        assert result == ["urgent"]
+
+    def test_single_candidate_below(self):
+        """候補1人でlos以下 → stay_ok"""
+        candidates = [{"estimated_los": 18}]
+        result = classify_discharge_urgency(candidates, los_limit=21.0)
+        assert result == ["stay_ok"]
+
+    def test_all_urgent(self):
+        """全員除外しても平均が下がらない場合 → 全員urgent"""
+        candidates = [
+            {"estimated_los": 50},
+            {"estimated_los": 45},
+            {"estimated_los": 40},
+        ]
+        # 全員除外すると remaining_count=0 になるので全員urgent
+        result = classify_discharge_urgency(candidates, los_limit=21.0)
+        assert result == ["urgent", "urgent", "urgent"]
 
 
 # ===================================================================
@@ -202,7 +224,7 @@ class TestSummarizeCandidatesForDisplay:
             los_limit=24.0,
         )
         assert len(summary["table_data"]) > 0
-        expected_columns = {"入院日", "在院日数", "病棟", "経路", "退院近接度", "調整余地(日)", "判定"}
+        expected_columns = {"入院日", "在院日数", "病棟", "経路", "判定"}
         for row in summary["table_data"]:
             assert expected_columns.issubset(row.keys()), (
                 f"Missing columns: {expected_columns - row.keys()}"

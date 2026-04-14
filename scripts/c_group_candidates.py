@@ -16,7 +16,6 @@ Streamlit に依存しない。pandas と標準ライブラリのみ使用する
 
 from __future__ import annotations
 
-import math
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -29,13 +28,6 @@ import pandas as pd
 C_PHASE_START_DAY: int = 15
 """C群開始日（15日目以降）"""
 
-_PROXIMITY_THRESHOLDS: dict[str, tuple[int, int]] = {
-    "far": (15, 20),
-    "mid": (21, 28),
-    "near": (29, 9999),
-}
-"""退院近接度の閾値（LOS範囲）: near=退院が迫っている(長期), far=退院まで余裕あり(短期)"""
-
 _DATA_SOURCE_LABEL: str = "proxy"
 _PROXY_NOTE: str = (
     "本データはlite版です。入退院イベントから算出したデータであり、"
@@ -47,14 +39,6 @@ _PROXY_NOTE: str = (
 # ---------------------------------------------------------------------------
 # ユーティリティ
 # ---------------------------------------------------------------------------
-
-def _classify_proximity(los: int) -> str:
-    """在院日数から退院近接度を判定する。"""
-    for label, (lo, hi) in _PROXIMITY_THRESHOLDS.items():
-        if lo <= los <= hi:
-            return label
-    return "near"
-
 
 def _safe_date(d) -> Optional[date]:
     """各種日付型を date に変換する。"""
@@ -280,27 +264,11 @@ def generate_c_group_candidate_list(
             r = row[route_col]
             route = str(r) if pd.notna(r) else ""
 
-        # 退院近接度
-        proximity = _classify_proximity(estimated_los)
-
-        # 調整可能日数の算出（LOS上限がないためここでは粗い見積もり）
-        # far(15-20日) → 退院まで余裕あるので調整余地大
-        # mid(21-28日) → 中間
-        # near(29日+) → 退院が迫っているので余地なし
-        if proximity == "far":
-            adjustable = max(0, 28 - estimated_los)
-        elif proximity == "mid":
-            adjustable = max(0, 35 - estimated_los)
-        else:
-            adjustable = 0  # 29日以上は退院が迫っており調整余地なし
-
         candidates.append({
             "admission_date": str(adm_date_d),
             "estimated_los": estimated_los,
             "ward": str(w),
             "phase": "C",
-            "discharge_proximity": proximity,
-            "adjustable_days_proxy": adjustable,
             "is_proxy": True,
             "route": route,
         })
@@ -308,7 +276,7 @@ def generate_c_group_candidate_list(
     # LOS降順でソート
     candidates.sort(key=lambda c: c["estimated_los"], reverse=True)
 
-    total_adjustable = sum(c["adjustable_days_proxy"] for c in candidates)
+    total_adjustable = 0
 
     return {
         "candidates": candidates,
@@ -322,98 +290,69 @@ def generate_c_group_candidate_list(
 
 
 # ---------------------------------------------------------------------------
-# 2. 個別候補の調整可能性評価
+# 2. 退院緊急度の分類
 # ---------------------------------------------------------------------------
 
-def assess_candidate_adjustability(
-    candidate: dict,
-    los_limit: float,
-    emergency_ratio_risk: bool = False,
-) -> dict:
-    """個別候補の調整可能性を制約条件を踏まえて評価する。
+def classify_discharge_urgency(
+    candidates: list[dict],
+    los_limit: float = 21.0,
+) -> list[str]:
+    """C群候補を「あと何人退院させれば平均在院日数≤los_limitか」で分類する。
 
-    Args:
-        candidate: generate_c_group_candidate_list の candidates 要素。
-        los_limit: 平均在院日数の制度上限（日）。
-        emergency_ratio_risk: 救急搬送後患者割合のリスクがあるか。
+    candidates は estimated_los 降順でソート済みであること。
+
+    アルゴリズム:
+    1. 全C群候補の平均在院日数を計算
+    2. 平均 ≤ los_limit なら全員「まだ在留可能」
+    3. 平均 > los_limit なら、在院日数の長い順に1人ずつ除外し、
+       残りの平均が ≤ los_limit になった時点でストップ
+    4. 除外された人 = 「急ぎ退院必要」
+    5. 除外されなかった人のうち在院日数 > los_limit = 「退院必要」
+    6. 在院日数 ≤ los_limit = 「まだ在留可能」
 
     Returns:
-        dict:
-            - "can_extend": bool
-            - "max_extend_days": int
-            - "recommendation": "extend_ok" | "release_preferred" | "release_required"
-            - "reasoning": str
-            - "constraints": list[str]
+        list[str]: 各候補に対応するurgencyラベル
+            "urgent" = 急ぎ退院必要
+            "release" = 退院必要
+            "stay_ok" = まだ在留可能
     """
-    estimated_los = candidate.get("estimated_los", 0)
-    adjustable = candidate.get("adjustable_days_proxy", 0)
-    constraints: list[str] = []
+    if not candidates:
+        return []
 
-    # --- 救急搬送比率リスク → 退院優先（制度要件が最優先） ---
-    if emergency_ratio_risk:
-        return {
-            "can_extend": False,
-            "max_extend_days": 0,
-            "recommendation": "release_required",
-            "reasoning": (
-                "救急搬送後患者割合が未達リスクのため、退院可能な患者は"
-                "退院を優先し、救急受入枠を確保する必要があります。"
-            ),
-            "constraints": ["救急搬送後患者割合の制度要件リスク"],
-        }
+    all_los = [c["estimated_los"] for c in candidates]
+    total = len(all_los)
+    current_avg = sum(all_los) / total
 
-    # --- LOS制限による制約 ---
-    los_margin = los_limit - estimated_los
-    if los_margin <= 0:
-        constraints.append(f"在院日数({estimated_los}日)がLOS上限({los_limit:.0f}日)以上")
-        return {
-            "can_extend": False,
-            "max_extend_days": 0,
-            "recommendation": "release_required",
-            "reasoning": (
-                f"在院日数({estimated_los}日)が平均在院日数上限"
-                f"({los_limit:.0f}日)を超過しており、延長は推奨されません。"
-            ),
-            "constraints": constraints,
-        }
+    if current_avg <= los_limit:
+        # すでに基準以下 → 全員在留可能（ただしlos_limit超の人は退院必要）
+        return [
+            "release" if los > los_limit else "stay_ok"
+            for los in all_los
+        ]
 
-    # LOS上限までの余裕と adjustable の小さい方
-    max_extend = min(adjustable, max(0, math.floor(los_margin)))
+    # 長い順に除外シミュレーション
+    urgency = ["stay_ok"] * total
+    remaining_sum = sum(all_los)
+    remaining_count = total
 
-    if max_extend <= 0:
-        constraints.append("調整余地なし")
-        return {
-            "can_extend": False,
-            "max_extend_days": 0,
-            "recommendation": "release_preferred",
-            "reasoning": "調整可能日数がなく、退院調整を進めることが望ましいです。",
-            "constraints": constraints,
-        }
+    for i in range(total):
+        urgency[i] = "urgent"
+        remaining_sum -= all_los[i]
+        remaining_count -= 1
 
-    # --- 延長可能 ---
-    if max_extend <= 2:
-        recommendation = "release_preferred"
-        reasoning = (
-            f"最大{max_extend}日の調整余地がありますが、余裕が少ないため"
-            "退院準備を進めつつ、需要に応じた微調整にとどめてください。"
-        )
-    else:
-        recommendation = "extend_ok"
-        reasoning = (
-            f"最大{max_extend}日の調整余地があります。需要の谷を埋める"
-            "ための退院日調整が可能です（臨床的妥当性の確認は必須）。"
-        )
+        if remaining_count == 0:
+            break
 
-    if estimated_los > los_limit * 0.9:
-        constraints.append(f"LOS上限の90%超（{estimated_los}/{los_limit:.0f}日）")
+        if (remaining_sum / remaining_count) <= los_limit:
+            # 残りの人を判定
+            for j in range(i + 1, total):
+                if all_los[j] > los_limit:
+                    urgency[j] = "release"
+                else:
+                    urgency[j] = "stay_ok"
+            break
 
-    return {
-        "can_extend": True,
-        "max_extend_days": max_extend,
-        "recommendation": recommendation,
-        "reasoning": reasoning,
-        "constraints": constraints,
-    }
+    return urgency
 
 
 # ---------------------------------------------------------------------------
@@ -445,11 +384,13 @@ def summarize_candidates_for_display(
     """
     candidates = candidates_result.get("candidates", [])
     total = candidates_result.get("total_candidates", 0)
-    total_adj = candidates_result.get("total_adjustable_bed_days", 0)
     ward = candidates_result.get("ward")
     as_of = candidates_result.get("as_of_date", "")
 
     ward_label = f"（{ward}）" if ward else "（全体）"
+
+    # --- 判定（urgency分類）---
+    urgency_labels = classify_discharge_urgency(candidates, los_limit)
 
     # --- サマリーテキスト ---
     if total == 0:
@@ -458,34 +399,34 @@ def summarize_candidates_for_display(
             "入退院詳細データの入力状況をご確認ください。"
         )
     else:
-        summary_text = (
-            f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
-            f"調整可能延べ日数: {total_adj}日\n"
-            "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
-        )
+        # urgency分類で急ぎ退院必要の人数を出す
+        urgent_count = sum(1 for u in urgency_labels if u == "urgent")
+        if urgent_count > 0:
+            summary_text = (
+                f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
+                f"平均在院日数を{los_limit:.0f}日以下にするには、あと{urgent_count}名の退院が必要です。\n"
+                "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
+            )
+        else:
+            summary_text = (
+                f"{ward_label} C群候補 {total}名（{as_of}時点）\n"
+                f"現在のC群平均在院日数は{los_limit:.0f}日以下です。\n"
+                "※ 臨床判断・退院支援状況を踏まえてご判断ください。"
+            )
 
     # --- テーブルデータ ---
     table_data: list[dict] = []
-    for c in candidates:
-        assessment = assess_candidate_adjustability(
-            c, los_limit, emergency_ratio_risk
-        )
+    for c, urgency in zip(candidates, urgency_labels):
         table_data.append({
             "入院日": c["admission_date"],
             "在院日数": c["estimated_los"],
             "病棟": c["ward"],
             "経路": c["route"] if c["route"] else "—",
-            "退院近接度": {
-                "near": "近い(29日+・退院急務)",
-                "mid": "中間(21-28日)",
-                "far": "遠い(15-20日・余裕あり)",
-            }.get(c["discharge_proximity"], c["discharge_proximity"]),
-            "調整余地(日)": c["adjustable_days_proxy"],
             "判定": {
-                "extend_ok": "調整可",
-                "release_preferred": "退院優先",
-                "release_required": "退院必要",
-            }.get(assessment["recommendation"], "—"),
+                "urgent": "🔴 急ぎ退院必要",
+                "release": "🟡 退院必要",
+                "stay_ok": "🟢 まだ在留可能",
+            }.get(urgency, "—"),
         })
 
     # --- トレードオフ注記 ---
@@ -519,7 +460,7 @@ def summarize_candidates_for_display(
     return {
         "summary_text": summary_text,
         "table_data": table_data,
-        "total_adjustable": total_adj,
+        "total_adjustable": 0,
         "tradeoff_note": tradeoff_note,
         "warning": warning,
         "data_quality": _DATA_SOURCE_LABEL,
