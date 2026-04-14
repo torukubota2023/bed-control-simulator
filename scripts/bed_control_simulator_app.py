@@ -8751,6 +8751,7 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         los_limit=_los_limit,
                         emergency_ratio_risk=_cg_er_risk,
                         morning_capacity_slots=_cg_morning_slots,
+                        current_ward_los=_cg_capacity.get("current_los"),
                     )
                     render_c_group_candidates_lite(_cg_display_summary, _cg_candidates_result)
 
