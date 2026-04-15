@@ -29,6 +29,15 @@ from bed_data_manager import (
 )
 from tabs import main_tab, detail_tab, regulation_tab, data_input_tab, settings_tab
 
+try:
+    from emergency_ratio import (
+        TRANSITIONAL_END_DATE,
+        days_until_transitional_end,
+    )
+    _TRANSITIONAL_AVAILABLE = True
+except Exception:
+    _TRANSITIONAL_AVAILABLE = False
+
 
 # ============================================================
 # データ読み込み
@@ -148,6 +157,33 @@ def _render_sidebar() -> dict:
         st.caption("v4.0")
 
         st.markdown("---")
+
+        # 経過措置終了カウントダウン（地域包括医療病棟・救急搬送15%）
+        # 令和6改定の経過措置は 2026-05-31 まで。6/1 以降は本則完全適用。
+        if _TRANSITIONAL_AVAILABLE:
+            _trans_remaining = days_until_transitional_end()
+            _trans_label = TRANSITIONAL_END_DATE.strftime("%Y-%m-%d")
+            if _trans_remaining > 30:
+                st.info(
+                    f"🗓️ 経過措置終了まで **あと {_trans_remaining} 日**\n\n"
+                    f"救急搬送15%等の本則完全適用は {_trans_label} 翌日から。"
+                )
+            elif _trans_remaining > 7:
+                st.warning(
+                    f"⚠️ 経過措置終了まで **あと {_trans_remaining} 日**（{_trans_label}）\n\n"
+                    f"6/1 以降は本則が完全適用されます。"
+                )
+            elif _trans_remaining >= 0:
+                st.error(
+                    f"🚨 経過措置終了まで **あと {_trans_remaining} 日**（{_trans_label}）\n\n"
+                    f"明日以降の運用判断は本則ベースで。"
+                )
+            else:
+                st.error(
+                    f"🚨 経過措置は終了しました（{_trans_label}）\n\n"
+                    f"地域包括医療病棟の本則が完全適用中。"
+                )
+            st.markdown("---")
 
         # 病棟選択
         ward_sel = st.radio("表示病棟", ["全体", "5F", "6F"], horizontal=True)

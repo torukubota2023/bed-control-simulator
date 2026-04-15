@@ -24,15 +24,18 @@ import pytest
 
 from scripts.emergency_ratio import (
     EMERGENCY_THRESHOLD_PCT,
+    TRANSITIONAL_END_DATE,
     calculate_additional_needed,
     calculate_dual_ratio,
     calculate_emergency_ratio,
     calculate_rolling_emergency_ratio,
+    days_until_transitional_end,
     estimate_next_morning_capacity,
     generate_emergency_alerts,
     get_cumulative_progress,
     get_monthly_history,
     get_ward_emergency_summary,
+    is_transitional_period,
     project_month_end,
 )
 
@@ -983,3 +986,42 @@ class TestRollingEmergencyRatio:
         assert result["numerator"] == 1
         assert result["ratio_pct"] == 50.0
         assert len(result["monthly_breakdown"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# 経過措置終了日（令和6改定 → 2026-05-31）
+# ---------------------------------------------------------------------------
+
+
+class TestTransitionalEndDate:
+    """令和6改定の経過措置終了日に関するヘルパーのテスト。"""
+
+    def test_constant_value(self):
+        """TRANSITIONAL_END_DATE は 2026-05-31 で固定。"""
+        assert TRANSITIONAL_END_DATE == date(2026, 5, 31)
+
+    def test_days_remaining_well_before(self):
+        """1月時点では残日数が十分大きい。"""
+        assert days_until_transitional_end(date(2026, 1, 1)) == 150
+
+    def test_days_remaining_one_month_before(self):
+        """終了1ヶ月前 = 30日。"""
+        assert days_until_transitional_end(date(2026, 5, 1)) == 30
+
+    def test_days_remaining_on_end_date(self):
+        """終了日当日 = 0日。"""
+        assert days_until_transitional_end(date(2026, 5, 31)) == 0
+
+    def test_days_remaining_after_end(self):
+        """終了翌日 = -1（負数）。"""
+        assert days_until_transitional_end(date(2026, 6, 1)) == -1
+
+    def test_is_transitional_period_true(self):
+        """終了日以前は経過措置期間内。"""
+        assert is_transitional_period(date(2026, 4, 15)) is True
+        assert is_transitional_period(date(2026, 5, 31)) is True
+
+    def test_is_transitional_period_false(self):
+        """終了翌日以降は期間外。"""
+        assert is_transitional_period(date(2026, 6, 1)) is False
+        assert is_transitional_period(date(2027, 1, 1)) is False

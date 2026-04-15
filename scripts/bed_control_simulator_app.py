@@ -238,6 +238,8 @@ try:
         get_cumulative_progress,
         EMERGENCY_THRESHOLD_PCT,
         estimate_next_morning_capacity,
+        TRANSITIONAL_END_DATE,
+        days_until_transitional_end,
     )
     _GUARDRAIL_AVAILABLE = True
     _EMERGENCY_RATIO_AVAILABLE = True
@@ -868,6 +870,37 @@ if _HOPE_AVAILABLE:
 
 _selected_section = st.sidebar.radio("メニュー", _section_names, label_visibility="collapsed")
 st.sidebar.markdown("---")
+
+# ---------------------------------------------------------------------------
+# 経過措置終了カウントダウン（地域包括医療病棟・救急搬送15%）
+# 令和6改定の経過措置は 2026-05-31 まで。6/1 以降は本則完全適用。
+# 本シミュレーターの判定ロジック自体は既に本則ベースだが、運用現場の
+# 心構えとして残り日数を可視化する。
+# ---------------------------------------------------------------------------
+if _EMERGENCY_RATIO_AVAILABLE:
+    _trans_remaining = days_until_transitional_end()
+    _trans_label = TRANSITIONAL_END_DATE.strftime("%Y-%m-%d")
+    if _trans_remaining > 30:
+        st.sidebar.info(
+            f"🗓️ 経過措置終了まで **あと {_trans_remaining} 日**\n\n"
+            f"地域包括医療病棟の救急搬送15%等の本則完全適用は {_trans_label} 翌日から。"
+        )
+    elif _trans_remaining > 7:
+        st.sidebar.warning(
+            f"⚠️ 経過措置終了まで **あと {_trans_remaining} 日**（{_trans_label}）\n\n"
+            f"6/1 以降は救急搬送15%等の本則が完全適用されます。"
+        )
+    elif _trans_remaining >= 0:
+        st.sidebar.error(
+            f"🚨 経過措置終了まで **あと {_trans_remaining} 日**（{_trans_label}）\n\n"
+            f"明日以降の運用判断は本則ベースで行ってください。"
+        )
+    else:
+        st.sidebar.error(
+            f"🚨 経過措置は終了しました（{_trans_label}）\n\n"
+            f"地域包括医療病棟の本則が完全適用されています。"
+        )
+    st.sidebar.markdown("---")
 
 _sidebar_annual_value_placeholder = st.sidebar.empty()  # プリセット確定後に更新
 _sidebar_occ_placeholder = st.sidebar.empty()  # target_lower 確定後に表示

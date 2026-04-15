@@ -47,6 +47,38 @@ SCENARIO_MULTIPLIERS: dict[str, float] = {
     "optimistic": 1.3,
 }
 
+# 令和6年度改定で設けられた経過措置の終了日（2026-05-31）。
+# この日までは「最大3ヶ月の困難時期を計算から除外」できる扱いだったが、
+# 翌6月1日からは本則が完全適用される。本シミュレーターの判定ロジック自体は
+# 既に本則ベースだが、UI で残り日数バナーを出すための定数として使用する。
+# 出典:
+# - GemMed: https://gemmed.ghc-j.com/?p=59593
+# - しろぼんねっとQ&A: https://shirobon.net/qabbs_detail.php?bbs_id=59150
+TRANSITIONAL_END_DATE: date = date(2026, 5, 31)
+
+
+def days_until_transitional_end(today: Optional[date] = None) -> int:
+    """経過措置終了日（TRANSITIONAL_END_DATE）までの残日数を返す。
+
+    Args:
+        today: 基準日。省略時は date.today()。
+
+    Returns:
+        残日数（整数）。当日 = 0、翌日 = 1。終了日を過ぎている場合は負の整数。
+    """
+    base = today if today is not None else date.today()
+    return (TRANSITIONAL_END_DATE - base).days
+
+
+def is_transitional_period(today: Optional[date] = None) -> bool:
+    """基準日が経過措置期間内（≦TRANSITIONAL_END_DATE）かを返す。
+
+    Args:
+        today: 基準日。省略時は date.today()。
+    """
+    base = today if today is not None else date.today()
+    return base <= TRANSITIONAL_END_DATE
+
 _ROUTE_KEY_MAP: dict[str, str] = {
     "救急": "ambulance",
     "下り搬送": "downstream",
