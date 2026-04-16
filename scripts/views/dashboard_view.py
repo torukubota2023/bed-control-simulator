@@ -33,6 +33,11 @@ def render_action_card(card: dict) -> None:
     else:
         st.success(message)
 
+    st.markdown(
+        f'<div data-testid="action-card" data-level="{level}" style="display:none">{card.get("title", "")}</div>',
+        unsafe_allow_html=True,
+    )
+
     # Show ward scope and source as caption
     _ward_label = card.get("selected_ward")
     _scope = f"対象: {_ward_label}病棟" if _ward_label else "対象: 病院全体"
@@ -68,6 +73,21 @@ def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
 
     status_emoji = {"danger": "\U0001f534", "warning": "\U0001f7e1", "safe": "\U0001f7e2", "unknown": "\u26aa"}
 
+    def _kpi_testid_key(name: str) -> str:
+        """Map a KPI name to a stable data-testid suffix."""
+        _name_lower = (name or "").lower()
+        if ("\u7a3c\u50cd\u7387" in name) or ("occupancy" in _name_lower):
+            return "occupancy"
+        if ("\u5728\u9662" in name) or ("los" in _name_lower):
+            return "alos"
+        if "\u6551\u6025" in name:
+            return "emergency_ratio"
+        if "\u91cd\u75c7" in name:
+            return "severity"
+        if "c\u7fa4" in _name_lower:
+            return "c_group"
+        return "other"
+
     # Top 3: prominent display in columns
     top_kpis = kpi_list[:3]
     cols = st.columns(len(top_kpis))
@@ -77,6 +97,11 @@ def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
             st.metric(
                 label=f"{emoji} {kpi['name']}",
                 value=kpi["value"],
+            )
+            _kpi_key = _kpi_testid_key(kpi.get("name", ""))
+            st.markdown(
+                f'<div data-testid="{_kpi_key}" data-kpi-name="{kpi.get("name", "")}" data-priority="top" style="display:none">{kpi.get("value", "")}</div>',
+                unsafe_allow_html=True,
             )
             st.caption(kpi["explanation"])
 
@@ -131,6 +156,10 @@ def render_morning_capacity_card(morning_capacity: dict, morning_5f: dict = None
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("翌朝受入余力（全体）", f"{slots}床", help="翌診療日朝の救急受入可能床数（推計）")
+        st.markdown(
+            f'<div data-testid="vacancy" style="display:none">{slots}</div>',
+            unsafe_allow_html=True,
+        )
     with col2:
         st.metric("3診療日最小", f"{three_day_min}床", help="直近3診療日の最小受入余力")
     with col3:

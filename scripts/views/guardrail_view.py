@@ -24,6 +24,11 @@ def render_guardrail_summary(guardrail_status: dict) -> None:
     status_emoji = {"safe": "\U0001f7e2", "warning": "\U0001f7e1", "danger": "\U0001f534", "incomplete": "\U0001f7e0"}.get(overall, "\u26aa")
     status_ja = {"safe": "\u5b89\u5168", "warning": "\u6ce8\u610f", "danger": "\u5371\u967a", "incomplete": "\u672a\u5b8c\uff08\u30c7\u30fc\u30bf\u4e0d\u8db3\uff09"}.get(overall, "\u4e0d\u660e")
     st.markdown(f"### {status_emoji} \u7dcf\u5408\u5224\u5b9a: **{status_ja}**")
+    _alerts_count = sum(1 for _r in results if _r.get("status") in ("warning", "danger"))
+    st.markdown(
+        f'<div data-testid="guardrail-summary" data-status="{overall}" style="display:none">{_alerts_count}alerts</div>',
+        unsafe_allow_html=True,
+    )
 
     # 指標カード
     ds_label_map = {"measured": "\u5b9f\u6e2c", "proxy": "\u63a8\u8a08", "manual_input": "\u624b\u52d5\u5165\u529b", "not_available": "\u672a\u53d6\u5f97"}
@@ -57,6 +62,10 @@ def render_guardrail_summary(guardrail_status: dict) -> None:
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("\u73fe\u5728\u306e\u5e73\u5747\u5728\u9662\u65e5\u6570", f"{los_headroom['current_los']:.1f}\u65e5")
+                st.markdown(
+                    f'<div data-testid="alos" data-limit="{los_headroom["los_limit"]}" style="display:none">{los_headroom["current_los"]:.1f}</div>',
+                    unsafe_allow_html=True,
+                )
             with col2:
                 st.metric("\u5236\u5ea6\u4e0a\u9650", f"{los_headroom['los_limit']:.0f}\u65e5")
             with col3:

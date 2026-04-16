@@ -1155,6 +1155,10 @@ _sidebar_annual_value_placeholder.metric(
     value=f"年間 {_ANNUAL_VALUE_PER_1PCT/10000:.0f}万円",
     delta="常勤医師1名分の手取り年収に相当",
 )
+st.sidebar.markdown(
+    f'<div data-testid="revenue" data-unit="万円/年" style="display:none">{_ANNUAL_VALUE_PER_1PCT/10000:.0f}</div>',
+    unsafe_allow_html=True,
+)
 
 # --- 戦略選択・実行ボタン（シミュレーションモードのみ） ---
 if not _is_actual_data_mode:
@@ -6037,6 +6041,11 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                     st.warning(_briefing_text)
                 else:
                     st.error(_briefing_text)
+
+                st.markdown(
+                    f'<div data-testid="phase" data-a="{_br_phase_a}" data-b="{_br_phase_b}" data-c="{_br_phase_c}" style="display:none">{_br_phase_a + _br_phase_b + _br_phase_c}</div>',
+                    unsafe_allow_html=True,
+                )
 
                 # --- 病棟状態詳細 ---
                 _ws_c1, _ws_c2, _ws_c3 = st.columns(3)

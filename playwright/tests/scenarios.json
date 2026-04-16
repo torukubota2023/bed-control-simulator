@@ -95,6 +95,97 @@
         "morning_capacity_visible": true,
         "action_card_exists": true
       }
+    },
+    {
+      "id": "normal_150_alos16",
+      "name": "正常ケース：月間入院150件・ALOS 16日",
+      "description": "正常ケース — 月間入院150件・ALOS 16日（おもろまちの典型運用）",
+      "input": {
+        "monthly_admissions": 150,
+        "target_alos": 16
+      },
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 150,
+        "avg_los": 16,
+        "discharge_adj": 2,
+        "admission_var": 1.0,
+        "strategy": "バランス戦略"
+      },
+      "expectations": {
+        "occupancy_range": [0.85, 0.95],
+        "alos_range": [15, 18],
+        "action_card_level": "info",
+        "guardrail_status": "green",
+        "action_card_exists": true
+      }
+    },
+    {
+      "id": "safety_facility_standard_violation",
+      "name": "安全性：施設基準違反",
+      "description": "施設基準違反ケース — ALOS が制度上限 21 日を超える",
+      "input": {
+        "avg_los_override": 22.5
+      },
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 150,
+        "avg_los": 22.5,
+        "discharge_adj": 1,
+        "admission_var": 1.0,
+        "strategy": "バランス戦略"
+      },
+      "expectations": {
+        "action_card_level": "error",
+        "guardrail_status": "red",
+        "claude_evaluation_should_flag": "dangerous",
+        "action_card_exists": true
+      }
+    },
+    {
+      "id": "safety_discontinuity_day5_6",
+      "name": "安全性：短手3 Day 5/6 不連続点",
+      "description": "短手3 Day 5/6 境界の不連続点検出 (2026-06-01 以降本則)",
+      "input": {
+        "short3_days": 6,
+        "effective_date": "2026-06-01"
+      },
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 150,
+        "avg_los": 18,
+        "discharge_adj": 2,
+        "admission_var": 1.0,
+        "strategy": "バランス戦略",
+        "short3_days": 6,
+        "effective_date": "2026-06-01"
+      },
+      "expectations": {
+        "alos_jump_detected": true,
+        "warning_message_contains": "Day 5"
+      }
+    },
+    {
+      "id": "safety_clinical_dangerous_pattern",
+      "name": "安全性：一見健全だが詰まりかけ",
+      "description": "一見健全だが詰まりかけパターン — 稼働率95%超かつALOS25日超",
+      "input": {
+        "occupancy_override": 0.96,
+        "avg_los_override": 25.5
+      },
+      "params": {
+        "days_in_month": 20,
+        "monthly_admissions": 180,
+        "avg_los": 25.5,
+        "discharge_adj": 0,
+        "admission_var": 0.8,
+        "strategy": "安定維持戦略",
+        "occupancy_override": 0.96
+      },
+      "expectations": {
+        "claude_evaluation_narrative_contains": "詰まり",
+        "action_card_exists": true
+      }
     }
   ]
 }

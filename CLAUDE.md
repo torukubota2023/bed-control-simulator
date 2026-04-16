@@ -110,6 +110,8 @@
 - 文献検索 → PubMed MCP で最新エビデンスを取得し、結果を/docs/pubmed 以下に .md → .docx or .pdf で出力
 - 教育資料作成 → /docs 以下に .md → .docx or .pdf で出力
 - KPI分析 → /data 以下のデータを集計・可視化
+- E2E テスト（Playwright + Claude 評価）→ `npm run test:e2e` / `npm run test:e2e:headed`（ブラウザ表示あり）/ `npm run test:e2e:report`（HTMLレポート）
+  - 初回セットアップと詳細手順は [docs/admin/bed_control_e2e_manual.md](docs/admin/bed_control_e2e_manual.md) を参照
 
 ## フォルダ構成
 ```
@@ -122,15 +124,25 @@
 ├── docs/              ← 教育資料・マニュアル・ガイド
 │   ├── respiratory/   ← 呼吸器フィジカル関連
 │   ├── education/     ← レジデント教育資料
-│   ├── admin/         ← 経営・管理文書
+│   ├── admin/         ← 経営・管理文書（bed_control_e2e_manual.md 等）
 │   └── pubmed/        ← 文献検索結果
 ├── data/              ← KPI・入院統計・分析用データ
 ├── templates/         ← 診療情報提供書・退院サマリーのテンプレート
-└── scripts/           ← 自動化スクリプト
-    ├── views/         ← 表示ロジック（dashboard_view.py, c_group_view.py, guardrail_view.py）
-    └── hooks/         ← セキュリティHooksスクリプト
+├── scripts/           ← 自動化スクリプト
+│   ├── views/         ← 表示ロジック（dashboard_view.py, c_group_view.py, guardrail_view.py）
+│   └── hooks/         ← セキュリティHooksスクリプト
 ├── tools/             ← ブラウザ互換性チェック（browser_probe.html）
-└── deploy/            ← 院内LAN起動スクリプト（bat, ps1）
+├── deploy/            ← 院内LAN起動スクリプト（bat, ps1）
+├── tests/             ← Python ユニット/統合テスト（pytest）
+├── playwright/        ← E2E テスト（TypeScript）
+│   ├── test_app.spec.ts     ← 正準テスト（3ケース + 追加6観点）
+│   ├── test_audit.spec.ts   ← 包括的監査テスト
+│   └── tests/
+│       └── scenarios.json   ← 9 シナリオ定義（正常/境界/安全性）
+└── utils/             ← E2E 共通ヘルパー（TypeScript）
+    ├── claude_eval.ts       ← Claude による運用妥当性評価
+    ├── extract_data.ts      ← KPI 抽出
+    └── streamlit_helpers.ts ← Streamlit DOM 待機
 ```
 
 ## ルール
