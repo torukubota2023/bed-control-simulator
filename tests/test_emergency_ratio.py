@@ -1025,3 +1025,129 @@ class TestTransitionalEndDate:
         """終了翌日以降は期間外。"""
         assert is_transitional_period(date(2026, 6, 1)) is False
         assert is_transitional_period(date(2027, 1, 1)) is False
+
+
+# ---------------------------------------------------------------------------
+# 経過措置ゲートによる判定期間切替（呼び出し側ロジック検証）
+# ---------------------------------------------------------------------------
+
+
+class TestTransitionalGateSwitch:
+    """2026-06-01 以降は救急搬送比率を rolling 3ヶ月で判定する仕様。
+
+    `bed_control_simulator_app.py` の `_calc_emergency_ratio_with_gate()` は
+    `is_transitional_period()` の戻り値に応じて単月 vs rolling を切り替える。
+    このテストは両 API の戻り値契約が互換であることを保証する。
+    """
+
+    def _build_3month_dataset(self) -> pd.DataFrame:
+        """単月と rolling で明確に差が出るデータセット。
+
+        2月: 10件中4件救急（40%）
+        3月: 20件中4件救急（20%）
+        4月: 30件中2件救急（約6.7%）
+        単月（4月）: 6.7% → 未達
+        rolling 3ヶ月: 10/60 = 16.67% → 達成
+        """
+        records: List[Dict[str, Any]] = []
+        # Feb
+        for _ in range(6):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(4):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "救急"})
+        # Mar
+        for _ in range(16):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(4):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "救急"})
+        # Apr
+        for _ in range(28):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(2):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+        return _make_detail_df(records)
+
+    def test_transitional_period_uses_single_month_semantics(self):
+        """経過措置中は単月判定（既存挙動）を採用することの契約確認。"""
+        df = self._build_3month_dataset()
+        target = date(2026, 4, 17)  # 経過措置中
+
+        # ゲート判定
+        assert is_transitional_period(target) is True
+
+        # 単月判定: 4月のみ（2/30 = 6.67%）
+        single = calculate_emergency_ratio(
+            df, ward="5F", year_month="2026-04", target_date=target,
+        )
+        assert single["denominator"] == 30
+        assert single["numerator"] == 2
+        assert abs(single["ratio_pct"] - 6.67) < 0.02
+
+    def test_post_transitional_rolling_differs_from_single_month(self):
+        """本則適用後は rolling 3ヶ月判定となり、単月とは異なる結果になる。"""
+        df = self._build_3month_dataset()
+        target = date(2026, 6, 15)  # 本則適用後
+
+        # ゲート判定
+        assert is_transitional_period(target) is False
+
+        # rolling 3ヶ月（4/5/6月）: 4月は単月同様 2/30
+        # 6月単月だと 0/0 になるので本テストは rolling の効果自体を見る
+        rolling = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=target, window_months=3,
+        )
+
+        # window は target の当月含む過去3ヶ月 = 4/5/6月
+        # データは 4月のみ: 2/30 = 6.67%
+        assert rolling["window_months"] == 3
+        assert rolling["denominator"] == 30
+        assert rolling["numerator"] == 2
+
+    def test_rolling_3month_at_june_covers_apr_may_jun(self):
+        """6/1 直後に rolling を取ると直近3ヶ月（4/5/6月）が集計対象となる。"""
+        df = self._build_3month_dataset()
+        target = date(2026, 6, 1)
+
+        assert is_transitional_period(target) is False
+
+        rolling = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=target, window_months=3,
+        )
+
+        # monthly_breakdown に 4/5/6月が現れる
+        months = [m["year_month"] for m in rolling["monthly_breakdown"]]
+        assert "2026-04" in months
+        assert "2026-05" in months
+        assert "2026-06" in months
+
+    def test_rolling_includes_short3_in_denominator(self):
+        """本則適用後、rolling は分母に短手3 を常に含む（仕様統一）。"""
+        records: List[Dict[str, Any]] = []
+        # 短手3 を含む入院群
+        for _ in range(5):
+            records.append({
+                "date": "2026-04-10", "ward": "5F", "route": "外来紹介",
+                "short3_type": "K7211",  # 短手3対象
+            })
+        for _ in range(5):
+            records.append({
+                "date": "2026-04-10", "ward": "5F", "route": "救急",
+                "short3_type": "該当なし",
+            })
+        df = _make_detail_df(records)
+
+        target = date(2026, 6, 15)  # 本則適用後
+        rolling = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=target, window_months=3,
+        )
+
+        # 短手3 が分母に含まれる: 全10件 / 救急5件 = 50%
+        assert rolling["denominator"] == 10
+        assert rolling["numerator"] == 5
+        assert rolling["ratio_pct"] == 50.0
+
+    def test_gate_boundary_day(self):
+        """2026-05-31 と 2026-06-01 の境界でゲートが正しく切り替わる。"""
+        assert is_transitional_period(date(2026, 5, 30)) is True
+        assert is_transitional_period(date(2026, 5, 31)) is True  # 最終日も含む
+        assert is_transitional_period(date(2026, 6, 1)) is False  # 翌日から本則

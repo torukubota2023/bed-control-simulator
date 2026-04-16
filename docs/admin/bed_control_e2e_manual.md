@@ -228,39 +228,37 @@ npm run test:e2e -- --project=chromium --grep "UI"
 
 A: Node.js のバージョンが古い可能性があります。第 2 章の確認コマンドで、18 以上になっているか確認してください。古ければ `brew upgrade node` で更新します。
 
-## 8. CI/CD 組み込みの準備 (将来)
+## 8. CI/CD 組み込み (実装済み)
 
-将来、GitHub に push したら自動でテストが回るように設定できます。以下は `.github/workflows/e2e.yml` の雛形です。
+`main` への push / PR / 手動実行のタイミングで、Playwright E2E + Python テスト + smoke test を自動実行するワークフローを `.github/workflows/e2e.yml` に導入済みです。
 
-```yaml
-name: E2E Test
+### 8.1 トリガー
+- `push` to `main`
+- `pull_request` to `main`
+- `workflow_dispatch`（GitHub Actions 画面から手動実行）
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+### 8.2 実行されるステップ
+1. リポジトリチェックアウト（`actions/checkout@v4`）
+2. Python 3.11 セットアップ＋`pip` キャッシュ
+3. Python 依存関係インストール（`requirements.txt` / `requirements-dev.txt` を自動検出）
+4. **Python テスト**: `PYTHONPATH=.:scripts python -m pytest tests/ -q`
+5. **Smoke test**: `python scripts/hooks/smoke_test.py`
+6. Node.js 20 セットアップ＋`npm` キャッシュ
+7. Node 依存関係インストール（`package-lock.json` があれば `npm ci`、無ければ `npm install`）
+8. Playwright ブラウザインストール（`chromium` のみ、`--with-deps` で OS 依存も含む）
+9. **Playwright E2E**: `npm run test:e2e`（`ANTHROPIC_API_KEY` をシークレットから注入）
+10. Playwright レポートを artifact としてアップロード（保持 14 日、常時）
+11. 失敗時のみ `test-results/` を artifact としてアップロード（保持 7 日）
 
-jobs:
-  test:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: npm install
-      - run: npx playwright install chromium
-      - run: pip install -r requirements.txt
-      - run: npm run test:e2e
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-```
+ランナーは `ubuntu-latest`、タイムアウトは 20 分です。
 
-GitHub リポジトリの Settings → Secrets and variables → Actions に `ANTHROPIC_API_KEY` を登録してください。登録しないと、Claude 評価ステップがスキップされます。
+### 8.3 シークレット登録
+
+GitHub リポジトリ Settings → Secrets and variables → Actions で `ANTHROPIC_API_KEY` を登録すると、Claude 評価ステップが有効化されます。未登録の場合は Claude 評価が自動 skip され、他のテストは正常に実行されます。
+
+### 8.4 実ファイル
+
+実装は `.github/workflows/e2e.yml` を直接参照してください。雛形ではなく本番適用ファイルです。
 
 ## 9. ディレクトリ構成一覧
 

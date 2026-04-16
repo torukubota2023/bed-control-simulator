@@ -56,6 +56,15 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
+    // v3.5 本体は初期状態では main content が「サイドバーのパラメータを設定し
+    // 『シミュレーション実行』ボタンを押してください」の案内のみで、
+    // data-testid (occupancy / alos / phase / vacancy / action-card / guardrail-summary)
+    // は描画されない。ダッシュボード本体を描画させるためにボタンを押す。
+    const runButton = page.getByRole('button', { name: 'シミュレーション実行' }).first();
+    if (await runButton.count() > 0) {
+      await runButton.click();
+      await waitForStreamlitLoad(page, 180000);
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -76,7 +85,21 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
 
     for (const id of requiredIds) {
       test(`[data-testid="${id}"] が存在する`, async ({ page }) => {
-        const count = await page.locator(`[data-testid="${id}"]`).count();
+        // testid によって出現タブが異なるため、ダッシュボードで見つからなければ
+        // 他のメインセクション（意思決定支援・制度管理）も巡回する。
+        let count = await page.locator(`[data-testid="${id}"]`).count();
+        if (count === 0) {
+          const sections = ['🎯 意思決定支援', '🛡️ 制度管理'];
+          for (const sectionName of sections) {
+            const radio = page.getByRole('radio', { name: sectionName });
+            if ((await radio.count()) > 0) {
+              await radio.click();
+              await waitForStreamlitLoad(page, 120000);
+              count = await page.locator(`[data-testid="${id}"]`).count();
+              if (count > 0) break;
+            }
+          }
+        }
         expect(count, `${id} が見つからない — UI 崩れの可能性`).toBeGreaterThanOrEqual(1);
       });
     }

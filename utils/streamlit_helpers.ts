@@ -6,17 +6,29 @@ import { Page, Locator, expect } from '@playwright/test';
  * Sidebar inputs use label text for identification.
  */
 
-/** Wait for Streamlit app to fully load (spinner disappears) */
-export async function waitForStreamlitLoad(page: Page, timeout = 15000): Promise<void> {
+/** Wait for Streamlit app to fully load (spinner disappears).
+ * v3.5 本体は 9,365 行 + 大量データロード + Matplotlib フォントキャッシュ構築で
+ * 初回起動に 60-90 秒かかる。単に stStatusWidget が空かどうかだけを見ると、
+ * 初回ロード前の null 状態も「空」として通ってしまうため、body テキスト長で
+ * 「実質レンダリング済み」を判定する。 */
+export async function waitForStreamlitLoad(page: Page, timeout = 120000): Promise<void> {
   // Wait for the main app container
   await page.waitForSelector('[data-testid="stAppViewContainer"]', { timeout });
-  // Wait for any running scripts to finish
+  // Wait for body to have substantial content (app truly rendered, not just shell)
+  await page.waitForFunction(() => {
+    return document.body.innerText.length > 500;
+  }, { timeout });
+  // Wait for all running scripts to finish: status widget empty + no spinner
   await page.waitForFunction(() => {
     const statusWidget = document.querySelector('[data-testid="stStatusWidget"]');
-    return !statusWidget || statusWidget.textContent === '';
+    const spinner = document.querySelector('[data-testid="stSpinner"], .stSpinner');
+    const runningImg = document.querySelector('img[alt="Running..."]');
+    return (!statusWidget || statusWidget.textContent === '')
+      && !spinner
+      && !runningImg;
   }, { timeout });
   // Extra settle time for Streamlit re-renders
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(2000);
 }
 
 /** Wait for Streamlit to finish re-running after an interaction */

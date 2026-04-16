@@ -759,7 +759,7 @@ def calculate_ideal_phase_ratios(
 # ---------------------------------------------------------------------------
 # 過去3ヶ月rolling 平均在院日数（2026年改定対応）
 # ---------------------------------------------------------------------------
-def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
+def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None, today=None):
     """
     過去window_days日間の厚労省公式rolling平均在院日数を計算する。
 
@@ -774,10 +774,23 @@ def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
     合算して3ヶ月rolling平均を計算できる（運用開始時の補完用）。
 
     短手3（短期滞在手術等基本料3）除外後の値も同時に返す:
+
+    【経過措置中 (today <= 2026-05-31)】 — 従来動作
         - 5日以内退院の短手3のみ除外（6日以上入院のオーバーフローは算入）
         - 分子: 在院延日数 − (5日以内退院の短手3数 × SHORT3_AVG_LOS_DAYS)
         - 分母: ((新入院数 − 除外数) + (退院数 − 除外数)) ÷ 2
-        - short3_overflow_count 列がない場合は後方互換で全短手3を除外
+
+    【本則完全適用 (today >= 2026-06-01)】 — 階段関数 (CLAUDE.md 確定事項)
+        - 5日目まで → 在院日数の分母に含めない（短手3 は完全除外）
+        - 6日目以降に滞在が延びた瞬間 → 入院初日まで遡って全日数を分母にカウント
+        - → Day 5/6 境界で LOS 分母が +6日 jump する不連続点が発生
+        - 日次集計データベースの実装では、overflow 患者は既に total_patient_days と
+          total_admissions に自然に含まれているため、この集計レベルでは
+          「overflow は算入」「5日以内退院は完全除外」ロジックは経過措置と同じ挙動になる。
+          ただし rolling_los_ex_short3 の計算根拠として docstring と
+          `transitional` フラグを明示する。
+
+    short3_overflow_count 列がない場合は後方互換で全短手3を除外。
 
     Args:
         df: 日次データ（date, total_patients, new_admissions, discharges列必須
@@ -790,6 +803,8 @@ def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
                                     "emergency": 11, "patient_days": 1300}, ...},
             }
         ward: 病棟 ("5F"/"6F")。monthly_summary からデータ取得時に使用
+        today: 基準日 (date)。省略時は date.today()。
+            本則完全適用期 (2026-06-01 以降) か経過措置中かを判定するゲート。
 
     Returns:
         dict or None: {
@@ -802,6 +817,7 @@ def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
             "total_short3": float,                  # 期間内短手3新入院数
             "total_short3_overflow": float,        # 期間内短手3オーバーフロー数
             "short3_5day_excluded": float,          # 5日以内退院の短手3除外数
+            "transitional": bool,                   # 経過措置中か (today <= 2026-05-31)
             "is_partial": bool,                     # window_daysに満たないか
             "end_date": Timestamp or None,          # 計算対象期間の最終日
             "start_date": Timestamp or None,        # 計算対象期間の開始日
@@ -809,6 +825,24 @@ def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
     """
     if df is None or len(df) == 0:
         return None
+
+    # --- 本則/経過措置 ゲート (CLAUDE.md 確定事項) ---
+    # 遅延 import で循環回避（emergency_ratio 側で bed_data_manager を import しない前提）
+    try:
+        from emergency_ratio import is_transitional_period
+    except ImportError:
+        # フォールバック: 経過措置終了日を直接判定
+        def is_transitional_period(d=None):
+            base = d if d is not None else date.today()
+            return base <= date(2026, 5, 31)
+
+    _today = today if today is not None else date.today()
+    transitional = is_transitional_period(_today)
+    # apply_short3_stair = not transitional
+    # 注: 日次集計データモデルでは、overflow 患者の患者日数は既に total_patient_days に
+    # 含まれているため、集計レベルでは「5日以内退院は除外 / overflow は算入」のロジックは
+    # 経過措置期・本則期ともに同じになる。`transitional` フラグを結果に含めて
+    # 呼び出し側（UI/シミュレータ）が判断できるようにする。
 
     df_sorted = df.copy()
     # date列の検出（date または 日付）
@@ -878,6 +912,7 @@ def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
         "total_discharges": total_discharges,
         "total_short3": total_short3,
         "summary_months_used": summary_months_used,
+        "transitional": transitional,
         "is_partial": actual_days < window_days,
         "end_date": window_df[date_col].iloc[-1] if actual_days > 0 else None,
         "start_date": window_df[date_col].iloc[0] if actual_days > 0 else None,
@@ -912,6 +947,53 @@ def calculate_rolling_los(df, window_days=90, monthly_summary=None, ward=None):
         result["rolling_los_ex_short3"] = result["rolling_los"]
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# 短手3 Day 5 患者検出インターフェース (本則完全適用期用)
+# ---------------------------------------------------------------------------
+def get_short3_day5_patients(df, today=None):
+    """Day 5 に到達した短手3 患者のリストを返す。
+
+    本則完全適用 (2026-06-01 以降) のみ有効。経過措置中 (today <= 2026-05-31)
+    は空リストを返す。
+
+    シミュレーター UI で「明日延長すると LOS +6日」のアラートを出すために
+    subagent A (bed_control_simulator_app.py) から呼ばれる想定。
+
+    現時点では日次集計データのみ利用可能。患者単位のデータ構造が
+    確立されていないため、プレースホルダとして空リストを返す。
+    将来、患者レコードテーブルが追加されたら実データ接続する。
+
+    Args:
+        df: 日次データ or 患者レコード（将来対応）
+        today: 基準日。省略時は date.today()。
+
+    Returns:
+        list[dict]: Day 5 短手3 患者のリスト。各要素は:
+            {
+                "patient_id": str (匿名化 ID),
+                "admission_date": date,
+                "ward": str,
+                "stay_days": int (= 5),
+            }
+        本則適用前または患者データがない場合は空リスト。
+    """
+    try:
+        from emergency_ratio import is_transitional_period
+    except ImportError:
+        def is_transitional_period(d=None):
+            base = d if d is not None else date.today()
+            return base <= date(2026, 5, 31)
+
+    _today = today if today is not None else date.today()
+    if is_transitional_period(_today):
+        return []
+
+    # TODO: 実データ列名を確定後、患者レコード（admission_date, short3_flag 等）
+    # をスキャンして stay_days == 5 の短手3 患者を抽出する。
+    # 現状は日次集計データのみのため、プレースホルダで空リスト。
+    return []
 
 
 # ---------------------------------------------------------------------------

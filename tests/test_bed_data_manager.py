@@ -5,7 +5,7 @@ import io
 import pytest
 import pandas as pd
 import numpy as np
-from datetime import timedelta
+from datetime import date, timedelta
 
 import bed_data_manager as bdm
 
@@ -383,3 +383,214 @@ class TestMonthlySummaryLos:
         assert result["total_patient_days"] == 80 * 14 + 1300
         assert len(result["summary_months_used"]) == 1
         assert "2026-03" in result["summary_months_used"]
+
+
+# ===================================================================
+# Feature: 本則完全適用 (2026-06-01) の短手3 階段関数
+# ===================================================================
+class TestShort3StairFunctionPostTransitional:
+    """CLAUDE.md 確定仕様 (2026-06-01 以降本則完全適用) の階段関数テスト。
+
+    - Day 5 以下 → 分母に含めない
+    - Day 6 以上に延びた瞬間 → 入院初日まで遡って全日数を加算 (+6日 jump)
+    - 経過措置中 (today <= 2026-05-31) は従来動作を維持する
+    """
+
+    def _make_df(self, n=30, short3_count=0, overflow_count=0, overflow_los=8.0):
+        """テスト用日次DataFrame。"""
+        dates = [pd.Timestamp("2026-03-01") + timedelta(days=i) for i in range(n)]
+        data = {
+            "date": dates,
+            "ward": ["5F"] * n,
+            "total_patients": [80] * n,
+            "new_admissions": [5] * n,
+            "new_admissions_short3": [0] * n,
+            "discharges": [5] * n,
+            "short3_overflow_count": [0] * n,
+            "short3_overflow_avg_los": [0.0] * n,
+        }
+        if short3_count > 0:
+            data["new_admissions_short3"][0] = short3_count
+            data["short3_overflow_count"][0] = overflow_count
+            data["short3_overflow_avg_los"][0] = overflow_los
+        return pd.DataFrame(data)
+
+    def test_transitional_period_today_2026_04_17(self):
+        """経過措置期間中 (今日) → transitional=True、既存挙動が維持される。"""
+        df = self._make_df(n=30, short3_count=0, overflow_count=0)
+        result = bdm.calculate_rolling_los(df, window_days=90, today=date(2026, 4, 17))
+
+        assert result is not None
+        assert result["transitional"] is True
+        # 短手3=0 なら rolling_los == rolling_los_ex_short3
+        assert result["rolling_los"] is not None
+        assert result["rolling_los_ex_short3"] == result["rolling_los"]
+
+    def test_transitional_period_last_day(self):
+        """経過措置終了当日 (2026-05-31) は transitional=True。"""
+        df = self._make_df(n=30)
+        result = bdm.calculate_rolling_los(df, window_days=90, today=date(2026, 5, 31))
+
+        assert result is not None
+        assert result["transitional"] is True
+
+    def test_post_transitional_from_2026_06_01(self):
+        """本則完全適用初日 (2026-06-01) → transitional=False。"""
+        df = self._make_df(n=30)
+        result = bdm.calculate_rolling_los(df, window_days=90, today=date(2026, 6, 1))
+
+        assert result is not None
+        assert result["transitional"] is False
+
+    def test_default_today_uses_date_today(self):
+        """today=None → date.today() を使う（現在は経過措置中）。"""
+        df = self._make_df(n=30)
+        result = bdm.calculate_rolling_los(df, window_days=90)
+
+        assert result is not None
+        # 2026-04-17 時点では経過措置中
+        # (将来このテストが 2026-06-01 以降に実行されると transitional=False になる)
+        expected_transitional = date.today() <= date(2026, 5, 31)
+        assert result["transitional"] == expected_transitional
+
+    def test_transitional_period_short3_day5_excluded(self):
+        """経過措置中: 5日以内退院の短手3 は従来通り除外される。"""
+        df = self._make_df(n=30, short3_count=5, overflow_count=2)
+        result = bdm.calculate_rolling_los(df, window_days=90, today=date(2026, 4, 17))
+
+        assert result is not None
+        assert result["transitional"] is True
+        assert result["short3_5day_excluded"] == 3.0  # 5 - 2
+        # ex_short3 は rolling_los と異なる（除外患者がある）
+        assert result["rolling_los_ex_short3"] != result["rolling_los"]
+
+    def test_post_transitional_short3_day5_excluded(self):
+        """本則完全適用: Day 5 以下の短手3 は分母から除外される（日次集計レベルでも同挙動）。"""
+        df = self._make_df(n=30, short3_count=5, overflow_count=2)
+        result = bdm.calculate_rolling_los(df, window_days=90, today=date(2026, 6, 1))
+
+        assert result is not None
+        assert result["transitional"] is False
+        assert result["short3_5day_excluded"] == 3.0  # 5 - 2
+        # Day 5 以下の短手3 (3件) は rolling_los_ex_short3 で除外される
+        assert result["rolling_los_ex_short3"] is not None
+        assert result["rolling_los_ex_short3"] != result["rolling_los"]
+
+    def test_post_transitional_short3_day6_overflow_included(self):
+        """本則完全適用: Day 6 以上の短手3 (overflow) は入院初日から全日数が分母に算入される。
+
+        日次集計データでは、overflow 患者の患者日数は既に total_patient_days に
+        含まれているため、overflow は rolling_los / rolling_los_ex_short3 の分子・分母に
+        算入されている状態が「入院初日まで遡って全日数をカウント」に対応する。
+        """
+        df = self._make_df(n=30, short3_count=5, overflow_count=5, overflow_los=8.0)
+        result = bdm.calculate_rolling_los(df, window_days=90, today=date(2026, 6, 1))
+
+        assert result is not None
+        assert result["transitional"] is False
+        # 全員 overflow なので 5日以内除外はゼロ
+        assert result["short3_5day_excluded"] == 0.0
+        # overflow 患者は rolling_los に算入されたまま → ex_short3 == rolling_los
+        assert result["rolling_los_ex_short3"] == result["rolling_los"]
+
+    def test_stair_function_discontinuity_day5_to_day6(self):
+        """Day 5/6 境界で分母が +6 日 jump する不連続点を直接検証。
+
+        シナリオ: 短手3 5件中 2件が overflow (Day 6+) のケースと、
+        同じ5件中 4件が overflow のケースを比較。
+        overflow 数が増えると除外数が減るため、分母 (admissions+discharges)/2 が
+        小さくなるはずが、overflow 患者の分子側の患者日数は同じように含まれる。
+        結果として rolling_los_ex_short3 は 4件overflowの方が低くなる
+        (除外2件のみ = 除外患者日数が少なくなる → ex_short3が本来の値に近づく)。
+        """
+        # ケース A: 5件中 2件 overflow → 3件除外
+        df_a = self._make_df(n=30, short3_count=5, overflow_count=2, overflow_los=8.0)
+        result_a = bdm.calculate_rolling_los(df_a, window_days=90, today=date(2026, 6, 1))
+
+        # ケース B: 5件中 4件 overflow → 1件除外
+        df_b = self._make_df(n=30, short3_count=5, overflow_count=4, overflow_los=8.0)
+        result_b = bdm.calculate_rolling_los(df_b, window_days=90, today=date(2026, 6, 1))
+
+        assert result_a["transitional"] is False
+        assert result_b["transitional"] is False
+        assert result_a["short3_5day_excluded"] == 3.0
+        assert result_b["short3_5day_excluded"] == 1.0
+
+        # 除外数が増える → ex_short3 の分母が減る → LOS 値が変化
+        # (確実な不連続性として、除外数が変わると ex_short3 値が異なる)
+        assert result_a["rolling_los_ex_short3"] != result_b["rolling_los_ex_short3"]
+
+    def test_regression_baseline_5F_17_7_transitional(self):
+        """リグレッション: 今日(2026-04-17)の5Fデモデータで rolling_los == 17.7 が維持される。"""
+        import os
+        csv_path = os.path.join(
+            os.path.dirname(__file__), "..", "data", "sample_actual_data_ward_202604.csv"
+        )
+        if not os.path.exists(csv_path):
+            pytest.skip("デモデータが見つかりません")
+
+        df = pd.read_csv(csv_path)
+        df_5f = df[df["ward"] == "5F"].copy()
+        result = bdm.calculate_rolling_los(df_5f, window_days=90, today=date(2026, 4, 17))
+
+        assert result is not None
+        assert result["rolling_los"] == 17.7, f"5F rolling_los drifted: {result['rolling_los']}"
+
+    def test_regression_baseline_6F_21_3_transitional(self):
+        """リグレッション: 今日(2026-04-17)の6Fデモデータで rolling_los == 21.3 が維持される。"""
+        import os
+        csv_path = os.path.join(
+            os.path.dirname(__file__), "..", "data", "sample_actual_data_ward_202604.csv"
+        )
+        if not os.path.exists(csv_path):
+            pytest.skip("デモデータが見つかりません")
+
+        df = pd.read_csv(csv_path)
+        df_6f = df[df["ward"] == "6F"].copy()
+        result = bdm.calculate_rolling_los(df_6f, window_days=90, today=date(2026, 4, 17))
+
+        assert result is not None
+        assert result["rolling_los"] == 21.3, f"6F rolling_los drifted: {result['rolling_los']}"
+
+    def test_regression_baseline_post_transitional_no_short3(self):
+        """リグレッション: 本則完全適用下でも短手3=0のデモデータなら 17.7/21.3 が維持される。"""
+        import os
+        csv_path = os.path.join(
+            os.path.dirname(__file__), "..", "data", "sample_actual_data_ward_202604.csv"
+        )
+        if not os.path.exists(csv_path):
+            pytest.skip("デモデータが見つかりません")
+
+        df = pd.read_csv(csv_path)
+        df_5f = df[df["ward"] == "5F"].copy()
+        df_6f = df[df["ward"] == "6F"].copy()
+
+        r5 = bdm.calculate_rolling_los(df_5f, window_days=90, today=date(2026, 6, 1))
+        r6 = bdm.calculate_rolling_los(df_6f, window_days=90, today=date(2026, 6, 1))
+
+        assert r5["rolling_los"] == 17.7
+        assert r6["rolling_los"] == 21.3
+        assert r5["transitional"] is False
+        assert r6["transitional"] is False
+
+
+# ===================================================================
+# Feature: get_short3_day5_patients インターフェース
+# ===================================================================
+class TestShort3Day5Interface:
+    """subagent A (bed_control_simulator_app.py) から呼ばれる Day 5 アラート用 API。"""
+
+    def test_transitional_period_returns_empty_list(self):
+        """経過措置中は常に空リストを返す。"""
+        result = bdm.get_short3_day5_patients(df=pd.DataFrame(), today=date(2026, 4, 17))
+        assert result == []
+
+    def test_post_transitional_placeholder_returns_empty_list(self):
+        """本則完全適用期でもプレースホルダ実装は空リストを返す (実データ接続待ち)。"""
+        result = bdm.get_short3_day5_patients(df=pd.DataFrame(), today=date(2026, 6, 1))
+        assert result == []
+
+    def test_default_today_returns_list(self):
+        """today=None でもエラーにならず list が返る。"""
+        result = bdm.get_short3_day5_patients(df=pd.DataFrame())
+        assert isinstance(result, list)

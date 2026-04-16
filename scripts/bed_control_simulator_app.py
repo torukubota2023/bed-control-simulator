@@ -229,6 +229,7 @@ try:
     )
     from emergency_ratio import (
         calculate_emergency_ratio,
+        calculate_rolling_emergency_ratio,
         calculate_dual_ratio,
         project_month_end,
         calculate_additional_needed,
@@ -240,6 +241,7 @@ try:
         estimate_next_morning_capacity,
         TRANSITIONAL_END_DATE,
         days_until_transitional_end,
+        is_transitional_period,
     )
     _GUARDRAIL_AVAILABLE = True
     _EMERGENCY_RATIO_AVAILABLE = True
@@ -247,6 +249,68 @@ except Exception as _gr_err:
     import traceback as _gr_tb
     _GUARDRAIL_ERROR = f"{_gr_err}\n{_gr_tb.format_exc()}"
     _EMERGENCY_RATIO_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# 救急搬送比率 — 経過措置期間ゲート付きラッパー
+# ---------------------------------------------------------------------------
+# 2026-05-31 までは令和6改定の経過措置期間（最大3ヶ月の困難時期除外が許容）
+# 2026-06-01 以降は本則完全適用 → 判定期間は rolling 3ヶ月（単月ではない）
+#   仕様確定日: 2026-04-15（事務担当者確認）
+#   詳細: CLAUDE.md「制度ルール確定事項（2026-06-01 以降の地域包括医療病棟運用）」
+#
+# 経過措置中は既存の calculate_emergency_ratio() を呼び、本則適用後は
+# calculate_rolling_emergency_ratio() に自動で切り替える。戻り値の互換性を
+# 維持するため、rolling 結果に単月の breakdown を重ねた dict を返す。
+def _calc_emergency_ratio_with_gate(detail_df, ward, year_month, target_date,
+                                     exclude_short3=False):
+    """経過措置ゲート付きの救急搬送比率計算。
+
+    Args:
+        detail_df: 入退院詳細データ
+        ward: "5F" / "6F" / None
+        year_month: "YYYY-MM" 形式の対象月
+        target_date: 基準日（経過措置判定用）
+        exclude_short3: 後方互換のため保持。2026改定で無視される
+
+    Returns:
+        calculate_emergency_ratio() と同形式の dict。
+        ゲート内は単月判定、ゲート外は rolling 3ヶ月判定の数値を持つ。
+        monthly_breakdown は rolling モードのみ含まれる。
+    """
+    if not _EMERGENCY_RATIO_AVAILABLE:
+        return None
+
+    # 経過措置中 or 本則適用後を判定
+    if is_transitional_period(target_date):
+        # 経過措置中（〜2026-05-31）: 単月判定（既存挙動）
+        return calculate_emergency_ratio(
+            detail_df, ward=ward, year_month=year_month,
+            exclude_short3=exclude_short3, target_date=target_date,
+        )
+
+    # 本則適用（2026-06-01〜）: rolling 3ヶ月判定
+    # breakdown / exclude_short3 は単月版から流用（UI の円グラフ等で必要）
+    single_month = calculate_emergency_ratio(
+        detail_df, ward=ward, year_month=year_month,
+        exclude_short3=exclude_short3, target_date=target_date,
+    )
+    rolling = calculate_rolling_emergency_ratio(
+        detail_df, ward=ward, target_date=target_date, window_months=3,
+    )
+
+    # rolling の分子/分母/比率/ステータスで単月の値を上書き
+    merged = dict(single_month)
+    merged["numerator"] = rolling["numerator"]
+    merged["denominator"] = rolling["denominator"]
+    merged["ratio_pct"] = rolling["ratio_pct"]
+    merged["gap_to_target_pt"] = rolling["gap_to_target_pt"]
+    merged["status"] = rolling["status"]
+    merged["monthly_breakdown"] = rolling.get("monthly_breakdown", [])
+    merged["_rolling_window_months"] = rolling.get("window_months", 3)
+    merged["_gate_mode"] = "rolling_3m"
+    return merged
+
 
 # ---------------------------------------------------------------------------
 # 結論カード / 今日の一手 / C群候補lite
@@ -2834,6 +2898,38 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
             )
             with _summary_expander:
                 render_action_card(_ac_card)
+
+                # -----------------------------------------------------------
+                # 短手3 Day 5 到達アラート（本則完全適用後 = 2026-06-01 以降のみ）
+                # -----------------------------------------------------------
+                # 本則適用後は LOS 計算の分母に、短手3 患者の入院日数を
+                # 「5日まで含めない、6日目以降は入院初日まで遡って全日数カウント」
+                # という階段関数で扱う。Day 5 到達患者が翌日延長すると、その瞬間に
+                # LOS 分母に +6 日 jump する不連続点が発生するため事前警告する。
+                #
+                # TODO: bed_data_manager に「短手3 Day 5 到達患者を返す関数」が
+                #       実装されたら呼び出しを有効化する（subagent B の担当）。
+                #       関数シグネチャ案: get_short3_patients_at_day5(detail_df, target_date) -> list
+                _short3_day5_alert_enabled = False  # 関数実装後に True へ切り替え
+                if (
+                    _short3_day5_alert_enabled
+                    and _EMERGENCY_RATIO_AVAILABLE
+                    and not is_transitional_period(date.today())
+                    and _ac_detail_df is not None
+                ):
+                    try:
+                        # 実装時に置き換え:
+                        # from bed_data_manager import get_short3_patients_at_day5
+                        # _short3_day5 = get_short3_patients_at_day5(_ac_detail_df, date.today())
+                        _short3_day5 = []
+                        if _short3_day5:
+                            st.warning(
+                                f"⚠️ 短手3 患者 {len(_short3_day5)} 名が入院 Day 5 到達。"
+                                "明日（Day 6）に滞在が延びると、入院初日まで遡って LOS 分母に "
+                                "+6 日計上されます（6/1 以降の本則適用ルール）。"
+                            )
+                    except Exception:
+                        pass
 
             _ac_kpi_list = generate_kpi_priority_list(
                 emergency_summary=_ac_emergency_summary,
@@ -8720,8 +8816,9 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                         from datetime import date as _cg_date
                         _cg_today = _cg_date.today()
                         _cg_ym = _cg_today.strftime("%Y-%m")
-                        _er_5f_cg = calculate_emergency_ratio(_gr_detail_df, "5F", _cg_ym, target_date=_cg_today)
-                        _er_6f_cg = calculate_emergency_ratio(_gr_detail_df, "6F", _cg_ym, target_date=_cg_today)
+                        # 経過措置ゲート: 〜2026-05-31 は単月、6/1 以降は rolling 3ヶ月
+                        _er_5f_cg = _calc_emergency_ratio_with_gate(_gr_detail_df, "5F", _cg_ym, _cg_today)
+                        _er_6f_cg = _calc_emergency_ratio_with_gate(_gr_detail_df, "6F", _cg_ym, _cg_today)
                         _er_need_5f_cg = calculate_additional_needed(_gr_detail_df, "5F", _cg_ym, _cg_today)
                         _er_need_6f_cg = calculate_additional_needed(_gr_detail_df, "6F", _cg_ym, _cg_today)
                         _er_risk_for_cg = {
@@ -9082,8 +9179,17 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 # =========================================
                 # セクション4: 危険域アラート
                 # =========================================
-                _er_ratio_5f = calculate_emergency_ratio(_gr_detail_df, "5F", _er_ym, exclude_short3=_er_use_short3_excl, target_date=_er_today)
-                _er_ratio_6f = calculate_emergency_ratio(_gr_detail_df, "6F", _er_ym, exclude_short3=_er_use_short3_excl, target_date=_er_today)
+                # 経過措置ゲート: 〜2026-05-31 は単月、6/1 以降は rolling 3ヶ月
+                _er_ratio_5f = _calc_emergency_ratio_with_gate(_gr_detail_df, "5F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
+                _er_ratio_6f = _calc_emergency_ratio_with_gate(_gr_detail_df, "6F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
+
+                # 判定モードの可視化（本則適用後は「rolling 3ヶ月判定」である旨を明示）
+                if not is_transitional_period(_er_today) and _er_ratio_5f is not None:
+                    st.caption(
+                        "ℹ️ 2026-06-01 以降は **rolling 3ヶ月判定** を採用しています"
+                        "（単月ではなく直近3ヶ月の分子・分母を合算して判定）。"
+                        "今月の状況カードに表示される単月数値とは異なる場合があります。"
+                    )
                 _er_proj_5f = project_month_end(_gr_detail_df, "5F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
                 _er_proj_6f = project_month_end(_gr_detail_df, "6F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
                 _er_need_5f = calculate_additional_needed(_gr_detail_df, "5F", _er_ym, _er_today, exclude_short3=_er_use_short3_excl)
@@ -9216,6 +9322,9 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                     for _er_ward, _route_col in [("5F", _route_col_5f), ("6F", _route_col_6f)]:
                         with _route_col:
                             st.markdown(f"**{_er_ward}**")
+                            # 入院経路構成比の円グラフは当月単月の内訳を表示するため
+                            # 経過措置ゲートの影響を受けない（rolling 3ヶ月の breakdown は
+                            # 構成比の瞬間スナップショットとして不適切）
                             _er_ratio_ward = calculate_emergency_ratio(
                                 _gr_detail_df, _er_ward, _er_ym, target_date=_er_today
                             )

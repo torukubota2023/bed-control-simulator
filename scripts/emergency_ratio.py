@@ -194,8 +194,11 @@ def calculate_emergency_ratio(
 ) -> Dict[str, Any]:
     """指定病棟・月の救急搬送後患者割合を計算する。
 
-    2026年改定により、短手3は救急搬送率の計算に含める（除外しない）。
-    exclude_short3 引数は後方互換のため残すが無視される。
+    注: exclude_short3 パラメータは 2026-06-01 本則完全適用後、
+    分母に常に短手3 を含む仕様に統一されたため、現在は受け取るが
+    効果を持たない。後方互換性のためシグネチャは維持する。
+    仕様確定日: 2026-04-15（事務担当者確認）
+    詳細: CLAUDE.md「制度ルール確定事項（2026-06-01 以降の地域包括医療病棟運用）」
 
     Args:
         detail_df: 入退院詳細データ
@@ -210,8 +213,11 @@ def calculate_emergency_ratio(
     ym = _resolve_year_month(year_month, target_date)
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
 
-    # 2026年改定: 短手3は救急搬送率の計算に含める（除外しない）
-    # exclude_short3 引数は後方互換のため残すが無視する
+    # 注: exclude_short3 パラメータは 2026-06-01 本則完全適用後、
+    # 分母に常に短手3 を含む仕様に統一されたため、現在は受け取るが効果を持たない。
+    # 後方互換性のためシグネチャは維持。
+    # 仕様確定日: 2026-04-15（事務担当者確認）
+    # 詳細: CLAUDE.md「制度ルール確定事項」を参照
     breakdown = _build_breakdown(adm_df, False)
 
     denominator = len(adm_df)
@@ -413,7 +419,9 @@ def project_month_end(
 
     # 現在までの入院
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
-    # 2026年改定: 短手3は常に含める（exclude_short3は無視）
+    # 注: 2026-06-01 本則完全適用後、分母に常に短手3 を含む仕様に統一
+    # （exclude_short3 は受け取るが効果なし、後方互換のみ）
+    # 仕様確定日: 2026-04-15（事務担当者確認）— CLAUDE.md「制度ルール確定事項」参照
     current_total = len(adm_df)
     current_emergency = 0
     if not adm_df.empty and "route" in adm_df.columns:
@@ -429,7 +437,8 @@ def project_month_end(
     # 過去14日間のデータで曜日別パターンを算出
     lookback_start = td - timedelta(days=13)
     all_adm = _filter_admissions(detail_df, ward=ward)
-    # 2026年改定: 短手3は常に含める
+    # 注: 2026-06-01 本則完全適用後、分母に常に短手3 を含む仕様に統一
+    # 仕様確定日: 2026-04-15（事務担当者確認）— CLAUDE.md「制度ルール確定事項」参照
 
     if not all_adm.empty:
         all_adm = all_adm.copy()
@@ -834,7 +843,9 @@ def get_cumulative_progress(
     # 当月入院データ取得
     adm_df = _filter_admissions(detail_df, ward=ward, year_month=ym)
 
-    # 2026年改定: 短手3は常に含める（exclude_short3は無視）
+    # 注: 2026-06-01 本則完全適用後、分母に常に短手3 を含む仕様に統一
+    # （exclude_short3 は受け取るが効果なし、後方互換のみ）
+    # 仕様確定日: 2026-04-15（事務担当者確認）— CLAUDE.md「制度ルール確定事項」参照
 
     if adm_df.empty:
         return []

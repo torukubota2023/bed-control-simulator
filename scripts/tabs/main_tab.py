@@ -160,6 +160,10 @@ def render(data: dict, ward: str | None, config: dict):
             delta = round(occ["value"] - target_occ, 1)
             st.metric("稼働率", f"{occ['value']:.1f}%",
                       f"目標{target_occ:.0f}%比 {delta:+.1f}%")
+            st.markdown(
+                f'<div data-testid="occupancy" data-kpi-name="稼働率" data-priority="top" style="display:none">{occ["value"]:.2f}</div>',
+                unsafe_allow_html=True,
+            )
         else:
             st.metric("稼働率", "—")
 
@@ -169,6 +173,10 @@ def render(data: dict, ward: str | None, config: dict):
             st.metric("平均在院日数", f"{los['value']:.1f}日",
                       f"余力 {headroom:+.1f}日",
                       delta_color="normal")
+            st.markdown(
+                f'<div data-testid="alos" data-limit="{los_limit}" style="display:none">{los["value"]:.1f}</div>',
+                unsafe_allow_html=True,
+            )
         else:
             st.metric("平均在院日数", "—")
 
@@ -177,6 +185,10 @@ def render(data: dict, ward: str | None, config: dict):
             er_delta = round(er["value"] - 15.0, 1)
             st.metric("救急搬送比率", f"{er['value']:.1f}%",
                       f"基準15%比 {er_delta:+.1f}%")
+            st.markdown(
+                f'<div data-testid="emergency_ratio" data-kpi-name="救急搬送比率" data-priority="top" style="display:none">{er["value"]:.1f}</div>',
+                unsafe_allow_html=True,
+            )
         else:
             st.metric("救急搬送比率", "—", "データ未入力")
 
@@ -191,6 +203,22 @@ def render(data: dict, ward: str | None, config: dict):
         else:
             st.metric("C群滞留", label, "30日超 なし", delta_color="off")
 
+        # --- phase (A群/B群/C群構成) hidden div (v3.5 互換 testid) ---
+        try:
+            if monthly is not None and len(monthly) > 0 and {
+                "phase_a_count", "phase_b_count", "phase_c_count"
+            }.issubset(monthly.columns):
+                _last = monthly.sort_values("date").iloc[-1]
+                _pa = int(_last.get("phase_a_count", 0) or 0)
+                _pb = int(_last.get("phase_b_count", 0) or 0)
+                _pc = int(_last.get("phase_c_count", 0) or 0)
+                st.markdown(
+                    f'<div data-testid="phase" data-a="{_pa}" data-b="{_pb}" data-c="{_pc}" style="display:none">{_pa + _pb + _pc}</div>',
+                    unsafe_allow_html=True,
+                )
+        except Exception:
+            pass
+
     with c5:
         if wk["drop"] is not None:
             st.metric("週末稼働率低下", f"{wk['drop']:+.1f}%",
@@ -199,9 +227,27 @@ def render(data: dict, ward: str | None, config: dict):
         else:
             st.metric("週末稼働率低下", "—")
 
+    # --- vacancy (空床数) hidden div (v3.5 互換 testid) ---
+    try:
+        if monthly is not None and len(monthly) > 0 and "total_patients" in monthly.columns and beds:
+            _latest_tp = float(
+                monthly.sort_values("date").iloc[-1]["total_patients"] or 0
+            )
+            _vacancy_slots = max(0, int(round(beds - _latest_tp)))
+            st.markdown(
+                f'<div data-testid="vacancy" style="display:none">{_vacancy_slots}</div>',
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass
+
     # --- 稼働率1%の価値 ---
     mv = config.get("marginal_value")
     if mv:
         st.markdown(f"<div style='text-align:center; color:gray; margin-top:1em;'>"
                     f"稼働率1%の価値: 年間 {mv:,}万円</div>",
                     unsafe_allow_html=True)
+        st.markdown(
+            f'<div data-testid="revenue" data-unit="万円/年" style="display:none">{mv}</div>',
+            unsafe_allow_html=True,
+        )

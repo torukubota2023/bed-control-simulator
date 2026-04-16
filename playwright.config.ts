@@ -5,7 +5,7 @@ config({ override: true });
 
 export default defineConfig({
   testDir: './playwright',
-  timeout: 60000,
+  timeout: 120000,
   retries: 1,
   use: {
     baseURL: 'http://localhost:8501',
@@ -13,9 +13,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'streamlit run scripts/bed_control_simulator_app.py --server.port 8501 --server.headless true',
+    command: '[ -x .venv/bin/streamlit ] && .venv/bin/streamlit run scripts/bed_control_simulator_app.py --server.port 8501 --server.headless true || streamlit run scripts/bed_control_simulator_app.py --server.port 8501 --server.headless true',
     port: 8501,
-    timeout: 30000,
+    timeout: 120000,
     reuseExistingServer: true,
   },
 });
