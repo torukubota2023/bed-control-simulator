@@ -69,18 +69,29 @@ npx playwright install chromium
 
 ### Claude API キー設定 (省略可)
 
-Claude AI による運用妥当性の評価を使う場合は、API キーを設定します。設定しなくてもテスト自体は動きますが、評価コメントがスキップされます。
+Claude AI による運用妥当性の評価を使う場合は、リポジトリルートの `.env` ファイルに API キーを記載します。設定しなくてもテスト自体は動きますが、`@claude-eval` タグが付いたテストはスキップされます。
+
+`playwright.config.ts` が dotenv で `.env` を自動読み込み（`override: true`）するため、**shell に `export` する必要はありません**。`.env` に書くだけで `npm run test:e2e` 実行時に自動で注入されます。
+
+`.env` ファイルがまだ無い場合は `.env.example` をコピーして作成します。
 
 ```bash
-echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc
-source ~/.zshrc
+cp .env.example .env
 ```
 
-`sk-ant-...` の部分は、Anthropic コンソールで取得した実際のキーに置き換えてください。設定後、以下で確認できます。
+作成した `.env` ファイルを開いて、以下の行を追加または編集します。`sk-ant-...` の部分は Anthropic コンソールで取得した実際のキーに置き換えてください。
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+`.env` は `.gitignore` されているため、git にはコミットされません。設定済みか確認するには以下を実行します（キー値は表示されず、存在だけ確認できます）。
 
 ```bash
-echo $ANTHROPIC_API_KEY
+grep -c "^ANTHROPIC_API_KEY=" .env
 ```
+
+出力が `1` なら設定済み、`0` または `grep: .env: No such file or directory` なら未設定です。
 
 ## 4. 日常の実行手順 — 3 ステップ
 
@@ -195,13 +206,13 @@ git diff scripts/views/
 
 ### Q3: Claude 評価がスキップされる
 
-A: 環境変数が設定されていない可能性があります。
+A: `.env` ファイルに `ANTHROPIC_API_KEY` が設定されていない可能性があります。shell の `$ANTHROPIC_API_KEY` ではなく、`.env` ファイルを確認してください（Playwright は dotenv で `.env` から自動読み込みするため、shell の export は不要です）。
 
 ```bash
-echo $ANTHROPIC_API_KEY
+grep -c "^ANTHROPIC_API_KEY=" .env
 ```
 
-これで何も表示されなければ、第 3 章の「Claude API キー設定」を実施してください。
+出力が `1` でなければ、第 3 章の「Claude API キー設定」を実施してください。
 
 ### Q4: テストが重くて待ち時間が長い
 
