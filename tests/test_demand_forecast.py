@@ -323,3 +323,100 @@ class TestRealWorldScenario:
         # 金曜需要 約5件 < 空床 約10.5床 → low 週
         assert r["week_type"] == "low"
         assert r["effective_fill"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------
+# 8. 回帰防止: 病棟集計バグ（2026-04-17 修正）
+# ---------------------------------------------------------------
+
+class TestWardAggregationBugRegression:
+    """
+    バグの再発防止: `_daily_df` に ward カラムがあり病棟ごとに複数行ある場合、
+    `df["total_patients"].mean()` を全行で取ると実質「行あたりの平均」になり、
+    稼働率が半分になってしまう（88% → 42% 等）。
+
+    修正: 全体選択時は date ごとに sum してから稼働率を計算する。
+    """
+
+    def test_ward_aggregation_produces_correct_occupancy(self):
+        """2 病棟データで、`groupby(date).sum()` → `mean() / total_beds` が
+        正しい稼働率を返すこと（全行 mean の バグ値ではない）。"""
+        # 2 病棟 × 10 日、各病棟 42 人（合計 84 人/日）
+        rows = []
+        for d in range(10):
+            dt = date(2026, 4, 1) + timedelta(days=d)
+            rows.append({"date": dt, "ward": "5F", "total_patients": 42})
+            rows.append({"date": dt, "ward": "6F", "total_patients": 42})
+        df = pd.DataFrame(rows)
+
+        # 旧（バグ）ロジック: 全行 mean
+        buggy_occ = df["total_patients"].mean() / 94
+        assert buggy_occ == pytest.approx(42 / 94), "旧バグの再現（参考）"
+
+        # 新ロジック: date ごとに sum → その mean
+        daily_total = df.groupby("date", as_index=False).agg(
+            {"total_patients": "sum"}
+        )
+        correct_occ = daily_total["total_patients"].mean() / 94
+        assert correct_occ == pytest.approx(84 / 94)  # 約 89.4%
+
+        # 稼働率 42% と 89% で既存空床は全く違う値になる
+        vac_buggy = estimate_existing_vacancy(date(2026, 4, 3), buggy_occ, total_beds=94)
+        vac_correct = estimate_existing_vacancy(date(2026, 4, 3), correct_occ, total_beds=94)
+        assert vac_buggy > 50.0  # 旧バグでは 54床 相当
+        assert vac_correct < 15.0  # 正しくは 10床 程度
+        assert vac_buggy - vac_correct > 40.0  # 40床 以上のズレ
+
+    def test_friday_specific_occupancy_gives_tighter_estimate(self):
+        """金曜限定平均を使うと、一般平均より実情に近い既存空床が得られること。"""
+        # 月〜木は 80% 稼働、金曜は 92% 稼働のパターン
+        rows = []
+        for week in range(8):
+            for dow in range(7):
+                dt = date(2026, 2, 2) + timedelta(days=week*7 + dow)
+                # dow: 0=月, 4=金, 5=土, 6=日
+                if dow == 4:
+                    pts = int(94 * 0.92)
+                elif dow in (5, 6):
+                    pts = int(94 * 0.70)
+                else:
+                    pts = int(94 * 0.80)
+                rows.append({"date": dt, "total_patients": pts})
+        df = pd.DataFrame(rows)
+        df["_dt"] = pd.to_datetime(df["date"])
+        df["_dow"] = df["_dt"].dt.dayofweek
+
+        # 全期間平均（荒い）
+        overall_occ = df["total_patients"].mean() / 94
+        overall_vac = estimate_existing_vacancy(date(2026, 4, 3), overall_occ, total_beds=94)
+
+        # 金曜限定平均（精緻）
+        friday_rows = df[df["_dow"] == 4]
+        fri_occ = friday_rows["total_patients"].mean() / 94
+        fri_vac = estimate_existing_vacancy(date(2026, 4, 3), fri_occ, total_beds=94)
+
+        # 金曜は 92% なので空床 ≈ 7床
+        assert fri_vac < 10.0
+        # 全期間は週末低稼働を含むので空床 ≈ 15-20床と緩い
+        assert overall_vac > fri_vac + 3.0
+
+    def test_ui_threshold_makes_sense_for_realistic_hospital(self):
+        """
+        現実的な当院シナリオ:
+        - 病床 94、金曜稼働率 88-90%、金曜平均入院 5.5件/日
+        → 金曜既存空床 約 9〜11床 で、発動には 10〜12件/日 超の需要が必要。
+        """
+        df = _make_synthetic_admissions(weeks=52)
+        target = date(2026, 3, 27)
+        forecast = forecast_weekly_demand(df, target)
+        fri_demand = forecast["dow_means"].get(4, 0.0)
+        # 現実的な金曜稼働率
+        existing_vac = estimate_existing_vacancy(target, 0.89, total_beds=94)
+        # 空床 10床 程度
+        assert 8.0 <= existing_vac <= 12.0
+        # 発動閾値: fri_demand > 11 で high
+        r_low = classify_week_type(fri_demand, existing_vac, margin=1.0)
+        assert r_low["type"] in ("low", "standard")  # 通常需要では発動しない
+        # 閾値を超える仮想需要
+        r_high = classify_week_type(existing_vac + 2.0, existing_vac, margin=1.0)
+        assert r_high["type"] == "high"

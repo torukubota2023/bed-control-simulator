@@ -8230,8 +8230,37 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                 _df_forecast = forecast_weekly_demand(
                                     _hist_df, _target_week, ward=_ward_arg, lookback_months=12,
                                 )
-                                # 現状稼働率（当月平均）を使用
-                                _cur_occ = float(_daily_df["total_patients"].mean()) / _view_beds if _view_beds > 0 else 0.9
+                                # ---- 既存空床の算出（金曜限定・病棟集計バグ修正版 2026-04-17） ----
+                                # 旧: _daily_df["total_patients"].mean() は、ward カラム有り時に
+                                #     病棟別行の平均になり実質半分の値（42% 等）となるバグあり。
+                                # 新: Hint 1 と同じ集計ロジックで病棟フィルタ/全体集計を行い、
+                                #     かつ「金曜限定の稼働率」で既存空床を推計する。
+                                _vac_daily = None
+                                if "ward" in _daily_df.columns:
+                                    if _ward_arg in ("5F", "6F"):
+                                        _vac_base = _daily_df[_daily_df["ward"] == _ward_arg].copy()
+                                    else:
+                                        _vac_base = _daily_df.groupby("date", as_index=False).agg(
+                                            {"total_patients": "sum"}
+                                        )
+                                else:
+                                    _vac_base = _daily_df.copy()
+                                if len(_vac_base) > 0 and "total_patients" in _vac_base.columns:
+                                    # 金曜限定平均（直近4週相当）を採用。取れない場合は全期間平均にフォールバック
+                                    try:
+                                        _vac_base["_dt"] = pd.to_datetime(_vac_base["date"])
+                                        _vac_base["_dow"] = _vac_base["_dt"].dt.dayofweek
+                                        _fri_rows = _vac_base[_vac_base["_dow"] == 4].tail(8)
+                                        if len(_fri_rows) >= 2:
+                                            _cur_occ = float(_fri_rows["total_patients"].mean()) / _view_beds
+                                        else:
+                                            _cur_occ = float(_vac_base["total_patients"].mean()) / _view_beds
+                                    except Exception:
+                                        _cur_occ = float(_vac_base["total_patients"].mean()) / _view_beds
+                                    # 稼働率は 0-1 の範囲にクランプ
+                                    _cur_occ = max(0.0, min(1.0, _cur_occ))
+                                else:
+                                    _cur_occ = 0.9  # データ不足時の控えめデフォルト
                                 _df_vacancy = estimate_existing_vacancy(
                                     _target_week, _cur_occ, total_beds=_view_beds,
                                 )
@@ -8255,18 +8284,27 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         if _week_type == "high":
                             st.success(
                                 f"🟢 **高需要週** — 木曜前倒しが有効です。\n"
-                                f"（金曜予想入院 {_fri_demand:.1f}件/日 > 既存空床 {_existing_vac:.1f}床/日）"
+                                f"（金曜予想入院 {_fri_demand:.1f}件/日 > 金曜既存空床 {_existing_vac:.1f}床 → "
+                                f"需要超過分を前倒しで吸収可）"
                             )
                         elif _week_type == "low":
                             st.error(
                                 f"🔴 **低需要週** — 木曜前倒しは逆効果です。通常運用を推奨。\n"
-                                f"（金曜予想入院 {_fri_demand:.1f}件/日 < 既存空床 {_existing_vac:.1f}床/日 → "
+                                f"（金曜予想入院 {_fri_demand:.1f}件/日 < 金曜既存空床 {_existing_vac:.1f}床 → "
                                 f"既存空床で需要は吸収されます）"
                             )
                         else:
                             st.warning(
                                 f"🟡 **標準週** — 効果は限定的です。\n"
-                                f"（金曜予想入院 {_fri_demand:.1f}件/日 ≈ 既存空床 {_existing_vac:.1f}床/日）"
+                                f"（金曜予想入院 {_fri_demand:.1f}件/日 ≈ 金曜既存空床 {_existing_vac:.1f}床）"
+                            )
+                        # 根拠の展開
+                        with st.expander("💡 この判定の根拠（金曜既存空床の計算方法）", expanded=False):
+                            st.markdown(
+                                f"- **金曜既存空床** = 病床数 {_view_beds} × (1 − 金曜平均稼働率 {_cur_occ*100:.1f}%) = **{_existing_vac:.1f}床**\n"
+                                f"- **金曜平均稼働率** は直近金曜（最大8回）の実測在院から計算（データ不足時は全期間平均にフォールバック）\n"
+                                f"- **金曜予想入院** は過去12ヶ月の曜日別平均 + 直近2週トレンド補正（ward={_ward_arg or '全体'}）\n"
+                                f"- 発動閾値: 金曜予想入院 > 金曜既存空床 + 1床（マージン）で高需要週判定"
                             )
 
                     _bm_sl1, _bm_sl2 = st.columns(2)
