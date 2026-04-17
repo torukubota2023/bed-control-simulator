@@ -31,14 +31,11 @@
 - v3 (`bed_control_simulator_app.py`) と v4 (`bed_control_app_v4.py`) の両サイドバーに残日数バナーを実装（4段階：info/warning/error/終了後）
 - テスト 7 件追加、全 39 件パス
 
-### 本格実装の残タスク（着手指示待ち）
-1. **`calculate_emergency_ratio()` の rolling 3ヶ月化**（現行は単月判定。`scripts/emergency_ratio.py:178-179`）
-   - `calculate_rolling_emergency_ratio()` は既に存在する（テスト確認済み）→ 呼び出し側を切り替える + 6/1 以降のみ適用するゲートを実装
-2. **LOS 計算の短手3階段関数対応**（`bed_data_manager.py` の `calculate_rolling_los()`）
-   - Day 5/6 境界の不連続点を実装。退院日時点での日数で分岐
-   - 既存テスト（rolling_los_5F=17.7, 6F=21.3）への影響を確認
-3. **シミュレーター上の警告:** 短手3患者が Day 5 に到達したら「明日延長すると LOS +6日」のアラート
-4. **リグレッション確認:** v3.3 の `emergency_ratio.py` で `exclude_short3` を無視する実装は仕様通り → コメント更新のみで OK
+### 本格実装の残タスク（2026-04-17 全完了）
+1. [x] **`calculate_emergency_ratio()` の rolling 3ヶ月化** — `is_transitional_period()` ゲートで 2026-06-01 以降のみ適用に切替（commit `0347739`）
+2. [x] **LOS 計算の短手3階段関数対応** — `calculate_rolling_los(today=None)` に拡張、Day 5/6 境界の不連続点を実装（commit `0347739`）
+3. [x] **シミュレーター上の警告:** 短手3患者 Day 5 到達アラート — `get_short3_day5_patients()` 本実装 + UI 有効化（2026-04-17, `scripts/bed_data_manager.py:955`, `scripts/bed_control_simulator_app.py:2910-2929`）
+4. [x] **リグレッション確認:** `emergency_ratio.py` の `exclude_short3` コメント更新済。全 267 テスト + smoke test 通過確認済
 
 ### リサーチ出典
 - [GemMed 地域包括医療病棟 施設基準・要件詳細](https://gemmed.ghc-j.com/?p=59593)
@@ -69,7 +66,7 @@
 ## ベッドコントロールシミュレーター（現行 v3.5）
 - **設計書:** [bed_control_evolution_design.md](docs/admin/bed_control_evolution_design.md)
 - **ビジョン:** 精神論を、数字に変える。
-- **現行バージョン:** v3.5（2026-04-13時点、全208テスト通過）
+- **現行バージョン:** v3.5i（2026-04-17時点、全 267 Python テスト + 7 Playwright E2E testid テスト通過）
 - **注意:** 以下の機能はすべて**実装済み**。再実装・再検討の必要はない。
 
 ### 実装済み機能一覧（変更不要 — 参照用）
@@ -82,6 +79,7 @@
 | v3.4 | サイドバー5セクション・パスワード認証・HOPE統合・シナリオ保存比較・CSVエクスポート | `scenario_manager.py` |
 | v3.5 | 結論カード（今日の一手）・KPI優先表示・views分離・他病棟協力表示 | `action_recommendation.py`, `views/` |
 | v3.5h | 院内LAN展開準備（Edge 90対応・ポータブルブラウザ方針） | `tools/browser_probe.html`, `deploy/` |
+| v3.5i | 2026-06-01 本則適用準備（救急 rolling 3ヶ月・LOS 階段関数・短手3 Day 5 アラート）・Playwright E2E Green 化（7 testid） | `emergency_ratio.py`, `bed_data_manager.py → get_short3_day5_patients()`, `playwright/test_app.spec.ts` |
 
 ### 設計上の重要ルール（コード修正時に参照）
 - C群は**院内運用ラベル**であり制度上の公式区分ではない。推計値はすべてproxy

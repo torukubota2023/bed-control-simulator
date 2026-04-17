@@ -57,6 +57,17 @@
 - [ ] シミュレーション未実行状態で各セクションに切替えてエラーが出ないか
 - [ ] 実績データなし状態で各セクションに切替えてエラーが出ないか
 
+### 短手3 Day 5 アラートの検証（2026-04-17 追加）
+`bed_control_simulator_app.py:2910-2929`（短手3 Day 5 到達アラート UI）を変更したら、以下3点を確認する。
+
+- [ ] **経過措置ガード**: `is_transitional_period(date.today())` が True のとき（〜2026-05-31）はアラートが非表示になるか
+- [ ] **detail_df None 耐性**: `_ac_detail_df is None` でもクラッシュせず、アラートが出ないか
+- [ ] **emergency_ratio 未ロード耐性**: `_EMERGENCY_RATIO_AVAILABLE = False` の環境（import 失敗時）で非表示になるか
+
+あわせて `scripts/bed_data_manager.py:get_short3_day5_patients()` のロジック整合性を確認：
+- Day 1 = 入院初日（`stay_days = (today - adm_date).days + 1`）
+- 退院済みキー識別: `los_days <= 5` の discharge を短手3 候補として扱う（patient_id 欠如による近似マッチング）
+
 ### 新しいタブ・セクションを追加する場合
 - セクション→タブマッピング（`_SECTION_TABS`）にタブ名を追加する
 - `_needs_sim_data` にそのセクションがデータ依存か明示する

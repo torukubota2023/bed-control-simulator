@@ -959,14 +959,23 @@ def get_short3_day5_patients(df, today=None):
     は空リストを返す。
 
     シミュレーター UI で「明日延長すると LOS +6日」のアラートを出すために
-    subagent A (bed_control_simulator_app.py) から呼ばれる想定。
+    bed_control_simulator_app.py から呼ばれる。
 
-    現時点では日次集計データのみ利用可能。患者単位のデータ構造が
-    確立されていないため、プレースホルダとして空リストを返す。
-    将来、患者レコードテーブルが追加されたら実データ接続する。
+    マッチング戦略:
+        1. admission_details DataFrame から event_type == "admission" かつ
+           short3_type が「該当なし」「空文字」「NaN」でない行を短手3 入院として抽出。
+        2. discharge 行は short3_type を持たないため、「ward × (discharge_date - los_days)」
+           タプルを退院済みキー集合として構築する。ただし短手3 か否かの完全識別が
+           できないため、los_days <= 5 の discharge を短手3 候補とみなす
+           （短手3 の LOS は最長 5 日前後）。
+        3. 各 短手3 admission について:
+             - stay_days = (today - admission_date).days + 1  (Day 1 = 入院初日)
+             - stay_days == 5 かつ discharged_keys に含まれない → Day 5 到達・未退院
+        4. 結果を {"patient_id", "admission_date", "ward", "stay_days": 5} のリストで返す。
 
     Args:
-        df: 日次データ or 患者レコード（将来対応）
+        df: admission_details DataFrame（generate_sample_data.py の列構成）。
+            None or 空 DataFrame のとき、空リストを返す。
         today: 基準日。省略時は date.today()。
 
     Returns:
@@ -990,10 +999,89 @@ def get_short3_day5_patients(df, today=None):
     if is_transitional_period(_today):
         return []
 
-    # TODO: 実データ列名を確定後、患者レコード（admission_date, short3_flag 等）
-    # をスキャンして stay_days == 5 の短手3 患者を抽出する。
-    # 現状は日次集計データのみのため、プレースホルダで空リスト。
-    return []
+    # 入力検証 ---------------------------------------------------------
+    if df is None:
+        return []
+    if not isinstance(df, pd.DataFrame) or len(df) == 0:
+        return []
+
+    required_cols = {"event_type", "date", "ward"}
+    if not required_cols.issubset(set(df.columns)):
+        return []
+
+    # 退院済みキー集合 (los_days <= 5 のみ = 短手3 候補) -------------------
+    # short3_type は discharge 行で空なので LOS 閾値で代替する。
+    discharged_keys: set[tuple[str, str]] = set()
+    try:
+        discharges = df[df["event_type"].astype(str) == "discharge"]
+    except Exception:
+        discharges = df.iloc[0:0]
+
+    for _, row in discharges.iterrows():
+        los = row.get("los_days", "")
+        if los in ("", None):
+            continue
+        try:
+            los_int = int(float(los))
+        except (ValueError, TypeError):
+            continue
+        if los_int > 5:
+            # 短手3 候補ではない（通常入院）のでマッチング対象外
+            continue
+        d_date_raw = row.get("date", "")
+        try:
+            d_date = pd.to_datetime(d_date_raw).date()
+        except Exception:
+            continue
+        try:
+            adm_date = d_date - timedelta(days=los_int)
+        except Exception:
+            continue
+        ward_val = str(row.get("ward", ""))
+        discharged_keys.add((ward_val, adm_date.isoformat()))
+
+    # 短手3 入院の抽出 → Day 5 判定 --------------------------------------
+    results: list[dict] = []
+    try:
+        admissions = df[df["event_type"].astype(str) == "admission"]
+    except Exception:
+        return []
+
+    for _, row in admissions.iterrows():
+        short3_type = row.get("short3_type", "")
+        if short3_type in (None, "", "該当なし"):
+            continue
+        # pd.isna は numeric / NaT にも効く。文字列 "該当なし" は上でフィルタ済み。
+        try:
+            if pd.isna(short3_type):
+                continue
+        except (TypeError, ValueError):
+            pass
+
+        adm_date_raw = row.get("date", "")
+        try:
+            adm_date = pd.to_datetime(adm_date_raw).date()
+        except Exception:
+            continue
+
+        stay_days = (_today - adm_date).days + 1  # Day 1 = 入院初日
+        if stay_days != 5:
+            continue
+
+        ward_val = str(row.get("ward", ""))
+        key = (ward_val, adm_date.isoformat())
+        if key in discharged_keys:
+            # 既に退院済みのためアラート対象外
+            continue
+
+        results.append({
+            "patient_id": str(row.get("id", "")),
+            "admission_date": adm_date,
+            "ward": ward_val,
+            "stay_days": 5,
+        })
+
+    return results
 
 
 # ---------------------------------------------------------------------------

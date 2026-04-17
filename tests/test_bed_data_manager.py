@@ -578,19 +578,107 @@ class TestShort3StairFunctionPostTransitional:
 # Feature: get_short3_day5_patients インターフェース
 # ===================================================================
 class TestShort3Day5Interface:
-    """subagent A (bed_control_simulator_app.py) から呼ばれる Day 5 アラート用 API。"""
+    """bed_control_simulator_app.py から呼ばれる Day 5 アラート用 API。"""
+
+    # --- 共通: 入退院詳細 DataFrame ビルダー ---
+    @staticmethod
+    def _make_admission(id_: str, date_str: str, ward: str, short3_type: str = "該当なし"):
+        return {
+            "id": id_,
+            "date": date_str,
+            "ward": ward,
+            "event_type": "admission",
+            "route": "外来紹介",
+            "source_doctor": "",
+            "attending_doctor": "",
+            "los_days": "",
+            "phase": "",
+            "short3_type": short3_type,
+        }
+
+    @staticmethod
+    def _make_discharge(id_: str, date_str: str, ward: str, los_days: int):
+        return {
+            "id": id_,
+            "date": date_str,
+            "ward": ward,
+            "event_type": "discharge",
+            "route": "",
+            "source_doctor": "",
+            "attending_doctor": "",
+            "los_days": str(los_days),
+            "phase": "",
+            "short3_type": "",
+        }
 
     def test_transitional_period_returns_empty_list(self):
         """経過措置中は常に空リストを返す。"""
         result = bdm.get_short3_day5_patients(df=pd.DataFrame(), today=date(2026, 4, 17))
         assert result == []
 
-    def test_post_transitional_placeholder_returns_empty_list(self):
-        """本則完全適用期でもプレースホルダ実装は空リストを返す (実データ接続待ち)。"""
-        result = bdm.get_short3_day5_patients(df=pd.DataFrame(), today=date(2026, 6, 1))
-        assert result == []
+    def test_empty_or_invalid_dataframe_returns_empty(self):
+        """空 DataFrame / None は空リストを返す。"""
+        assert bdm.get_short3_day5_patients(df=None, today=date(2026, 6, 15)) == []
+        assert bdm.get_short3_day5_patients(df=pd.DataFrame(), today=date(2026, 6, 15)) == []
 
     def test_default_today_returns_list(self):
         """today=None でもエラーにならず list が返る。"""
         result = bdm.get_short3_day5_patients(df=pd.DataFrame())
         assert isinstance(result, list)
+
+    # --- 実データロジック ---
+    def test_transitional_period_blocks_even_with_day5_patients(self):
+        """経過措置中 (2026-05-31 以前) は Day 5 患者がいても空リスト。"""
+        today = date(2026, 5, 31)
+        adm_date = today - timedelta(days=4)  # Day 5 (Day 1 = 入院初日)
+        df = pd.DataFrame([
+            self._make_admission("a1", adm_date.isoformat(), "5F", "短手3 ヘルニア"),
+        ])
+        assert bdm.get_short3_day5_patients(df=df, today=today) == []
+
+    def test_post_transitional_returns_day5_short3_patients(self):
+        """本則完全適用後 (2026-06-15) かつ Day 5 到達の短手3 患者 2 名 → 2 件返却。"""
+        today = date(2026, 6, 15)
+        adm_date = today - timedelta(days=4)  # Day 5
+        df = pd.DataFrame([
+            self._make_admission("a1", adm_date.isoformat(), "5F", "短手3 ヘルニア"),
+            self._make_admission("a2", adm_date.isoformat(), "6F", "短手3 大腸ポリープ"),
+            # Day 5 の通常入院（短手3 ではない）は除外される
+            self._make_admission("a3", adm_date.isoformat(), "5F", "該当なし"),
+        ])
+        result = bdm.get_short3_day5_patients(df=df, today=today)
+        assert len(result) == 2
+        patient_ids = {r["patient_id"] for r in result}
+        assert patient_ids == {"a1", "a2"}
+        for r in result:
+            assert r["stay_days"] == 5
+            assert r["admission_date"] == adm_date
+            assert r["ward"] in {"5F", "6F"}
+
+    def test_day4_and_day6_patients_excluded(self):
+        """Day 4 と Day 6 の短手3 患者のみ（Day 5 なし）→ 空リスト。"""
+        today = date(2026, 6, 15)
+        day4_adm = today - timedelta(days=3)  # Day 4
+        day6_adm = today - timedelta(days=5)  # Day 6
+        df = pd.DataFrame([
+            self._make_admission("a1", day4_adm.isoformat(), "5F", "短手3 ヘルニア"),
+            self._make_admission("a2", day6_adm.isoformat(), "6F", "短手3 白内障"),
+        ])
+        assert bdm.get_short3_day5_patients(df=df, today=today) == []
+
+    def test_already_discharged_day5_patient_excluded(self):
+        """Day 5 到達だが既に退院済み (los_days=4) → 除外される。"""
+        today = date(2026, 6, 15)
+        adm_date = today - timedelta(days=4)  # Day 5
+        # 退院日 = adm_date + 4 日 (los_days=4)
+        dis_date = adm_date + timedelta(days=4)
+        df = pd.DataFrame([
+            self._make_admission("a1", adm_date.isoformat(), "5F", "短手3 ヘルニア"),
+            self._make_discharge("d1", dis_date.isoformat(), "5F", los_days=4),
+            # 別の未退院 Day 5 患者（対照）
+            self._make_admission("a2", adm_date.isoformat(), "6F", "短手3 ポリープ"),
+        ])
+        result = bdm.get_short3_day5_patients(df=df, today=today)
+        assert len(result) == 1
+        assert result[0]["patient_id"] == "a2"
+        assert result[0]["ward"] == "6F"

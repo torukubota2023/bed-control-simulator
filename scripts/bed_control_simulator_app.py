@@ -2907,10 +2907,9 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                 # という階段関数で扱う。Day 5 到達患者が翌日延長すると、その瞬間に
                 # LOS 分母に +6 日 jump する不連続点が発生するため事前警告する。
                 #
-                # TODO: bed_data_manager に「短手3 Day 5 到達患者を返す関数」が
-                #       実装されたら呼び出しを有効化する（subagent B の担当）。
-                #       関数シグネチャ案: get_short3_patients_at_day5(detail_df, target_date) -> list
-                _short3_day5_alert_enabled = False  # 関数実装後に True へ切り替え
+                # bed_data_manager.get_short3_day5_patients() を呼び出して
+                # Day 5 到達の短手3 患者を検出する。
+                _short3_day5_alert_enabled = True  # 2026-04-17 本実装で有効化
                 if (
                     _short3_day5_alert_enabled
                     and _EMERGENCY_RATIO_AVAILABLE
@@ -2918,10 +2917,8 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
                     and _ac_detail_df is not None
                 ):
                     try:
-                        # 実装時に置き換え:
-                        # from bed_data_manager import get_short3_patients_at_day5
-                        # _short3_day5 = get_short3_patients_at_day5(_ac_detail_df, date.today())
-                        _short3_day5 = []
+                        from bed_data_manager import get_short3_day5_patients
+                        _short3_day5 = get_short3_day5_patients(_ac_detail_df, date.today())
                         if _short3_day5:
                             st.warning(
                                 f"⚠️ 短手3 患者 {len(_short3_day5)} 名が入院 Day 5 到達。"

@@ -87,15 +87,26 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
       test(`[data-testid="${id}"] が存在する`, async ({ page }) => {
         // testid によって出現タブが異なるため、ダッシュボードで見つからなければ
         // 他のメインセクション（意思決定支援・制度管理）も巡回する。
+        // Streamlit のラジオは <input type="radio" tabindex="-1"> で不可視のため、
+        // getByRole('radio').click() は「element is not visible」でタイムアウトする。
+        // 親ラベル（label:has-text）をクリックすることで Streamlit の state が切り替わる。
         let count = await page.locator(`[data-testid="${id}"]`).count();
         if (count === 0) {
           const sections = ['🎯 意思決定支援', '🛡️ 制度管理'];
+          const sidebar = page.locator('[data-testid="stSidebar"]');
           for (const sectionName of sections) {
-            const radio = page.getByRole('radio', { name: sectionName });
-            if ((await radio.count()) > 0) {
-              await radio.click();
+            const label = sidebar.locator(`label:has-text("${sectionName}")`).first();
+            if ((await label.count()) > 0) {
+              await label.click();
               await waitForStreamlitLoad(page, 120000);
+              // 制度管理セクションは「制度余力」サブタブが最初に開くが、念のため
+              // 内部 st.tabs の要素をスクロール可視化して遅延ロードをトリガ。
               count = await page.locator(`[data-testid="${id}"]`).count();
+              if (count === 0) {
+                // st.tabs 配下の遅延描画対策: 少し追加待機してから再カウント
+                await page.waitForTimeout(1500);
+                count = await page.locator(`[data-testid="${id}"]`).count();
+              }
               if (count > 0) break;
             }
           }
