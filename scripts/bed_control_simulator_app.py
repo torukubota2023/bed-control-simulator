@@ -12,7 +12,7 @@ import sys
 import os
 import io
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
 import streamlit as st
 import pandas as pd
@@ -365,6 +365,13 @@ try:
     )
     from views.c_group_view import render_c_group_candidates_lite
     from views.guardrail_view import render_guardrail_summary, render_demand_wave_summary
+    from views.holiday_strategy_view import (
+        render_weekly_demand_dashboard,
+        render_discharge_candidates_tab,
+        render_booking_availability_calendar,
+        calculate_next_holiday_countdown,
+        compute_dow_occupancy,
+    )
     _VIEWS_AVAILABLE = True
 except Exception as _v_err:
     import traceback as _v_tb
@@ -940,6 +947,9 @@ if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.sessi
 _section_names = ["📊 ダッシュボード", "🎯 意思決定支援"]
 if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
     _section_names.append("🛡️ 制度管理")
+# 🗓 連休対策: 制度管理 の後、データ管理 の前（need demand_forecast + views）
+if _DEMAND_FORECAST_AVAILABLE and _VIEWS_AVAILABLE:
+    _section_names.append("🗓 連休対策")
 if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE:
     _section_names.append("📋 データ管理")
 if _HOPE_AVAILABLE:
@@ -3027,6 +3037,8 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
     tab_names = ["\U0001f6e1\ufe0f 制度・需要・C群"]
     if _DOCTOR_MASTER_AVAILABLE:
         tab_names.append("\U0001f4a1 改善のヒント")
+elif _selected_section == "\U0001f5d3 連休対策":
+    tab_names = ["\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 予約可能枠"]
 elif _selected_section == "\U0001f4cb データ管理":
     tab_names = []
     if _DATA_MANAGER_AVAILABLE:
@@ -9445,6 +9457,122 @@ if "📥 データエクスポート" in _tab_idx:
 if _HOPE_AVAILABLE and "📨 HOPE送信" in _tab_idx:
     with tabs[_tab_idx["📨 HOPE送信"]]:
         _render_hope_tab()
+
+# ---------------------------------------------------------------------------
+# 🗓 連休対策セクション: 3 タブ構成
+# タブ 1: 📊 今週の需要予測（今回実装）
+# タブ 2: 📋 退院候補リスト（Task 2 で実装予定 — placeholder）
+# タブ 3: 📅 予約可能枠（Task 3 で実装予定 — placeholder）
+# ---------------------------------------------------------------------------
+if (
+    _selected_section == "\U0001f5d3 連休対策"
+    and _DEMAND_FORECAST_AVAILABLE
+    and _VIEWS_AVAILABLE
+    and "\U0001f4ca 今週の需要予測" in _tab_idx
+):
+    # --- 共通データ準備 ---
+    _hs_today = date.today()
+    # 対象週: 今週の月曜
+    _hs_week_start = _hs_today - timedelta(days=_hs_today.weekday())
+
+    # ward フィルタ
+    _hs_ward = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
+    _hs_total_beds = (
+        get_ward_beds(_hs_ward) if (_hs_ward and _DATA_MANAGER_AVAILABLE) else total_beds
+    )
+
+    # 過去 12ヶ月の入院実績 CSV ロード
+    _hs_csv_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "data",
+        "admissions_consolidated_dedup.csv",
+    )
+    try:
+        _hs_hist_df = load_historical_admissions(_hs_csv_path)
+    except Exception:
+        _hs_hist_df = pd.DataFrame()
+
+    # 需要予測
+    try:
+        _hs_forecast = forecast_weekly_demand(
+            _hs_hist_df, _hs_week_start, ward=_hs_ward, lookback_months=12
+        )
+    except Exception:
+        _hs_forecast = {
+            "target_week_start": _hs_week_start,
+            "dow_means": {i: 0.0 for i in range(7)},
+            "expected_weekly_total": 0.0,
+            "p25": 0.0,
+            "p75": 0.0,
+            "recent_trend_factor": 1.0,
+            "confidence": "low",
+            "sample_size": 0,
+        }
+
+    # 曜日別稼働率（直近 8 週）→ 曜日別空床
+    _hs_daily_df = st.session_state.get("daily_data", pd.DataFrame())
+    _hs_dow_occ = compute_dow_occupancy(
+        _hs_daily_df, total_beds=_hs_total_beds, weeks=8, ward=_hs_ward
+    )
+    _hs_vacancy_by_dow = {
+        i: max(0.0, _hs_total_beds * (1.0 - _hs_dow_occ.get(i, 0.9))) for i in range(7)
+    }
+
+    # --- タブ 1: 今週の需要予測 ---
+    if "\U0001f4ca 今週の需要予測" in _tab_idx:
+        with tabs[_tab_idx["\U0001f4ca 今週の需要予測"]]:
+            st.header("📊 今週の需要予測")
+            st.caption("病棟師長向け：今週の入院予測と既存空床を突合して、前倒し可否を判定します")
+            render_weekly_demand_dashboard(
+                forecast=_hs_forecast,
+                vacancy_by_dow=_hs_vacancy_by_dow,
+                ward=_hs_ward,
+                total_beds=_hs_total_beds,
+                today=_hs_today,
+                week_start=_hs_week_start,
+            )
+
+    # --- タブ 2: 退院候補リスト ---
+    if "\U0001f4cb 退院候補リスト" in _tab_idx:
+        with tabs[_tab_idx["\U0001f4cb 退院候補リスト"]]:
+            st.header("📋 退院候補リスト")
+            st.caption(
+                "退院調整会議向け：現在入院中の患者さんを「連休前に退院可能か」で自動仕分けいたします"
+            )
+            # 次の大型連休情報を取得
+            _hs_next_holiday = calculate_next_holiday_countdown(_hs_today)
+            # admission_details をセッションから取得
+            _hs_details_df = st.session_state.get("admission_details", pd.DataFrame())
+            render_discharge_candidates_tab(
+                details_df=_hs_details_df,
+                daily_df=_hs_daily_df,
+                ward=_hs_ward,
+                next_holiday=_hs_next_holiday,
+                today=_hs_today,
+            )
+
+    # --- タブ 3: 予約可能枠 ---
+    if "\U0001f4c5 予約可能枠" in _tab_idx:
+        with tabs[_tab_idx["\U0001f4c5 予約可能枠"]]:
+            st.header("📅 予約可能枠")
+            st.caption(
+                "予約受付事務員向け：4週間先まで日別の需要・空床・可能枠を色分けしてカレンダーで表示します"
+            )
+            # 既に上で計算済みの変数を流用
+            _hs_details_df_tab3 = st.session_state.get("admission_details", pd.DataFrame())
+            render_booking_availability_calendar(
+                forecast=_hs_forecast,
+                details_df=_hs_details_df_tab3,
+                daily_df=_hs_daily_df,
+                ward=_hs_ward,
+                total_beds=_hs_total_beds,
+                today=_hs_today,
+                weeks_ahead=4,
+            )
+            st.caption(
+                "4 週間先までの日別予想需要を、予約受付事務員向けに色分け表示いたします。"
+            )
 
 # ---------------------------------------------------------------------------
 # フッター
