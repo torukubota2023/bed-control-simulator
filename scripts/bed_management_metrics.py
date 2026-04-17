@@ -197,24 +197,112 @@ def calculate_weekend_whatif(
     fill_rate: float,
     weekend_empty: float,
     unit_price_per_day: float,
+    demand_forecast: Optional[dict] = None,
+    existing_vacancy: Optional[float] = None,
 ) -> dict:
     """
     金曜退院を木曜に前倒しした場合の空床改善効果を試算する。
 
-    前倒しだけでは空床は減らない。
-    空いた床に新規入院が入る確率 (充填確率) を掛けて初めて効果が出る。
+    Phase 3α: 需要条件付きロジック
+    ------------------------------
+    demand_forecast と existing_vacancy が両方渡された場合は、需要ベースの
+    実効充填を計算する（需要 − 空床 を上限として前倒しが寄与）。
+
+        effective_fill = min(shift, max(0, expected_demand_daily − existing_vacancy))
+
+    P25/median/P75 の3水準で範囲計算も同時に返す。
+
+    どちらも None の場合は旧ロジック（後方互換）:
+
+        effective_fill = shift × (fill_rate / 100)
 
     Args:
         shift: 前倒し人数
-        fill_rate: 充填確率 (0〜100)
+        fill_rate: 充填確率 (0〜100) — 旧ロジック時のみ使用、deprecated
         weekend_empty: 改善前の土日平均空床数
         unit_price_per_day: 1日あたり入院単価
+        demand_forecast: forecast_weekly_demand() の結果。None なら旧ロジック
+        existing_vacancy: 既存空床推定（床/日）。None なら旧ロジック
 
     Returns:
-        dict with keys:
+        旧キー（常に返す）:
             effective_fill, new_weekend_empty,
             new_cost_weekly, saving_weekly, saving_annual
+        新キー（demand_forecast 経路のみ）:
+            method: "data_driven" | "legacy_slider"
+            week_type: "high" | "standard" | "low"
+            effective_fill_range: (p25, p75)
+            saving_annual_range: (p25, p75)
+            expected_demand_daily, existing_vacancy_daily
+            recommendation: str
     """
+    # ---- 新ロジック: demand_forecast + existing_vacancy 経路 ----
+    if demand_forecast is not None and existing_vacancy is not None:
+        # import をここで遅延（循環インポート回避）
+        from demand_forecast import classify_week_type
+
+        weekly_total = float(demand_forecast.get("expected_weekly_total", 0.0))
+        p25 = float(demand_forecast.get("p25", weekly_total))
+        p75 = float(demand_forecast.get("p75", weekly_total))
+
+        # 金曜の需要（1日）として換算（曜日別配分で金曜シェアを取る）
+        dow_means = demand_forecast.get("dow_means") or {}
+        fri_demand = float(dow_means.get(4, weekly_total / 7.0 if weekly_total > 0 else 0.0))
+        weekly_base = max(1e-9, sum(float(v) for v in dow_means.values())) if dow_means else max(1e-9, weekly_total)
+        # P25/P75 を同率でスケールして金曜値に換算
+        fri_p25 = fri_demand * (p25 / weekly_base) if weekly_base > 0 else fri_demand
+        fri_p75 = fri_demand * (p75 / weekly_base) if weekly_base > 0 else fri_demand
+
+        existing_vac = float(existing_vacancy)
+
+        def _eff(dem: float) -> float:
+            return float(min(max(0, shift), max(0.0, dem - existing_vac)))
+
+        eff_median = _eff(fri_demand)
+        eff_p25 = _eff(fri_p25)
+        eff_p75 = _eff(fri_p75)
+
+        # 週末空床への影響（中央値）
+        new_weekend_empty = max(0.0, weekend_empty - eff_median)
+        new_cost_weekly = new_weekend_empty * 2 * unit_price_per_day
+        before_cost_weekly = weekend_empty * 2 * unit_price_per_day
+        saving_weekly = before_cost_weekly - new_cost_weekly
+        saving_annual = saving_weekly * 4 * 12
+
+        # 範囲（年間節減の P25/P75）
+        def _saving_annual(eff: float) -> float:
+            new_we = max(0.0, weekend_empty - eff)
+            saving_w = (weekend_empty - new_we) * 2 * unit_price_per_day
+            return saving_w * 4 * 12
+
+        saving_annual_p25 = _saving_annual(eff_p25)
+        saving_annual_p75 = _saving_annual(eff_p75)
+
+        # 週タイプ分類
+        wt = classify_week_type(
+            expected_demand_daily=fri_demand,
+            existing_vacancy_daily=existing_vac,
+        )
+
+        return {
+            # 旧キー（互換性維持）
+            "effective_fill": float(eff_median),
+            "new_weekend_empty": float(new_weekend_empty),
+            "new_cost_weekly": float(new_cost_weekly),
+            "saving_weekly": float(saving_weekly),
+            "saving_annual": float(saving_annual),
+            # 新キー
+            "method": "data_driven",
+            "week_type": wt["type"],
+            "effective_fill_range": (float(eff_p25), float(eff_p75)),
+            "saving_annual_range": (float(saving_annual_p25), float(saving_annual_p75)),
+            "expected_demand_daily": float(fri_demand),
+            "existing_vacancy_daily": float(existing_vac),
+            "recommendation": wt["recommendation"],
+            "rationale": wt["rationale"],
+        }
+
+    # ---- 旧ロジック（後方互換） ----
     effective_fill = shift * (fill_rate / 100)
     new_weekend_empty = max(0.0, weekend_empty - effective_fill)
     new_cost_weekly = new_weekend_empty * 2 * unit_price_per_day
@@ -228,6 +316,7 @@ def calculate_weekend_whatif(
         "new_cost_weekly": float(new_cost_weekly),
         "saving_weekly": float(saving_weekly),
         "saving_annual": float(saving_annual),
+        "method": "legacy_slider",
     }
 
 
