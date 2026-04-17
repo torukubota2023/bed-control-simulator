@@ -1,5 +1,5 @@
 /**
- * 週末・大型連休の稼働率対策プレゼン (17スライド)
+ * 週末・大型連休の稼働率対策プレゼン (16スライド)
  * Build: node build_pptx.js
  */
 const pptxgen = require("pptxgenjs");
@@ -146,7 +146,7 @@ function addBigStat(slide, x, y, w, h, value, label, unit = "", valueColor = COL
   });
 }
 
-const TOTAL = 17;
+const TOTAL = 16;
 
 // =============================================================================
 // Slide 1: タイトル
@@ -200,19 +200,19 @@ const TOTAL = 17;
   const s = pres.addSlide();
   s.background = { color: COLOR.cream };
   addFrame(s, 2, TOTAL);
-  addPageTitle(s, "本日の要点", "4つの発見と、そこから導かれる 4つの提案");
+  addPageTitle(s, "本日の要点", "4つの発見と、そこから導かれる 3つの提案");
 
   // 左右 2 列ヘッダー
   s.addText("4 つの発見", {
     x: 0.5, y: 1.85, w: 6.1, h: 0.4,
     fontFace: FONT_H, fontSize: 16, bold: true, color: COLOR.navy, margin: 0,
   });
-  s.addText("4 つの提案", {
+  s.addText("3 つの提案", {
     x: 6.9, y: 1.85, w: 5.9, h: 0.4,
     fontFace: FONT_H, fontSize: 16, bold: true, color: COLOR.red, margin: 0,
   });
 
-  // 発見 1-4（左）
+  // 発見 1-4（左） — 行間 1.1、4段
   const findings = [
     ["緊急は 8 割ではなく 58%", "予定入院のレバーは依然有効"],
     ["週末・連休の需要谷", "平日の 1/5 〜 1/16（GW -94%）"],
@@ -220,7 +220,7 @@ const TOTAL = 17;
     ["予定入院は 平均 16.3日前に予約", "運用で曜日を動かせる ← 本日の新発見"],
   ];
   findings.forEach(([title, body], i) => {
-    const y = 2.35 + i * 1.15;
+    const y = 2.35 + i * 1.1;
     addNumberCircle(s, 0.5, y, i + 1, COLOR.navy);
     s.addText(title, {
       x: 1.15, y: y - 0.02, w: 5.45, h: 0.4,
@@ -237,36 +237,44 @@ const TOTAL = 17;
     x: 6.75, y: 2.0, w: 0.02, h: 4.7, fill: { color: COLOR.grayLight }, line: { type: "none" },
   });
 
-  // 提案 1-4（右）
+  // 提案 1-3（右） — 木曜前倒し提案を撤回し 3 項目に精査
   const proposals = [
-    ["木曜退院の前倒し", "週末空床を同日中の緊急需要で吸収"],
     ["大型連休前の退院枠 事前確保", "連休明け詰め込みの回避"],
     ["連休前後の予約枠を data-driven 配置", "既存運用の体系化"],
-    ["充填確率ダッシュボード", "v3.5 への機能追加で運用判断を数字化"],
+    ["Phase 3α 需要予測ダッシュボード", "病棟運用判断の数字化基盤を緊急実装"],
   ];
+  // 右列は 3 項目なので、縦間隔を広めに取って視認性を上げる
   proposals.forEach(([title, body], i) => {
-    const y = 2.35 + i * 1.15;
+    const y = 2.55 + i * 1.45;
     addNumberCircle(s, 6.9, y, i + 1, COLOR.red);
     s.addText(title, {
-      x: 7.55, y: y - 0.02, w: 5.25, h: 0.4,
-      fontFace: FONT_H, fontSize: 13, bold: true, color: COLOR.navy, margin: 0, valign: "top",
+      x: 7.55, y: y - 0.02, w: 5.25, h: 0.45,
+      fontFace: FONT_H, fontSize: 14, bold: true, color: COLOR.navy, margin: 0, valign: "top",
     });
     s.addText(body, {
-      x: 7.55, y: y + 0.42, w: 5.25, h: 0.5,
+      x: 7.55, y: y + 0.46, w: 5.25, h: 0.6,
       fontFace: FONT_B, fontSize: 11, color: COLOR.gray, margin: 0, valign: "top",
     });
   });
 
-  // 目標 KPI フッターバナー
+  // 目標 KPI フッターバナー（Phase 2 ベースに書き換え）
   s.addShape(pres.shapes.RECTANGLE, {
     x: 0.5, y: 6.8, w: W - 1.0, h: 0.4,
     fill: { color: COLOR.navy }, line: { type: "none" },
   });
   s.addText([
     { text: "目標 KPI  ", options: { fontSize: 11, bold: true, color: COLOR.gold } },
-    { text: "高需要週のみ選択発動  |   年間吸収効果  300〜700 万円（P25-P75、中央値 503 万円）", options: { fontSize: 11, color: COLOR.white } },
+    { text: "Phase 2 連休対策で 年間 300〜500 万円の空床ロス回収（5 大型連休合計）", options: { fontSize: 11, color: COLOR.white } },
   ], {
     x: 0.7, y: 6.8, w: W - 1.4, h: 0.4, fontFace: FONT_B, align: "center", valign: "middle", margin: 0,
+  });
+
+  // 注記: 当初案 Phase 1 撤回を明示（誠実さの担保）
+  s.addText([
+    { text: "※ 当初検討の「Phase 1 木曜退院前倒し」はデータ精査により撤回（高需要週は年 2〜3回のみ、経営インパクト限定的）。提案を 3 項目に精査。",
+      options: { fontSize: 9, italic: true, color: COLOR.grayLight } },
+  ], {
+    x: 0.5, y: 7.25, w: W - 1.0, h: 0.3, fontFace: FONT_B, align: "center", valign: "middle", margin: 0,
   });
 }
 
@@ -650,45 +658,12 @@ const TOTAL = 17;
 }
 
 // =============================================================================
-// Slide 15: Phase 1 週末対策
+// Slide 15: Phase 2 連休対策（旧 Slide 16 — 番号繰り上げ）
 // =============================================================================
 {
   const s = pres.addSlide();
   s.background = { color: COLOR.cream };
   addFrame(s, 15, TOTAL);
-  addPageTitle(s, "Phase 1 — 選択的木曜前倒し（高需要週のみ発動）", "効果は週タイプで決まる — 需要条件付きロジックに改訂");
-
-  s.addImage({
-    path: path.join(CHART_DIR, "09_impact_simulation.png"),
-    x: 0.5, y: 1.9, w: 8.0, h: 4.7, sizing: { type: "contain", w: 8.0, h: 4.7 },
-  });
-
-  // 右：改訂版 KPI（300〜700万円）
-  s.addShape(pres.shapes.RECTANGLE, {
-    x: 8.8, y: 2.0, w: 4.0, h: 1.8,
-    fill: { color: COLOR.green }, line: { type: "none" },
-  });
-  s.addText("300〜700 万円", {
-    x: 8.8, y: 2.05, w: 4.0, h: 1.0,
-    fontFace: FONT_H, fontSize: 30, bold: true, color: COLOR.white, align: "center", valign: "middle", margin: 0,
-  });
-  s.addText("年間吸収効果（P25-P75）\n中央値 503 万円", {
-    x: 8.8, y: 3.05, w: 4.0, h: 0.75,
-    fontFace: FONT_B, fontSize: 12, color: COLOR.white, align: "center", valign: "top", margin: 0,
-  });
-
-  addAccentCard(s, 8.8, 3.95, 4.0, 0.9, "対象週", "高需要週のみ（全体の約 24% = 4週に1週）", COLOR.green);
-  addAccentCard(s, 8.8, 4.95, 4.0, 0.9, "必須前提", "Phase 3α ダッシュボード（需要判定の自動化）", COLOR.red);
-  addAccentCard(s, 8.8, 5.95, 4.0, 0.9, "試験運用", "2026年5月中旬〜、Phase 3α 完成後に開始", COLOR.navyAccent);
-}
-
-// =============================================================================
-// Slide 16: Phase 2 連休対策
-// =============================================================================
-{
-  const s = pres.addSlide();
-  s.background = { color: COLOR.cream };
-  addFrame(s, 16, TOTAL);
   addPageTitle(s, "Phase 2 — 連休対策：前退院枠 & 予約枠最適化", "連休 3週前 からの退院調整と連休明け予約枠の事前確保");
 
   // 大きな図解スペース
@@ -764,7 +739,7 @@ const TOTAL = 17;
 }
 
 // =============================================================================
-// Slide 17: ロードマップとネクストアクション
+// Slide 16: ロードマップとネクストアクション（旧 Slide 17 — 番号繰り上げ）
 // =============================================================================
 {
   const s = pres.addSlide();
@@ -787,7 +762,7 @@ const TOTAL = 17;
     x: 0.5, y: 0.35, w: W - 1.0, h: 0.7,
     fontFace: FONT_H, fontSize: 28, bold: true, color: COLOR.white, margin: 0, valign: "middle",
   });
-  s.addText("Phase 3α 緊急追加で 4 フェーズ + GW パイロット — 本則適用と同期して稼働", {
+  s.addText("Phase 3α 緊急追加で 4 フェーズ構成 — 本則適用と同期して稼働", {
     x: 0.5, y: 1.1, w: W - 1.0, h: 0.4,
     fontFace: FONT_B, fontSize: 14, color: COLOR.gold, italic: true, margin: 0,
   });
@@ -801,52 +776,50 @@ const TOTAL = 17;
     x: 0.5, y: 1.85, w: 8.5, h: 3.8, sizing: { type: "contain", w: 8.5, h: 3.8 },
   });
 
-  // 右側：5 Phase カード（ダーク背景用 — 白い不透明カードに濃紺文字）
+  // 右側：4 Phase カード（Phase 1 撤回で 4 段構成）
   const phases = [
     { t: "Phase 3α (4月下旬〜)", b: "アプリ緊急改修・需要予測モジュール", color: COLOR.red },
     { t: "GW 緊急パイロット", b: "4/20〜5/7 先行試行（α 版活用）", color: "9333EA" },
-    { t: "Phase 1 (5月中旬〜)", b: "選択的木曜前倒し試験運用", color: COLOR.blue },
     { t: "Phase 2 (8月〜)", b: "連休前退院枠・予約枠最適化", color: COLOR.orange },
     { t: "Phase 3β (10月〜)", b: "ダッシュボード完成・院内展開", color: COLOR.green },
   ];
   phases.forEach((p, i) => {
-    const y = 1.85 + i * 0.75;
+    const y = 1.95 + i * 0.92;
     // 白いカード（完全不透明）
     s.addShape(pres.shapes.RECTANGLE, {
-      x: 9.3, y, w: 3.5, h: 0.68,
+      x: 9.3, y, w: 3.5, h: 0.82,
       fill: { color: COLOR.white }, line: { color: p.color, width: 1.5 },
     });
     // 左アクセントバー
     s.addShape(pres.shapes.RECTANGLE, {
-      x: 9.3, y, w: 0.08, h: 0.68, fill: { color: p.color }, line: { type: "none" },
+      x: 9.3, y, w: 0.08, h: 0.82, fill: { color: p.color }, line: { type: "none" },
     });
     // タイトル（濃紺）
     s.addText(p.t, {
-      x: 9.45, y: y + 0.05, w: 3.3, h: 0.3,
-      fontFace: FONT_H, fontSize: 11, bold: true, color: COLOR.navy, margin: 0,
+      x: 9.45, y: y + 0.08, w: 3.3, h: 0.32,
+      fontFace: FONT_H, fontSize: 12, bold: true, color: COLOR.navy, margin: 0,
     });
     // 本文（グレー）
     s.addText(p.b, {
-      x: 9.45, y: y + 0.36, w: 3.3, h: 0.3,
-      fontFace: FONT_B, fontSize: 9, color: COLOR.gray, margin: 0, valign: "top",
+      x: 9.45, y: y + 0.42, w: 3.3, h: 0.38,
+      fontFace: FONT_B, fontSize: 10, color: COLOR.gray, margin: 0, valign: "top",
     });
   });
 
-  // 下段：本日のご決裁事項ボックス（3項目に拡張）
+  // 下段：本日のご決裁事項ボックス（2 項目に縮小）
   s.addShape(pres.shapes.RECTANGLE, {
     x: 0.5, y: 5.85, w: W - 1.0, h: 1.3,
     fill: { color: COLOR.gold }, line: { type: "none" },
   });
-  s.addText("本日のご決裁事項（3 項目）", {
+  s.addText("本日のご決裁事項（2 項目）", {
     x: 0.7, y: 5.95, w: W - 1.4, h: 0.35,
     fontFace: FONT_H, fontSize: 15, bold: true, color: COLOR.navyDark, margin: 0,
   });
   s.addText([
     { text: "① Phase 3α（アプリ緊急改修）の開始承認 ― 2026年4月下旬〜5月中旬", options: { fontSize: 11, bold: true, color: COLOR.navyDark, breakLine: true } },
-    { text: "② Phase 1 試験運用の開始承認（Phase 3α 完成後、5月中旬〜8月中旬）", options: { fontSize: 11, bold: true, color: COLOR.navyDark, breakLine: true } },
-    { text: "③ GW2026 緊急パイロットの可否判断（4/20 頃からの退院調整試行）", options: { fontSize: 11, bold: true, color: COLOR.navyDark } },
+    { text: "② GW2026 緊急パイロットの可否判断（4/20 頃からの退院調整試行）", options: { fontSize: 11, bold: true, color: COLOR.navyDark } },
   ], {
-    x: 0.7, y: 6.3, w: W - 1.4, h: 0.85, fontFace: FONT_B, margin: 0, valign: "top",
+    x: 0.7, y: 6.35, w: W - 1.4, h: 0.8, fontFace: FONT_B, margin: 0, valign: "top",
   });
 }
 

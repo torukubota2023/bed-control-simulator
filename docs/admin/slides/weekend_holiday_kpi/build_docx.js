@@ -306,13 +306,25 @@ for (const s of slides) {
     spacing: { line: 320, after: 60 },
   }));
 }
-// 反論章への目次リンク
+// 付録 A: Phase 1 不採用の検討経緯 目次リンク
 children.push(new Paragraph({
   tabStops: [{ type: TabStopType.RIGHT, position: 9200, leader: "dot" }],
   children: [
     new InternalHyperlink({
-      anchor: "rebuttal",
-      children: [new TextRun({ text: "【重要】Slide 15 補足 — 「木曜前倒し＝マイナスベッド」への回答", style: "Hyperlink", bold: true, color: "C73E1D" })],
+      anchor: "appendix-a",
+      children: [new TextRun({ text: "付録 A: 検討経緯 — Phase 1（選択的木曜前倒し）を不採用とした理由", style: "Hyperlink", bold: true, color: "C73E1D" })],
+    }),
+    new TextRun({ text: "\t" }),
+  ],
+  spacing: { line: 320, after: 60 },
+}));
+// 付録 B: 反論章（木曜前倒しへの懸念回答）目次リンク
+children.push(new Paragraph({
+  tabStops: [{ type: TabStopType.RIGHT, position: 9200, leader: "dot" }],
+  children: [
+    new InternalHyperlink({
+      anchor: "appendix-b",
+      children: [new TextRun({ text: "付録 B: 検討した反論の整理 —「木曜前倒し＝マイナスベッド」への回答", style: "Hyperlink" })],
     }),
     new TextRun({ text: "\t" }),
   ],
@@ -392,29 +404,110 @@ for (const s of slides) {
 }
 
 // =============================================================================
-// ----- 反論章: 「木曜前倒し＝マイナスベッド」への懸念と回答 -----
+// ----- 付録 A: Phase 1 を不採用とした検討経緯 -----
 // =============================================================================
 children.push(new Paragraph({ children: [new PageBreak()] }));
 children.push(new Paragraph({
   heading: HeadingLevel.HEADING_1,
   children: [
     new Bookmark({
-      id: "rebuttal",
-      children: [new TextRun("【重要】Slide 15 補足 — 「木曜前倒し＝マイナスベッド」への回答")],
+      id: "appendix-a",
+      children: [new TextRun("付録 A: 検討経緯 — Phase 1（選択的木曜前倒し）を不採用とした理由")],
     }),
   ],
   spacing: { before: 200, after: 200 },
 }));
 
+children.push(paragraph(
+  "本章は、当初「Phase 1 = 選択的木曜前倒し運用」として提案を進めていた案を、**最終的に独立提案として経営会議にお諮りしない判断** に至った経緯を記録として残すものでございます。経営陣から「木曜前倒しは検討したのか」とご質問いただいた際に、本章をそのまま回答資料としてご参照いただけます。"
+));
+
+children.push(new Paragraph({
+  heading: HeadingLevel.HEADING_2,
+  children: [new TextRun("A-1. 当初案の骨子")],
+  spacing: { before: 240, after: 120 },
+}));
+children.push(paragraph(
+  "当初は、金曜に集中している退院を木曜朝に前倒しし、空いたベッドを同日午後の緊急入院で「同日充填」することで、土日の空床時間を短縮する施策を設計しておりました。緊急入院の **64% が 13〜18時 に集中** しているデータ（本書 Slide 10）から、「退院した床はその日の午後に埋まる」という直感は成立し得ると考えたものでございます。"
+));
+children.push(paragraph(
+  "当初想定の効果額は **年間 約 1,000 万円**、試験運用を 2026年5月中旬〜8月中旬の 3ヶ月で実施する計画でございました。"
+));
+
+children.push(new Paragraph({
+  heading: HeadingLevel.HEADING_2,
+  children: [new TextRun("A-2. データ検証で判明した過大評価")],
+  spacing: { before: 240, after: 120 },
+}));
+children.push(paragraph(
+  "過去 12ヶ月のデータで 52 週を「低需要週 / 標準週 / 高需要週」の 3 タイプに分類し、各週タイプで木曜前倒しが生む実効効果を試算いたしました。結果、以下が判明いたしました。"
+));
+children.push(bulletItem("**低需要週（約 41%）**: 金曜の既存空床が新規入院を上回っており、木曜前倒しは **空床をさらに増やすだけ** で逆効果"));
+children.push(bulletItem("**標準週（約 35%）**: 需要と空床がほぼ釣り合い、効果は 1床 程度に限定される"));
+children.push(bulletItem("**高需要週（約 24%、4週に1週）**: 新規入院 > 既存空床 のため木曜前倒しが有効に機能"));
+children.push(paragraph(
+  "すなわち、「毎週一律前倒し」では **76% の週で逆効果 or 効果限定** となるため、「高需要週のみ選択発動」する運用に限定すべきという結論に至りました。この条件下での再試算で、年間効果は **300〜700 万円（P25-P75、中央値 503 万円）** に下方修正されました。当初 1,000 万円という試算は、需要側の条件を精査せずに立てた **過大評価** であったことを正直に認めなければなりません。"
+));
+
+children.push(new Paragraph({
+  heading: HeadingLevel.HEADING_2,
+  children: [new TextRun("A-3. 最終的に独立提案から撤回した理由")],
+  spacing: { before: 240, after: 120 },
+}));
+children.push(paragraph(
+  "Phase 3α バグ修正作業の中で、高需要週の実出現頻度をさらに精査したところ、**年 2〜3 回程度** にとどまり、仮に完璧に発動できたとしても経営インパクトは **50〜150 万円** の幅に収まることが判明いたしました。300〜700 万円という改訂版試算も、発動機会を年 12 回以上として積み上げた楽観値であったことが分かった形でございます。"
+));
+children.push(paragraph(
+  "この水準は、以下の 3 点から「独立提案として経営会議にお諮りする水準にない」と判断いたしました。"
+));
+children.push(bulletItem("**他提案との相対比較**: Phase 2（連休対策）の潜在効果 300〜500 万円 / 年と比べて、運用コストに見合わない"));
+children.push(bulletItem("**現場運用負荷**: 「高需要週の自動判定」に依存するため、師長・退院支援看護師・MSW の運用ルールが複雑化する"));
+children.push(bulletItem("**副作用リスク**: 低需要週での誤発動が発生した場合、むしろ稼働率が悪化する可能性"));
+children.push(paragraph(
+  "したがって本提案書では、**Phase 1 木曜前倒し運用を独立提案として撤回** し、提案を 3 項目（Phase 2 連休対策・予約枠最適化・Phase 3α 需要予測ダッシュボード）に精査いたしました。"
+));
+
+children.push(new Paragraph({
+  heading: HeadingLevel.HEADING_2,
+  children: [new TextRun("A-4. 本取り組みから得られた学び")],
+  spacing: { before: 240, after: 120 },
+}));
+children.push(paragraph(
+  "当初案を撤回したこと自体は、**失敗というより健全な自己修正** と位置づけております。" +
+  "「感覚で立てた施策をデータで検証する」文化があれば、経営会議に誤った試算をお示しする前に過大評価を発見できる ― これこそが本プロジェクトから得られた最大の学びでございます。"
+));
+children.push(paragraph(
+  "なお、高需要週シグナル自体は Phase 3α のダッシュボードで引き続き可視化いたします。将来的に、Phase 3β（ダッシュボード院内展開）以降で、他の運用改善と組み合わせる形で再検討する余地は残しております。"
+));
+
+// =============================================================================
+// ----- 付録 B: 反論章 — 「木曜前倒し＝マイナスベッド」への懸念と回答 -----
+// =============================================================================
+children.push(new Paragraph({ children: [new PageBreak()] }));
+children.push(new Paragraph({
+  heading: HeadingLevel.HEADING_1,
+  children: [
+    new Bookmark({
+      id: "appendix-b",
+      children: [new TextRun("付録 B: 検討した反論の整理 —「木曜前倒し＝マイナスベッド」への回答")],
+    }),
+  ],
+  spacing: { before: 200, after: 200 },
+}));
+
+children.push(paragraph(
+  "本章は、**Phase 1 木曜前倒し運用を検討する過程で整理した、6 つの代表的な懸念への回答集** でございます。最終的には独立提案として撤回いたしましたが（付録 A 参照）、検討過程で得られた論点整理は将来の議論にも資するため、記録として残しております。"
+));
+
 // 導入文
 children.push(paragraph(
-  "Slide 15 でご提案いたしました「金曜・土曜退院を木曜に前倒しする」という運用変更につきまして、現場の多くの方がまず感じられる違和感は、まさに **「それは病棟のベッドを早く空けるだけで、**マイナス**ではないか？」** というものでございます。"
+  "検討していた「金曜・土曜退院を木曜に前倒しする」という運用変更につきまして、現場の多くの方がまず感じられる違和感は、まさに **「それは病棟のベッドを早く空けるだけで、**マイナス**ではないか？」** というものでございます。"
 ));
 children.push(paragraph(
   "看護部長、病棟師長、診療科の先生方、退院支援看護師・MSW、そして患者さんのご家族まで、多くの関係者にとって「木曜退院」は直感的に **「よくない話」** に感じられるのが自然なことと存じます。"
 ));
 children.push(paragraph(
-  "本章では、**この施策が「常識に反している」ように見えるにもかかわらず、データに照らすと合理的である** ことを、6 つの代表的な懸念に正面から回答する形で整理いたしました。経営会議での質疑応答、および運用開始時の現場説明にそのままお使いいただけます。"
+  "本章では、**この施策が「常識に反している」ように見えるにもかかわらず、データに照らすと合理的である** ことを、6 つの代表的な懸念に正面から回答する形で整理いたしました。最終的に独立提案からは撤回（付録 A 参照）いたしましたが、将来の議論や運用改善の参考資料としてご活用いただけます。"
 ));
 
 // 核心の一言

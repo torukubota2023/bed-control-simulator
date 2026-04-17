@@ -8204,208 +8204,24 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         help=f"金曜退院 平均{_fri_dis:.1f}人 → 月曜入院 平均{_mon_adm:.1f}人",
                     )
 
-                    # What-If: 退院前倒し × 充填確率
-                    st.markdown("##### 🔧 What-If: 退院前倒し × 空床充填シミュレーション")
-                    st.caption("退院を前倒ししただけでは空床は減りません。空いた床に新規入院が入って初めて効果が出ます。")
-
-                    # --- Phase 3α: 需要予測ロードと週タイプ判定 ---
-                    _df_forecast = None
-                    _df_vacancy = None
-                    _week_type = None
-                    _data_driven_available = False
-                    if _DEMAND_FORECAST_AVAILABLE:
-                        try:
-                            import os as _os_df
-                            _hist_path = _os_df.path.join(
-                                _os_df.path.dirname(__file__), "..",
-                                "data", "admissions_consolidated_dedup.csv",
-                            )
-                            if _os_df.path.exists(_hist_path):
-                                _hist_df = load_historical_admissions(_hist_path)
-                                # 対象週 = 今週の月曜日
-                                import datetime as _dt_df
-                                _today = _dt_df.date.today()
-                                _target_week = _today - _dt_df.timedelta(days=_today.weekday())
-                                _ward_arg = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
-                                _df_forecast = forecast_weekly_demand(
-                                    _hist_df, _target_week, ward=_ward_arg, lookback_months=12,
-                                )
-                                # ---- 既存空床の算出（金曜限定・病棟集計バグ修正版 2026-04-17） ----
-                                # 旧: _daily_df["total_patients"].mean() は、ward カラム有り時に
-                                #     病棟別行の平均になり実質半分の値（42% 等）となるバグあり。
-                                # 新: Hint 1 と同じ集計ロジックで病棟フィルタ/全体集計を行い、
-                                #     かつ「金曜限定の稼働率」で既存空床を推計する。
-                                _vac_daily = None
-                                if "ward" in _daily_df.columns:
-                                    if _ward_arg in ("5F", "6F"):
-                                        _vac_base = _daily_df[_daily_df["ward"] == _ward_arg].copy()
-                                    else:
-                                        _vac_base = _daily_df.groupby("date", as_index=False).agg(
-                                            {"total_patients": "sum"}
-                                        )
-                                else:
-                                    _vac_base = _daily_df.copy()
-                                if len(_vac_base) > 0 and "total_patients" in _vac_base.columns:
-                                    # 金曜限定平均（直近4週相当）を採用。取れない場合は全期間平均にフォールバック
-                                    try:
-                                        _vac_base["_dt"] = pd.to_datetime(_vac_base["date"])
-                                        _vac_base["_dow"] = _vac_base["_dt"].dt.dayofweek
-                                        _fri_rows = _vac_base[_vac_base["_dow"] == 4].tail(8)
-                                        if len(_fri_rows) >= 2:
-                                            _cur_occ = float(_fri_rows["total_patients"].mean()) / _view_beds
-                                        else:
-                                            _cur_occ = float(_vac_base["total_patients"].mean()) / _view_beds
-                                    except Exception:
-                                        _cur_occ = float(_vac_base["total_patients"].mean()) / _view_beds
-                                    # 稼働率は 0-1 の範囲にクランプ
-                                    _cur_occ = max(0.0, min(1.0, _cur_occ))
-                                else:
-                                    _cur_occ = 0.9  # データ不足時の控えめデフォルト
-                                _df_vacancy = estimate_existing_vacancy(
-                                    _target_week, _cur_occ, total_beds=_view_beds,
-                                )
-                                _data_driven_available = (_df_forecast.get("sample_size", 0) > 0)
-                        except Exception as _df_ui_err:  # noqa: BLE001
-                            _data_driven_available = False
-
-                    # --- Week Type バナー（Phase 3α） ---
-                    if _data_driven_available and _df_forecast is not None:
-                        _wi_preview = calculate_weekend_whatif(
-                            shift=3, fill_rate=50,
-                            weekend_empty=_weekend_empty,
-                            unit_price_per_day=_UNIT_PRICE_PER_DAY,
-                            demand_forecast=_df_forecast,
-                            existing_vacancy=_df_vacancy,
-                        )
-                        _week_type = _wi_preview.get("week_type", "standard")
-                        _fri_demand = _wi_preview.get("expected_demand_daily", 0.0)
-                        _existing_vac = _wi_preview.get("existing_vacancy_daily", 0.0)
-
-                        if _week_type == "high":
-                            st.success(
-                                f"🟢 **高需要週** — 木曜前倒しが有効です。\n"
-                                f"（金曜予想入院 {_fri_demand:.1f}件/日 > 金曜既存空床 {_existing_vac:.1f}床 → "
-                                f"需要超過分を前倒しで吸収可）"
-                            )
-                        elif _week_type == "low":
-                            st.error(
-                                f"🔴 **低需要週** — 木曜前倒しは逆効果です。通常運用を推奨。\n"
-                                f"（金曜予想入院 {_fri_demand:.1f}件/日 < 金曜既存空床 {_existing_vac:.1f}床 → "
-                                f"既存空床で需要は吸収されます）"
-                            )
-                        else:
-                            st.warning(
-                                f"🟡 **標準週** — 効果は限定的です。\n"
-                                f"（金曜予想入院 {_fri_demand:.1f}件/日 ≈ 金曜既存空床 {_existing_vac:.1f}床）"
-                            )
-                        # 根拠の展開
-                        with st.expander("💡 この判定の根拠（金曜既存空床の計算方法）", expanded=False):
-                            st.markdown(
-                                f"- **金曜既存空床** = 病床数 {_view_beds} × (1 − 金曜平均稼働率 {_cur_occ*100:.1f}%) = **{_existing_vac:.1f}床**\n"
-                                f"- **金曜平均稼働率** は直近金曜（最大8回）の実測在院から計算（データ不足時は全期間平均にフォールバック）\n"
-                                f"- **金曜予想入院** は過去12ヶ月の曜日別平均 + 直近2週トレンド補正（ward={_ward_arg or '全体'}）\n"
-                                f"- 発動閾値: 金曜予想入院 > 金曜既存空床 + 1床（マージン）で高需要週判定"
-                            )
-
-                    _bm_sl1, _bm_sl2 = st.columns(2)
-                    with _bm_sl1:
-                        _bm_shift = st.slider(
-                            "金曜退院のうち木曜に前倒しする人数",
-                            min_value=0, max_value=max(1, int(_fri_dis)),
-                            value=min(3, max(1, int(_fri_dis // 2))),
-                            step=1,
-                            key="_hint_weekend_shift",
-                        )
-                    with _bm_sl2:
-                        # Phase 3α: data-driven な実効充填率を計算して初期値にする
-                        _default_fill_rate = 50
-                        if _data_driven_available and _df_forecast is not None:
-                            _fri_demand_pre = _df_forecast.get("dow_means", {}).get(4, 0.0)
-                            _delta = max(0.0, _fri_demand_pre - (_df_vacancy or 0.0))
-                            _shift_preview = min(3, max(1, int(_fri_dis // 2)))
-                            if _shift_preview > 0:
-                                _default_fill_rate = int(min(100, max(0, round(_delta / _shift_preview * 100))))
-                        _bm_fill_rate = st.slider(
-                            "前倒しで空いた床に入院が入る確率",
-                            min_value=0, max_value=100, value=_default_fill_rate, step=10,
-                            key="_hint_fill_rate",
-                            help="木曜に退院→同日に新規入院が入る見込み。連携室の調整力次第。",
-                        )
-                        if _data_driven_available:
-                            st.caption(f"📊 過去12ヶ月の実測需要から計算: {_default_fill_rate}%")
-
-                    # --- 計算: data-driven パスを優先、フォールバックで旧ロジック ---
-                    if _data_driven_available and _df_forecast is not None:
-                        _wi = calculate_weekend_whatif(
-                            shift=_bm_shift, fill_rate=_bm_fill_rate,
-                            weekend_empty=_weekend_empty,
-                            unit_price_per_day=_UNIT_PRICE_PER_DAY,
-                            demand_forecast=_df_forecast,
-                            existing_vacancy=_df_vacancy,
-                        )
-                    else:
-                        _wi = calculate_weekend_whatif(
-                            _bm_shift, _bm_fill_rate, _weekend_empty, _UNIT_PRICE_PER_DAY,
-                        )
-                    _bm_effective_fill = _wi["effective_fill"]
-                    _bm_new_weekend_empty = _wi["new_weekend_empty"]
-                    _bm_new_cost_weekly = _wi["new_cost_weekly"]
-                    _bm_saving_annual = _wi["saving_annual"]
-                    _bm_saving_range = _wi.get("saving_annual_range")
-
-                    _hint_savings["週末空床削減"] = _bm_saving_annual
-
-                    _bm_r1, _bm_r2 = st.columns(2)
-                    with _bm_r1:
-                        st.metric("改善前 土日空床", f"{_weekend_empty:.1f}床/日")
-                        st.metric("改善前 週末コスト", f"¥{_weekend_cost_per_week/10000:.0f}万/週")
-                    with _bm_r2:
-                        st.metric("改善後 土日空床", f"{_bm_new_weekend_empty:.1f}床/日",
-                                  delta=f"-{_bm_effective_fill:.1f}床")
-                        # 範囲付き表示（Phase 3α）
-                        if _bm_saving_range and _data_driven_available:
-                            _p25, _p75 = _bm_saving_range
-                            st.metric(
-                                "改善後 週末コスト",
-                                f"¥{_bm_new_cost_weekly/10000:.0f}万/週",
-                                delta=f"年間 {_p25/10000:.0f}〜{_p75/10000:.0f}万円（中央値 {_bm_saving_annual/10000:.0f}万）",
-                            )
-                        else:
-                            st.metric(
-                                "改善後 週末コスト", f"¥{_bm_new_cost_weekly/10000:.0f}万/週",
-                                delta=f"年間 {_bm_saving_annual/10000:.0f}万円 改善",
-                            )
-
-                    if _data_driven_available and _week_type == "low":
-                        st.info(
-                            f"💡 低需要週のため、前倒し効果は限定的（年間 {_bm_saving_annual/10000:.0f}万円）。\n"
-                            f"需要不足週は既存空床で需要が吸収されるため、前倒しは稼働率悪化リスクあり。"
-                        )
-                    else:
-                        st.info(
-                            f"💡 金曜退院 **{_bm_shift}人を木曜に前倒し** × 充填確率 **{_bm_fill_rate}%** → "
-                            f"実効 **{_bm_effective_fill:.1f}床** が金曜に埋まり、"
-                            f"土日空床 **{_weekend_empty:.0f}床 → {_bm_new_weekend_empty:.1f}床** に改善。"
-                            f"年間 **約{_bm_saving_annual/10000:.0f}万円** の効果。"
-                        )
-
-                    # --- expander: 根拠 ---
-                    if _data_driven_available and _df_forecast is not None:
-                        with st.expander("💡 この数字の根拠（Phase 3α データ駆動ロジック）"):
-                            _weekly_total = _df_forecast.get("expected_weekly_total", 0.0)
-                            _sample = _df_forecast.get("sample_size", 0)
-                            _trend = _df_forecast.get("recent_trend_factor", 1.0)
-                            _conf = _df_forecast.get("confidence", "low")
-                            _rationale = _wi.get("rationale", "")
-                            st.markdown(f"""
-- **対象週の予想週間入院数:** 約 **{_weekly_total:.1f}件/週**（過去12ヶ月の同曜日平均、サンプル {_sample}件、信頼度 {_conf}）
-- **直近2週トレンド補正:** × {_trend:.2f}
-- **対象日の既存空床（推定）:** 約 **{_df_vacancy:.1f}床**（現状稼働率ベース）
-- **金曜の予想需要:** 約 **{_wi.get('expected_demand_daily', 0):.1f}件**
-- **判定:** {_rationale}
-- **計算式:** `effective_fill = min(shift, max(0, 金曜需要 − 既存空床))`
-- **信頼区間:** P25/P75 の年間改善額レンジを表示
-                            """)
+                    # ---------------------------------------------------------
+                    # 📝 What-If: 退院前倒し × 充填確率  ── 経営会議提案から除外
+                    # ---------------------------------------------------------
+                    # 2026-04-17 副院長判断で、木曜前倒し運用（Phase 1）を
+                    # 独立提案から撤回しました。過去 12ヶ月データ検証の結果、
+                    # 高需要週は年 2〜3 回のみで経営インパクトが 50〜150 万円
+                    # と限定的と判明したためです。Phase 2 連休対策と
+                    # Phase 3α 需要予測ダッシュボードの実装に注力します。
+                    #
+                    # なお、計算ロジック（forecast_weekly_demand /
+                    # calculate_weekend_whatif / estimate_existing_vacancy）は
+                    # Phase 2 での再利用を見越して保持しています。
+                    st.caption(
+                        "💡 木曜前倒し運用は過去12ヶ月データで検証した結果、"
+                        "高需要週が年2-3回のみで経営インパクトが限定的と判明したため、"
+                        "経営会議提案から除外しました（2026-04-17 副院長判断）。"
+                        "Phase 2 連休対策・Phase 3α 需要予測に注力します。"
+                    )
 
         # =====================================================================
         # Hint 2: 金曜退院の集中
