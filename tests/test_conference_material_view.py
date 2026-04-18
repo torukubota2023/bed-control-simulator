@@ -590,6 +590,9 @@ class TestWeekendCapacityLabel:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def test_weekend_capacity_label_shown(self, app_path: Path):
@@ -673,6 +676,9 @@ class TestBlockBDynamicAggregation:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def test_initial_all_patients_counted_as_new(self, app_path: Path):
@@ -736,14 +742,20 @@ class TestStatusPersistence:
 
     @pytest.fixture
     def isolated_stores(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """2 つのストア（名前 / ステータス）を独立した一時ファイルに差し替える."""
+        """2 つのストア（名前 / ステータス）+ 履歴ファイルを独立した一時ファイルに差し替える."""
         import patient_name_store as pns
         import patient_status_store as pss
         names_path = tmp_path / "patient_names.json"
         status_path = tmp_path / "patient_status.json"
+        history_path = tmp_path / "patient_status_history.json"
         monkeypatch.setattr(pns, "_STORAGE_PATH", names_path)
         monkeypatch.setattr(pss, "_STORAGE_PATH", status_path)
-        return {"names_path": names_path, "status_path": status_path}
+        monkeypatch.setattr(pss, "_HISTORY_PATH", history_path)
+        return {
+            "names_path": names_path,
+            "status_path": status_path,
+            "history_path": history_path,
+        }
 
     def test_status_file_initially_absent(self, isolated_stores: dict, app_path: Path):
         """アプリ初期描画時、ステータス JSON はまだ作成されない（selectbox 未変更）."""
@@ -815,6 +827,9 @@ class TestStatusTagClickable:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def test_no_status_update_selectbox_anymore(self, app_path: Path):
@@ -957,6 +972,9 @@ class TestCountStoredData:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def test_empty_stores_return_zero(self):
@@ -1004,6 +1022,9 @@ class TestIndividualClearUI:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def test_individual_clear_checkboxes_exist(self, app_path: Path):
@@ -1050,6 +1071,9 @@ class TestBulkClearUI:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def test_bulk_clear_expander_label_shown(self, app_path: Path):
@@ -1293,6 +1317,9 @@ class TestHolidayModeRecommendBanner:
         import patient_status_store as pss
         monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
         monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
         yield
 
     def _app_entry(self, tmp_path: Path, today_str: str) -> Path:
@@ -1714,3 +1741,657 @@ class TestFactBarStillPrintsNormally:
         assert found_fact_bar_hide, (
             "conf-fact-bar の印刷時非表示（既存仕様）が失われている"
         )
+
+
+# ---------------------------------------------------------------------------
+# 実データ連携（2026-04-18 追加）
+# ---------------------------------------------------------------------------
+
+import pandas as pd  # noqa: E402
+
+
+def _make_detail_df(rows: list) -> pd.DataFrame:
+    """admission_details 互換の DataFrame を構築するヘルパー.
+
+    rows: list of dicts with optional keys:
+      event_type ("admission" / "discharge"), date, ward, route,
+      source_doctor, attending_doctor, los_days, phase, id, short3_type
+    """
+    cols = [
+        "id", "date", "ward", "event_type", "route",
+        "source_doctor", "attending_doctor",
+        "los_days", "phase", "short3_type",
+    ]
+    filled = []
+    for i, r in enumerate(rows):
+        record = {c: r.get(c, None) for c in cols}
+        if record["id"] is None:
+            record["id"] = f"evt-{i:04d}"
+        filled.append(record)
+    df = pd.DataFrame(filled, columns=cols)
+    df["date"] = pd.to_datetime(df["date"])
+    df["id"] = df["id"].astype("string")
+    df["ward"] = df["ward"].astype("string")
+    df["event_type"] = df["event_type"].astype("string")
+    df["attending_doctor"] = df["attending_doctor"].astype("string")
+    df["los_days"] = pd.to_numeric(df["los_days"], errors="coerce").astype("Int64")
+    return df
+
+
+class TestPatientsFromActualData:
+    """_patients_from_actual_data のユニットテスト."""
+
+    def test_returns_empty_on_none_df(self):
+        """df が None のとき空リスト + data_unavailable=True."""
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            df_override=None,
+        )
+        assert patients == []
+        assert meta["data_unavailable"] is True
+        assert meta["reason"] == "no_data"
+
+    def test_returns_empty_on_empty_df(self):
+        """空 DataFrame でも落ちず空リストを返す."""
+        empty = _make_detail_df([])
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            df_override=empty,
+        )
+        assert patients == []
+        assert meta["data_unavailable"] is True
+        assert meta["reason"] == "no_data"
+
+    def test_ward_filter_works(self):
+        """ward が一致する admission のみ返る."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "田中", "route": "外来紹介"},
+            {"event_type": "admission", "date": "2026-04-10", "ward": "6F",
+             "attending_doctor": "佐藤", "route": "救急"},
+        ])
+        p_5f, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        p_6f, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="6F", mode="normal", df_override=df,
+        )
+        assert len(p_5f) == 1
+        assert p_5f[0].ward == "5F"
+        assert len(p_6f) == 1
+        assert p_6f[0].ward == "6F"
+
+    def test_discharged_patients_excluded(self):
+        """退院済み患者（(ward, admission_date) が discharge レコードに対応）は除外."""
+        df = _make_detail_df([
+            # 入院 4/10、退院 4/15 (los=5) → 現在入院していない
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "田中", "route": "外来紹介"},
+            {"event_type": "discharge", "date": "2026-04-15", "ward": "5F",
+             "attending_doctor": "田中", "los_days": 5},
+            # 入院 4/12、未退院 → 在院中
+            {"event_type": "admission", "date": "2026-04-12", "ward": "5F",
+             "attending_doctor": "佐藤", "route": "救急"},
+        ])
+        patients, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert len(patients) == 1
+        assert patients[0].doctor_surname == "佐藤"
+        # 4/12 → 4/17 は 6 日目 (Day 1 = 入院当日)
+        assert patients[0].day_count == 6
+
+    def test_future_admission_excluded(self):
+        """today より後に入院予定のレコードは含めない."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-25", "ward": "5F",
+             "attending_doctor": "未来"},
+        ])
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert len(patients) == 0
+        assert meta["reason"] == "no_inpatients"
+
+    def test_sorting_by_day_count_desc(self):
+        """在院日数降順（長期優先）で返る."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-16", "ward": "5F",
+             "attending_doctor": "A"},  # Day 2
+            {"event_type": "admission", "date": "2026-03-17", "ward": "5F",
+             "attending_doctor": "B"},  # Day 32
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "C"},  # Day 8
+        ])
+        patients, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert [p.doctor_surname for p in patients] == ["B", "C", "A"]
+
+    def test_max_patients_limit(self):
+        """max_patients=10 を超えるデータでも上位 10 名のみ."""
+        rows = []
+        base = date(2026, 4, 1)
+        for i in range(15):
+            rows.append({
+                "event_type": "admission",
+                "date": base.isoformat(),
+                "ward": "5F",
+                "attending_doctor": f"Dr{i:02d}",
+                "id": f"adm-{i:04d}",
+            })
+        df = _make_detail_df(rows)
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert len(patients) == 10
+        assert meta["total_inpatients"] == 15
+
+    def test_fewer_than_10_patients_handled(self):
+        """在院者が 10 名未満でも正しく動く（3 名など）."""
+        rows = [
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "田中"},
+            {"event_type": "admission", "date": "2026-04-12", "ward": "5F",
+             "attending_doctor": "佐藤"},
+            {"event_type": "admission", "date": "2026-04-14", "ward": "5F",
+             "attending_doctor": "鈴木"},
+        ]
+        df = _make_detail_df(rows)
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert len(patients) == 3
+        assert meta["total_inpatients"] == 3
+        assert meta["reason"] == "ok"
+        # 全員 status_key=new で初期化される
+        for p in patients:
+            assert p.status_key == "new"
+
+    def test_no_inpatients_reason(self):
+        """admission がゼロ（discharge のみ、or ward 不一致）の場合 no_inpatients."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-10", "ward": "6F",
+             "attending_doctor": "田中"},
+        ])
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert patients == []
+        assert meta["reason"] == "no_inpatients"
+        assert meta["total_inpatients"] == 0
+
+    def test_stable_anonymized_patient_id(self):
+        """同じ admission id からは同じ patient_id が返る（ステータス永続性の保証）."""
+        df = _make_detail_df([
+            {"id": "fixed-id-1234", "event_type": "admission",
+             "date": "2026-04-10", "ward": "5F", "attending_doctor": "田中"},
+        ])
+        p1, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        p2, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert len(p1) == 1 and len(p2) == 1
+        assert p1[0].patient_id == p2[0].patient_id
+        # 8 桁 hex
+        assert len(p1[0].patient_id) == 8
+        all(c in "0123456789abcdef" for c in p1[0].patient_id)
+
+    def test_missing_columns_graceful_fallback(self):
+        """admission_details に必須列が欠落していてもエラーにならない."""
+        broken = pd.DataFrame({"foo": [1, 2], "bar": [3, 4]})
+        patients, meta = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            df_override=broken,
+        )
+        assert patients == []
+        assert meta["reason"] == "error"
+
+    def test_doctor_surname_extraction(self):
+        """姓 名（スペース区切り）から姓のみ抽出."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "田中 太郎"},
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "佐藤　花子"},  # 全角スペース
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "鈴木"},
+        ])
+        patients, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        surnames = [p.doctor_surname for p in patients]
+        assert "田中" in surnames
+        assert "佐藤" in surnames
+        assert "鈴木" in surnames
+
+    def test_doctor_empty_fallback(self):
+        """attending_doctor が空の場合「未定」にフォールバック."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": None},
+        ])
+        patients, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert len(patients) == 1
+        assert patients[0].doctor_surname == "未定"
+
+    def test_note_shows_route(self):
+        """note に入院経路が含まれる."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "田中", "route": "救急"},
+        ])
+        patients, _ = cmv._patients_from_actual_data(
+            today=date(2026, 4, 17), ward="5F", mode="normal", df_override=df,
+        )
+        assert "実データ" in patients[0].note
+        assert "救急" in patients[0].note
+
+
+class TestResolvePatientsDispatch:
+    """_resolve_patients のモード分岐."""
+
+    def test_simulation_mode_returns_sample(self):
+        """シミュレーションモード → サンプル 10 名."""
+        patients, src, meta = cmv._resolve_patients(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            data_source_override="🔬 シミュレーション（予測モデル）",
+        )
+        assert src == "sample"
+        assert len(patients) == 10
+
+    def test_empty_data_source_defaults_to_sample(self):
+        """data_source_mode が空文字列でもサンプルにフォールバック."""
+        patients, src, _ = cmv._resolve_patients(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            data_source_override="",
+        )
+        assert src == "sample"
+        assert len(patients) == 10
+
+    def test_actual_mode_uses_actual_data(self):
+        """実績データモード → 実データから取得."""
+        df = _make_detail_df([
+            {"event_type": "admission", "date": "2026-04-10", "ward": "5F",
+             "attending_doctor": "田中"},
+        ])
+        patients, src, meta = cmv._resolve_patients(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            data_source_override="📋 実績データ（日次入力）",
+            df_override=df,
+        )
+        assert src == "actual"
+        assert len(patients) == 1
+        assert "実データ" in patients[0].note
+
+    def test_actual_mode_empty_data_returns_empty(self):
+        """実績データモードで DataFrame 空 → 空リスト + meta.data_unavailable."""
+        patients, src, meta = cmv._resolve_patients(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            data_source_override="📋 実績データ（日次入力）",
+            df_override=_make_detail_df([]),
+        )
+        assert src == "actual"
+        assert patients == []
+        assert meta["data_unavailable"] is True
+
+
+class TestAnonymizePatientId:
+    """_anonymize_patient_id のヘルパーテスト."""
+
+    def test_same_input_same_output(self):
+        assert cmv._anonymize_patient_id("abc") == cmv._anonymize_patient_id("abc")
+
+    def test_different_input_different_output(self):
+        assert cmv._anonymize_patient_id("abc") != cmv._anonymize_patient_id("xyz")
+
+    def test_empty_input_safe(self):
+        assert len(cmv._anonymize_patient_id("")) == 8
+        assert len(cmv._anonymize_patient_id(None)) == 8
+
+    def test_returns_8_char(self):
+        assert len(cmv._anonymize_patient_id("whatever-uuid-here")) == 8
+
+
+class TestExtractSurname:
+    """_extract_surname のヘルパーテスト."""
+
+    def test_half_space_split(self):
+        assert cmv._extract_surname("田中 太郎") == "田中"
+
+    def test_full_space_split(self):
+        assert cmv._extract_surname("佐藤　花子") == "佐藤"
+
+    def test_short_name_pass_through(self):
+        assert cmv._extract_surname("鈴木") == "鈴木"
+
+    def test_long_name_truncated(self):
+        assert cmv._extract_surname("山田太郎花子") == "山田太"
+
+    def test_empty_fallback(self):
+        assert cmv._extract_surname("") == "未定"
+        assert cmv._extract_surname(None) == "未定"
+
+
+class TestConferenceRendersWithActualData:
+    """render_conference_material_view が実データ引数で落ちないこと（統合）."""
+
+    def test_render_with_empty_actual_data_shows_warning(self, tmp_path):
+        """実データモード + 空 DataFrame → warning が出る（エラーで落ちない）."""
+        import importlib
+
+        # ストリームリット AppTest を使わずに内部関数の結線だけ検証
+        # _resolve_patients が空 + actual を返すことを確認
+        patients, src, meta = cmv._resolve_patients(
+            today=date(2026, 4, 17), ward="5F", mode="normal",
+            data_source_override="📋 実績データ（日次入力）",
+            df_override=_make_detail_df([]),
+        )
+        assert src == "actual"
+        assert patients == []
+        assert meta["data_unavailable"] is True
+
+    def test_render_with_actual_data_via_apptest(self, tmp_path):
+        """AppTest で実データモードを渡しても描画が完走する."""
+        from streamlit.testing.v1 import AppTest
+
+        repo_scripts = Path(__file__).resolve().parent.parent / "scripts"
+        entry = repo_scripts / "_conference_view_actual_entry.py"
+        entry.write_text(
+            """
+import sys
+from pathlib import Path
+
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
+import streamlit as st
+st.set_page_config(layout='wide')
+
+import pandas as pd
+from datetime import date
+
+# 実データモードを強制し、空 DataFrame を渡す
+from views.conference_material_view import render_conference_material_view
+
+render_conference_material_view(
+    today=date(2026, 4, 17),
+    data_source_override='📋 実績データ（日次入力）',
+    df_override=pd.DataFrame(),
+)
+""",
+            encoding="utf-8",
+        )
+        try:
+            at = AppTest.from_file(str(entry), default_timeout=30)
+            at.run()
+            # エラーで終わっていないこと
+            assert not at.exception, f"レンダリングで例外: {at.exception}"
+            # warning が 1 つ以上出ていること
+            warnings_text = " ".join(w.value for w in at.warning) if at.warning else ""
+            # no_data は warning 表示（reason="no_data" → st.warning）
+            assert "入退院詳細データが未登録" in warnings_text or len(at.warning) > 0
+        finally:
+            try:
+                entry.unlink()
+            except FileNotFoundError:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# 11. 週次カンファ履歴 UI（2026-04-18 新規）
+# ---------------------------------------------------------------------------
+
+class TestWeeklyHistoryExpander:
+    """📈 先週からの変化 expander の描画検証."""
+
+    @pytest.fixture
+    def app_path(self, tmp_path: Path) -> Path:
+        repo_scripts = Path(__file__).resolve().parent.parent / "scripts"
+        entry = repo_scripts / "_conference_view_test_entry.py"
+        _write_app_entry(entry)
+        yield entry
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            pass
+
+    @pytest.fixture(autouse=True)
+    def isolate_storage(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """ステータス/履歴/名前ストアを隔離."""
+        import patient_name_store as pns
+        import patient_status_store as pss
+        monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
+        monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
+        yield
+
+    def test_history_expander_testid_present(self, app_path: Path):
+        """履歴エクスパンダーの data-testid (件数集計) が markdown に含まれる."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 3 種の集計件数テスト ID
+        assert 'data-testid="conference-history-changes-count"' in markdown_text
+        assert 'data-testid="conference-history-stagnant-count"' in markdown_text
+        assert 'data-testid="conference-history-long-undecided-count"' in markdown_text
+
+    def test_history_expander_initial_counts_zero(self, app_path: Path):
+        """初期状態（履歴ファイル未作成）では全カウントが 0."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 0 が 3 箇所出るはず（changes/stagnant/long_undecided）
+        import re
+        m = re.search(
+            r'data-testid="conference-history-changes-count" '
+            r'style="display:none">(\d+)<',
+            markdown_text,
+        )
+        assert m is not None
+        assert m.group(1) == "0"
+
+    def test_history_expander_shows_changes_after_save(self, app_path: Path):
+        """履歴ファイルに記録があると expander の集計が 1 以上になる.
+
+        Note: entry app は today=date(2026, 4, 17) 固定なので、
+        history 側も同日以前の日付で手動書き込み、reference_date の窓に入れる。
+        """
+        import patient_status_store as pss
+        import json
+        # 直接履歴ファイルに書き込む（2026-04-15 の変化 2 件）
+        history_path = Path(pss._HISTORY_PATH)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(
+            json.dumps({
+                "a1b2c3d4": [
+                    {
+                        "timestamp": "2026-04-12T10:00:00",
+                        "status": "new",
+                        "conference_date": "2026-04-12",
+                    },
+                    {
+                        "timestamp": "2026-04-15T10:00:00",
+                        "status": "undecided",
+                        "conference_date": "2026-04-15",
+                    },
+                ]
+            }),
+            encoding="utf-8",
+        )
+
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        m = re.search(
+            r'data-testid="conference-history-changes-count" '
+            r'style="display:none">(\d+)<',
+            markdown_text,
+        )
+        assert m is not None
+        count = int(m.group(1))
+        # reference_date=2026-04-17, 窓 [4/10, 4/17] → 2 件とも該当
+        assert count == 2, f"履歴変化カウントが 2 ではない: {count}"
+
+    def test_history_expander_renders_without_error(self, app_path: Path):
+        """履歴 expander を含む全体描画で例外が出ない."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        assert not at.exception, (
+            f"履歴 expander 描画で例外: {[e.value for e in at.exception]}"
+        )
+
+    def test_history_label_present_in_expander(self, app_path: Path):
+        """expander ラベル「📈 先週からの変化」が画面に存在する."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        # expander は at.expander で確認
+        labels = [e.label for e in at.expander] if at.expander else []
+        joined = " | ".join(labels)
+        assert "📈" in joined or "先週からの変化" in joined, (
+            f"履歴 expander ラベルが見つからない: {labels}"
+        )
+
+    def test_stagnant_warning_shown_for_old_history(self, app_path: Path):
+        """3 週以上前の履歴のみの患者 → 停滞警告に登場."""
+        import patient_status_store as pss
+        import json
+        # 履歴ファイルを直接書き込む（3 週以上前の日付）
+        # 5F サンプルの実在 UUID "a1b2c3d4" を使う
+        history_path = Path(pss._HISTORY_PATH)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(
+            json.dumps({
+                "a1b2c3d4": [
+                    {
+                        "timestamp": "2026-03-20T10:00:00",
+                        "status": "undecided",
+                        "conference_date": "2026-03-20",
+                    },
+                ]
+            }),
+            encoding="utf-8",
+        )
+
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 停滞患者 testid が存在する
+        assert "conference-history-stagnant-a1b2c3d4" in markdown_text, (
+            "停滞患者の testid が見つからない"
+        )
+
+    def test_long_undecided_warning_shown(self, app_path: Path):
+        """在院 21 日以上 × undecided の患者は要議論リストに登場."""
+        import patient_status_store as pss
+        # サンプル 5F 最初の患者 a1b2c3d4 は Day 35（在院 21 日以上）
+        # status を undecided にセット
+        pss.save_status("a1b2c3d4", "undecided")
+
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 要議論 testid が存在する
+        assert "conference-history-long-undecided-a1b2c3d4" in markdown_text
+
+    def test_per_patient_history_btn_testid_exists(self, app_path: Path):
+        """各患者行に 📜 履歴ボタンの testid が出る（10 名分）."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        testids = re.findall(
+            r'data-testid="conference-history-btn-([a-f0-9]{8})"',
+            markdown_text,
+        )
+        # 10 名分出るはず
+        assert len(testids) == 10, (
+            f"📜 履歴ボタンの testid が 10 個ではない: {len(testids)} ({testids})"
+        )
+
+    def test_print_css_hides_history_expander(self, app_path: Path):
+        """@media print で履歴 expander が非表示になる CSS が含まれる."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # print CSS に history-expander-wrap / history-btn-wrap の non-display が入る
+        assert ".conf-history-expander-wrap" in markdown_text
+        assert ".conf-history-btn-wrap" in markdown_text
+
+    def test_existing_testids_preserved(self, app_path: Path):
+        """既存 data-testid が履歴機能追加で壊れていないこと."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 主要な既存 testid が全て存在する
+        required_testids = [
+            "conference-mode",
+            "conference-ward",
+            "conference-occupancy-pct",
+            "conference-alos-days",
+            "conference-emergency-pct",
+            "conference-patient-count",
+            "conference-fact-id",
+        ]
+        for testid in required_testids:
+            assert f'data-testid="{testid}"' in markdown_text, (
+                f"既存 testid '{testid}' が壊れている"
+            )
+
+
+class TestHistoryStoreHelpers:
+    """新規ヘルパ関数 _format_status_label / _aggregate_status_changes."""
+
+    def test_format_status_label_normal(self):
+        """通常モードの status_key が正しくラベル化."""
+        assert "方向性未決" in cmv._format_status_label("undecided")
+        assert "新規" in cmv._format_status_label("new")
+
+    def test_format_status_label_holiday(self):
+        """連休モードの status_key も同じ関数で解決."""
+        assert "連休前退院" in cmv._format_status_label("before_confirmed")
+
+    def test_format_status_label_unknown(self):
+        """未知 key は フォールバック表示."""
+        assert "未分類" in cmv._format_status_label("invalid_key")
+
+    def test_aggregate_status_changes_counts_transitions(self):
+        """_aggregate_status_changes が遷移ペアごとに件数集計する."""
+        changes = [
+            {"uuid": "u1", "from_status": "new", "to_status": "undecided"},
+            {"uuid": "u2", "from_status": "new", "to_status": "undecided"},
+            {"uuid": "u3", "from_status": "undecided", "to_status": "family"},
+        ]
+        agg = cmv._aggregate_status_changes(changes)
+        assert agg[("new", "undecided")] == 2
+        assert agg[("undecided", "family")] == 1
+
+    def test_aggregate_status_changes_empty(self):
+        assert cmv._aggregate_status_changes([]) == {}
+
+    def test_aggregate_includes_new_tracking(self):
+        """初出エントリ（from_status="") も別キーで集計される."""
+        changes = [
+            {"uuid": "u1", "from_status": "", "to_status": "new"},
+            {"uuid": "u2", "from_status": "", "to_status": "new"},
+        ]
+        agg = cmv._aggregate_status_changes(changes)
+        assert agg[("", "new")] == 2

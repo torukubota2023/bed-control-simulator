@@ -51,6 +51,9 @@ data/patient_names.json
 # 患者ステータス（カンファ区分）ストア（ユーザー固有の運用データのため Git 追跡禁止）
 data/patient_status.json
 
+# 患者ステータス履歴（週次カンファの変化履歴、個人運用データのため Git 追跡禁止）
+data/patient_status_history.json
+
 # Playwright
 playwright/screenshots/*.png
 playwright-report/

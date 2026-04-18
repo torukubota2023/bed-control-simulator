@@ -33,12 +33,13 @@ Phase 2 以降（未実装、別タスク）:
 
 from __future__ import annotations
 
+import hashlib
 import random
 import sys
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 import yaml
@@ -69,7 +70,10 @@ from patient_name_store import (  # noqa: E402
 from patient_status_store import (  # noqa: E402
     clear_all_statuses,
     clear_status,
+    get_stagnant_patients,
+    get_status_changes_this_week,
     load_all_statuses,
+    load_status_history,
     save_status,
 )
 
@@ -256,6 +260,312 @@ def _get_sample_patients(ward: str, mode: str) -> List[SamplePatient]:
     if mode == "holiday":
         return _sample_patients_holiday_5f() if ward == "5F" else _sample_patients_holiday_6f()
     return _sample_patients_5f_normal() if ward == "5F" else _sample_patients_6f_normal()
+
+
+# ---------------------------------------------------------------------------
+# 実データ連携（2026-04-18）
+# ---------------------------------------------------------------------------
+# 実績データ（日次入力）モード時、bed_data_manager の admission_details から
+# 現在入院中の患者リストを生成する。カンファビューでサンプルではなく実データを
+# 使うためのデータ経路。
+#
+# マッチング戦略（get_short3_day5_patients と整合）:
+#   - admission / discharge は別レコード。患者 ID が直接ひもづかないため、
+#     (ward, admission_date) の組を「退院済みキー」として構築し、
+#     admission 側でキーにマッチしないものを「現在入院中」とみなす。
+#
+# データ取得源:
+#   - st.session_state["admission_details"]（bed_control_simulator_app.py が起動時に
+#     data/admission_details.csv から読み込む）。
+#   - テスト時は df_override パラメータで直接注入可能。
+#
+# 匿名化:
+#   - admission の `id`（UUID）を SHA256 → 先頭 8 桁を patient_id として使う。
+#     同じ admission には常に同じ UUID が生成される（永続性）。
+#   - 主治医は姓のみ（attending_doctor 列は通常「姓 名」か「姓」なので
+#     先頭トークンを採用）。
+#   - note は実データには含まれないため、入院経路 (route) を表示する。
+
+
+def _anonymize_patient_id(raw_id) -> str:
+    """任意の admission ID から安定した 8 桁の匿名 ID を生成.
+
+    None / pd.NA / 空文字列はすべて定数プレースホルダに変換。
+    """
+    import pandas as pd  # 遅延 import
+
+    if raw_id is None:
+        return "00000000"
+    try:
+        if pd.isna(raw_id):
+            return "00000000"
+    except (TypeError, ValueError):
+        pass
+    s = str(raw_id)
+    if s == "" or s.lower() == "nan":
+        return "00000000"
+    h = hashlib.sha256(s.encode("utf-8")).hexdigest()
+    return h[:8]
+
+
+def _extract_surname(full_name) -> str:
+    """医師フルネームから姓のみ抽出（姓名がスペース区切りを想定、そうでなければそのまま）.
+
+    pd.NA / None / 空文字列はすべて「未定」にフォールバック。
+    """
+    import pandas as pd  # 遅延 import
+
+    if full_name is None:
+        return "未定"
+    # pd.NA / NaN を安全に判定
+    try:
+        if pd.isna(full_name):
+            return "未定"
+    except (TypeError, ValueError):
+        pass
+    s = str(full_name).strip()
+    if s == "" or s.lower() == "nan" or s == "<NA>":
+        return "未定"
+    if " " in s:
+        return s.split(" ", 1)[0]
+    if "　" in s:
+        return s.split("　", 1)[0]
+    # スペースなし → 姓のみか氏名一体かの判別は難しい。2-3 文字に切り詰める（姓として一般的）
+    if len(s) > 3:
+        return s[:3]
+    return s
+
+
+def _build_discharged_keys(detail_df) -> set:
+    """admission_details の discharge レコードから (ward, admission_date_iso) のキー集合を作る.
+
+    注意: discharge レコードは los_days を持つが、admission_date 列は持たない。
+    admission_date は discharge_date - los_days で復元する。
+    この復元は短手3 判定（get_short3_day5_patients）と同じ戦略。
+    """
+    import pandas as pd  # 遅延 import（views/ がアプリ以外でも import される場合のため）
+
+    discharged: set = set()
+    if detail_df is None or len(detail_df) == 0:
+        return discharged
+    if not hasattr(detail_df, "columns"):
+        return discharged
+    required = {"event_type", "date", "ward", "los_days"}
+    if not required.issubset(set(detail_df.columns)):
+        return discharged
+
+    try:
+        discharges = detail_df[detail_df["event_type"].astype(str) == "discharge"]
+    except Exception:
+        return discharged
+
+    for _, row in discharges.iterrows():
+        los_raw = row.get("los_days", "")
+        if los_raw in (None, ""):
+            continue
+        try:
+            if pd.isna(los_raw):
+                continue
+        except (TypeError, ValueError):
+            pass
+        try:
+            los_int = int(float(los_raw))
+        except (ValueError, TypeError):
+            continue
+        try:
+            d_date = pd.to_datetime(row.get("date", "")).date()
+        except Exception:
+            continue
+        try:
+            adm_date = d_date - timedelta(days=los_int)
+        except Exception:
+            continue
+        ward_val = str(row.get("ward", ""))
+        discharged.add((ward_val, adm_date.isoformat()))
+    return discharged
+
+
+def _patients_from_actual_data(
+    today: date,
+    ward: str,
+    mode: str,
+    *,
+    df_override=None,
+    max_patients: int = _MAX_PATIENTS_DISPLAYED,
+) -> Tuple[List[SamplePatient], Dict[str, Any]]:
+    """実績データ（admission_details）から現在入院中の患者を SamplePatient リストに変換.
+
+    Parameters
+    ----------
+    today : date
+        基準日（在院日数計算に使う）。
+    ward : str
+        "5F" or "6F"。フィルタ条件。
+    mode : str
+        "normal" or "holiday"（note の文言生成に影響するが現時点では影響軽微）。
+    df_override : pd.DataFrame, optional
+        テスト用。None の場合 ``st.session_state["admission_details"]`` を参照。
+    max_patients : int
+        表示上限。デフォルト 10。
+
+    Returns
+    -------
+    (patients, meta)
+        patients : List[SamplePatient]
+            実データから抽出された現在入院中の患者（最大 max_patients 名）。
+            空の場合もあり（呼び出し元でフォールバック／情報バナーを判断）。
+        meta : Dict[str, Any]
+            {
+                "total_inpatients": int,   # 表示上限前の全在院者数
+                "data_unavailable": bool,  # admission_details が無い／空
+                "reason": str,             # "ok" / "no_data" / "no_inpatients" / "error"
+            }
+
+    Notes
+    -----
+    - admission_details がセッション中に未登録・空の場合は空リストを返す
+      (呼び出し元で警告を出す)。
+    - matching は get_short3_day5_patients と同じく (ward, admission_date) キーで行う。
+    """
+    import pandas as pd  # 遅延 import
+
+    meta: Dict[str, Any] = {
+        "total_inpatients": 0,
+        "data_unavailable": False,
+        "reason": "ok",
+    }
+
+    # DataFrame の取得 -------------------------------------------------------
+    detail_df = df_override
+    if detail_df is None:
+        try:
+            detail_df = st.session_state.get("admission_details")
+        except Exception:
+            detail_df = None
+
+    if detail_df is None:
+        meta["data_unavailable"] = True
+        meta["reason"] = "no_data"
+        return [], meta
+    if not isinstance(detail_df, pd.DataFrame) or len(detail_df) == 0:
+        meta["data_unavailable"] = True
+        meta["reason"] = "no_data"
+        return [], meta
+
+    required_cols = {"event_type", "date", "ward"}
+    if not required_cols.issubset(set(detail_df.columns)):
+        meta["data_unavailable"] = True
+        meta["reason"] = "error"
+        return [], meta
+
+    # 退院済みキー（(ward, admission_date) 集合）----------------------------
+    try:
+        discharged_keys = _build_discharged_keys(detail_df)
+    except Exception:
+        discharged_keys = set()
+
+    # admission から現在入院中を抽出 ---------------------------------------
+    try:
+        admissions = detail_df[detail_df["event_type"].astype(str) == "admission"]
+    except Exception:
+        meta["reason"] = "error"
+        return [], meta
+
+    current_inpatients: List[SamplePatient] = []
+    for _, row in admissions.iterrows():
+        w = str(row.get("ward", ""))
+        if w != ward:
+            continue
+        # 入院日
+        try:
+            adm_date = pd.to_datetime(row.get("date", "")).date()
+        except Exception:
+            continue
+        # 退院済みならスキップ
+        key = (w, adm_date.isoformat())
+        if key in discharged_keys:
+            continue
+        # 基準日より後に入院したレコード（将来予約）はスキップ
+        if adm_date > today:
+            continue
+
+        # 在院日数: Day 1 = 入院当日
+        day_count = max(1, (today - adm_date).days + 1)
+
+        # 主治医（attending_doctor から姓を抽出、空なら「未定」）
+        doctor_surname = _extract_surname(row.get("attending_doctor", ""))
+
+        # 入院経路を note として表示（実データは予定退院日を持たないため「未定」）
+        route = row.get("route", "")
+        try:
+            if pd.isna(route):
+                route = ""
+        except (TypeError, ValueError):
+            pass
+        note = f"（実データ）入院経路: {route}" if route else "（実データ）"
+
+        anon_id = _anonymize_patient_id(str(row.get("id", "")))
+
+        current_inpatients.append(
+            SamplePatient(
+                patient_id=anon_id,
+                doctor_surname=doctor_surname or "未定",
+                ward=ward,
+                day_count=int(day_count),
+                planned_date="未定",
+                status_key="new",
+                note=note,
+            )
+        )
+
+    meta["total_inpatients"] = len(current_inpatients)
+    if len(current_inpatients) == 0:
+        meta["reason"] = "no_inpatients"
+
+    # 在院日数降順で上位 max_patients 名 -----------------------------------
+    current_inpatients.sort(key=lambda p: p.day_count, reverse=True)
+    return current_inpatients[:max_patients], meta
+
+
+def _resolve_patients(
+    today: date,
+    ward: str,
+    mode: str,
+    *,
+    data_source_override: Optional[str] = None,
+    df_override=None,
+) -> Tuple[List[SamplePatient], str, Dict[str, Any]]:
+    """データソース判定 → 患者リスト取得のエントリ.
+
+    Returns
+    -------
+    (patients, source_tag, meta)
+        patients : List[SamplePatient]
+        source_tag : "actual" or "sample"
+        meta : dict（source_tag == "actual" の場合のみ _patients_from_actual_data の meta）
+    """
+    if data_source_override is not None:
+        ds = data_source_override
+    else:
+        try:
+            ds = st.session_state.get("data_source_mode", "")
+        except Exception:
+            ds = ""
+
+    # 文字列ラベルを比較（app 側の定義と合わせる）
+    is_actual = ds == "📋 実績データ（日次入力）"
+
+    if is_actual:
+        patients, meta = _patients_from_actual_data(
+            today, ward, mode, df_override=df_override,
+        )
+        return patients, "actual", meta
+
+    return _get_sample_patients(ward, mode), "sample", {
+        "total_inpatients": 10,
+        "data_unavailable": False,
+        "reason": "ok",
+    }
 
 
 def _sample_kpi_metrics(ward: str) -> Dict[str, float]:
@@ -811,6 +1121,9 @@ def _inject_css() -> None:
             .conf-data-manage-wrap { display: none !important; }
             /* 📚 ファクトライブラリ（折りたたみ）も印刷不要 */
             .conf-fact-library-wrap { display: none !important; }
+            /* 📈 履歴エクスパンダー／個別履歴 popover は印刷不要 */
+            .conf-history-expander-wrap { display: none !important; }
+            .conf-history-btn-wrap { display: none !important; }
         }
         .conf-status-print-tag { display: none; }
         /* ========================================================
@@ -916,6 +1229,78 @@ def _inject_css() -> None:
             text-align: center;
             font-style: italic;
         }
+        /* ========================================================
+           15. 📈 週次カンファ履歴ビュー
+               副院長指示（2026-04-18）: 先週からの変化を可視化し、
+               停滞患者を洗い出す。エビデンスバー直上に配置し、
+               印刷時は非表示にする（@media print で処理済み）。
+           ======================================================== */
+        .conf-history-expander-wrap { margin-top: 4px; margin-bottom: 4px; }
+        .conf-history-summary {
+            background: #f4f6f8;
+            border-left: 3px solid #34495e;
+            padding: 8px 12px;
+            margin: 6px 0;
+            font-size: 12px;
+            color: #2c3e50;
+            border-radius: 0 3px 3px 0;
+        }
+        .conf-history-summary-title {
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: #34495e;
+        }
+        .conf-history-summary-item {
+            display: inline-block;
+            margin: 2px 6px 2px 0;
+            padding: 1px 6px;
+            background: #ffffff;
+            border: 1px solid #d5dbdb;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .conf-history-warning {
+            background: #fff5e6;
+            border-left: 3px solid #f39c12;
+            padding: 8px 12px;
+            margin: 6px 0;
+            font-size: 12px;
+            color: #7e5109;
+            border-radius: 0 3px 3px 0;
+        }
+        .conf-history-warning-title {
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: #b9770e;
+        }
+        .conf-history-empty {
+            padding: 8px 12px;
+            color: #7f8c8d;
+            font-size: 12px;
+            font-style: italic;
+            text-align: center;
+        }
+        .conf-history-timeline {
+            font-size: 11px;
+            color: #2c3e50;
+        }
+        .conf-history-timeline .hist-entry {
+            padding: 3px 6px;
+            margin: 2px 0;
+            background: #f8f9fa;
+            border-left: 2px solid #95a5a6;
+            border-radius: 0 3px 3px 0;
+        }
+        .conf-history-timeline .hist-entry .hist-date {
+            font-weight: 600;
+            color: #34495e;
+            margin-right: 4px;
+        }
+        .conf-history-timeline .hist-entry.hist-first {
+            border-left-color: #27ae60;
+        }
+        /* 個別 📜 履歴ボタンのラッパー（印刷非表示用） */
+        .conf-history-btn-wrap { display: inline-block; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1719,6 +2104,59 @@ def _render_block_c(
                 '<div class="conf-edit-btn-wrap">',
                 unsafe_allow_html=True,
             )
+            # 📜 履歴 popover（2026-04-18 新規）: タイムラインと遷移ペアを表示
+            # 印刷時は非表示（.conf-history-btn-wrap は @media print で消える）
+            st.markdown(
+                '<div class="conf-history-btn-wrap" '
+                f'data-testid="conference-history-btn-{p.patient_id}">',
+                unsafe_allow_html=True,
+            )
+            with st.popover("📜", use_container_width=False):
+                st.caption(
+                    f"履歴タイムライン — {p.doctor_surname} ({p.patient_id})"
+                )
+                history = load_status_history(p.patient_id)
+                if not history:
+                    st.markdown(
+                        '<div class="conf-history-empty">'
+                        'まだ履歴はありません（カンファでステータスを更新すると記録されます）。'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    # タイムライン表示（時系列順・古い → 新しい）
+                    timeline_parts: List[str] = ['<div class="conf-history-timeline">']
+                    for idx, h in enumerate(history):
+                        ts = h.get("timestamp", "")
+                        status = h.get("status", "")
+                        cdate = h.get("conference_date", ts[:10] if ts else "")
+                        label = _format_status_label(status)
+                        is_first = "hist-first" if idx == 0 else ""
+                        timeline_parts.append(
+                            f'<div class="hist-entry {is_first}">'
+                            f'<span class="hist-date">{cdate}</span>'
+                            f'{label}'
+                            f'</div>'
+                        )
+                    timeline_parts.append('</div>')
+                    st.markdown("".join(timeline_parts), unsafe_allow_html=True)
+
+                    # 遷移ペア表示（2 件以上の履歴がある場合のみ）
+                    if len(history) >= 2:
+                        st.divider()
+                        st.caption("ステータス遷移")
+                        for i in range(1, len(history)):
+                            prev_label = _format_status_label(
+                                history[i - 1].get("status", "")
+                            )
+                            curr_label = _format_status_label(
+                                history[i].get("status", "")
+                            )
+                            st.markdown(
+                                f"- {prev_label} → {curr_label}",
+                                unsafe_allow_html=False,
+                            )
+            st.markdown("</div>", unsafe_allow_html=True)
             with st.popover("✏️", use_container_width=False):
                 st.caption(
                     f"患者 {p.patient_id}（UUID 先頭8桁）の情報を編集"
@@ -2088,6 +2526,230 @@ def _render_fact_library(
 
 
 # ---------------------------------------------------------------------------
+# 履歴ビュー: 週次カンファ履歴（2026-04-18 新規）
+# ---------------------------------------------------------------------------
+
+def _format_status_label(status_key: str) -> str:
+    """status_key → 表示ラベル（emoji + 日本語）. モード非依存で両プールから探す.
+
+    Notes
+    -----
+    - 履歴表示はモードに関係なく過去の status_key をそのまま読む
+    - 通常モード 7 種 + 連休モード 3 種の統合プールから検索
+    - 未知の値は "❓ 未分類" を返す
+    """
+    for pool in (_STATUS_NORMAL, _STATUS_HOLIDAY):
+        for s in pool:
+            if s["key"] == status_key:
+                return f"{s['emoji']} {s['label']}"
+    return "❓ 未分類"
+
+
+def _aggregate_status_changes(
+    changes: List[Dict[str, str]],
+) -> Dict[Tuple[str, str], int]:
+    """変化イベントのリストを遷移ペアごとに集計する.
+
+    Parameters
+    ----------
+    changes : list
+        :func:`get_status_changes_this_week` の返り値
+
+    Returns
+    -------
+    dict
+        ``{(from_status, to_status): count, ...}``。
+        初出エントリ（from_status が空）は ``("", to_status)`` キーで集計。
+    """
+    agg: Dict[Tuple[str, str], int] = {}
+    for c in changes:
+        key = (c.get("from_status", ""), c.get("to_status", ""))
+        agg[key] = agg.get(key, 0) + 1
+    return agg
+
+
+def _render_weekly_history_expander(
+    patients: List[SamplePatient],
+    today: date,
+) -> None:
+    """週次カンファ履歴エクスパンダーを描画する（エビデンスバー直上）.
+
+    副院長指示（2026-04-18）: 振り返り・トレンド可視化専用。
+    プロフェッショナルなトーン（個人非難しない）で傾向分析に特化する。
+
+    含まれる要素:
+    - 今週のステータス変化サマリー（遷移ペア × 件数）
+    - 停滞警告: 3 週以上ステータスが変わらない患者
+    - 長期入院 × 方向性未決 の要議論リスト
+
+    Parameters
+    ----------
+    patients : list
+        表示中の患者リスト（病棟フィルタ後）。
+        停滞判定は表示中の患者 ID と履歴の intersection のみで行う。
+    today : date
+        基準日（通常はカンファ当日）
+    """
+    # 表示中の患者 UUID をセットで保持（病棟フィルタ後）
+    displayed_uuids = {p.patient_id for p in patients}
+    day_count_by_uuid = {p.patient_id: p.day_count for p in patients}
+    note_by_uuid = {p.patient_id: p.note for p in patients}
+
+    # 履歴データ取得（変化件数 + 停滞患者）
+    changes = get_status_changes_this_week(today)
+    # 表示中の病棟の患者のみフィルタ
+    changes_in_ward = [c for c in changes if c.get("uuid") in displayed_uuids]
+
+    stagnant = get_stagnant_patients(today, weeks=3)
+    stagnant_in_ward = [s for s in stagnant if s.get("uuid") in displayed_uuids]
+
+    # 長期入院 × 方向性未決: 表示中患者でステータスが "undecided" かつ在院日数 >= 21 日
+    # 最新ステータスは現在ステータスから取得（履歴なしでも評価可能にするため）
+    current_statuses = load_all_statuses()
+    long_stay_undecided: List[Dict[str, object]] = []
+    for p in patients:
+        latest = current_statuses.get(p.patient_id, p.status_key)
+        if latest == "undecided" and p.day_count >= 21:
+            long_stay_undecided.append({
+                "uuid": p.patient_id,
+                "day_count": p.day_count,
+                "note": p.note,
+            })
+
+    # hidden testid: 集計件数を E2E テストから参照可能にする
+    st.markdown(
+        '<div class="conf-history-expander-wrap">'
+        f'<div data-testid="conference-history-changes-count" style="display:none">'
+        f'{len(changes_in_ward)}</div>'
+        f'<div data-testid="conference-history-stagnant-count" style="display:none">'
+        f'{len(stagnant_in_ward)}</div>'
+        f'<div data-testid="conference-history-long-undecided-count" style="display:none">'
+        f'{len(long_stay_undecided)}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    label = "📈 先週からの変化（履歴・停滞・要議論）"
+    with st.expander(label, expanded=False):
+        st.markdown(
+            '<div data-testid="conference-history-expander" style="display:none">open</div>',
+            unsafe_allow_html=True,
+        )
+
+        # === セクション 1: 今週のステータス変化サマリー ===
+        if changes_in_ward:
+            agg = _aggregate_status_changes(changes_in_ward)
+            summary_items: List[str] = []
+            # 初出（from が空）と遷移を分けて表示
+            transitions = []
+            new_entries = 0
+            for (from_k, to_k), cnt in sorted(
+                agg.items(), key=lambda kv: (-kv[1], kv[0][1])
+            ):
+                if not from_k:
+                    new_entries += cnt
+                    continue
+                transitions.append(
+                    f'<span class="conf-history-summary-item">'
+                    f'{_format_status_label(from_k)} → {_format_status_label(to_k)}: '
+                    f'{cnt} 名</span>'
+                )
+            pieces_html = "".join(transitions)
+            new_pieces = ""
+            if new_entries:
+                new_pieces = (
+                    f'<span class="conf-history-summary-item">'
+                    f'🆕 新規トラッキング開始: {new_entries} 名</span>'
+                )
+            st.markdown(
+                f'<div class="conf-history-summary">'
+                f'<div class="conf-history-summary-title">'
+                f'今週のステータス変化（直近 7 日・{ward_label(patients)}）</div>'
+                f'{pieces_html}{new_pieces}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="conf-history-empty">'
+                '今週はステータス変化の履歴が記録されていません（初回起動時や全員の状態が先週から不変の場合に表示されます）。'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+        # === セクション 2: 停滞警告 ===
+        if stagnant_in_ward:
+            items_html: List[str] = []
+            for s in stagnant_in_ward:
+                uuid = s.get("uuid", "")
+                status_label = _format_status_label(s.get("status", ""))
+                weeks = s.get("weeks_stagnant", "")
+                last_changed = s.get("last_changed", "")
+                day_count = day_count_by_uuid.get(uuid, 0)
+                items_html.append(
+                    f'<div class="conf-history-summary-item" '
+                    f'data-testid="conference-history-stagnant-{uuid}">'
+                    f'ID {uuid} (Day {day_count}): {status_label}から {weeks} 週停滞 '
+                    f'(最終更新 {last_changed})'
+                    f'</div>'
+                )
+            st.markdown(
+                f'<div class="conf-history-warning">'
+                f'<div class="conf-history-warning-title">'
+                f'⚠ 3 週以上ステータス変化のない患者（要再評価）</div>'
+                f'{"".join(items_html)}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # === セクション 3: 長期入院 × 方向性未決 ===
+        if long_stay_undecided:
+            items_html2: List[str] = []
+            for lu in long_stay_undecided:
+                uuid = lu.get("uuid", "")
+                day = lu.get("day_count", "")
+                note = lu.get("note", "")
+                items_html2.append(
+                    f'<div class="conf-history-summary-item" '
+                    f'data-testid="conference-history-long-undecided-{uuid}">'
+                    f'ID {uuid} (Day {day}): {note}'
+                    f'</div>'
+                )
+            st.markdown(
+                f'<div class="conf-history-warning">'
+                f'<div class="conf-history-warning-title">'
+                f'⚠ 在院 21 日以上 × 方向性未決（カンファで重点議論）</div>'
+                f'{"".join(items_html2)}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # 全セクションが空の場合のフォールバック
+        if (not changes_in_ward and not stagnant_in_ward
+                and not long_stay_undecided):
+            st.markdown(
+                '<div class="conf-history-empty">'
+                '履歴データはまだ蓄積されていません。カンファでステータスを更新していくと、'
+                '次週以降ここにトレンドが表示されます。'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+
+def ward_label(patients: List[SamplePatient]) -> str:
+    """患者リストの代表病棟（表示中サンプルの最頻）を返す.
+
+    Notes
+    -----
+    ヒストリー表示のキャプションに使う軽量ヘルパ。
+    """
+    if not patients:
+        return "—"
+    # 先頭患者の病棟を使う（_resolve_patients で 1 病棟にフィルタ済み前提）
+    return patients[0].ward
+
+
+# ---------------------------------------------------------------------------
 # 公開 API
 # ---------------------------------------------------------------------------
 
@@ -2096,8 +2758,10 @@ def render_conference_material_view(
     *,
     rng: Optional[random.Random] = None,
     facts_override: Optional[List[Dict[str, Any]]] = None,
+    data_source_override: Optional[str] = None,
+    df_override=None,
 ) -> None:
-    """多職種退院調整・連休対策カンファ資料画面を描画する（Phase 1）.
+    """多職種退院調整・連休対策カンファ資料画面を描画する（Phase 1 + 実データ連携）.
 
     Parameters
     ----------
@@ -2107,6 +2771,11 @@ def render_conference_material_view(
         ファクト抽選用の乱数器（テスト用）。None なら新規生成。
     facts_override : list, optional
         facts.yaml 読み込みを上書きするリスト（テスト用）。
+    data_source_override : str, optional
+        データソースラベルを直接指定（テスト用）。None の場合
+        ``st.session_state["data_source_mode"]`` を参照。
+    df_override : pd.DataFrame, optional
+        admission_details DataFrame を直接注入（テスト用）。
 
     Returns
     -------
@@ -2116,8 +2785,9 @@ def render_conference_material_view(
     Notes
     -----
     - 16:9 レイアウトは親ページの ``st.set_page_config(layout="wide")`` 前提。
-    - ステータス更新は ``st.session_state['conf_patient_status']`` に保存される
-      （Phase 1 はセッション内のみ、永続化は Phase 2）。
+    - ステータス更新は ``st.session_state['conf_patient_status']`` に保存される。
+    - データソース「実績データ（日次入力）」モードでは admission_details から
+      現在入院中の患者を取得する。データが無い場合は警告を表示し、サンプルは出さない。
     """
     _today = today if today is not None else date.today()
     _init_session(_today)
@@ -2187,7 +2857,42 @@ def render_conference_material_view(
     _render_block_a(ward, _today, banner, kpi)
 
     # --- 中央: ブロック B (左 300px) + ブロック C (右) ---
-    patients = _get_sample_patients(ward, mode)
+    # データソースに応じてサンプル or 実データを選択する
+    patients, _data_src, _data_meta = _resolve_patients(
+        _today, ward, mode,
+        data_source_override=data_source_override,
+        df_override=df_override,
+    )
+
+    # 実データモード時、データが無い or 入院患者が少ないケースで情報提示
+    if _data_src == "actual":
+        _reason = _data_meta.get("reason", "ok")
+        _total = int(_data_meta.get("total_inpatients", 0))
+        if _reason == "no_data":
+            st.warning(
+                "実データモードですが、入退院詳細データが未登録です。"
+                "まず「⚙️ データ・設定 → 日次データ入力」で入退院イベントを入力してください。"
+                " — サンプル患者は表示しません。"
+            )
+        elif _reason == "no_inpatients":
+            st.warning(
+                f"実データモードですが、{ward} に現在入院中の患者がいません（データ上の退院済みを除外済み）。"
+                "直近の入院イベントが登録されているか確認してください。"
+            )
+        elif _reason == "ok" and _total < _MAX_PATIENTS_DISPLAYED:
+            st.info(f"実データで取得できた {ward} の在院患者は {_total} 名です。")
+        # data-testid: 実データフラグ（E2E で識別可能にしておく）
+        st.markdown(
+            f'<div data-testid="conference-data-source" style="display:none">actual</div>'
+            f'<div data-testid="conference-inpatient-count" style="display:none">{_total}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div data-testid="conference-data-source" style="display:none">sample</div>',
+            unsafe_allow_html=True,
+        )
+
     middle_left, middle_right = st.columns([0.3, 0.7])
     with middle_left:
         _render_block_b(ward, mode, patients)
@@ -2197,6 +2902,10 @@ def render_conference_material_view(
     # --- ブロック D: 職種別 今週のお願い ---
     # 2026-04-18 圧縮: 不要な &nbsp; 余白を削除（縦 26px 削減）
     _render_block_d(patients, mode)
+
+    # --- 📈 週次カンファ履歴エクスパンダー（エビデンスバー直上） ---
+    # 2026-04-18 新規: 先週からの変化・停滞警告・要議論リストを可視化
+    _render_weekly_history_expander(patients, _today)
 
     # --- ファクトバー ---
     _render_fact_bar(ward, mode, rng=rng, facts_override=facts_override)

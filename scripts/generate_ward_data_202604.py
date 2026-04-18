@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Generate sample_actual_data_ward_202604.csv with adjusted occupancy rates."""
+"""Generate sample_actual_data_ward_202604.csv with adjusted occupancy rates.
+
+[DEPRECATED — 2026-04-18]
+このスクリプトは 2026年4月単月（20 日分）のみを生成する古い教育用デモデータ
+ジェネレーター。年度全体の季節性・連休対応は
+:file:`scripts/generate_demo_data_2026fy.py` の ``generate_yearly_data()`` を使用すること。
+既存 CSV (`data/sample_actual_data_ward_202604.csv`) の再生成時のみ本スクリプトを利用する。
+"""
 
 import csv
 import os

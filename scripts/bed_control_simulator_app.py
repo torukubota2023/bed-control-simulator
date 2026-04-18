@@ -183,6 +183,21 @@ except Exception as _detail_err:
     _DETAIL_DATA_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# 医師別 深掘りインサイトエンジン
+# ---------------------------------------------------------------------------
+try:
+    from doctor_insight_engine import (
+        build_doctor_insights as _di_build_doctor_insights,
+        build_weekday_insights as _di_build_weekday_insights,
+        build_c_group_insights as _di_build_c_group_insights,
+    )
+    _DOCTOR_INSIGHT_AVAILABLE = True
+except Exception as _di_err:
+    import traceback as _di_tb
+    _DOCTOR_INSIGHT_ERROR = f"{_di_err}\n{_di_tb.format_exc()}"
+    _DOCTOR_INSIGHT_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
 # 空床マネジメント指標モジュール
 # ---------------------------------------------------------------------------
 try:
@@ -3281,7 +3296,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                 # デモデータが既にロード済みかチェック
                 _demo_loaded = isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0
 
-                dm_demo_col1, dm_demo_col2, dm_demo_col3 = st.columns(3)
+                dm_demo_col1, dm_demo_col2, dm_demo_col3, dm_demo_col4 = st.columns(4)
                 with dm_demo_col1:
                     if _demo_loaded:
                         _demo_ward_count = st.session_state.demo_data["ward"].nunique() if "ward" in st.session_state.demo_data.columns else 0
@@ -3293,6 +3308,41 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     else:
                         _bc_alert("デモデータが見つかりません", severity="warning")
                 with dm_demo_col2:
+                    if st.button(
+                        "📊 年度デモデータ生成（2026FY 365日分）",
+                        key="dm_gen_yearly",
+                        help="2026年度全体（4/1〜翌3/31）に季節性・連休パターンを織り込んだ1年分のデモデータを生成します",
+                    ):
+                        try:
+                            from generate_demo_data_2026fy import generate_yearly_data
+                            _yearly = generate_yearly_data(year=2026, seed=42)
+                            _yearly_daily = _yearly["daily_df"].copy()
+                            _yearly_daily["date"] = pd.to_datetime(_yearly_daily["date"])
+                            # occupancy_rate / num_beds 補完（初期ロード時と同じロジック）
+                            if "num_beds" not in _yearly_daily.columns:
+                                _yearly_daily["num_beds"] = _yearly_daily["ward"].map(lambda w: get_ward_beds(w))
+                            if "occupancy_rate" not in _yearly_daily.columns:
+                                _yearly_daily["occupancy_rate"] = (
+                                    (_yearly_daily["total_patients"] + _yearly_daily["discharges"])
+                                    / _yearly_daily["num_beds"] * 100
+                                ).round(1)
+                            st.session_state.demo_data = _yearly_daily.sort_values(["date", "ward"]).reset_index(drop=True)
+                            _bc_alert(
+                                f"2026年度デモデータ（2病棟×365日 = {len(_yearly_daily)}レコード）を生成しました。"
+                                "GW・お盆・年末年始を含む連休前後パターンと、冬季呼吸器感染症ピーク等の季節性が反映されています。",
+                                severity="success",
+                            )
+                            _auto_save_to_db()
+                            st.rerun()
+                        except ImportError as _e:
+                            _bc_alert(
+                                f"年度デモデータ生成モジュールが読み込めません: {_e}",
+                                severity="danger",
+                            )
+                        except Exception as _e:  # noqa: BLE001
+                            _bc_alert(f"年度デモデータ生成に失敗しました: {_e}", severity="danger")
+
+                with dm_demo_col3:
                     if st.button("🔄 ランダムデータで再生成（30日分）", key="dm_gen_sample",
                                  help="教育用デモの代わりにランダムなダミーデータを生成します"):
                         _demo_5f = generate_sample_data(num_days=30, num_beds=get_ward_beds("5F"))
@@ -3304,7 +3354,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         _auto_save_to_db()
                         st.rerun()
 
-                with dm_demo_col3:
+                with dm_demo_col4:
                     if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
                         _demo_csv_str = dm_export_to_csv(st.session_state.demo_data)
                         _demo_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
@@ -8875,6 +8925,163 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                             st.write(f"**{_dn}**: {_pattern} （金曜率{_fri_ratio:.0f}%）{_flag}")
                 else:
                     st.info(f"{_selected_month} のデータがありません")
+
+            # =========================================================
+            # 📊 深掘りインサイト（Phase 1: 曜日プロファイル + C群長期化率）
+            # 全期間データで医師ごとの傾向を抽出。月別サマリとは独立。
+            # =========================================================
+            if _DOCTOR_INSIGHT_AVAILABLE:
+                st.markdown("---")
+                _bc_section_title("医師別 改善の可能性（深掘りインサイト）", icon="💡")
+                st.caption(
+                    "全期間の退院データから、医師ごとの傾向を客観指標で抽出します。"
+                    "評価ではなく改善の可能性の提示を目的とし、理事会・師長会議での議論材料に使えます。"
+                )
+
+                _insights_all = _di_build_doctor_insights(_detail_df)
+                if not _insights_all:
+                    _bc_alert(
+                        "深掘りインサイトを出すには退院データが必要です。"
+                        "「日次データ入力」タブで退院イベントを記録してください。",
+                        severity="info",
+                    )
+                else:
+                    # サマリ: warning 件数
+                    _warning_docs = [i for i in _insights_all if i.get("worst_severity") == "warning"]
+                    _neutral_docs = [i for i in _insights_all if i.get("worst_severity") == "neutral"]
+                    _unknown_docs = [i for i in _insights_all if i.get("worst_severity") == "unknown"]
+
+                    _sum_c1, _sum_c2, _sum_c3 = st.columns(3)
+                    with _sum_c1:
+                        _bc_kpi_card(
+                            "注目の医師",
+                            str(len(_warning_docs)),
+                            "名",
+                            severity="warning" if _warning_docs else "neutral",
+                            size="md",
+                        )
+                    with _sum_c2:
+                        _bc_kpi_card(
+                            "平均圏内",
+                            str(len(_neutral_docs)),
+                            "名",
+                            severity="neutral",
+                            size="md",
+                        )
+                    with _sum_c3:
+                        _bc_kpi_card(
+                            "データ不足",
+                            str(len(_unknown_docs)),
+                            "名",
+                            severity="neutral",
+                            size="md",
+                        )
+
+                    # --- 指標 1: 曜日別退院プロファイル ---
+                    st.markdown("##### 📅 曜日別退院プロファイル")
+                    st.caption(
+                        "金曜集中 or 週末回避が顕著な医師を抽出。"
+                        "退院の曜日分散が土日稼働率に直結します。"
+                    )
+                    _wd_rows = []
+                    for ins in _insights_all:
+                        wd = ins.get("weekday")
+                        if not wd:
+                            continue
+                        _severity_icon = {
+                            "warning": "⚠️",
+                            "neutral": "🟢",
+                            "unknown": "—",
+                        }.get(wd.get("severity", "unknown"), "—")
+                        _wd_rows.append({
+                            "": _severity_icon,
+                            "医師名": ins["doctor"],
+                            "退院数": wd.get("total_discharges", 0),
+                            "金曜率(%)": wd.get("friday_pct", 0.0),
+                            "週末率(%)": wd.get("weekend_pct", 0.0),
+                            "観察": wd.get("observation", ""),
+                        })
+                    if _wd_rows:
+                        _wd_df = pd.DataFrame(_wd_rows)
+                        st.dataframe(_wd_df, use_container_width=True, hide_index=True)
+
+                        # 注目医師ごとのアクションヒント
+                        _wd_warnings = [
+                            ins for ins in _insights_all
+                            if ins.get("weekday") and ins["weekday"].get("severity") == "warning"
+                        ]
+                        if _wd_warnings:
+                            for ins in _wd_warnings:
+                                wd = ins["weekday"]
+                                _bc_alert(
+                                    f"**{ins['doctor']}**: {wd['observation']}  \n"
+                                    f"💡 {wd['action_hint']}",
+                                    severity="warning",
+                                )
+                        else:
+                            _bc_alert(
+                                "曜日分布について注目が必要な医師はいません。",
+                                severity="success",
+                            )
+
+                    # --- 指標 2: C群長期化率 ---
+                    st.markdown("##### 🏥 C群（15日以上）長期化率")
+                    st.caption(
+                        "在院15日以上の患者比率。診療科・患者背景で違いはありますが、"
+                        "平均から大きく乖離する場合は退院阻害要因の棚卸しが有効です。"
+                    )
+                    _cg_rows = []
+                    for ins in _insights_all:
+                        cg = ins.get("c_group")
+                        if not cg:
+                            continue
+                        _severity_icon = {
+                            "warning": "⚠️",
+                            "neutral": "🟢",
+                            "unknown": "—",
+                        }.get(cg.get("severity", "unknown"), "—")
+                        _cg_rows.append({
+                            "": _severity_icon,
+                            "医師名": ins["doctor"],
+                            "退院数": cg.get("total_discharges", 0),
+                            "C群数": cg.get("c_group_count", 0),
+                            "C群率(%)": cg.get("c_group_pct", 0.0),
+                            "C群平均LOS(日)": cg.get("avg_los_c", 0.0),
+                            "観察": cg.get("observation", ""),
+                        })
+                    if _cg_rows:
+                        _cg_df = pd.DataFrame(_cg_rows)
+                        st.dataframe(_cg_df, use_container_width=True, hide_index=True)
+
+                        _cg_warnings = [
+                            ins for ins in _insights_all
+                            if ins.get("c_group") and ins["c_group"].get("severity") == "warning"
+                        ]
+                        if _cg_warnings:
+                            for ins in _cg_warnings:
+                                cg = ins["c_group"]
+                                _bc_alert(
+                                    f"**{ins['doctor']}**: {cg['observation']}  \n"
+                                    f"💡 {cg['action_hint']}",
+                                    severity="warning",
+                                )
+                        else:
+                            _bc_alert(
+                                "C群長期化について注目が必要な医師はいません。",
+                                severity="success",
+                            )
+
+                    # --- 将来拡張の予告（非UI） ---
+                    with st.expander("ℹ️ 今後追加予定の深掘り指標", expanded=False):
+                        st.markdown("""
+- **退院調整の速さ** — 入院→退院確定までの平均日数
+- **短手3 活用率 / Day 5 超過率** — 短手3 症例の選び方と延長リスク
+- **救急搬送後入院の貢献度** — 救急 15% 基準達成への寄与
+
+これらは追加実装予定です。現時点では「曜日プロファイル」と「C群長期化率」の 2 指標のみで運用します。
+""")
+            elif "_DOCTOR_INSIGHT_ERROR" in dir():
+                st.caption(f"（深掘りインサイトモジュールの読み込みに失敗しました: {_DOCTOR_INSIGHT_ERROR[:200]}）")
 
 # ---------------------------------------------------------------------------
 # タブ: 💡 改善のヒント（インタラクティブ What-If シミュレーション付き）
