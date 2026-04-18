@@ -2395,3 +2395,156 @@ class TestHistoryStoreHelpers:
         ]
         agg = cmv._aggregate_status_changes(changes)
         assert agg[("", "new")] == 2
+
+
+# ---------------------------------------------------------------------------
+# 10. Live KPI metrics — サマリーと Block A の数値整合性
+# ---------------------------------------------------------------------------
+
+class _FakeSessionState:
+    """st.session_state の .get() インターフェースを模倣する簡易コンテナ."""
+
+    def __init__(self, data: dict):
+        self._d = dict(data)
+
+    def get(self, key, default=None):
+        return self._d.get(key, default)
+
+    def __getitem__(self, key):
+        return self._d[key]
+
+    def __contains__(self, key):
+        return key in self._d
+
+
+class TestLiveKpiMetrics:
+    """_compute_live_kpi_metrics が「本日のサマリー」と同じ数値を返す."""
+
+    def _make_ward_df(self, mean_occ_pct: float, days: int = 18):
+        """occupancy_rate 平均が指定 % になる 1 月分の DataFrame を構築."""
+        import pandas as pd
+        from datetime import datetime, timedelta
+
+        start = datetime(2026, 4, 1)
+        dates = [start + timedelta(days=i) for i in range(days)]
+        # occupancy_rate は 0-1 ratio
+        occ = mean_occ_pct / 100.0
+        return pd.DataFrame(
+            {
+                "date": dates,
+                "occupancy_rate": [occ] * days,
+                "total_patients": [int(47 * occ)] * days,
+                "new_admissions": [5] * days,
+                "discharges": [5] * days,
+                "daily_revenue": [1_500_000] * days,
+                "daily_cost": [900_000] * days,
+                "daily_profit": [600_000] * days,
+                "phase_a_ratio": [0.4] * days,
+                "phase_b_ratio": [0.4] * days,
+                "phase_c_ratio": [0.2] * days,
+            }
+        )
+
+    def test_returns_none_when_no_session_data(self):
+        """session_state 空なら None (サンプル値フォールバック)."""
+        fake = _FakeSessionState({})
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is None
+
+    def test_occupancy_matches_summary_5f(self):
+        """5F の occupancy_pct は ward_raw_dfs["5F"] の occupancy_rate.mean()*100 と一致."""
+        df_5f = self._make_ward_df(86.5)
+        fake = _FakeSessionState({"ward_raw_dfs": {"5F": df_5f}, "ward_raw_dfs_full": {"5F": df_5f}})
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        assert result["occupancy_pct"] == 86.5, (
+            f"Block A の稼働率がサマリーと乖離: Block A={result['occupancy_pct']}, 期待=86.5"
+        )
+
+    def test_occupancy_matches_summary_6f(self):
+        """6F の occupancy_pct もサマリーと一致 (副院長指摘: 6F 91.1% vs 82% の乖離)."""
+        df_6f = self._make_ward_df(91.1)
+        fake = _FakeSessionState({"ward_raw_dfs": {"6F": df_6f}, "ward_raw_dfs_full": {"6F": df_6f}})
+        result = cmv._compute_live_kpi_metrics("6F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        assert result["occupancy_pct"] == 91.1
+
+    def test_sim_ward_dfs_takes_precedence_over_actual(self):
+        """シミュレーションモード時は sim_ward_raw_dfs を優先する."""
+        df_sim = self._make_ward_df(88.0)
+        df_actual = self._make_ward_df(70.0)
+        fake = _FakeSessionState(
+            {
+                "sim_ward_raw_dfs": {"5F": df_sim},
+                "ward_raw_dfs": {"5F": df_actual},
+            }
+        )
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        assert result["occupancy_pct"] == 88.0, "sim_ward_raw_dfs が優先されていない"
+
+    def test_remaining_days_uses_calendar_month_end(self):
+        """残り診療日は当月末までのカレンダー日数と一致する."""
+        df_5f = self._make_ward_df(85.0)
+        fake = _FakeSessionState({"ward_raw_dfs": {"5F": df_5f}, "ward_raw_dfs_full": {"5F": df_5f}})
+        # 2026-04-18 なら 4/30 まで 12 日
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        assert result["remaining_business_days"] == 12.0
+
+    def test_required_bed_days_zero_when_target_met(self):
+        """稼働率が目標 90% を上回っているときは必要床日は 0."""
+        df_5f = self._make_ward_df(92.0)
+        fake = _FakeSessionState({"ward_raw_dfs": {"5F": df_5f}, "ward_raw_dfs_full": {"5F": df_5f}})
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        assert result["required_bed_days"] == 0.0
+
+    def test_alos_computed_from_rolling_los(self):
+        """alos_days は calculate_rolling_los() の結果を反映 (サンプル 17.5 とは異なる値)."""
+        df_5f = self._make_ward_df(86.5, days=90)
+        fake = _FakeSessionState({"ward_raw_dfs": {"5F": df_5f}, "ward_raw_dfs_full": {"5F": df_5f}})
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        # rolling_los = 在院延日数 / ((入院+退院)/2)
+        # 在院延日数 = 47*0.865 * 90 ≈ 3660, (新5+退5)/2 * 90 = 450 → 3660/450 ≈ 8.1
+        # サンプル値 17.5 ではない → 実データ経由で計算されていることを保証
+        assert result["alos_days"] != 17.5
+        assert 0 < result["alos_days"] < 50  # 常識的範囲
+
+    def test_conference_block_a_matches_summary_occupancy(self):
+        """Block A の `conference-occupancy-pct` testid がサマリー月平均と一致する (E2E 代用)."""
+        # サマリー計算式: ward_raw_dfs[ward]["occupancy_rate"].mean() * 100
+        # カンファ Block A: _compute_live_kpi_metrics(ward) → occupancy_pct
+        # 両者が同じ値を返すことを保証する統合テスト。
+        df_6f = self._make_ward_df(91.1)
+        fake = _FakeSessionState({"ward_raw_dfs": {"6F": df_6f}, "ward_raw_dfs_full": {"6F": df_6f}})
+        kpi = cmv._compute_live_kpi_metrics("6F", date(2026, 4, 18), session_state=fake)
+        # サマリーの式を再現して期待値を得る
+        expected_summary_occ = round(float(df_6f["occupancy_rate"].mean()) * 100, 1)
+        assert kpi["occupancy_pct"] == expected_summary_occ, (
+            f"サマリーとカンファ Block A の稼働率が乖離: "
+            f"サマリー={expected_summary_occ} vs Block A={kpi['occupancy_pct']}"
+        )
+
+    def test_fallback_to_full_df_when_current_month_missing(self):
+        """ward_raw_dfs にデータがなくても ward_raw_dfs_full があれば計算できる."""
+        df_full = self._make_ward_df(89.0)
+        fake = _FakeSessionState({"ward_raw_dfs": {}, "ward_raw_dfs_full": {"5F": df_full}})
+        result = cmv._compute_live_kpi_metrics("5F", date(2026, 4, 18), session_state=fake)
+        assert result is not None
+        assert result["occupancy_pct"] == 89.0
+
+    def test_explicit_override_params(self):
+        """ward_dfs_override / ward_dfs_full_override が session_state を上書きする."""
+        df_over = self._make_ward_df(80.0)
+        df_session = self._make_ward_df(95.0)
+        fake = _FakeSessionState({"ward_raw_dfs": {"5F": df_session}})
+        result = cmv._compute_live_kpi_metrics(
+            "5F", date(2026, 4, 18),
+            session_state=fake,
+            ward_dfs_override={"5F": df_over},
+            ward_dfs_full_override={"5F": df_over},
+        )
+        assert result is not None
+        assert result["occupancy_pct"] == 80.0

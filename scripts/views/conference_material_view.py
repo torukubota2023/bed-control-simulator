@@ -569,7 +569,11 @@ def _resolve_patients(
 
 
 def _sample_kpi_metrics(ward: str) -> Dict[str, float]:
-    """病棟別サンプル KPI 値（Phase 1 はハードコード、Phase 2 で実データ接続）."""
+    """病棟別サンプル KPI 値（データ未読込時のフォールバック）.
+
+    実データ連携が可能な場合は :func:`_compute_live_kpi_metrics` を優先し、
+    その関数が ``None`` を返したときのみこのサンプルを使う。
+    """
     if ward == "5F":
         return {
             "occupancy_pct": 85.0,
@@ -585,6 +589,183 @@ def _sample_kpi_metrics(ward: str) -> Dict[str, float]:
         "remaining_business_days": 9.0,
         "required_bed_days": 34.0,
     }
+
+
+def _compute_live_kpi_metrics(
+    ward: str,
+    today: date,
+    *,
+    session_state: Optional[Any] = None,
+    detail_df_override=None,
+    ward_dfs_override: Optional[Dict[str, Any]] = None,
+    ward_dfs_full_override: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, float]]:
+    """「本日のサマリー」と同じデータソースから Block A の KPI を計算する.
+
+    副院長決定 (2026-04-18): サマリー上部と Block A が乖離して見える
+    (例: サマリー 86.5% / カンファ 85%) 問題を解消するため、同じ
+    ``st.session_state`` の ward_raw_dfs / admission_details を参照し、
+    同一の計算関数 (``calculate_rolling_los`` / ``calculate_emergency_ratio``)
+    を呼ぶ。
+
+    Returns
+    -------
+    dict or None
+        計算に必要なデータが揃っている場合のみ dict を返す。
+        揃っていない場合は ``None`` を返し、呼び出し側で
+        :func:`_sample_kpi_metrics` にフォールバックする。
+
+    Notes
+    -----
+    - ``occupancy_pct`` は ``ward_raw_dfs[ward]["occupancy_rate"].mean() * 100``
+      (サマリー「月平均稼働率」と同じ式)
+    - ``alos_days`` は ``calculate_rolling_los(ward_raw_dfs_full[ward], window_days=90)``
+      の ``rolling_los_ex_short3`` (なければ ``rolling_los``)
+      — サマリー「📏 在院日数(90日rolling)」と同じ式
+    - ``emergency_pct`` は ``_calc_emergency_ratio_with_gate`` 互換で病棟別に
+      計算。経過措置中 (~2026-05-31) は単月、本則適用後 (2026-06-01~) は
+      rolling 3ヶ月。admission_details が無ければ None を返す。
+    - 3 指標のいずれかが取得できない場合は、取得できた分だけ上書きし、
+      残りはサンプル値でフォールバックする (部分的実データ表示を許容)。
+    - ``ward == "全体"`` は本ビューでは想定外 (_WARD_OPTIONS は ["5F", "6F"])
+      だが念のため全病棟合算の挙動に対応する。
+    """
+    # セッションステート取得 — st 未初期化 (テストから直接呼ぶ場合) もケア
+    if session_state is None:
+        try:
+            session_state = st.session_state
+        except Exception:
+            return None
+
+    # 取得: 病棟別 raw DataFrame (current month / full)
+    ward_dfs = ward_dfs_override if ward_dfs_override is not None else (
+        session_state.get("sim_ward_raw_dfs")
+        or session_state.get("ward_raw_dfs")
+        or {}
+    )
+    ward_dfs_full = ward_dfs_full_override if ward_dfs_full_override is not None else (
+        session_state.get("sim_ward_raw_dfs_full")
+        or session_state.get("ward_raw_dfs_full")
+        or {}
+    )
+
+    # データが全く無い場合は None を返してサンプルフォールバック
+    if not ward_dfs and not ward_dfs_full:
+        return None
+
+    # サンプルをベースに、取得できた実データで上書きする (部分実データ戦略)
+    result: Dict[str, float] = dict(_sample_kpi_metrics(ward))
+
+    # --- 稼働率 (サマリーと完全一致する式) ---
+    # サマリー (_render_ward_kpi_with_alert) は ward_raw_dfs[ward] の
+    # "occupancy_rate" 列の mean() * 100 を月平均稼働率として表示する。
+    # カンファ Block A も同じ式で計算する。
+    target_df = None
+    if ward in ward_dfs:
+        target_df = ward_dfs.get(ward)
+    if target_df is None or not hasattr(target_df, "columns"):
+        # full データでフォールバック (current month フィルタ前)
+        if ward in ward_dfs_full:
+            target_df = ward_dfs_full.get(ward)
+
+    occ_updated = False
+    if target_df is not None and hasattr(target_df, "columns") and len(target_df) > 0:
+        try:
+            occ_col = "occupancy_rate" if "occupancy_rate" in target_df.columns else "稼働率"
+            occ_series = target_df[occ_col]
+            occ_mean = float(occ_series.mean())
+            # occupancy_rate は 0-1 ratio, 稼働率 は 0-100 または 0-1
+            if occ_col == "occupancy_rate":
+                occ_pct = occ_mean * 100
+            else:
+                occ_pct = occ_mean * 100 if occ_mean < 1.5 else occ_mean
+            result["occupancy_pct"] = round(occ_pct, 1)
+            occ_updated = True
+        except Exception:
+            pass
+
+    # --- 平均在院日数 (サマリーと同じ 90 日 rolling) ---
+    # サマリー (_ward_rolling_results) は calculate_rolling_los() の
+    # rolling_los_ex_short3 (無ければ rolling_los) を表示する。
+    full_target_df = ward_dfs_full.get(ward) if ward in ward_dfs_full else target_df
+    if full_target_df is not None and hasattr(full_target_df, "columns") and len(full_target_df) > 0:
+        try:
+            # 遅延 import で循環 / テスト時 import コスト回避
+            from bed_data_manager import calculate_rolling_los as _calc_rolling_los
+            monthly_summary = session_state.get("monthly_summary") if hasattr(session_state, "get") else None
+            rolling = _calc_rolling_los(
+                full_target_df,
+                window_days=90,
+                monthly_summary=monthly_summary,
+                ward=ward if ward in ("5F", "6F") else None,
+            )
+            if rolling is not None:
+                los_val = rolling.get("rolling_los_ex_short3") or rolling.get("rolling_los")
+                if los_val is not None:
+                    result["alos_days"] = round(float(los_val), 1)
+        except Exception:
+            pass
+
+    # --- 救急搬送後患者割合 (サマリー/意思決定ダッシュボードと同じロジック) ---
+    detail_df = detail_df_override if detail_df_override is not None else (
+        session_state.get("admission_details") if hasattr(session_state, "get") else None
+    )
+    has_details = detail_df is not None and hasattr(detail_df, "columns") and len(detail_df) > 0
+    if has_details:
+        try:
+            # 遅延 import — emergency_ratio を本ビューが直接依存しないように
+            from emergency_ratio import (
+                calculate_emergency_ratio as _calc_er,
+                calculate_rolling_emergency_ratio as _calc_rolling_er,
+                is_transitional_period as _is_transitional,
+            )
+            target_ward = ward if ward in ("5F", "6F") else None
+            ym = f"{today.year:04d}-{today.month:02d}"
+            if _is_transitional(today):
+                # 経過措置中 (~2026-05-31): 単月判定
+                er = _calc_er(detail_df, ward=target_ward, year_month=ym, target_date=today)
+            else:
+                # 本則完全適用 (2026-06-01~): rolling 3ヶ月
+                er = _calc_rolling_er(
+                    detail_df, ward=target_ward, target_date=today, window_months=3,
+                )
+            if er is not None and er.get("ratio_pct") is not None:
+                result["emergency_pct"] = round(float(er["ratio_pct"]), 1)
+        except Exception:
+            pass
+
+    # --- 残り診療日 / 必要床日 ---
+    # カレンダー上の月末までの日数 (サマリーの _calc_remaining_days と同じ簡易式)
+    try:
+        import calendar as _cal
+        last_day = _cal.monthrange(today.year, today.month)[1]
+        remaining = max(0, last_day - today.day)
+        result["remaining_business_days"] = float(remaining)
+    except Exception:
+        pass
+
+    # 必要床日 = (目標稼働率 - 現在月平均稼働率) × 残日数 × 病棟床数
+    # 既にサマリーで達成している場合は 0。
+    try:
+        from bed_data_manager import get_ward_beds as _get_ward_beds
+        ward_beds = _get_ward_beds(ward) if ward in ("5F", "6F") else 94
+        target_pct = float(get_occupancy_target(ward, month=today))  # 90.0 等
+        gap_pct = max(0.0, target_pct - float(result["occupancy_pct"]))
+        rem = float(result.get("remaining_business_days", 0.0))
+        # 必要床日 ≈ gap_pct/100 × ward_beds × 残日数
+        required = round(gap_pct / 100.0 * ward_beds * rem, 0)
+        result["required_bed_days"] = float(required)
+    except Exception:
+        pass
+
+    # occ_updated すら出来ていない場合はサンプルだけを返す形になるが、
+    # 上位の _render_block_a はサンプル dict も受け付けるので問題ない。
+    # ただし 1 指標も更新できなかった場合は None を返し、呼び出し側で
+    # 明示的にサンプルを使う (将来的にテストや警告表示が可能になる)。
+    # データ自体は取れているが計算に失敗した場合のみ部分実データを返す。
+    if not occ_updated and not has_details:
+        return None
+    return result
 
 
 def _sample_weekend_forecast(ward: str, mode: str) -> List[Dict[str, Any]]:
@@ -2853,7 +3034,10 @@ def render_conference_material_view(
     _render_holiday_mode_recommendation_banner(mode, banner)
 
     # --- ブロック A: KPI 5 横並び ---
-    kpi = _sample_kpi_metrics(ward)
+    # サマリー上部の数値と一致させるため、session_state を参照して
+    # 実データから計算する (副院長決定 2026-04-18)。
+    # データが未読込ならサンプル値にフォールバック。
+    kpi = _compute_live_kpi_metrics(ward, _today) or _sample_kpi_metrics(ward)
     _render_block_a(ward, _today, banner, kpi)
 
     # --- 中央: ブロック B (左 300px) + ブロック C (右) ---
