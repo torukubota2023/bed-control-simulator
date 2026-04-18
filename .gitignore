@@ -19,7 +19,17 @@ output/*.png
 
 # Claude Code
 .claude/settings.local.json
+.claude/projects/
 .mcp.json
+
+# Codex IDE (ローカル設定)
+.codex/
+
+# コンパイル済みバイナリ（ソース管理対象外）
+output/claude_allow_watcher/
+
+# 動画作成AI ワークフォルダ（生成物のみ）
+動画作成AI/
 
 # Secrets
 .env
