@@ -1,3 +1,14 @@
+# ベッドコントロールアプリ — 本番依存関係（ここが単一ソース）
+#
+# 📍 重要: 本番用依存はこの1ファイルだけで管理します。
+#   - Streamlit Community Cloud はリポジトリルートの requirements.txt を使う
+#   - 旧 scripts/requirements.txt は削除済み（2重管理による不一致事故防止）
+#   - 他の 要件ファイル:
+#     - requirements-dev.txt: pytest/ruff を追加した開発者向け（ローカルテスト用）
+#     - requirements-edge90.txt: 院内LAN（Edge 90）互換性検証用・固定バージョン
+#
+# 依存を追加/変更する時は、必要に応じて -dev / -edge90 も同期させること。
+
 pandas>=2.0.0
 matplotlib>=3.7.0
 numpy>=1.24.0

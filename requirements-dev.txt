@@ -6,3 +6,4 @@ plotly
 matplotlib
 ruff
 jpholiday
+PyYAML

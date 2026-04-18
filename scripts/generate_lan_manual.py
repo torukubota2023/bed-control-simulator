@@ -248,7 +248,7 @@ def create_manual():
                               "意味：仮想環境を作る（他のソフトに影響しない安全な箱のようなもの）")
     add_code_with_description(doc, "source .venv/bin/activate",
                               "意味：仮想環境に入る（ターミナルの行頭に(.venv)と表示される）")
-    add_code_with_description(doc, "pip install -r scripts/requirements.txt",
+    add_code_with_description(doc, "pip install -r requirements.txt",
                               "意味：シミュレーターに必要なソフトを自動インストールする")
 
     p = add_paragraph(doc, "「Successfully installed ...」と表示されれば完了です。", bold=True)

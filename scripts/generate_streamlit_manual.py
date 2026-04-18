@@ -437,7 +437,7 @@ def main():
             files_info = [
                 ('bed_control_simulator.py', '~/ai-management/scripts/bed_control_simulator.py'),
                 ('bed_control_simulator_app.py', '~/ai-management/scripts/bed_control_simulator_app.py'),
-                ('requirements.txt', '~/ai-management/scripts/requirements.txt'),
+                ('requirements.txt', '~/ai-management/requirements.txt'),
             ]
             for fname, fpath in files_info:
                 p = doc.add_paragraph()
@@ -473,7 +473,7 @@ def main():
     commands = [
         ('cd ~/ai-management', 'ai-managementフォルダに移動します。'),
         ('git init', 'Gitの管理を開始します（初回のみ必要）。'),
-        ('git add scripts/bed_control_simulator.py scripts/bed_control_simulator_app.py scripts/requirements.txt',
+        ('git add scripts/bed_control_simulator.py scripts/bed_control_simulator_app.py requirements.txt',
          'アップロードするファイルを選択します。'),
         ('git commit -m "ベッドコントロールシミュレーター初回コミット"', '変更内容を記録します。'),
         ('git remote add origin https://github.com/ユーザー名/bed-control-simulator.git',
