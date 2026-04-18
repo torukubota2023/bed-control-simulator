@@ -433,7 +433,7 @@ facts:
     year: 2026
     n: "前向きコホート"
     pmid: "41672875"
-    doi: "10.1136/emermed-2025-215012"
+    doi: "10.1136/emermed-2025-214983"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
