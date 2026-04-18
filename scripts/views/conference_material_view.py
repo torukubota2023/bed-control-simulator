@@ -396,6 +396,10 @@ def _inject_css() -> None:
     Streamlit デフォルトの余白（block-container padding 96+160px, gap 16px）を
     極小化し、patient 行の popover ボタン高さを 40px → 22px に下げる.
 
+    2026-04-18 追加調整（副院長指示）: 770px への圧縮は「縮めすぎ」で文字が重なって
+    読みにくい状態のため、125% 拡大（~960px）で視認性を回復する.
+    「ヘッダーとエビデンスがギリギリ収まる」を目標にし、文字重なりを解消する.
+
     印刷時にファクトバーを非表示にする ``@media print`` も同時に注入する。
     """
     st.markdown(
@@ -412,77 +416,77 @@ def _inject_css() -> None:
             padding-bottom: 0.5rem !important;
             max-width: 100% !important;
         }
-        /* トップレベル要素間の16pxギャップを4pxに圧縮 */
+        /* トップレベル要素間のギャップ（125%拡大: 0.25rem → 0.3rem） */
         section[data-testid="stMainBlockContainer"] > div[data-testid="stVerticalBlock"] {
-            gap: 0.25rem !important;
+            gap: 0.3rem !important;
         }
         /* コンテナ幅拡張（互換） */
         .conf-root .block-container { padding-top: 1rem; padding-bottom: 0.5rem; }
         /* ========================================================
-           2. ヘッダー（圧縮: padding 8→6, title 16→15）
+           2. ヘッダー（125%拡大: padding 6→8, title 15→16）
            ======================================================== */
         .conf-header {
             background: #2c3e50;
             color: #fff;
-            padding: 6px 14px;
+            padding: 8px 16px;
             border-radius: 4px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
         }
-        .conf-header .title { font-size: 15px; font-weight: 600; }
+        .conf-header .title { font-size: 16px; font-weight: 600; }
         .conf-header .mode {
             background: #e67e22;
-            padding: 2px 8px;
+            padding: 3px 10px;
             border-radius: 4px;
-            font-size: 11px;
+            font-size: 12px;
             margin-left: 8px;
         }
         .conf-header .mode.holiday {
             background: #c0392b;
             font-weight: 700;
         }
-        .conf-header .meta { font-size: 12px; opacity: 0.9; }
+        .conf-header .meta { font-size: 13px; opacity: 0.9; }
         .conf-header .meta .days.urgent { color: #ff6b6b; font-weight: 700; }
         .conf-header .meta .days.warning { color: #f39c12; font-weight: 600; }
         /* ========================================================
-           3. KPI 行（圧縮: padding 8→4, value 20→18, fonts -1）
+           3. KPI 行（125%拡大: padding 4→6, value 18→22, fonts +1-2）
            ======================================================== */
         .conf-kpi-row {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 4px;
-            padding: 4px 10px;
+            padding: 6px 12px;
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: 10px;
-            margin-bottom: 4px;
+            gap: 12px;
+            margin-bottom: 5px;
         }
-        .conf-kpi { text-align: center; line-height: 1.15; }
-        .conf-kpi .label { font-size: 9px; color: #666; }
+        .conf-kpi { text-align: center; line-height: 1.2; }
+        .conf-kpi .label { font-size: 11px; color: #666; }
         .conf-kpi .value {
-            font-size: 18px;
+            font-size: 22px;
             font-weight: 700;
             color: #2c3e50;
         }
         .conf-kpi .value.warning { color: #e67e22; }
         .conf-kpi .value.danger { color: #c0392b; }
         .conf-kpi .value.good { color: #27ae60; }
-        .conf-kpi .unit { font-size: 11px; color: #666; font-weight: normal; }
-        .conf-kpi .target { font-size: 10px; color: #888; }
+        .conf-kpi .unit { font-size: 12px; color: #666; font-weight: normal; }
+        .conf-kpi .target { font-size: 11px; color: #888; }
         /* ステータスタグ（Block B の内訳で使用する静的表示） */
         .conf-status-tag {
             display: inline-block;
-            padding: 1px 8px;
+            padding: 2px 10px;
             border-radius: 10px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             white-space: nowrap;
         }
         /* ========================================================
-           5. 患者行（圧縮: padding 4→2, font 12→11）
+           5. 患者行（125%拡大: padding 2→3, font 11→12, min-height 20→26）
            ======================================================== */
         /* 患者行 — 医師/患者 170px / 病棟 32px / Day 46px / 予定 72px / 確認事項 1fr
            ステータスと編集は Streamlit 列側に分離（popover クリック用） */
@@ -491,17 +495,17 @@ def _inject_css() -> None:
             grid-template-columns: 170px 32px 46px 72px 1fr;
             gap: 6px;
             align-items: center;
-            padding: 2px 6px;
-            font-size: 11px;
+            padding: 3px 8px;
+            font-size: 12px;
             border-bottom: 1px solid #f3f3f3;
-            line-height: 1.25;
-            min-height: 20px;
+            line-height: 1.3;
+            min-height: 26px;
         }
         .conf-patient-row .doctor { font-weight: 600; color: #333; }
         .conf-patient-row .doctor .pname { color: #444; font-weight: 500; }
         .conf-patient-row .doctor .pid {
             color: #888;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 400;
             margin-left: 4px;
         }
@@ -521,28 +525,27 @@ def _inject_css() -> None:
             white-space: nowrap;
         }
         /* ========================================================
-           6. Block C 列全体: popover button 高さ & 列余白を圧縮
-              ここがカンファ画面 1 画面収納の最大のポイント
-              （患者 10 行 × 約 18px 削減 = 180px の短縮）
+           6. Block C 列全体: popover button 高さ & 列余白
+              125%拡大: 22px → 28px で文字重なり解消（患者 10 名全員表示維持）
            ======================================================== */
-        /* カンファ画面内の全 popover button を 22px 高さに
+        /* カンファ画面内の全 popover button を 28px 高さに
            st.markdown('<div class="conf-root">') は自己閉じ要素で
            子孫セレクタが効かないため、グローバルに適用.
            ベッドコントロールアプリ本体で st.popover は未使用のため影響なし. */
         div[data-testid="stPopover"] > button,
         button[data-testid="stPopoverButton"],
         .stPopover button {
-            min-height: 22px !important;
-            height: 22px !important;
-            padding: 2px 8px !important;
-            font-size: 10px !important;
-            line-height: 1.2 !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            padding: 3px 10px !important;
+            font-size: 11px !important;
+            line-height: 1.25 !important;
             font-weight: 500 !important;
             white-space: nowrap !important;
         }
         /* 患者行を含む水平ブロックの列間 gap & マージンを縮める（:has セレクタ）*/
         div[data-testid="stHorizontalBlock"]:has(.conf-patient-row) {
-            gap: 4px !important;
+            gap: 5px !important;
             margin-bottom: 0 !important;
             min-height: unset !important;
         }
@@ -558,39 +561,39 @@ def _inject_css() -> None:
             margin: 0 !important;
         }
         /* ========================================================
-           7. 予測行
+           7. 予測行（125%拡大）
            ======================================================== */
         .conf-forecast-row {
             display: grid;
             grid-template-columns: 60px 1fr 1fr;
-            gap: 4px;
-            font-size: 11px;
-            padding: 2px 0;
+            gap: 5px;
+            font-size: 12px;
+            padding: 3px 0;
             border-bottom: 1px dashed #eee;
         }
         .conf-forecast-row .day { font-weight: 600; }
         .conf-forecast-row .vacancy.warn { color: #e67e22; font-weight: 600; }
         .conf-forecast-row .vacancy.danger { color: #c0392b; font-weight: 600; }
         .conf-forecast-summary {
-            margin-top: 4px;
-            padding: 4px 6px;
+            margin-top: 5px;
+            padding: 6px 8px;
             background: #fff3e0;
             border-radius: 4px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             text-align: center;
             color: #e65100;
         }
         /* ========================================================
-           8. 役割ブロック（圧縮: padding 6→4, role-name 13→11, li 11→10）
+           8. 役割ブロック（125%拡大: padding 4→6, role-name 11→13, li 10→11）
            ======================================================== */
         .conf-role {
-            padding: 4px 8px;
+            padding: 6px 10px;
             border-left: 3px solid #3498db;
-            font-size: 11px;
+            font-size: 12px;
             background: #fafbfc;
             border-radius: 2px;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
         .conf-role.reha { border-left-color: #27ae60; }
         .conf-role.disch { border-left-color: #e67e22; }
@@ -598,43 +601,43 @@ def _inject_css() -> None:
         .conf-role.nurse { border-left-color: #3498db; }
         .conf-role .role-name {
             font-weight: 700;
-            font-size: 11px;
-            margin-bottom: 2px;
+            font-size: 13px;
+            margin-bottom: 3px;
         }
         .conf-role ul { list-style: none; padding: 0; margin: 0; }
-        .conf-role li { font-size: 10px; line-height: 1.3; padding: 0; color: #444; }
+        .conf-role li { font-size: 11px; line-height: 1.35; padding: 0; color: #444; }
         .conf-role li::before { content: "・"; margin-right: 2px; }
         /* ========================================================
-           9. ファクトバー（圧縮: padding 8→4, fonts -1）
+           9. ファクトバー（125%拡大: padding 4→6, fonts +1-2）
            ======================================================== */
         .conf-fact-bar {
             background: #2c3e50;
             color: #ecf0f1;
-            padding: 4px 12px;
+            padding: 6px 14px;
             border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 11px;
-            margin-top: 4px;
+            font-size: 12px;
+            margin-top: 5px;
         }
         .conf-fact-bar .fact-label {
-            font-size: 9px;
+            font-size: 11px;
             background: #34495e;
-            padding: 2px 6px;
+            padding: 3px 8px;
             border-radius: 3px;
             margin-right: 10px;
         }
         .conf-fact-bar .fact-text { flex: 1; }
         .conf-fact-bar .fact-src {
-            font-size: 9px;
+            font-size: 11px;
             opacity: 0.75;
             margin-left: 10px;
         }
         /* ========================================================
            10. ステータス popover trigger（タグ風スタイル）
                副院長決定（2026-04-17）: ステータスタグ自体をクリッカブルに
-               2026-04-18: 1画面収納のため高さを 22px に圧縮
+               2026-04-18: 125%拡大で 22px → 28px（文字重なり解消）
            ======================================================== */
         .conf-status-popover-wrap .stPopover > div[data-testid="stPopoverButton"] > button,
         .conf-status-popover-wrap div[data-testid="stPopover"] > div > button,
@@ -642,13 +645,13 @@ def _inject_css() -> None:
             background: var(--conf-status-bg, #e9ecef) !important;
             color: var(--conf-status-fg, #495057) !important;
             border: none !important;
-            border-radius: 11px !important;
-            padding: 1px 8px !important;
-            font-size: 10px !important;
+            border-radius: 14px !important;
+            padding: 2px 10px !important;
+            font-size: 11px !important;
             font-weight: 600 !important;
-            min-height: 22px !important;
-            height: 22px !important;
-            line-height: 1.2 !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            line-height: 1.25 !important;
             white-space: nowrap !important;
             box-shadow: none !important;
         }
@@ -659,34 +662,34 @@ def _inject_css() -> None:
             cursor: pointer !important;
         }
         /* ========================================================
-           11. 編集ボタン（✏️）
+           11. 編集ボタン（✏️）125%拡大
            ======================================================== */
         .conf-edit-btn-wrap .stPopover > div[data-testid="stPopoverButton"] > button,
         .conf-edit-btn-wrap div[data-testid="stPopover"] > div > button,
         .conf-edit-btn-wrap button[kind="secondary"] {
-            min-height: 22px !important;
-            height: 22px !important;
-            padding: 1px 6px !important;
-            font-size: 10px !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            padding: 2px 8px !important;
+            font-size: 11px !important;
         }
         /* ========================================================
-           12. 上部コントロール（病棟/モード）の高さ圧縮
+           12. 上部コントロール（病棟/モード）125%拡大
            ======================================================== */
         .conf-root div[data-testid="stSelectbox"] {
             margin-bottom: 0 !important;
         }
         .conf-root div[data-testid="stSelectbox"] > label,
         .conf-root div[data-testid="stCheckbox"] > label {
-            font-size: 11px !important;
+            font-size: 12px !important;
             padding-bottom: 0 !important;
             margin-bottom: 2px !important;
         }
         .conf-root div[data-baseweb="select"] > div {
-            min-height: 32px !important;
+            min-height: 36px !important;
         }
-        /* トグルラベルも圧縮 */
+        /* トグルラベルも 125%拡大 */
         .conf-root label[data-testid="stWidgetLabel"] {
-            font-size: 11px !important;
+            font-size: 12px !important;
         }
         /* ========================================================
            13. 印刷時設定
@@ -1045,20 +1048,20 @@ def _render_holiday_mode_recommendation_banner(
         f"""
         <style>
         .conf-holiday-recommend-banner {{
-            margin: 2px 0 4px 0;
-            padding: 4px 10px;
+            margin: 4px 0 6px 0;
+            padding: 6px 12px;
             border-left: 4px solid {color["border"]};
             background: {color["bg"]};
             color: {color["fg"]};
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             border-radius: 0 6px 6px 0;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            line-height: 1.3;
+            line-height: 1.35;
         }}
         .conf-holiday-recommend-banner .hint {{
             font-weight: 400;
-            font-size: 10px;
+            font-size: 11px;
             opacity: 0.85;
             margin-left: 8px;
         }}
@@ -1218,7 +1221,7 @@ def _render_block_a(
           </div>
           <div class="conf-kpi">
             <div class="label">次の大型連休</div>
-            <div class="value" style="color:{countdown_color};font-size:16px;">{countdown_text}</div>
+            <div class="value" style="color:{countdown_color};font-size:18px;">{countdown_text}</div>
             <div class="target">{countdown_sub}</div>
           </div>
         </div>
@@ -1294,7 +1297,7 @@ def _render_block_b(
         for meta in _STATUS_HOLIDAY:
             count = status_counts.get(meta["key"], 0)
             breakdown_items.append(
-                f'<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;">'
+                f'<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;">'
                 f'{_format_status_tag(meta["key"], mode)}'
                 f'<span style="font-weight:600;">{count}名</span></div>'
             )
@@ -1304,7 +1307,7 @@ def _render_block_b(
         for meta in _STATUS_NORMAL:
             count = status_counts.get(meta["key"], 0)
             breakdown_items.append(
-                f'<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;">'
+                f'<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;">'
                 f'{_format_status_tag(meta["key"], mode)}'
                 f'<span style="font-weight:600;">{count}名</span></div>'
             )
@@ -1312,11 +1315,11 @@ def _render_block_b(
 
     st.markdown(
         f"""
-        <div style="border:1px solid #dee2e6;border-radius:4px;padding:10px;background:#fefefe;">
-          <div style="font-size:13px;font-weight:700;color:#555;margin-bottom:6px;">{title}</div>
+        <div style="border:1px solid #dee2e6;border-radius:4px;padding:12px;background:#fefefe;">
+          <div style="font-size:14px;font-weight:700;color:#555;margin-bottom:7px;">{title}</div>
           {forecast_rows_html}
           <div class="conf-forecast-summary" style="background:{cost_bg};color:{cost_fg};">{cost_text}</div>
-          <div style="font-size:12px;font-weight:700;color:#555;margin-top:10px;margin-bottom:4px;">
+          <div style="font-size:13px;font-weight:700;color:#555;margin-top:12px;margin-bottom:5px;">
             {breakdown_title}
           </div>
           {"".join(breakdown_items)}
@@ -1365,11 +1368,11 @@ def _render_block_c(
 
     st.markdown(
         f"""
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div style="font-size:13px;font-weight:700;color:#555;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+          <div style="font-size:14px;font-weight:700;color:#555;">
             個別患者のステータス（カンファで更新）
           </div>
-          <div style="font-size:11px;color:#666;">
+          <div style="font-size:12px;color:#666;">
             表示中 {len(displayed)} / 最大 {_MAX_PATIENTS_DISPLAYED} 名
           </div>
         </div>
@@ -1384,7 +1387,7 @@ def _render_block_c(
     )
     with header_col_html:
         st.markdown(
-            '<div class="conf-patient-row" style="font-size:10px;color:#666;font-weight:600;'
+            '<div class="conf-patient-row" style="font-size:11px;color:#666;font-weight:600;'
             'border-bottom:2px solid #aaa;">'
             '<span>医師 / 患者</span><span>病棟</span><span>在院</span>'
             '<span>退院予定</span><span>確認事項</span>'
@@ -1393,14 +1396,14 @@ def _render_block_c(
         )
     with header_col_status:
         st.markdown(
-            '<div style="font-size:10px;color:#666;font-weight:600;text-align:center;'
-            'padding:4px 0;border-bottom:2px solid #aaa;">ステータス</div>',
+            '<div style="font-size:11px;color:#666;font-weight:600;text-align:center;'
+            'padding:5px 0;border-bottom:2px solid #aaa;">ステータス</div>',
             unsafe_allow_html=True,
         )
     with header_col_edit:
         st.markdown(
-            '<div style="font-size:10px;color:#666;font-weight:600;text-align:center;'
-            'padding:4px 0;border-bottom:2px solid #aaa;">編集</div>',
+            '<div style="font-size:11px;color:#666;font-weight:600;text-align:center;'
+            'padding:5px 0;border-bottom:2px solid #aaa;">編集</div>',
             unsafe_allow_html=True,
         )
 
