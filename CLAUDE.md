@@ -167,6 +167,44 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 - `data-testid` が必要な箇所は `kpi_card(testid=...)` で hidden div 付き
 - severity 色は意味が一意に定まるまで `neutral` を選ぶ（将来判断しやすいように）
 
+## 📚 エビデンス検証完了記録（2026-04-18）
+
+カンファ画面下部のエビデンスバー用 `data/facts.yaml`（80 件、v2）について、**全件を一次文献として PubMed MCP で精密検証**。副院長の医療倫理的要求（毎日表示されるローテーション 12 件は看護師・リハ・退院支援 NS・医師の信頼を損なってはならない）に応えるため実施。
+
+### 検証範囲
+- ローテーション 12 件（`rotation_eligible: true`）
+- 折りたたみ 68 件（`rotation_eligible: false`、Layer 1-3 / 4-6 / 7）
+- PMID 付き 約 54 件 + 国内統計 26 件
+
+### 最終結果
+| 項目 | 結果 |
+|------|------|
+| ハルシネーション | **0 件** ✅ |
+| 致命的誤引用（別論文） | 先行で 2 件発見→修正済（f015 Loertscher / f021 Hartley） |
+| PMID 実在確認 | 100% |
+| 数値・内容一致 | 100%（軽微修正 7 件を含む） |
+| DOI 整合率 | **100%**（全件 PubMed 公式 DOI に統一） |
+
+### 累計修正 32 件
+- DOI 誤記修正: 25 件（全 PMID 付きで公式 DOI に統一）
+- n 数・内容修正: 5 件（f009, f036, f038, f079, f080）
+- 致命的誤引用修正: 2 件（f015, f021）
+
+### 検証レポート（7 本）
+- [evidence_verification_rotation_12_2026-04-18.md](docs/admin/evidence_verification_rotation_12_2026-04-18.md)
+- [evidence_verification_layer123_2026-04-18.md](docs/admin/evidence_verification_layer123_2026-04-18.md)
+- [evidence_verification_layer456_2026-04-18.md](docs/admin/evidence_verification_layer456_2026-04-18.md)
+- [evidence_verification_layer7_2026-04-18.md](docs/admin/evidence_verification_layer7_2026-04-18.md)
+- [evidence_doi_crosscheck_2026-04-18.md](docs/admin/evidence_doi_crosscheck_2026-04-18.md)
+- [evidence_doi_crosscheck_layer7_2026-04-18.md](docs/admin/evidence_doi_crosscheck_layer7_2026-04-18.md)
+- [evidence_f079_verification_2026-04-18.md](docs/admin/evidence_f079_verification_2026-04-18.md)
+
+### 今後の運用ルール
+- 新規エビデンス追加時は必ず PubMed MCP で fetch_summary を取得し、PMID＋公式 DOI をそのままコピーする
+- 「論文を知っている」状態から記憶で書かない
+- 数値・n 数は abstract から直接取る
+- 二次引用・孫引き・レビューからの孫引きは禁止（原著に必ずトレースダウン）
+
 ## MCP接続
 - PubMed: 文献検索・メタデータ取得・フルテキスト取得
   - 検索結果は必ずPMID・DOIを記録する
