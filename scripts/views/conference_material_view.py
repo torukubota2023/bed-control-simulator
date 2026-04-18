@@ -392,63 +392,86 @@ def _select_fact(
 def _inject_css() -> None:
     """画面共通の CSS を注入する（モック HTML に近いルック）.
 
+    2026-04-18 副院長指示で「1920x1080 で全要素が1画面収納」を目標に圧縮実施.
+    Streamlit デフォルトの余白（block-container padding 96+160px, gap 16px）を
+    極小化し、patient 行の popover ボタン高さを 40px → 22px に下げる.
+
     印刷時にファクトバーを非表示にする ``@media print`` も同時に注入する。
     """
     st.markdown(
         """
         <style>
-        /* コンテナ幅拡張 */
-        .conf-root .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-        /* ヘッダー */
+        /* ========================================================
+           1. Streamlit デフォルト余白の圧縮（1画面収納の主役）
+           ======================================================== */
+        /* block-container の大きな上下パディング（96+160px）を削減 */
+        section[data-testid="stMainBlockContainer"],
+        .main .block-container,
+        .block-container {
+            padding-top: 1.5rem !important;
+            padding-bottom: 0.5rem !important;
+            max-width: 100% !important;
+        }
+        /* トップレベル要素間の16pxギャップを4pxに圧縮 */
+        section[data-testid="stMainBlockContainer"] > div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
+        /* コンテナ幅拡張（互換） */
+        .conf-root .block-container { padding-top: 1rem; padding-bottom: 0.5rem; }
+        /* ========================================================
+           2. ヘッダー（圧縮: padding 8→6, title 16→15）
+           ======================================================== */
         .conf-header {
             background: #2c3e50;
             color: #fff;
-            padding: 8px 16px;
+            padding: 6px 14px;
             border-radius: 4px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
-            margin-bottom: 10px;
+            margin-bottom: 4px;
         }
-        .conf-header .title { font-size: 16px; font-weight: 600; }
+        .conf-header .title { font-size: 15px; font-weight: 600; }
         .conf-header .mode {
             background: #e67e22;
-            padding: 3px 10px;
+            padding: 2px 8px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             margin-left: 8px;
         }
         .conf-header .mode.holiday {
             background: #c0392b;
             font-weight: 700;
         }
-        .conf-header .meta { font-size: 13px; opacity: 0.9; }
+        .conf-header .meta { font-size: 12px; opacity: 0.9; }
         .conf-header .meta .days.urgent { color: #ff6b6b; font-weight: 700; }
         .conf-header .meta .days.warning { color: #f39c12; font-weight: 600; }
-        /* KPI 行 */
+        /* ========================================================
+           3. KPI 行（圧縮: padding 8→4, value 20→18, fonts -1）
+           ======================================================== */
         .conf-kpi-row {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 4px;
-            padding: 8px 12px;
+            padding: 4px 10px;
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-            margin-bottom: 10px;
+            gap: 10px;
+            margin-bottom: 4px;
         }
-        .conf-kpi { text-align: center; }
-        .conf-kpi .label { font-size: 10px; color: #666; }
+        .conf-kpi { text-align: center; line-height: 1.15; }
+        .conf-kpi .label { font-size: 9px; color: #666; }
         .conf-kpi .value {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
             color: #2c3e50;
         }
         .conf-kpi .value.warning { color: #e67e22; }
         .conf-kpi .value.danger { color: #c0392b; }
         .conf-kpi .value.good { color: #27ae60; }
-        .conf-kpi .unit { font-size: 12px; color: #666; font-weight: normal; }
-        .conf-kpi .target { font-size: 11px; color: #888; }
+        .conf-kpi .unit { font-size: 11px; color: #666; font-weight: normal; }
+        .conf-kpi .target { font-size: 10px; color: #888; }
         /* ステータスタグ（Block B の内訳で使用する静的表示） */
         .conf-status-tag {
             display: inline-block;
@@ -458,6 +481,9 @@ def _inject_css() -> None:
             font-weight: 600;
             white-space: nowrap;
         }
+        /* ========================================================
+           5. 患者行（圧縮: padding 4→2, font 12→11）
+           ======================================================== */
         /* 患者行 — 医師/患者 170px / 病棟 32px / Day 46px / 予定 72px / 確認事項 1fr
            ステータスと編集は Streamlit 列側に分離（popover クリック用） */
         .conf-patient-row {
@@ -465,10 +491,11 @@ def _inject_css() -> None:
             grid-template-columns: 170px 32px 46px 72px 1fr;
             gap: 6px;
             align-items: center;
-            padding: 4px 6px;
-            font-size: 12px;
+            padding: 2px 6px;
+            font-size: 11px;
             border-bottom: 1px solid #f3f3f3;
-            line-height: 1.3;
+            line-height: 1.25;
+            min-height: 20px;
         }
         .conf-patient-row .doctor { font-weight: 600; color: #333; }
         .conf-patient-row .doctor .pname { color: #444; font-weight: 500; }
@@ -487,37 +514,83 @@ def _inject_css() -> None:
         .conf-patient-row .ward.f6 { color: #8e44ad; font-weight: 600; }
         .conf-patient-row .day { color: #666; }
         .conf-patient-row .plan-date { color: #555; }
-        .conf-patient-row .note { color: #333; }
-        /* 予測行 */
+        .conf-patient-row .note {
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        /* ========================================================
+           6. Block C 列全体: popover button 高さ & 列余白を圧縮
+              ここがカンファ画面 1 画面収納の最大のポイント
+              （患者 10 行 × 約 18px 削減 = 180px の短縮）
+           ======================================================== */
+        /* カンファ画面内の全 popover button を 22px 高さに
+           st.markdown('<div class="conf-root">') は自己閉じ要素で
+           子孫セレクタが効かないため、グローバルに適用.
+           ベッドコントロールアプリ本体で st.popover は未使用のため影響なし. */
+        div[data-testid="stPopover"] > button,
+        button[data-testid="stPopoverButton"],
+        .stPopover button {
+            min-height: 22px !important;
+            height: 22px !important;
+            padding: 2px 8px !important;
+            font-size: 10px !important;
+            line-height: 1.2 !important;
+            font-weight: 500 !important;
+            white-space: nowrap !important;
+        }
+        /* 患者行を含む水平ブロックの列間 gap & マージンを縮める（:has セレクタ）*/
+        div[data-testid="stHorizontalBlock"]:has(.conf-patient-row) {
+            gap: 4px !important;
+            margin-bottom: 0 !important;
+            min-height: unset !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.conf-patient-row) > [data-testid="stColumn"] {
+            padding: 0 !important;
+        }
+        /* popover を持つ列の内部 vertical gap を 0 に */
+        [data-testid="stColumn"]:has(button[data-testid="stPopoverButton"]) > div[data-testid="stVerticalBlock"] {
+            gap: 0 !important;
+        }
+        /* stElementContainer の余白（popover 列のみ）*/
+        [data-testid="stColumn"]:has(button[data-testid="stPopoverButton"]) [data-testid="stElementContainer"] {
+            margin: 0 !important;
+        }
+        /* ========================================================
+           7. 予測行
+           ======================================================== */
         .conf-forecast-row {
             display: grid;
             grid-template-columns: 60px 1fr 1fr;
             gap: 4px;
-            font-size: 12px;
-            padding: 3px 0;
+            font-size: 11px;
+            padding: 2px 0;
             border-bottom: 1px dashed #eee;
         }
         .conf-forecast-row .day { font-weight: 600; }
         .conf-forecast-row .vacancy.warn { color: #e67e22; font-weight: 600; }
         .conf-forecast-row .vacancy.danger { color: #c0392b; font-weight: 600; }
         .conf-forecast-summary {
-            margin-top: 8px;
-            padding: 8px;
+            margin-top: 4px;
+            padding: 4px 6px;
             background: #fff3e0;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             text-align: center;
             color: #e65100;
         }
-        /* 役割ブロック */
+        /* ========================================================
+           8. 役割ブロック（圧縮: padding 6→4, role-name 13→11, li 11→10）
+           ======================================================== */
         .conf-role {
-            padding: 6px 10px;
+            padding: 4px 8px;
             border-left: 3px solid #3498db;
-            font-size: 12px;
+            font-size: 11px;
             background: #fafbfc;
             border-radius: 2px;
-            margin-bottom: 6px;
+            margin-bottom: 2px;
         }
         .conf-role.reha { border-left-color: #27ae60; }
         .conf-role.disch { border-left-color: #e67e22; }
@@ -525,26 +598,28 @@ def _inject_css() -> None:
         .conf-role.nurse { border-left-color: #3498db; }
         .conf-role .role-name {
             font-weight: 700;
-            font-size: 13px;
-            margin-bottom: 4px;
+            font-size: 11px;
+            margin-bottom: 2px;
         }
         .conf-role ul { list-style: none; padding: 0; margin: 0; }
-        .conf-role li { font-size: 11px; line-height: 1.4; padding: 1px 0; color: #444; }
+        .conf-role li { font-size: 10px; line-height: 1.3; padding: 0; color: #444; }
         .conf-role li::before { content: "・"; margin-right: 2px; }
-        /* ファクトバー */
+        /* ========================================================
+           9. ファクトバー（圧縮: padding 8→4, fonts -1）
+           ======================================================== */
         .conf-fact-bar {
             background: #2c3e50;
             color: #ecf0f1;
-            padding: 8px 14px;
+            padding: 4px 12px;
             border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 12px;
-            margin-top: 10px;
+            font-size: 11px;
+            margin-top: 4px;
         }
         .conf-fact-bar .fact-label {
-            font-size: 10px;
+            font-size: 9px;
             background: #34495e;
             padding: 2px 6px;
             border-radius: 3px;
@@ -552,26 +627,28 @@ def _inject_css() -> None:
         }
         .conf-fact-bar .fact-text { flex: 1; }
         .conf-fact-bar .fact-src {
-            font-size: 10px;
+            font-size: 9px;
             opacity: 0.75;
             margin-left: 10px;
         }
-        /* ステータス popover trigger（タグ風スタイル）
-           副院長決定（2026-04-17）: ステータスタグ自体をクリッカブルにして
-           タグ → プルダウン → その場で変更 の一貫した UX にする */
+        /* ========================================================
+           10. ステータス popover trigger（タグ風スタイル）
+               副院長決定（2026-04-17）: ステータスタグ自体をクリッカブルに
+               2026-04-18: 1画面収納のため高さを 22px に圧縮
+           ======================================================== */
         .conf-status-popover-wrap .stPopover > div[data-testid="stPopoverButton"] > button,
         .conf-status-popover-wrap div[data-testid="stPopover"] > div > button,
         .conf-status-popover-wrap button[kind="secondary"] {
             background: var(--conf-status-bg, #e9ecef) !important;
             color: var(--conf-status-fg, #495057) !important;
             border: none !important;
-            border-radius: 12px !important;
-            padding: 2px 10px !important;
-            font-size: 11px !important;
+            border-radius: 11px !important;
+            padding: 1px 8px !important;
+            font-size: 10px !important;
             font-weight: 600 !important;
-            min-height: 24px !important;
-            height: auto !important;
-            line-height: 1.3 !important;
+            min-height: 22px !important;
+            height: 22px !important;
+            line-height: 1.2 !important;
             white-space: nowrap !important;
             box-shadow: none !important;
         }
@@ -581,15 +658,39 @@ def _inject_css() -> None:
             opacity: 0.9 !important;
             cursor: pointer !important;
         }
-        /* 編集ボタン（✏️）も小さく */
+        /* ========================================================
+           11. 編集ボタン（✏️）
+           ======================================================== */
         .conf-edit-btn-wrap .stPopover > div[data-testid="stPopoverButton"] > button,
         .conf-edit-btn-wrap div[data-testid="stPopover"] > div > button,
         .conf-edit-btn-wrap button[kind="secondary"] {
-            min-height: 24px !important;
-            height: auto !important;
-            padding: 2px 6px !important;
+            min-height: 22px !important;
+            height: 22px !important;
+            padding: 1px 6px !important;
+            font-size: 10px !important;
+        }
+        /* ========================================================
+           12. 上部コントロール（病棟/モード）の高さ圧縮
+           ======================================================== */
+        .conf-root div[data-testid="stSelectbox"] {
+            margin-bottom: 0 !important;
+        }
+        .conf-root div[data-testid="stSelectbox"] > label,
+        .conf-root div[data-testid="stCheckbox"] > label {
+            font-size: 11px !important;
+            padding-bottom: 0 !important;
+            margin-bottom: 2px !important;
+        }
+        .conf-root div[data-baseweb="select"] > div {
+            min-height: 32px !important;
+        }
+        /* トグルラベルも圧縮 */
+        .conf-root label[data-testid="stWidgetLabel"] {
             font-size: 11px !important;
         }
+        /* ========================================================
+           13. 印刷時設定
+           ======================================================== */
         @media print {
             .conf-fact-bar { display: none !important; }
             /* 編集ボタン（popover）は印刷時に非表示。患者名・ID はそのまま印刷 */
@@ -727,19 +828,20 @@ def _classify_emergency(pct: float, minimum: float) -> str:
 def _render_data_manage_expander() -> None:
     """一括クリア UI（副院長決定 2026-04-17 Q2=🅰 / Q3=🅱 / Q4=🅱）.
 
-    - ヘッダー付近に ``st.expander`` で配置（closed by default）
+    - 2026-04-18 圧縮（副院長指示）: メイン画面の縦幅を食わないよう
+      ``st.sidebar`` 配下の ``st.expander`` に移設（closed by default）
     - チェックボックスで対象を選択（主治医名 / 患者名 / 患者ID / ステータス）
     - 「クリア」のタイプ入力で二重確認
     - 入力 == "クリア" かつ 1 件以上チェックで実行ボタンが有効化
     - 実行後: フィードバック + 確認入力欄リセット + rerun
     - 印刷時は ``conf-data-manage-wrap`` クラスで非表示
     """
-    # 印刷時非表示用のラッパークラス
-    st.markdown(
+    # 印刷時非表示用のラッパークラス（印刷は main 側ではもう不要だが互換維持）
+    st.sidebar.markdown(
         '<div class="conf-data-manage-wrap">',
         unsafe_allow_html=True,
     )
-    with st.expander("🗑 データ管理（一括クリア）", expanded=False):
+    with st.sidebar.expander("🗑 カンファデータ管理", expanded=False):
         stats = _count_stored_data()
         st.caption(
             "全患者の編集データをまとめてクリアします。"
@@ -822,7 +924,7 @@ def _render_data_manage_expander() -> None:
                 "一括クリア完了: " + " / ".join(cleared_summary)
             )
             st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
 
 def _count_stored_data() -> Dict[str, int]:
@@ -875,6 +977,115 @@ def _init_session(today: date) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 連休対策モード推奨バナー（Block A 直上）
+# ---------------------------------------------------------------------------
+
+def _render_holiday_mode_recommendation_banner(
+    mode: str,
+    banner: Dict[str, Any],
+) -> None:
+    """通常モード時、連休まで 21 日以下で切替推奨バナーを表示する.
+
+    副院長決定（2026-04-18）: 連休対策モードは師長が手動で ON/OFF する運用.
+    自動切替は行わず、気づきのきっかけとして画面上部に推奨バナーを出す.
+
+    表示条件
+    --------
+    - ``mode == "normal"`` （連休対策モードが OFF）
+    - ``banner["days_remaining"] is not None``
+    - ``banner["days_remaining"] <= 21``
+
+    色・severity
+    -----------
+    - ``days_remaining <= 7`` → ``urgent`` （赤）
+    - ``8 <= days_remaining <= 21`` → ``warning`` （橙）
+    - 連休期間中 (``days_remaining <= 0``) でも通常モードなら、切替推奨として赤表示
+    """
+    if mode != "normal":
+        return
+    days_remaining = banner.get("days_remaining")
+    if days_remaining is None:
+        return
+    if days_remaining > 21:
+        return
+
+    holiday_name = banner.get("holiday_name") or "連休"
+    severity_label = "urgent" if days_remaining <= 7 else "warning"
+    if days_remaining <= 0:
+        # 連休中なのに通常モードのまま → 切替推奨（urgent 強調）
+        banner_text = (
+            f"💡 {holiday_name} 期間中 — 連休対策モードへの切替を推奨します"
+        )
+    else:
+        banner_text = (
+            f"💡 {holiday_name} まで {days_remaining} 日 — "
+            f"連休対策モードへの切替を推奨します"
+        )
+
+    # --- インライン HTML でバナーを描画 ---
+    # bc-alert CSS（theme_css.py）はメインアプリ経由では読み込まれるが、
+    # 本ビュー単独起動時（run_conference_view.py）でも同じ見た目にするため、
+    # ここでは独立した CSS（.conf-holiday-recommend-banner）でスタイルを閉じる。
+    # data-testid は E2E 検証用、印刷時にも表示（@media print で消さない）。
+    severity_color_map = {
+        "warning": {
+            "bg": "#fff7e6",
+            "border": "#e67e22",
+            "fg": "#7a4a0b",
+        },
+        "urgent": {
+            "bg": "#fdecec",
+            "border": "#c0392b",
+            "fg": "#7a1f17",
+        },
+    }
+    color = severity_color_map.get(severity_label, severity_color_map["warning"])
+
+    st.markdown(
+        f"""
+        <style>
+        .conf-holiday-recommend-banner {{
+            margin: 2px 0 4px 0;
+            padding: 4px 10px;
+            border-left: 4px solid {color["border"]};
+            background: {color["bg"]};
+            color: {color["fg"]};
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 0 6px 6px 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            line-height: 1.3;
+        }}
+        .conf-holiday-recommend-banner .hint {{
+            font-weight: 400;
+            font-size: 10px;
+            opacity: 0.85;
+            margin-left: 8px;
+        }}
+        @media print {{
+            .conf-holiday-recommend-banner {{
+                /* 師長が紙で持ち帰るときの気づきにもなるよう、印刷時も表示 */
+                border-left: 4px solid {color["border"]};
+                background: {color["bg"]};
+                color: {color["fg"]};
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }}
+        }}
+        </style>
+        <div class="conf-holiday-recommend-banner"
+             data-testid="conference-holiday-mode-recommend-banner"
+             data-severity="{severity_label}"
+             data-days="{days_remaining}">
+          {banner_text}
+          <span class="hint">（「連休対策モード」トグルを ON にしてください）</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # ブロック描画: ヘッダー
 # ---------------------------------------------------------------------------
 
@@ -884,13 +1095,17 @@ def _render_header(
     mode: str,
     banner: Dict[str, Any],
 ) -> None:
-    """ヘッダー（タイトル・モード・病棟・連休カウントダウン）を描画."""
+    """ヘッダー（タイトル・モード・日付）を描画.
+
+    2026-04-18 圧縮（副院長指示）:
+    - 「{ward} 表示中」は上部セレクトで可視なので撤去
+    - GW カウントダウンは Block A にもあるのでヘッダーからは撤去
+      （banner_text の severity クラスは CSS 互換のために残す）
+    """
     mode_label = "通常モード" if mode == "normal" else "🚨 連休対策モード"
     mode_cls = "" if mode == "normal" else "holiday"
     # 曜日表示
     weekday_ja = ["月", "火", "水", "木", "金", "土", "日"][today.weekday()]
-    days_cls = _severity_to_cls(banner.get("severity", "none"))
-    banner_text = banner.get("banner_text", "") or ""
     st.markdown(
         f"""
         <div class="conf-header">
@@ -899,8 +1114,7 @@ def _render_header(
             <span class="mode {mode_cls}">{mode_label}</span>
           </div>
           <div class="meta">
-            {today.isoformat()} ({weekday_ja}) | {ward} 表示中 |
-            <span class="days {days_cls}">{banner_text}</span>
+            {today.isoformat()} ({weekday_ja})
           </div>
         </div>
         """,
@@ -1556,6 +1770,10 @@ def render_conference_material_view(
     # CSS は毎回注入（reactive でも重複は Streamlit 側で吸収される）
     _inject_css()
 
+    # カンファ画面全体を .conf-root スコープで包む（CSS の .conf-root セレクタを有効化）
+    # close tag は関数末尾（ファクトバー後）に書く
+    st.markdown('<div class="conf-root">', unsafe_allow_html=True)
+
     # --- 上部コントロール: 病棟 / モード 切替 ---
     ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 3])
     with ctrl_col1:
@@ -1581,10 +1799,8 @@ def render_conference_material_view(
             # モード変更時もステータスをリセット（カテゴリ体系が異なる）
             st.session_state["conf_patient_status"] = {}
     with ctrl_col3:
-        st.caption(
-            "ヘッダーの連休カウントダウンは ``holiday_calendar`` が自動判定。"
-            "モードトグルは表示を切り替えるだけで、カウントダウンは常時表示。"
-        )
+        # 2026-04-18 圧縮: 縦幅を食わないよう長文 caption を削除
+        st.caption("連休 5 連休以上の場合は自動で連休対策モードを推奨")
 
     ward = st.session_state["conf_ward"]
     mode = st.session_state["conf_mode"]
@@ -1600,8 +1816,16 @@ def render_conference_material_view(
     # --- ヘッダー ---
     _render_header(_today, ward, mode, banner)
 
-    # --- データ管理（一括クリア）— ヘッダーの直下、Block A の直前 ---
+    # --- データ管理（一括クリア）— 2026-04-18 サイドバーに移設（縦 40px 削減）---
     _render_data_manage_expander()
+
+    # --- 連休対策モード切替 推奨バナー（Block A 直上） ---
+    # 副院長決定（2026-04-18）: 連休対策モードは師長が手動で ON/OFF する運用。
+    # ただし「連休まで 21 日以下」になったら、切替のきっかけとなる推奨バナーを
+    # 画面上部に表示する。バナーは通常モード時のみ表示し、連休対策モード ON 時は
+    # 非表示（既に切替済みのため）。
+    # severity: 8-21 日は warning（橙）、7 日以内は urgent（赤、_bc_alert では danger に変換）。
+    _render_holiday_mode_recommendation_banner(mode, banner)
 
     # --- ブロック A: KPI 5 横並び ---
     kpi = _sample_kpi_metrics(ward)
@@ -1616,8 +1840,11 @@ def render_conference_material_view(
         _render_block_c(patients, mode)
 
     # --- ブロック D: 職種別 今週のお願い ---
-    st.markdown("&nbsp;", unsafe_allow_html=True)
+    # 2026-04-18 圧縮: 不要な &nbsp; 余白を削除（縦 26px 削減）
     _render_block_d(patients, mode)
 
     # --- ファクトバー ---
     _render_fact_bar(ward, mode, rng=rng, facts_override=facts_override)
+
+    # conf-root スコープを閉じる
+    st.markdown('</div>', unsafe_allow_html=True)

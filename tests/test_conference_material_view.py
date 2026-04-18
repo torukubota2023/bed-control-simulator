@@ -1239,3 +1239,173 @@ class TestBulkClearUI:
         assert "2 名" in labels.get("clr_all_status", ""), (
             f"clr_all_status ラベルに件数 2 が出ていない: {labels.get('clr_all_status')}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 12. 連休対策モード切替 推奨バナー（副院長決定 2026-04-18）
+# ---------------------------------------------------------------------------
+
+def _write_app_entry_with_today(path: Path, today_str: str) -> None:
+    """任意 today でカンファビューを描画する AppTest 用エントリ.
+
+    ``today_str`` は ``"2026, 4, 18"`` 形式（date() コンストラクタ引数の直書き）。
+    """
+    path.write_text(
+        f"""
+import sys
+from pathlib import Path
+
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
+import streamlit as st
+st.set_page_config(layout='wide')
+
+from views.conference_material_view import render_conference_material_view
+from datetime import date
+
+render_conference_material_view(today=date({today_str}))
+""",
+        encoding="utf-8",
+    )
+
+
+class TestHolidayModeRecommendBanner:
+    """連休対策モード切替の推奨バナー描画を検証.
+
+    副院長決定（2026-04-18）: 連休対策モードは手動切替のみ。
+    ただし「連休まで 21 日以下」になったら、画面上部に推奨バナー（💡…切替を推奨）
+    を表示して気づきを促す。severity は 8-21 日=warning（橙）、7 日以内=urgent（赤）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def isolate_storage(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import patient_name_store as pns
+        import patient_status_store as pss
+        monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
+        monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        yield
+
+    def _app_entry(self, tmp_path: Path, today_str: str) -> Path:
+        repo_scripts = Path(__file__).resolve().parent.parent / "scripts"
+        entry = repo_scripts / "_conference_view_test_entry.py"
+        _write_app_entry_with_today(entry, today_str)
+        return entry
+
+    def _markdown(self, app_path: Path) -> str:
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        return "\n".join(m.value for m in at.markdown), at
+
+    def test_banner_absent_when_days_exceed_21(self, tmp_path: Path):
+        """2026-04-10（GW まで 22 日）では推奨バナーは表示されない."""
+        app = self._app_entry(tmp_path, "2026, 4, 10")
+        try:
+            markdown, _ = self._markdown(app)
+            assert (
+                'data-testid="conference-holiday-mode-recommend-banner"'
+                not in markdown
+            ), "21 日超なのに推奨バナーが表示されている"
+        finally:
+            app.unlink(missing_ok=True)
+
+    def test_banner_shown_at_boundary_21_days(self, tmp_path: Path):
+        """2026-04-11（GW まで 21 日）では推奨バナーが warning severity で出る."""
+        app = self._app_entry(tmp_path, "2026, 4, 11")
+        try:
+            markdown, _ = self._markdown(app)
+            assert (
+                'data-testid="conference-holiday-mode-recommend-banner"'
+                in markdown
+            ), "21 日ちょうどで推奨バナーが出ない"
+            assert 'data-severity="warning"' in markdown
+        finally:
+            app.unlink(missing_ok=True)
+
+    def test_banner_warning_severity_at_14_days(self, tmp_path: Path):
+        """2026-04-18（GW まで 14 日）では warning severity（橙）."""
+        app = self._app_entry(tmp_path, "2026, 4, 18")
+        try:
+            markdown, _ = self._markdown(app)
+            assert (
+                'data-testid="conference-holiday-mode-recommend-banner"'
+                in markdown
+            )
+            assert 'data-severity="warning"' in markdown
+            assert 'data-days="14"' in markdown
+            assert "💡" in markdown
+            assert "連休対策モードへの切替を推奨します" in markdown
+        finally:
+            app.unlink(missing_ok=True)
+
+    def test_banner_urgent_severity_at_7_days(self, tmp_path: Path):
+        """2026-04-25（GW まで 7 日）では urgent severity（赤）."""
+        app = self._app_entry(tmp_path, "2026, 4, 25")
+        try:
+            markdown, _ = self._markdown(app)
+            assert 'data-severity="urgent"' in markdown
+            assert 'data-days="7"' in markdown
+        finally:
+            app.unlink(missing_ok=True)
+
+    def test_banner_hidden_when_holiday_mode_on(self, tmp_path: Path):
+        """連休対策モード ON に切り替えると推奨バナーは非表示."""
+        app = self._app_entry(tmp_path, "2026, 4, 18")
+        try:
+            from streamlit.testing.v1 import AppTest
+            at = AppTest.from_file(str(app), default_timeout=30)
+            at.run()
+            # 初期状態（通常モード）ではバナー表示
+            md1 = "\n".join(m.value for m in at.markdown)
+            assert (
+                'data-testid="conference-holiday-mode-recommend-banner"'
+                in md1
+            )
+            # モードを holiday に切替
+            assert len(at.toggle) >= 1
+            at.toggle[0].set_value(True)
+            at.run()
+            md2 = "\n".join(m.value for m in at.markdown)
+            assert (
+                'data-testid="conference-holiday-mode-recommend-banner"'
+                not in md2
+            ), "連休対策モード ON なのに推奨バナーが残っている"
+            # 戻すと再表示
+            at.toggle[0].set_value(False)
+            at.run()
+            md3 = "\n".join(m.value for m in at.markdown)
+            assert (
+                'data-testid="conference-holiday-mode-recommend-banner"'
+                in md3
+            ), "通常モードに戻したのにバナーが再表示されない"
+        finally:
+            app.unlink(missing_ok=True)
+
+    def test_banner_print_visible_style_injected(self, tmp_path: Path):
+        """印刷時（@media print）にもバナーは表示される（display:none にならない）."""
+        app = self._app_entry(tmp_path, "2026, 4, 18")
+        try:
+            markdown, _ = self._markdown(app)
+            # バナー用スタイルが含まれており、@media print で display:none にされていない
+            assert ".conf-holiday-recommend-banner" in markdown
+            # print ブロック抽出してバナーが display:none されていないことを確認
+            import re
+            # CSS の @media print ブロック全体（複数）を取得
+            print_blocks = re.findall(
+                r"@media print\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}",
+                markdown,
+            )
+            for block in print_blocks:
+                if "conf-holiday-recommend-banner" in block:
+                    # 対象クラスに display: none が指定されていないことを確認
+                    # （display プロパティそのものが無ければ OK、あっても none ではない）
+                    assert "display: none" not in block, (
+                        "推奨バナーが print で非表示化されている"
+                    )
+                    assert "display:none" not in block, (
+                        "推奨バナーが print で非表示化されている"
+                    )
+        finally:
+            app.unlink(missing_ok=True)
