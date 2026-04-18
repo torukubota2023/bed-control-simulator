@@ -54,7 +54,8 @@ test.afterAll(() => {
 test.describe('監査1: 全セクション×全病棟の巡回', () => {
   test('全セクションを開いて Python エラー・Tracebackを検出', async ({ page }) => {
     test.setTimeout(300000); // 5分タイムアウト（巡回は時間がかかる）
-    const sections = ['ダッシュボード', '意思決定支援', '制度管理', 'データ管理', 'HOPE連携'];
+    // Phase 4（2026-04-18・最終）: 「📋 データ管理」「📨 HOPE連携」を「⚙️ データ・設定」へ統合
+    const sections = ['今日の運営', 'What-if・戦略', '制度管理', '退院調整', 'データ・設定'];
     const wards: Array<'全体' | '5F' | '6F'> = ['全体', '5F', '6F'];
 
     await page.goto('/');
@@ -111,7 +112,7 @@ test.describe('監査2: 数値の妥当性チェック', () => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
     await clickButton(page, 'シミュレーション実行');
-    await selectSection(page, '意思決定支援');
+    await selectSection(page, 'What-if・戦略');
 
     const metrics = await getAllMetrics(page);
 
@@ -208,7 +209,7 @@ test.describe('監査3: 結論カードの論理矛盾', () => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
     await clickButton(page, 'シミュレーション実行');
-    await selectSection(page, '意思決定支援');
+    await selectSection(page, 'What-if・戦略');
 
     // 結論カードのメッセージを取得
     const alerts = await getAlertMessages(page);
@@ -267,13 +268,15 @@ test.describe('監査3: 結論カードの論理矛盾', () => {
 // 監査4: タブ切替でコンテンツが正しく切り替わるか
 // =====================================================================
 test.describe('監査4: 各タブの内容確認', () => {
-  test('ダッシュボード全タブで内容が表示される', async ({ page }) => {
+  test('今日の運営全タブで内容が表示される', async ({ page }) => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
-    await selectSection(page, 'ダッシュボード');
+    await selectSection(page, '今日の運営');
     await clickButton(page, 'シミュレーション実行');
 
-    const tabs = ['日次推移', 'フェーズ構成', '運営分析', 'トレンド分析'];
+    // Phase 2 情報階層リデザイン（2026-04-18）以降、意思決定ダッシュボード・運営改善アラートは
+    // 「📊 今日の運営」配下へ移設（旧「📊 ダッシュボード」セクションを改名）
+    const tabs = ['意思決定ダッシュボード', '運営改善アラート', '日次推移', 'フェーズ構成', '運営分析', 'トレンド分析'];
     for (const tabName of tabs) {
       try {
         const tab = page.locator(`[data-testid="stTab"]:has-text("${tabName}")`).first();
@@ -302,13 +305,44 @@ test.describe('監査4: 各タブの内容確認', () => {
     }
   });
 
-  test('意思決定支援タブ', async ({ page }) => {
+  test('What-if・戦略タブ', async ({ page }) => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
-    await selectSection(page, '意思決定支援');
+    await selectSection(page, 'What-if・戦略');
     await clickButton(page, 'シミュレーション実行');
 
-    const tabs = ['意思決定ダッシュボード', '運営改善アラート', 'What-if分析', '退院タイミング'];
+    // Phase 1: 退院タイミングは「退院調整」へ移設
+    // Phase 2: 意思決定ダッシュボード・運営改善アラートは「今日の運営」へ移設 → What-if のみ残る
+    const tabs = ['What-if分析'];
+    for (const tabName of tabs) {
+      try {
+        const tab = page.locator(`[data-testid="stTab"]:has-text("${tabName}")`).first();
+        if (await tab.count() === 0) {
+          logIssue('warning', `タブ: ${tabName}`, 'タブが存在しない');
+          continue;
+        }
+        await tab.click();
+        await page.waitForTimeout(1500);
+        const exceptions = await page.locator('[data-testid="stException"]').count();
+        if (exceptions > 0) {
+          const text = await page.locator('[data-testid="stException"]').first().textContent();
+          logIssue('critical', `タブ: ${tabName}`, '例外発生', text?.slice(0, 200));
+        }
+      } catch (e) {
+        logIssue('warning', `タブ: ${tabName}`, `タブ操作失敗: ${e}`);
+      }
+    }
+  });
+
+  test('退院調整タブ', async ({ page }) => {
+    // Phase 1 情報階層リデザイン（2026-04-18）で新設。
+    // 旧「連休対策」「多職種退院調整カンファ」＋旧意思決定支援（現 What-if・戦略）「退院タイミング」を統合。
+    await page.goto('/');
+    await waitForStreamlitLoad(page);
+    await selectSection(page, '退院調整');
+    await page.waitForTimeout(1500);
+
+    const tabs = ['カンファ資料', '退院タイミング', '今週の需要予測', '退院候補リスト', '予約可能枠'];
     for (const tabName of tabs) {
       try {
         const tab = page.locator(`[data-testid="stTab"]:has-text("${tabName}")`).first();
@@ -331,13 +365,14 @@ test.describe('監査4: 各タブの内容確認', () => {
 });
 
 // =====================================================================
-// 監査5: データ管理タブでの入力・保存・削除
+// 監査5: データ・設定タブでの入力・保存・削除
+// Phase 4（2026-04-18・最終）: 旧「データ管理」→「データ・設定」に改名
 // =====================================================================
 test.describe('監査5: データ入力機能', () => {
   test('日次データ入力フォームが正しく表示される', async ({ page }) => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
-    await selectSection(page, 'データ管理');
+    await selectSection(page, 'データ・設定');
     await page.waitForTimeout(2000);
 
     // 日次データ入力タブをクリック
@@ -379,7 +414,7 @@ test.describe('監査6: コンソールエラー検出', () => {
     await waitForStreamlitLoad(page);
     await clickButton(page, 'シミュレーション実行');
 
-    for (const section of ['ダッシュボード', '意思決定支援', '制度管理']) {
+    for (const section of ['今日の運営', 'What-if・戦略', '制度管理']) {
       await selectSection(page, section);
       await page.waitForTimeout(1500);
     }

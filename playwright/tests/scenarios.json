@@ -190,9 +190,9 @@
     {
       "id": "conference_normal_5f",
       "name": "カンファビュー：通常モード 5F の基本表示",
-      "description": "多職種退院調整カンファ画面 — 通常モード / 5F / サンプル患者 10 名表示",
+      "description": "退院調整セクション > カンファ資料タブ — 通常モード / 5F / サンプル患者 10 名表示",
       "params": {
-        "section": "🏥 多職種退院調整カンファ",
+        "section": "🏥 退院調整",
         "mode": "normal",
         "ward": "5F"
       },
@@ -215,9 +215,9 @@
     {
       "id": "conference_holiday_6f",
       "name": "カンファビュー：連休対策モード 6F の表示切替",
-      "description": "多職種退院調整カンファ画面 — 連休対策モードトグル + 病棟 6F 切替後の表示",
+      "description": "退院調整セクション > カンファ資料タブ — 連休対策モードトグル + 病棟 6F 切替後の表示",
       "params": {
-        "section": "🏥 多職種退院調整カンファ",
+        "section": "🏥 退院調整",
         "mode": "holiday",
         "ward": "6F"
       },

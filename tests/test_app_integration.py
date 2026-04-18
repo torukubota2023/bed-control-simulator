@@ -190,7 +190,7 @@ class TestTabNameConsistency:
                         sections_found.append(f"  セクション '{section_name}' (L{i}): tab_names = [] のまま")
                 sections_found_ok = True
 
-        # "📋 データ管理" は tab_names = [] で始まるが .extend で追加されるので OK
+        # "⚙️ データ・設定" は tab_names = [] で始まるが .extend で追加されるので OK
         # 空のまま進むセクションがないか確認
         # （このテストは構造変更時のリグレッション検出用）
 
@@ -468,7 +468,7 @@ class TestSectionTabMapping:
         menu_sections = set()
         for m in re.finditer(r'"([^"]+)"', menu_block):
             val = m.group(1)
-            if any(kw in val for kw in ["ダッシュボード", "意思決定", "制度", "データ", "HOPE"]):
+            if any(kw in val for kw in ["今日の運営", "意思決定", "制度", "データ", "HOPE"]):
                 menu_sections.add(_normalize(val))
 
         # 各メニューセクションに対応する条件分岐があること
@@ -610,19 +610,23 @@ class TestNeedsSimDataLogic:
     """_needs_sim_data の定義が全データ依存セクションをカバーしているか"""
 
     def test_データ依存セクションが_needs_sim_dataに含まれる(self):
-        """ダッシュボード・意思決定支援が _needs_sim_data の判定に含まれること"""
+        """今日の運営・What-if・戦略が _needs_sim_data の判定に含まれること"""
         pattern = r'_needs_sim_data\s*=\s*_selected_section\s+in\s+\[([^\]]+)\]'
         match = re.search(pattern, APP_SOURCE)
         assert match, "_needs_sim_data の定義が見つからない"
 
         sections_in_check = match.group(1)
-        # ダッシュボードと意思決定支援が含まれていること
-        assert "ダッシュボード" in sections_in_check, "ダッシュボードが _needs_sim_data に含まれていない"
-        assert "意思決定支援" in sections_in_check, "意思決定支援が _needs_sim_data に含まれていない"
+        # 今日の運営と What-if・戦略が含まれていること（Phase 3 情報階層リデザインで改名）
+        assert "今日の運営" in sections_in_check, "今日の運営が _needs_sim_data に含まれていない"
+        assert "What-if・戦略" in sections_in_check, "What-if・戦略が _needs_sim_data に含まれていない"
 
     def test_データ不要セクションが_needs_sim_dataに含まれない(self):
-        """制度管理・データ管理・HOPE連携が _needs_sim_data に含まれないこと
-        （これらのセクションはデータなしでもアクセスできるべき）"""
+        """制度管理・データ・設定が _needs_sim_data に含まれないこと
+        （これらのセクションはデータなしでもアクセスできるべき）
+
+        Phase 4（2026-04-18）: 旧「📋 データ管理」「📨 HOPE連携」は
+        「⚙️ データ・設定」へ統合された。
+        """
         pattern = r'_needs_sim_data\s*=\s*_selected_section\s+in\s+\[([^\]]+)\]'
         match = re.search(pattern, APP_SOURCE)
         assert match, "_needs_sim_data の定義が見つからない"
@@ -630,8 +634,10 @@ class TestNeedsSimDataLogic:
         sections_in_check = match.group(1)
         # データ不要セクションが含まれていないこと
         assert "制度管理" not in sections_in_check, "制度管理が _needs_sim_data に誤って含まれている"
-        assert "データ管理" not in sections_in_check, "データ管理が _needs_sim_data に誤って含まれている"
-        assert "HOPE" not in sections_in_check, "HOPE連携が _needs_sim_data に誤って含まれている"
+        assert "データ・設定" not in sections_in_check, "データ・設定が _needs_sim_data に誤って含まれている"
+        assert "HOPE" not in sections_in_check, "HOPE が _needs_sim_data に誤って含まれている（HOPE 送信タブは「⚙️ データ・設定」配下）"
+        # Phase 4 以前の旧名称が再出現していないか
+        assert "データ管理" not in sections_in_check, "旧称「データ管理」が _needs_sim_data に残っている"
 
 
 # =====================================================================

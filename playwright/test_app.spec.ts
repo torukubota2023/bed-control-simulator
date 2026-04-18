@@ -59,7 +59,7 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
     // v3.5 本体は初期状態では main content が「サイドバーのパラメータを設定し
     // 『シミュレーション実行』ボタンを押してください」の案内のみで、
     // data-testid (occupancy / alos / phase / vacancy / action-card / guardrail-summary)
-    // は描画されない。ダッシュボード本体を描画させるためにボタンを押す。
+    // は描画されない。「📊 今日の運営」本体を描画させるためにボタンを押す。
     const runButton = page.getByRole('button', { name: 'シミュレーション実行' }).first();
     if (await runButton.count() > 0) {
       await runButton.click();
@@ -85,14 +85,14 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
 
     for (const id of requiredIds) {
       test(`[data-testid="${id}"] が存在する`, async ({ page }) => {
-        // testid によって出現タブが異なるため、ダッシュボードで見つからなければ
-        // 他のメインセクション（意思決定支援・制度管理）も巡回する。
+        // testid によって出現タブが異なるため、「📊 今日の運営」で見つからなければ
+        // 他のメインセクション（What-if・戦略・制度管理）も巡回する。
         // Streamlit のラジオは <input type="radio" tabindex="-1"> で不可視のため、
         // getByRole('radio').click() は「element is not visible」でタイムアウトする。
         // 親ラベル（label:has-text）をクリックすることで Streamlit の state が切り替わる。
         let count = await page.locator(`[data-testid="${id}"]`).count();
         if (count === 0) {
-          const sections = ['🎯 意思決定支援', '🛡️ 制度管理'];
+          const sections = ['🔮 What-if・戦略', '🛡️ 制度管理'];
           const sidebar = page.locator('[data-testid="stSidebar"]');
           for (const sectionName of sections) {
             const label = sidebar.locator(`label:has-text("${sectionName}")`).first();

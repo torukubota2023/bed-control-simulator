@@ -722,6 +722,67 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- 共通デザインシステム CSS を注入（単一ソース: theme_css.py + design_tokens.py） ---
+# 既存の個別 CSS は後続で注入されるため、そちらで上書き可能（段階的移行）
+try:
+    from theme_css import render_theme_css as _render_theme_css
+    st.markdown(_render_theme_css(), unsafe_allow_html=True)
+except Exception as _theme_err:
+    # デザインシステム不在でも本体機能は止めない
+    import traceback as _theme_tb
+    st.sidebar.warning(
+        f"⚠️ デザインシステム CSS の読み込みに失敗しました（機能は動作します）\n\n"
+        f"{_theme_err}\n{_theme_tb.format_exc()}"
+    )
+
+# --- 共通 UI コンポーネント（section_title / kpi_card / alert） ---
+# 取り込みに失敗しても本体機能は維持するため、フォールバックとして no-op 相当を用意
+try:
+    from ui_components import (
+        alert as _bc_alert,
+        kpi_card as _bc_kpi_card,
+        section_title as _bc_section_title,
+    )
+    _UI_COMPONENTS_AVAILABLE = True
+except Exception as _uc_err:
+    _UI_COMPONENTS_AVAILABLE = False
+
+    def _bc_section_title(title: str, icon: str = "") -> None:  # type: ignore[no-redef]
+        st.markdown(f"#### {icon} {title}" if icon else f"#### {title}")
+
+    def _bc_kpi_card(  # type: ignore[no-redef]
+        label: str,
+        value: str,
+        unit: str = "",
+        delta=None,
+        severity: str = "neutral",
+        size: str = "md",
+        testid=None,
+        testid_attrs=None,
+        testid_text=None,
+    ) -> None:
+        st.metric(label, f"{value}{unit}", delta=delta)
+        if testid:
+            _attrs = ""
+            if testid_attrs:
+                for _k, _v in testid_attrs.items():
+                    _attrs += f' data-{_k}="{_v}"'
+            _inner = testid_text if testid_text is not None else value
+            st.markdown(
+                f'<div data-testid="{testid}"{_attrs} style="display:none">{_inner}</div>',
+                unsafe_allow_html=True,
+            )
+
+    def _bc_alert(message: str, severity: str = "info") -> None:  # type: ignore[no-redef]
+        if severity == "danger":
+            st.error(message)
+        elif severity == "warning":
+            st.warning(message)
+        elif severity == "success":
+            st.success(message)
+        else:
+            st.info(message)
+
 # --- パスワード認証（データ入力・エクスポート時のみ） ---
 if "data_authenticated" not in st.session_state:
     st.session_state.data_authenticated = False
@@ -956,20 +1017,20 @@ if isinstance(st.session_state.get("daily_data"), pd.DataFrame) and len(st.sessi
 # ---------------------------------------------------------------------------
 # サイドバー: メニュー選択（データソースの上に配置）
 # ---------------------------------------------------------------------------
-_section_names = ["📊 ダッシュボード", "🎯 意思決定支援"]
+_section_names = ["📊 今日の運営", "🔮 What-if・戦略"]
 if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
     _section_names.append("🛡️ 制度管理")
-# 🗓 連休対策: 制度管理 の後、データ管理 の前（need demand_forecast + views）
-if _DEMAND_FORECAST_AVAILABLE and _VIEWS_AVAILABLE:
-    _section_names.append("🗓 連休対策")
-# 🏥 多職種退院調整カンファ: 連休対策と関連が深いため直後に配置
-# （旧「🗓 連休対策」は連休期間限定／新カンファは通常+連休の統合資料）
-if _CONFERENCE_VIEW_AVAILABLE:
-    _section_names.append("🏥 多職種退院調整カンファ")
-if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE:
-    _section_names.append("📋 データ管理")
-if _HOPE_AVAILABLE:
-    _section_names.append("📨 HOPE連携")
+# 🏥 退院調整: 情報階層リデザイン Phase 1（2026-04-18）
+# 旧「🗓 連休対策」「🏥 多職種退院調整カンファ」と意思決定支援の「退院タイミング」を
+# 単一セクションに統合。カンファ・退院タイミング・需要予測・退院候補・予約枠の 5 タブ構成。
+# 両方の依存 view が揃っていないときのみセクションを出す（片方だけでも出す運用はしない）
+if _CONFERENCE_VIEW_AVAILABLE and _DEMAND_FORECAST_AVAILABLE and _VIEWS_AVAILABLE:
+    _section_names.append("🏥 退院調整")
+# ⚙️ データ・設定: 情報階層リデザイン Phase 4（2026-04-18・最終）
+# 旧「📋 データ管理」に旧「📨 HOPE連携」セクションとサイドバー短手3 パラメータを統合。
+# データ・設定モジュールの依存があれば（or HOPE 単独でも）セクションを出す。
+if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE or _HOPE_AVAILABLE:
+    _section_names.append("⚙️ データ・設定")
 
 _selected_section = st.sidebar.radio("メニュー", _section_names, label_visibility="collapsed")
 st.sidebar.markdown("---")
@@ -1207,32 +1268,20 @@ _SHORT3_DEFAULT_COST = {
     SHORT3_TYPE_OTHER:    0,
 }
 
-with st.sidebar.expander("🏃 短手3（包括点数・種類別）パラメータ"):
-    st.caption(
-        "短期滞在手術等基本料3 は包括点数で算定されます。種類別に1件あたりの収入を設定できます。"
-        + ("（2026年改定で -10% を仮定）" if _is_2026 else "")
+# Phase 4（2026-04-18）: 短手3 パラメータの入力 UI は「⚙️ データ・設定 > 🏃 短手3設定」
+# タブに移設。ここでは session_state からマップを再構築するだけにして、
+# 下流（運営貢献額サマリー・月次分離表示など）が従来どおり参照できる形を維持する。
+# 初回レンダリング時は widget が未作成で session_state にキーがないので、
+# デフォルト値にフォールバック。2 回目以降のレンダリングでは前回値を取得する。
+_short3_revenue_map = {}
+_short3_cost_map = {}
+for _t in [SHORT3_TYPE_POLYP_S, SHORT3_TYPE_POLYP_L, SHORT3_TYPE_INGUINAL, SHORT3_TYPE_PSG, SHORT3_TYPE_OTHER]:
+    _short3_revenue_map[_t] = st.session_state.get(
+        f"short3_rev_{_t}", _SHORT3_DEFAULT_REVENUE[_t]
     )
-    _short3_revenue_map = {}
-    _short3_cost_map = {}
-    for _t in [SHORT3_TYPE_POLYP_S, SHORT3_TYPE_POLYP_L, SHORT3_TYPE_INGUINAL, SHORT3_TYPE_PSG, SHORT3_TYPE_OTHER]:
-        _rev = st.number_input(
-            f"{_t} 収入（円/件）",
-            min_value=0, max_value=500000,
-            value=_SHORT3_DEFAULT_REVENUE[_t],
-            step=1000,
-            key=f"short3_rev_{_t}",
-        )
-        _cost = st.number_input(
-            f"{_t} コスト（円/件）",
-            min_value=0, max_value=200000,
-            value=_SHORT3_DEFAULT_COST[_t],
-            step=1000,
-            key=f"short3_cost_{_t}",
-        )
-        _short3_revenue_map[_t] = _rev
-        _short3_cost_map[_t] = _cost
-        if _rev > 0:
-            st.caption(f"　→ 運営貢献額: **¥{_rev - _cost:,}/件**")
+    _short3_cost_map[_t] = st.session_state.get(
+        f"short3_cost_{_t}", _SHORT3_DEFAULT_COST[_t]
+    )
 
 # --- 追加パラメータ ---
 with st.sidebar.expander("追加パラメータ"):
@@ -2808,7 +2857,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
 # 結論カード（今日の一手）— サマリー expander 内に表示
 # ---------------------------------------------------------------------------
 _ac_has_data = isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0
-if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
     if not (_ACTION_CARD_AVAILABLE and _VIEWS_AVAILABLE):
         _missing = []
         if not _ACTION_CARD_AVAILABLE:
@@ -3003,7 +3052,7 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
 # ---------------------------------------------------------------------------
 # セクション共通ヘッダー（サマリー expander 内に表示）
 # ---------------------------------------------------------------------------
-if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]:
+if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
   with _summary_expander:
     # 病棟選択キャプション
     if _selected_ward_key != "全体":
@@ -3032,8 +3081,8 @@ if _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"
         if _ward_data_available:
             _render_comparison_strip(_selected_ward_key, _ward_raw_dfs, _ward_display_dfs, get_ward_beds)
 
-# 意思決定支援セクション: 機能チェックをタブの外に表示
-if _selected_section == "🎯 意思決定支援" and not _DECISION_SUPPORT_AVAILABLE:
+# What-if・戦略セクション: 機能チェックをタブの外に表示
+if _selected_section == "🔮 What-if・戦略" and not _DECISION_SUPPORT_AVAILABLE:
     st.error("意思決定支援機能はまだ利用できません。CLI版（bed_control_simulator.py）に必要な関数が実装されていません。")
     if "_DECISION_SUPPORT_ERROR" in dir():
         st.code(_DECISION_SUPPORT_ERROR)
@@ -3041,10 +3090,18 @@ if _selected_section == "🎯 意思決定支援" and not _DECISION_SUPPORT_AVAI
 # ---------------------------------------------------------------------------
 # セクション別タブ構成（_selected_section はサイドバー上部で定義済み）
 # ---------------------------------------------------------------------------
-if _selected_section == "\U0001f4ca ダッシュボード":
-    tab_names = ["\U0001f4ca 日次推移", "\U0001f504 フェーズ構成", "\U0001f4b0 運営分析", "\U0001f4c8 トレンド分析"]
-elif _selected_section == "\U0001f3af 意思決定支援":
-    tab_names = ["\U0001f3af 意思決定ダッシュボード", "\U0001f6a8 運営改善アラート", "\U0001f52e What-if分析", "\U0001f468\u200d\u2695\ufe0f 退院タイミング"]
+if _selected_section == "\U0001f4ca 今日の運営":
+    # Phase 2 情報階層リデザイン（2026-04-18）: 旧「📊 ダッシュボード」を改名し、
+    # 旧「🎯 意思決定支援」（Phase 3 で「🔮 What-if・戦略」に改名）から
+    # 「意思決定ダッシュボード」「運営改善アラート」を集約。
+    # 朝の目線の流れ（総合状況 → アラート → 詳細指標）に沿って 6 タブ構成。
+    tab_names = ["\U0001f3af 意思決定ダッシュボード", "\U0001f6a8 運営改善アラート", "\U0001f4ca 日次推移", "\U0001f504 フェーズ構成", "\U0001f4b0 運営分析", "\U0001f4c8 トレンド分析"]
+elif _selected_section == "\U0001f52e What-if・戦略":
+    # Phase 1: 「👨‍⚕️ 退院タイミング」タブを「🏥 退院調整」へ移設
+    # Phase 2: 「意思決定ダッシュボード」「運営改善アラート」を「📊 今日の運営」へ移設
+    # Phase 3: セクション名を「🎯 意思決定支援」→「🔮 What-if・戦略」へ改名（仮説検証・経営シミュレーション専用）
+    # → What-if 分析 + 仮説管理（+ 戦略比較があれば）の 1-3 タブ構成
+    tab_names = ["\U0001f52e What-if分析"]
     if not _is_actual_data_mode and st.session_state.get("comparison") is not None:
         tab_names.append("戦略比較")
     if _SCENARIO_MANAGER_AVAILABLE:
@@ -3053,26 +3110,28 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
     tab_names = ["\U0001f6e1\ufe0f 制度・需要・C群"]
     if _DOCTOR_MASTER_AVAILABLE:
         tab_names.append("\U0001f4a1 改善のヒント")
-elif _selected_section == "\U0001f5d3 連休対策":
-    tab_names = ["\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 予約可能枠"]
-elif _selected_section == "\U0001f3e5 多職種退院調整カンファ":
-    # カンファビューは単一タブ（内部で 4 ブロック + 病棟/モード切替を自律管理）
-    tab_names = ["\U0001f3e5 カンファ資料"]
-elif _selected_section == "\U0001f4cb データ管理":
+elif _selected_section == "\U0001f3e5 退院調整":
+    # Phase 1 情報階層リデザイン（2026-04-18）: 5 タブ統合
+    # カンファ資料 / 退院タイミング / 今週の需要予測 / 退院候補リスト / 予約可能枠
+    tab_names = ["\U0001f3e5 カンファ資料", "\U0001f468\u200d\u2695\ufe0f 退院タイミング", "\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 予約可能枠"]
+elif _selected_section == "\u2699\ufe0f データ・設定":
+    # Phase 4 情報階層リデザイン（2026-04-18・最終）: 旧「📋 データ管理」に
+    # 旧「📨 HOPE連携」セクションとサイドバー「🏃 短手3 パラメータ」を統合した 7 タブ構成
     tab_names = []
     if _DATA_MANAGER_AVAILABLE:
         tab_names.extend(["\U0001f4cb 日次データ入力", "\U0001f52e 実績分析・予測"])
     if _DOCTOR_MASTER_AVAILABLE:
         tab_names.extend(["\U0001f468\u200d\u2695\ufe0f 医師別分析", "\u2699\ufe0f 医師マスター"])
     tab_names.append("\U0001f4e5 データエクスポート")
+    if _HOPE_AVAILABLE:
+        tab_names.append("\U0001f4e8 HOPE送信")
+    tab_names.append("\U0001f3c3 短手3設定")
     tab_names.append("データ")
-elif _selected_section == "\U0001f4e8 HOPE連携":
-    tab_names = ["\U0001f4e8 HOPE送信"]
 else:
     tab_names = ["\U0001f4ca 日次推移"]
 
 # タブナビゲーション（モード名 + 区切りバー）
-_section_label = _selected_section if "_selected_section" in dir() else "📊 ダッシュボード"
+_section_label = _selected_section if "_selected_section" in dir() else "📊 今日の運営"
 st.markdown(
     f'<div style="background:linear-gradient(90deg,#1E88E5 0%,#42A5F5 100%);'
     f'padding:8px 16px;border-radius:8px;margin:12px 0 4px 0;">'
@@ -3098,7 +3157,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
     # ----- タブ: 📋 日次データ入力 -----
     _dm_auth_ok = False
     with tabs[_dm_tab_daily_idx]:
-        st.subheader("📋 日次データ入力")
+        _bc_section_title("日次データ入力", icon="📋")
         _dm_auth_ok = _require_data_auth("データ入力")
 
     # 認証成功時のみタブ内容を描画（st.stop()を使わず他タブへの影響を防ぐ）
@@ -3114,11 +3173,67 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 
             st.markdown("---")
 
+            # ============================================================
+            # 📊 本日のサマリー KPI — 入力者が今の状況を把握した上で入力する
+            # ============================================================
+            _bc_section_title("本日のサマリー", icon="📊")
+
+            # 本日の入退院数・現在の在院数を計算
+            _today_ts = pd.Timestamp.now().normalize()
+            try:
+                if _is_demo_mode:
+                    _src_df = st.session_state.demo_data
+                else:
+                    _src_df = st.session_state.daily_data
+                if isinstance(_src_df, pd.DataFrame) and len(_src_df) > 0 and "date" in _src_df.columns:
+                    _df_chk = _src_df.copy()
+                    _df_chk["date"] = pd.to_datetime(_df_chk["date"], errors="coerce")
+                    _today_rows = _df_chk[_df_chk["date"] == _today_ts]
+                    _n_adm_today = int(_today_rows["new_admissions"].fillna(0).sum()) if "new_admissions" in _today_rows.columns else 0
+                    _n_dis_today = int(_today_rows["discharges"].fillna(0).sum()) if "discharges" in _today_rows.columns else 0
+                else:
+                    _n_adm_today = 0
+                    _n_dis_today = 0
+            except Exception:
+                _n_adm_today = 0
+                _n_dis_today = 0
+
+            _abc_cur = st.session_state.get("abc_state", {"A": 0, "B": 0, "C": 0})
+            _n_inpatients = int(_abc_cur.get("A", 0)) + int(_abc_cur.get("B", 0)) + int(_abc_cur.get("C", 0))
+
+            _sum_col1, _sum_col2, _sum_col3 = st.columns(3)
+            with _sum_col1:
+                _bc_kpi_card(
+                    label="本日の入院",
+                    value=str(_n_adm_today),
+                    unit="件",
+                    severity="info" if _n_adm_today > 0 else "neutral",
+                )
+            with _sum_col2:
+                _bc_kpi_card(
+                    label="本日の退院",
+                    value=str(_n_dis_today),
+                    unit="件",
+                    severity="info" if _n_dis_today > 0 else "neutral",
+                )
+            with _sum_col3:
+                _bc_kpi_card(
+                    label="現在の在院",
+                    value=str(_n_inpatients),
+                    unit="名",
+                    severity="neutral",
+                )
+
+            st.markdown("---")
+
             if _is_demo_mode:
                 # ============================================================
                 # デモモード
                 # ============================================================
-                st.info("🎓 これは教育用デモデータです。5F（稼働率低下傾向）と6F（安定稼働）のシナリオが含まれています。")
+                _bc_alert(
+                    "🎓 これは教育用デモデータです。5F（稼働率低下傾向）と6F（安定稼働）のシナリオが含まれています。",
+                    severity="info",
+                )
 
                 # デモデータが既にロード済みかチェック
                 _demo_loaded = isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0
@@ -3128,9 +3243,12 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     if _demo_loaded:
                         _demo_ward_count = st.session_state.demo_data["ward"].nunique() if "ward" in st.session_state.demo_data.columns else 0
                         _demo_day_count = st.session_state.demo_data["date"].nunique() if "date" in st.session_state.demo_data.columns else 0
-                        st.success(f"✅ デモデータロード済（{_demo_ward_count}病棟 × {_demo_day_count}日分）")
+                        _bc_alert(
+                            f"デモデータロード済（{_demo_ward_count}病棟 × {_demo_day_count}日分）",
+                            severity="success",
+                        )
                     else:
-                        st.warning("デモデータが見つかりません")
+                        _bc_alert("デモデータが見つかりません", severity="warning")
                 with dm_demo_col2:
                     if st.button("🔄 ランダムデータで再生成（30日分）", key="dm_gen_sample",
                                  help="教育用デモの代わりにランダムなダミーデータを生成します"):
@@ -3139,7 +3257,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         _demo_6f = generate_sample_data(num_days=30, num_beds=get_ward_beds("6F"))
                         _demo_6f["ward"] = "6F"
                         st.session_state.demo_data = pd.concat([_demo_5f, _demo_6f], ignore_index=True).sort_values(["date", "ward"]).reset_index(drop=True)
-                        st.success("ランダムサンプルデータ（30日分）を生成しました。")
+                        _bc_alert("ランダムサンプルデータ（30日分）を生成しました。", severity="success")
                         _auto_save_to_db()
                         st.rerun()
 
@@ -3155,12 +3273,12 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             key="dm_demo_csv_download",
                         )
                     else:
-                        st.info("データなし")
+                        _bc_alert("データなし", severity="info")
 
                 st.markdown("---")
 
                 # --- デモデータ一覧（閲覧のみ） ---
-                st.markdown("#### デモデータ一覧（閲覧専用）")
+                _bc_section_title("デモデータ一覧（閲覧専用）", icon="📄")
                 if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
                     _demo_display = st.session_state.demo_data.copy()
                     _demo_display["date"] = pd.to_datetime(_demo_display["date"])
@@ -3192,7 +3310,10 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                     )
                     st.caption(f"合計 {len(st.session_state.demo_data)} 件のデモレコード")
                 else:
-                    st.info("デモデータがありません。「サンプルデータ生成」ボタンを押してください。")
+                    _bc_alert(
+                        "デモデータがありません。「サンプルデータ生成」ボタンを押してください。",
+                        severity="info",
+                    )
 
             else:
                 # ============================================================
@@ -3200,7 +3321,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                 # ============================================================
 
                 # --- データ管理セクション ---
-                st.markdown("#### データ管理")
+                _bc_section_title("データ管理", icon="🗂")
                 dm_col1, dm_col2 = st.columns(2)
 
                 with dm_col1:
@@ -3212,13 +3333,16 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         csv_content = uploaded_file.getvalue().decode("utf-8")
                         imported_df, import_error = import_from_csv(csv_content)
                         if import_error:
-                            st.warning(f"インポート警告: {import_error}")
+                            _bc_alert(f"インポート警告: {import_error}", severity="warning")
                         if len(imported_df) > 0:
                             st.session_state.daily_data = imported_df
-                            st.success(f"{len(imported_df)}件のデータをインポートしました。")
+                            _bc_alert(
+                                f"{len(imported_df)}件のデータをインポートしました。",
+                                severity="success",
+                            )
                             _auto_save_to_db()
                         elif not import_error:
-                            st.info("CSVにデータがありません。")
+                            _bc_alert("CSVにデータがありません。", severity="info")
 
                 with dm_col2:
                     if len(st.session_state.daily_data) > 0:
@@ -3232,7 +3356,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             key="dm_csv_download",
                         )
                     else:
-                        st.info("データなし")
+                        _bc_alert("データなし", severity="info")
 
                 # --- 運用開始時：過去月サマリー入力 ---
                 with st.expander("📋 過去月サマリー入力（運用開始時）", expanded=False):
@@ -3289,12 +3413,15 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 
                     if st.button("サマリーデータを保存", key="save_monthly_summary"):
                         st.session_state.monthly_summary = _summary_data
-                        st.success("過去月サマリーデータを保存しました。")
+                        _bc_alert("過去月サマリーデータを保存しました。", severity="success")
 
                 # --- 全データクリア ---
                 if len(st.session_state.daily_data) > 0:
                     with st.expander("⚠️ 全データ消去", expanded=False):
-                        st.warning(f"現在 {len(st.session_state.daily_data)} 件のデータがあります。この操作は取り消せません。")
+                        _bc_alert(
+                            f"現在 {len(st.session_state.daily_data)} 件のデータがあります。この操作は取り消せません。",
+                            severity="warning",
+                        )
                         _confirm_text = st.text_input(
                             "消去するには「全て消去」と入力してください",
                             key="dm_clear_confirm",
@@ -3309,13 +3436,14 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                                 del st.session_state.ward_day_buckets
                             if _DB_AVAILABLE:
                                 db_clear_all()
-                            st.success("全データを消去しました。")
+                            _bc_alert("全データを消去しました。", severity="success")
                             st.rerun()
 
                 st.markdown("---")
 
                 # --- データ入力フォーム ---
-                st.markdown("#### 新しいデータを追加")
+                _bc_section_title("1日分を登録", icon="📝")
+                st.caption("入院・退院を1日分まとめて登録します。医師別の詳細も同時に記録されます。")
 
                 # 初回セットアップ: データがない場合、ベッドマップから初期値を設定
                 _has_data = len(st.session_state.daily_data) > 0
@@ -3324,7 +3452,10 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                                 and st.session_state.abc_state["C"] == 0)
 
                 if not _has_data and _abc_is_zero:
-                    st.info("⚡ 初回セットアップ：病棟ベッドマップで各患者の在院日数を入力してください（初回のみ）")
+                    _bc_alert(
+                        "⚡ 初回セットアップ：病棟ベッドマップで各患者の在院日数を入力してください（初回のみ）",
+                        severity="info",
+                    )
 
                     if _BED_MAP_AVAILABLE:
                         # 病棟選択タブ
@@ -3372,13 +3503,16 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             st.session_state.day_buckets = {k: buckets_5f[k] + buckets_6f[k] for k in DAY_BUCKET_KEYS}
                             st.session_state.init_total_patients = sum(1 for v in bed_data_5f.values() if v > 0) + sum(1 for v in bed_data_6f.values() if v > 0)
 
-                            st.success(f"✅ 初期値を設定しました！ 5F: A{a_5f}/B{b_5f}/C{c_5f} | 6F: A{a_6f}/B{b_6f}/C{c_6f} | 合計: {total_a + total_b + total_c}名")
+                            _bc_alert(
+                                f"初期値を設定しました。5F: A{a_5f}/B{b_5f}/C{c_5f} | 6F: A{a_6f}/B{b_6f}/C{c_6f} | 合計: {total_a + total_b + total_c}名",
+                                severity="success",
+                            )
                             _auto_save_to_db()
                             st.rerun()
                         elif confirmed_5f or confirmed_6f:
-                            st.warning("両方の病棟を確定してください。")
+                            _bc_alert("両方の病棟を確定してください。", severity="warning")
                     else:
-                        st.warning("ベッドマップUIが利用できません。")
+                        _bc_alert("ベッドマップUIが利用できません。", severity="warning")
                         if "_BED_MAP_ERROR" in dir():
                             st.code(_BED_MAP_ERROR)
 
@@ -3447,143 +3581,149 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                 for _g_label, _names in _source_options_ui.items():
                     _flat_source_list.extend(_names)
 
-                form_col0, form_col1, form_col2 = st.columns(3)
-                with form_col0:
-                    input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
-                with form_col1:
-                    input_date = st.date_input("日付", value=pd.Timestamp.now().normalize(), key="dm_date")
-                with form_col2:
-                    _ward_max_beds = 47
-                    input_total = st.number_input(
-                        "在院患者総数", min_value=0, max_value=_ward_max_beds,
-                        value=40, step=1, key="dm_total_patients",
-                    )
+                with st.container(border=True):
+                    st.caption("🗓 共通項目（病棟・日付・在院患者総数）")
+                    form_col0, form_col1, form_col2 = st.columns(3)
+                    with form_col0:
+                        input_ward = st.selectbox("病棟", ["5F", "6F"], key="input_ward_select")
+                    with form_col1:
+                        input_date = st.date_input("日付", value=pd.Timestamp.now().normalize(), key="dm_date")
+                    with form_col2:
+                        _ward_max_beds = 47
+                        input_total = st.number_input(
+                            "在院患者総数", min_value=0, max_value=_ward_max_beds,
+                            value=40, step=1, key="dm_total_patients",
+                        )
 
                 # --- 入院情報セクション ---
-                st.markdown("**🏥 入院情報**")
-                input_admissions = st.number_input(
-                    "新規入院数（入院なしは0）",
-                    min_value=0, max_value=8, value=0, step=1,
-                    key="dm_admission_count",
-                    help="本日の新規入院数を入力。下に入院人数分のスロットが展開されます。",
-                )
-
-                _adm_events = []  # [(route, source, attending, short3_type), ...]
-                # 短手3 種類の選択肢（該当なしを先頭）
-                _short3_type_options = [
-                    SHORT3_TYPE_NONE,
-                    SHORT3_TYPE_POLYP_S,
-                    SHORT3_TYPE_POLYP_L,
-                    SHORT3_TYPE_INGUINAL,
-                    SHORT3_TYPE_PSG,
-                    SHORT3_TYPE_OTHER,
-                ]
-                if input_admissions > 0:
-                    st.caption(f"💡 {int(input_admissions)}名分の入院詳細を入力してください（経路・担当医は必須）")
-                for _a_slot_row in range(0, 8, 2):
-                    _a_slot_cols = st.columns(2)
-                    for _aci, _a_col in enumerate(_a_slot_cols):
-                        _asi = _a_slot_row + _aci
-                        if _asi >= input_admissions:
-                            continue
-                        with _a_col:
-                            with st.container(border=True):
-                                st.caption(f"✏️ 入院{_asi + 1}")
-                                _a_route = st.selectbox(
-                                    "経路",
-                                    _routes_ui,
-                                    key=f"dm_adm_route_{_asi}",
-                                )
-                                _a_source = st.selectbox(
-                                    "入院創出医（任意）",
-                                    _flat_source_list,
-                                    key=f"dm_adm_source_{_asi}",
-                                )
-                                _a_attending = st.selectbox(
-                                    "入院担当医（必須）",
-                                    [""] + _doctor_names_ui,
-                                    key=f"dm_adm_attending_{_asi}",
-                                )
-                                _a_short3_type = st.selectbox(
-                                    "🏃 短手3 種類",
-                                    _short3_type_options,
-                                    key=f"dm_adm_short3_type_{_asi}",
-                                    help="短期滞在手術等基本料3（4泊5日以内）の算定対象。該当する場合は種類を選択。計算は種類別の包括点数で行われます。",
-                                )
-                                _adm_events.append((_a_route, _a_source, _a_attending, _a_short3_type))
-
-                # 短手3 内数を集計（「該当なし」以外を1件とカウント）
-                input_admissions_short3 = sum(
-                    1 for ev in _adm_events if ev[3] and ev[3] != SHORT3_TYPE_NONE
-                )
-
-                # --- 短手3 → 通常入院 切替 ---
-                input_short3_overflow = st.number_input(
-                    "短手3→通常切替（6日以上入院継続）",
-                    min_value=0, max_value=10, value=0, step=1,
-                    help="短手3患者が6日目以降も入院継続した場合の切替患者数",
-                    key="input_short3_overflow",
-                )
-                input_short3_overflow_los = None
-                if input_short3_overflow > 0:
-                    input_short3_overflow_los = st.number_input(
-                        "切替患者の入院初日からの在院日数",
-                        min_value=6, max_value=90, value=6, step=1,
-                        help="入院料: Tier3 ¥31,170/日（予定入院+手術あり）",
-                        key="input_short3_overflow_los",
+                with st.container(border=True):
+                    _bc_section_title("入院登録", icon="🏥")
+                    input_admissions = st.number_input(
+                        "新規入院数（入院なしは0）",
+                        min_value=0, max_value=8, value=0, step=1,
+                        key="dm_admission_count",
+                        help="本日の新規入院数を入力。下に入院人数分のスロットが展開されます。",
                     )
 
-                # --- 退院情報セクション ---
-                st.markdown("**🚪 退院情報**")
-                st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
-                input_discharge_count = st.number_input(
-                    "退院人数（退院なしは0）",
-                    min_value=0, max_value=8, value=0, step=1,
-                    key="dm_discharge_count",
-                    help="本日の退院患者数を入力。下に退院人数分のスロットが展開されます。",
-                )
+                    _adm_events = []  # [(route, source, attending, short3_type), ...]
+                    # 短手3 種類の選択肢（該当なしを先頭）
+                    _short3_type_options = [
+                        SHORT3_TYPE_NONE,
+                        SHORT3_TYPE_POLYP_S,
+                        SHORT3_TYPE_POLYP_L,
+                        SHORT3_TYPE_INGUINAL,
+                        SHORT3_TYPE_PSG,
+                        SHORT3_TYPE_OTHER,
+                    ]
+                    if input_admissions > 0:
+                        st.caption(f"💡 {int(input_admissions)}名分の入院詳細を入力してください（経路・担当医は必須）")
+                    for _a_slot_row in range(0, 8, 2):
+                        _a_slot_cols = st.columns(2)
+                        for _aci, _a_col in enumerate(_a_slot_cols):
+                            _asi = _a_slot_row + _aci
+                            if _asi >= input_admissions:
+                                continue
+                            with _a_col:
+                                with st.container(border=True):
+                                    st.caption(f"✏️ 入院{_asi + 1}")
+                                    _a_route = st.selectbox(
+                                        "経路（必須）",
+                                        _routes_ui,
+                                        key=f"dm_adm_route_{_asi}",
+                                    )
+                                    _a_attending = st.selectbox(
+                                        "入院担当医（必須）",
+                                        [""] + _doctor_names_ui,
+                                        key=f"dm_adm_attending_{_asi}",
+                                    )
+                                    with st.expander("詳細（任意）", expanded=False):
+                                        _a_source = st.selectbox(
+                                            "入院創出医",
+                                            _flat_source_list,
+                                            key=f"dm_adm_source_{_asi}",
+                                        )
+                                        _a_short3_type = st.selectbox(
+                                            "🏃 短手3 種類",
+                                            _short3_type_options,
+                                            key=f"dm_adm_short3_type_{_asi}",
+                                            help="短期滞在手術等基本料3（4泊5日以内）の算定対象。該当する場合は種類を選択。計算は種類別の包括点数で行われます。",
+                                        )
+                                    _adm_events.append((_a_route, _a_source, _a_attending, _a_short3_type))
 
-                # 在院日数スライダー（通常1-90日、90日超は数値入力）
-                _los_options = list(range(1, 91))
-                if input_discharge_count > 0:
-                    st.caption(f"💡 {int(input_discharge_count)}名分の退院詳細を入力してください（在院日数・担当医）")
-                _los_all = []
-                _dis_attendings = []
-                for _slot_row in range(0, 8, 2):
-                    _slot_cols = st.columns(2)
-                    for _ci, _col in enumerate(_slot_cols):
-                        _si = _slot_row + _ci
-                        if _si >= input_discharge_count:
-                            continue
-                        with _col:
-                            with st.container(border=True):
-                                st.caption(f"✏️ 退院{_si + 1}")
-                                _manual_key = f"dm_los_manual_{_si}"
-                                _is_manual = st.checkbox(
-                                    "📝 90日超（数値入力）",
-                                    key=_manual_key,
-                                    help="91日以上の長期入院患者の場合にチェック。",
-                                )
-                                if _is_manual:
-                                    _los_val = st.number_input(
-                                        "在院日数",
-                                        min_value=1, max_value=365, value=91, step=1,
-                                        key=f"dm_los_slot_input_{_si}",
+                    # 短手3 内数を集計（「該当なし」以外を1件とカウント）
+                    input_admissions_short3 = sum(
+                        1 for ev in _adm_events if ev[3] and ev[3] != SHORT3_TYPE_NONE
+                    )
+
+                    # --- 短手3 → 通常入院 切替（高度オプション: 折りたたみ） ---
+                    with st.expander("短手3 → 通常入院 切替（該当がある場合のみ）", expanded=False):
+                        input_short3_overflow = st.number_input(
+                            "短手3→通常切替（6日以上入院継続）",
+                            min_value=0, max_value=10, value=0, step=1,
+                            help="短手3患者が6日目以降も入院継続した場合の切替患者数",
+                            key="input_short3_overflow",
+                        )
+                        input_short3_overflow_los = None
+                        if input_short3_overflow > 0:
+                            input_short3_overflow_los = st.number_input(
+                                "切替患者の入院初日からの在院日数",
+                                min_value=6, max_value=90, value=6, step=1,
+                                help="入院料: Tier3 ¥31,170/日（予定入院+手術あり）",
+                                key="input_short3_overflow_los",
+                            )
+
+                # --- 退院情報セクション ---
+                with st.container(border=True):
+                    _bc_section_title("退院登録", icon="🚪")
+                    st.caption("🟢 A群: 1-5日 ／ 🟡 B群: 6-14日 ／ 🔴 C群: 15日以上")
+                    input_discharge_count = st.number_input(
+                        "退院人数（退院なしは0）",
+                        min_value=0, max_value=8, value=0, step=1,
+                        key="dm_discharge_count",
+                        help="本日の退院患者数を入力。下に退院人数分のスロットが展開されます。",
+                    )
+
+                    # 在院日数スライダー（通常1-90日、90日超は数値入力）
+                    _los_options = list(range(1, 91))
+                    if input_discharge_count > 0:
+                        st.caption(f"💡 {int(input_discharge_count)}名分の退院詳細を入力してください（在院日数・担当医）")
+                    _los_all = []
+                    _dis_attendings = []
+                    for _slot_row in range(0, 8, 2):
+                        _slot_cols = st.columns(2)
+                        for _ci, _col in enumerate(_slot_cols):
+                            _si = _slot_row + _ci
+                            if _si >= input_discharge_count:
+                                continue
+                            with _col:
+                                with st.container(border=True):
+                                    st.caption(f"✏️ 退院{_si + 1}")
+                                    _manual_key = f"dm_los_manual_{_si}"
+                                    _is_manual = st.checkbox(
+                                        "📝 90日超（数値入力）",
+                                        key=_manual_key,
+                                        help="91日以上の長期入院患者の場合にチェック。",
                                     )
-                                else:
-                                    _los_val = st.select_slider(
-                                        "在院日数",
-                                        options=_los_options,
-                                        value=10,
-                                        key=f"dm_los_slot_slide_{_si}",
+                                    if _is_manual:
+                                        _los_val = st.number_input(
+                                            "在院日数",
+                                            min_value=1, max_value=365, value=91, step=1,
+                                            key=f"dm_los_slot_input_{_si}",
+                                        )
+                                    else:
+                                        _los_val = st.select_slider(
+                                            "在院日数",
+                                            options=_los_options,
+                                            value=10,
+                                            key=f"dm_los_slot_slide_{_si}",
+                                        )
+                                    _d_attending = st.selectbox(
+                                        "担当医（必須）",
+                                        [""] + _doctor_names_ui,
+                                        key=f"dm_dis_attending_{_si}",
                                     )
-                                _d_attending = st.selectbox(
-                                    "担当医（必須）",
-                                    [""] + _doctor_names_ui,
-                                    key=f"dm_dis_attending_{_si}",
-                                )
-                                _los_all.append(_los_val)
-                                _dis_attendings.append(_d_attending)
+                                    _los_all.append(_los_val)
+                                    _dis_attendings.append(_d_attending)
 
                 # 退院人数分だけ有効値として集計
                 auto_discharges = int(input_discharge_count)
@@ -3618,9 +3758,12 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         f"（A:{_auto_da} B:{_auto_db} C:{_auto_dc}　平均LOS（在院日数）: **{_avg_los_display:.1f}日**）"
                     )
                 if _summary_parts:
-                    st.info("💡 " + "\n\n".join(_summary_parts))
+                    _bc_alert("💡 " + "<br><br>".join(_summary_parts), severity="info")
                 else:
-                    st.info("💡 入院・退院なし（上で人数を設定するとスロットが展開されます）")
+                    _bc_alert(
+                        "💡 入院・退院なし（上で人数を設定するとスロットが展開されます）",
+                        severity="info",
+                    )
 
                 input_notes = st.text_input("備考（任意）", value="", key="dm_notes")
 
@@ -3637,8 +3780,10 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             _validation_errors.append(f"退院{_d_i + 1}: 担当医を選択してください")
 
                     if _validation_errors:
-                        for _err in _validation_errors:
-                            st.error(f"⚠️ {_err}")
+                        _bc_alert(
+                            "⚠️ 入力を確認してください:<br>" + "<br>".join(_validation_errors),
+                            severity="danger",
+                        )
                         st.stop()
 
                     # 在院日数リストからA/B/C退院数を算出
@@ -3727,21 +3872,22 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             f"{'🟢' if v <= 5 else '🟡' if v <= 14 else '🔴'}{v}日" for v in _active_los
                         ) if _active_los else "なし"
                         _detail_note = f" / 医師別詳細 {_detail_written_count}件記録" if _detail_written_count > 0 else ""
-                        st.success(
-                            f"✅ {input_date} ({input_ward}) の 1日分を登録しました。"
-                            f"（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}{_detail_note}）"
+                        _bc_alert(
+                            f"{input_date} ({input_ward}) の 1日分を登録しました。"
+                            f"（退院:{_phase_detail} / A群:{new_a} B群:{new_b} C群:{new_c}{_detail_note}）",
+                            severity="success",
                         )
                         _auto_save_to_db()
                         # 次回再描画時に全入力フィールドを初期化する
                         st.session_state["_dm_reset_inputs"] = True
                         st.rerun()
                     else:
-                        st.error(f"入力エラー:\n{error_msg}")
+                        _bc_alert(f"入力エラー: {error_msg}", severity="danger")
 
                 st.markdown("---")
 
                 # --- データ一覧・編集 ---
-                st.markdown("#### 記録データ一覧")
+                _bc_section_title("本日の記録一覧", icon="📊")
                 if len(st.session_state.daily_data) > 0:
                     display_data = st.session_state.daily_data.copy()
                     display_data["date"] = pd.to_datetime(display_data["date"])
@@ -3900,11 +4046,14 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                                     st.session_state.abc_state = _fb_abc
 
                                 st.session_state.daily_data = updated
-                                st.success("変更を保存しました。A/B/C群と退院数を再計算しました。")
+                                _bc_alert(
+                                    "変更を保存しました。A/B/C群と退院数を再計算しました。",
+                                    severity="success",
+                                )
                                 _auto_save_to_db()
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"保存エラー: {e}")
+                                _bc_alert(f"保存エラー: {e}", severity="danger")
 
                     with edit_col2:
                         # 削除用：日付 + 病棟 を選択（同一日付の5F/6Fを区別するため）
@@ -3925,15 +4074,16 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                                 st.session_state.daily_data = delete_record(
                                     st.session_state.daily_data, _del_date_str, ward=_del_ward,
                                 )
-                                st.success(f"{del_label} のデータを削除しました。")
+                                _bc_alert(f"{del_label} のデータを削除しました。", severity="success")
                                 _auto_save_to_db()
                                 st.rerun()
 
                     st.caption(f"合計 {len(st.session_state.daily_data)} 件のレコード")
                 else:
-                    st.warning(
+                    _bc_alert(
                         "まずデータを入力してください。操作方法がわからない場合は"
-                        "「🎮 デモモード（サンプルデータ）」でお試しください。"
+                        "「🎮 デモモード（サンプルデータ）」でお試しください。",
+                        severity="warning",
                     )
 
             # === 入退院詳細 表示のみ（入力は統合フォームに一本化） ===
@@ -3942,8 +4092,8 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
             if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE:
                 if len(st.session_state.admission_details) > 0:
                     st.markdown("---")
-                    st.markdown("#### 入退院詳細（医師別）— 直近の記録")
-                    st.caption("入力は上の「新しいデータを追加」フォームで行います。医師別情報は1回の登録でまとめて記録されます。")
+                    _bc_section_title("入退院詳細（医師別）— 直近の記録", icon="👩‍⚕️")
+                    st.caption("入力は上の「1日分を登録」フォームで行います。医師別情報は1回の登録でまとめて記録されます。")
                     _recent = st.session_state.admission_details.sort_values("date", ascending=False).head(20).copy()
                     _display_cols = {
                         "date": "日付", "ward": "病棟", "event_type": "種別",
@@ -4217,8 +4367,11 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 # =====================================================================
 # シミュレーション結果タブ / 実績データタブ
 # =====================================================================
-# データが必要なセクション（ダッシュボード・意思決定支援）かどうか
-_needs_sim_data = _selected_section in ["📊 ダッシュボード", "🎯 意思決定支援"]
+# データが必要なセクション（今日の運営・What-if・戦略）かどうか
+# ※「🏥 退院調整」は含めない — カンファ資料／需要予測／退院候補／予約可能枠は
+#  sim データ未準備でも自己完結で描画し、退院タイミングタブ自体も内部で
+#  「シミュレーションを実行するか、実績データを入力してください」ガードを持つため。
+_needs_sim_data = _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]
 # データ準備完了フラグ（st.stop()の代わりに各タブでガードに使用）
 _data_ready = False
 
@@ -4346,6 +4499,53 @@ if "📊 日次推移" in _tab_idx and _data_ready:
             with st.expander("📖 このタブの見方と活用法"):
                 st.markdown(HELP_TEXTS["tab_daily"])
 
+        # --- 日次推移タブ専用のデザイントークン（design_tokens.py と整合） ---
+        # matplotlib に design_tokens の定数を適用するため、ここでローカル変数として束ねる
+        _DT_TEXT_PRIMARY = "#1F2937"
+        _DT_TEXT_SECONDARY = "#6B7280"
+        _DT_TEXT_MUTED = "#9CA3AF"
+        _DT_BORDER = "#E5E7EB"
+        _DT_ACCENT = "#374151"      # 主役ダークグレー（稼働率・全体の線）
+        _DT_WARD_5F = "#2563EB"     # 5F: ブルー
+        _DT_WARD_6F = "#8B5CF6"     # 6F: パープル
+        _DT_WARNING = "#F59E0B"
+        _DT_DANGER = "#DC2626"
+        _DT_SUCCESS = "#10B981"
+        _DT_INFO = "#2563EB"
+        # 実線 / 破線 / 点線の標準線幅
+        _DT_LW_PRIMARY = 2.5
+        _DT_LW_TARGET = 1.8
+        _DT_LW_AUX = 1.2
+
+        def _apply_daily_axes_style(ax_obj, show_xgrid: bool = False):
+            """日次推移タブ共通の軸スタイル（ミニマル・横グリッドのみ）."""
+            ax_obj.set_facecolor("white")
+            ax_obj.grid(False)
+            ax_obj.yaxis.grid(True, color=_DT_BORDER, linewidth=0.8, alpha=0.9)
+            if show_xgrid:
+                ax_obj.xaxis.grid(True, color=_DT_BORDER, linewidth=0.6, alpha=0.6)
+            ax_obj.set_axisbelow(True)
+            for _spine_name, _spine in ax_obj.spines.items():
+                if _spine_name in ("top", "right"):
+                    _spine.set_visible(False)
+                else:
+                    _spine.set_color(_DT_BORDER)
+                    _spine.set_linewidth(0.8)
+            ax_obj.tick_params(colors=_DT_TEXT_SECONDARY, labelsize=9)
+            ax_obj.xaxis.label.set_color(_DT_TEXT_SECONDARY)
+            ax_obj.yaxis.label.set_color(_DT_TEXT_SECONDARY)
+            ax_obj.xaxis.label.set_fontsize(10)
+            ax_obj.yaxis.label.set_fontsize(10)
+
+        def _style_daily_legend(leg_obj):
+            """日次推移タブ共通の凡例スタイル（枠なし・控えめ）."""
+            if leg_obj is None:
+                return
+            leg_obj.get_frame().set_alpha(0.0)
+            for _t in leg_obj.get_texts():
+                _t.set_color(_DT_TEXT_SECONDARY)
+                _t.set_fontsize(9)
+
         # --- 曜日ラベル生成 ---
         _weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
         _day_weekdays = []
@@ -4360,9 +4560,9 @@ if "📊 日次推移" in _tab_idx and _data_ready:
         _weekend_days = [df["日"].iloc[i] for i in range(len(df)) if _day_weekdays[i] >= 5]
 
         def _add_weekend_bg(ax_obj, weekend_list):
-            """土日をグレー背景で強調するヘルパー"""
+            """土日を極薄グレー背景で強調するヘルパー（新デザイン）."""
             for _wd in weekend_list:
-                ax_obj.axvspan(_wd - 0.5, _wd + 0.5, alpha=0.08, color="gray")
+                ax_obj.axvspan(_wd - 0.5, _wd + 0.5, alpha=0.06, color=_DT_TEXT_MUTED)
 
         def _set_weekday_ticks(ax_obj, day_series, weekday_list):
             """曜日ラベル付き目盛りを設定するヘルパー"""
@@ -4372,34 +4572,125 @@ if "📊 日次推移" in _tab_idx and _data_ready:
                 _step = max(1, len(_tpos) // 15)
                 _show = list(range(0, len(_tpos), _step))
                 ax_obj.set_xticks([_tpos[j] for j in _show])
-                ax_obj.set_xticklabels([_tlbl[j] for j in _show], fontsize=8)
+                ax_obj.set_xticklabels([_tlbl[j] for j in _show], fontsize=9, color=_DT_TEXT_SECONDARY)
             else:
                 ax_obj.set_xticks(_tpos)
-                ax_obj.set_xticklabels(_tlbl, fontsize=8)
+                ax_obj.set_xticklabels(_tlbl, fontsize=9, color=_DT_TEXT_SECONDARY)
 
-        # --- 稼働率推移 ---
-        fig, ax = plt.subplots(figsize=(12, 3))
+        # --- 今日の指標サマリー（KPIカード3列） ---
+        # 本日値 = データ最終日、月平均 = これまでの平均
+        try:
+            _today_occ_pct = float(df["稼働率"].iloc[-1]) * 100
+            _avg_occ_pct_kpi = float(df["稼働率"].mean()) * 100
+            _delta_occ = _today_occ_pct - _avg_occ_pct_kpi
+
+            _today_patients = float(df["在院患者数"].iloc[-1])
+            _avg_patients = float(df["在院患者数"].mean())
+            _delta_patients = _today_patients - _avg_patients
+
+            # ALOS: summary から月平均・rolling があれば本日の参考値として使う
+            _today_los = None
+            _avg_los = None
+            if isinstance(summary, dict):
+                # summary に "rolling_los" or "平均在院日数" が入っているパターンをカバー
+                for _k in ("平均在院日数", "rolling_los", "avg_los"):
+                    if _k in summary and summary[_k] is not None:
+                        _avg_los = float(summary[_k])
+                        break
+            # df 内に在院日数列があれば最終日値を本日値として使用（無ければ avg と同値）
+            if "平均在院日数" in df.columns:
+                try:
+                    _today_los = float(df["平均在院日数"].iloc[-1])
+                except Exception:
+                    _today_los = None
+            if _today_los is None:
+                _today_los = _avg_los
+
+            _bc_section_title("今日の指標サマリー", icon="📊")
+            _kpi_col1, _kpi_col2, _kpi_col3 = st.columns(3)
+            with _kpi_col1:
+                _sev = "success" if _today_occ_pct >= target_lower * 100 else ("warning" if _today_occ_pct >= (target_lower * 100 - 3) else "danger")
+                _delta_str = f"月平均比 {_delta_occ:+.1f} pt（月平均 {_avg_occ_pct_kpi:.1f}%）"
+                _bc_kpi_card(
+                    label="稼働率（本日）",
+                    value=f"{_today_occ_pct:.1f}",
+                    unit="%",
+                    delta=_delta_str,
+                    severity=_sev,
+                )
+            with _kpi_col2:
+                _delta_p_str = f"月平均比 {_delta_patients:+.1f} 名（月平均 {_avg_patients:.1f} 名）"
+                _bc_kpi_card(
+                    label="在院患者数（本日）",
+                    value=f"{_today_patients:.0f}",
+                    unit=" 名",
+                    delta=_delta_p_str,
+                    severity="neutral",
+                )
+            with _kpi_col3:
+                if _today_los is not None and _avg_los is not None:
+                    _delta_los = _today_los - _avg_los
+                    _bc_kpi_card(
+                        label="平均在院日数（直近）",
+                        value=f"{_today_los:.1f}",
+                        unit=" 日",
+                        delta=f"月平均 {_avg_los:.1f} 日",
+                        severity="neutral",
+                    )
+                elif _avg_los is not None:
+                    _bc_kpi_card(
+                        label="平均在院日数（月平均）",
+                        value=f"{_avg_los:.1f}",
+                        unit=" 日",
+                        severity="neutral",
+                    )
+                else:
+                    _bc_kpi_card(
+                        label="平均在院日数",
+                        value="—",
+                        severity="neutral",
+                    )
+        except Exception as _kpi_err:
+            # KPI サマリーで失敗しても本体グラフは描画する
+            import traceback as _kpi_tb
+            st.caption(f"（KPI サマリー取得エラー: {type(_kpi_err).__name__}）")
+
+        st.markdown("")  # 空行（セクション間の呼吸）
+
+        # --- 稼働率推移（Hero チャート） ---
+        _bc_section_title("稼働率の推移", icon="📊")
+        fig, ax = plt.subplots(figsize=(12, 3.2))
+        fig.patch.set_alpha(0.0)
         _add_weekend_bg(ax, _weekend_days)
-        ax.plot(df["日"], df["稼働率"] * 100, color="#2C3E50", linewidth=2, label="稼働率")
+        ax.plot(
+            df["日"], df["稼働率"] * 100,
+            color=_DT_ACCENT, linewidth=_DT_LW_PRIMARY, label="稼働率",
+            zorder=3,
+        )
         ax.axhspan(
             target_lower * 100, target_upper * 100,
-            alpha=0.15, color="#F39C12", label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%)"
+            alpha=0.10, color=_DT_WARNING,
+            label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%)",
+            zorder=1,
         )
         ax.set_xlabel("日")
         ax.set_ylabel("稼働率 (%)")
-        ax.set_title("稼働率推移（グレー背景=土日）")
         _set_weekday_ticks(ax, df["日"], _day_weekdays)
-        ax.legend(loc="lower right")
+        _apply_daily_axes_style(ax)
+        _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
+        _style_daily_legend(_leg)
         ax.set_xlim(1, days_in_month)
-        ax.grid(True, alpha=0.3)
 
         # --- 月平均ライン（常時表示）---
         _avg_occ_pct = df["稼働率"].mean() * 100
-        ax.axhline(y=_avg_occ_pct, color="gray", linestyle=":", linewidth=1, alpha=0.7)
+        ax.axhline(
+            y=_avg_occ_pct, color=_DT_TEXT_MUTED, linestyle=":",
+            linewidth=_DT_LW_AUX, alpha=0.8, zorder=2,
+        )
         ax.annotate(
             f'月平均 {_avg_occ_pct:.1f}%',
             xy=(2, _avg_occ_pct),
-            fontsize=9, color="gray", va="bottom",
+            fontsize=9, color=_DT_TEXT_SECONDARY, va="bottom",
         )
 
         # --- 残り日数の目標達成ライン（常時表示）---
@@ -4473,14 +4764,14 @@ if "📊 日次推移" in _tab_idx and _data_ready:
             _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
 
             if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
-                _target_color = "#1E8449"
+                _target_color = _DT_SUCCESS
                 _target_label = f'{_label_scope} 維持\n{_required_occ_pct:.1f}%以上'
             else:
-                _target_color = "#FF4444" if _mt_chart["difficulty"] in ("hard", "impossible") else "#FF8800"
+                _target_color = _DT_DANGER if _mt_chart["difficulty"] in ("hard", "impossible") else _DT_WARNING
                 _target_label = f'{_label_scope} 必要\n{_required_occ_pct:.1f}%'
 
             ax.plot(_target_x, _target_y,
-                    linestyle="--", linewidth=2.5, color=_target_color,
+                    linestyle="--", linewidth=_DT_LW_TARGET, color=_target_color,
                     marker="", zorder=5, label=f"{_label_scope} {_required_occ_pct:.1f}%")
             ax.annotate(
                 _target_label,
@@ -4490,14 +4781,14 @@ if "📊 日次推移" in _tab_idx and _data_ready:
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
             )
 
-            # 2. 均等努力目標線（青い点線）— 全体主義での目標達成ライン
+            # 2. 均等努力目標線（補助）— 全体主義での目標達成ライン
             if _has_equal_effort and _ee_target is not None:
                 _ee_display = min(_ee_target, helper_cap * 100) if _ee_over_cap else _ee_target
                 _ee_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
                 _ee_y = [_occ_pct_values[-1], _ee_display, _ee_display]
-                _ee_line_color = "#E67E22" if _ee_over_cap else "#3498DB"
+                _ee_line_color = _DT_WARNING if _ee_over_cap else _DT_INFO
                 ax.plot(_ee_x, _ee_y,
-                        linestyle=":", linewidth=2.5, color=_ee_line_color,
+                        linestyle=":", linewidth=_DT_LW_TARGET, color=_ee_line_color,
                         marker="", zorder=4, alpha=0.85,
                         label=f"助け合い {_ee_display:.1f}%")
                 if _ee_over_cap:
@@ -4536,57 +4827,83 @@ if "📊 日次推移" in _tab_idx and _data_ready:
 
         # 病棟別稼働率は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
-        # --- 在院患者数推移 ---
+        # --- Secondary チャート（在院患者数・新規入院/退院数）---
         col1, col2 = st.columns(2)
         with col1:
-            fig, ax = plt.subplots(figsize=(6, 3.5))
+            _bc_section_title("在院患者数の推移", icon="🛏")
+            fig, ax = plt.subplots(figsize=(6, 3.2))
+            fig.patch.set_alpha(0.0)
             _add_weekend_bg(ax, _weekend_days)
-            ax.plot(df["日"], df["在院患者数"], color="#8E44AD", linewidth=2)
-            ax.axhline(y=_view_beds, color="#E74C3C", linestyle="--", alpha=0.5, label=f"病床数({_view_beds})")
+            ax.plot(
+                df["日"], df["在院患者数"],
+                color=_DT_WARD_6F, linewidth=_DT_LW_PRIMARY, zorder=3,
+                label="在院患者数",
+            )
+            ax.axhline(
+                y=_view_beds, color=_DT_DANGER, linestyle="--",
+                linewidth=_DT_LW_TARGET, alpha=0.6,
+                label=f"病床数 {_view_beds}",
+            )
             ax.set_xlabel("日")
-            ax.set_ylabel("患者数")
-            ax.set_title("在院患者数推移")
-            ax.legend()
+            ax.set_ylabel("患者数（名）")
+            _set_weekday_ticks(ax, df["日"], _day_weekdays)
+            _apply_daily_axes_style(ax)
+            _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
+            _style_daily_legend(_leg)
             ax.set_xlim(1, days_in_month)
-            ax.grid(True, alpha=0.3)
             st.pyplot(fig)
             plt.close(fig)
 
         # --- 新規入院・退院数 ---
         with col2:
-            fig, ax = plt.subplots(figsize=(6, 3.5))
+            _bc_section_title("新規入院・退院数", icon="🚪")
+            fig, ax = plt.subplots(figsize=(6, 3.2))
+            fig.patch.set_alpha(0.0)
             _add_weekend_bg(ax, _weekend_days)
             x = df["日"]
-            width = 0.35
-            ax.bar(x - width/2, df["新規入院"], width, label="新規入院", color=COLOR_B, alpha=0.8)
-            ax.bar(x + width/2, df["退院"], width, label="退院", color=COLOR_A, alpha=0.8)
+            width = 0.38
+            ax.bar(
+                x - width/2, df["新規入院"], width,
+                label="新規入院", color=_DT_INFO, alpha=0.85, edgecolor="none",
+            )
+            ax.bar(
+                x + width/2, df["退院"], width,
+                label="退院", color=_DT_WARD_6F, alpha=0.85, edgecolor="none",
+            )
             ax.set_xlabel("日")
             ax.set_ylabel("人数")
-            ax.set_title("新規入院・退院数")
-            ax.legend()
+            _set_weekday_ticks(ax, df["日"], _day_weekdays)
+            _apply_daily_axes_style(ax)
+            _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
+            _style_daily_legend(_leg)
             ax.set_xlim(0.5, days_in_month + 0.5)
-            ax.grid(True, alpha=0.3, axis="y")
             st.pyplot(fig)
             plt.close(fig)
 
         # 病棟別在院患者数は病棟セレクターで切り替え
 
-        # --- 日次運営貢献額推移 ---
-        fig, ax = plt.subplots(figsize=(12, 3))
+        # --- 日次運営貢献額推移（Tertiary）---
+        _bc_section_title("日次運営貢献額の推移", icon="💴")
+        fig, ax = plt.subplots(figsize=(12, 2.8))
+        fig.patch.set_alpha(0.0)
         _add_weekend_bg(ax, _weekend_days)
-        colors_profit = [COLOR_PROFIT if v >= 0 else COLOR_A for v in df["日次運営貢献額"]]
-        ax.bar(df["日"], df["日次運営貢献額"] / 10000, color=colors_profit, alpha=0.8)
-        ax.axhline(y=0, color="black", linewidth=0.5)
+        # 正 = 成功色（緑系）、負 = 危険色（赤系）
+        colors_profit = [_DT_SUCCESS if v >= 0 else _DT_DANGER for v in df["日次運営貢献額"]]
+        ax.bar(
+            df["日"], df["日次運営貢献額"] / 10000,
+            color=colors_profit, alpha=0.85, edgecolor="none",
+        )
+        ax.axhline(y=0, color=_DT_TEXT_MUTED, linewidth=0.8)
         ax.set_xlabel("日")
         ax.set_ylabel("運営貢献額（万円）")
-        ax.set_title("日次運営貢献額推移")
+        _set_weekday_ticks(ax, df["日"], _day_weekdays)
+        _apply_daily_axes_style(ax)
         ax.set_xlim(0.5, days_in_month + 0.5)
-        ax.grid(True, alpha=0.3, axis="y")
         st.pyplot(fig)
         plt.close(fig)
 
         # --- 今月のハイライト ---
-        st.markdown("**📌 今月のハイライト**")
+        _bc_section_title("今月のハイライト", icon="📌")
         _occ_pct = df["稼働率"] * 100
         _min_occ_idx = _occ_pct.idxmin()
         _max_occ_idx = _occ_pct.idxmax()
@@ -6090,7 +6407,7 @@ if "🚨 運営改善アラート" in _tab_idx and _data_ready:
         # 病棟別フラグは病棟セレクターで切り替え（比較ストリップで他病棟を表示）
 
 
-# ===== タブ5-7: 意思決定支援タブ =====
+# ===== 意思決定タブ群（「📊 今日の運営」「🔮 What-if・戦略」に分散配置） =====
 # --- タブ5: 意思決定ダッシュボード ---
 if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
     with tabs[_tab_idx["\U0001f3af 意思決定ダッシュボード"]]:
@@ -6117,7 +6434,7 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                 _forecast = predict_occupancy(_raw_df, _day_idx, _cli_params, horizon=5)
                 _actions = suggest_actions(_ward_status, _forecast, _cli_params)
 
-                # --- 🌅 朝のブリーフィング ---
+                # --- 朝のブリーフィング: 指標の下ごしらえ ---
                 _br_score_numeric = _ward_status.get("score_numeric", 0)
                 _br_score_label = _ward_status.get("score", "unknown")
                 _br_score_ja = {"healthy": "健全", "caution": "注意", "warning": "警告", "critical": "危機"}.get(_br_score_label, _br_score_label)
@@ -6132,70 +6449,176 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                 _br_phase_b = int(round(_br_patients * _br_pct_b / 100))
                 _br_phase_c = _br_patients - _br_phase_a - _br_phase_b
 
-                # 優先アクション（上位2件）
+                # 稼働率の severity を目標レンジに合わせて決定（Hero カード用）
+                if _br_occ < target_lower * 100:
+                    _occ_severity = "warning"  # 目標下限未達
+                    _occ_delta = f"目標 {target_lower*100:.0f}% 未達（-{target_lower*100 - _br_occ:.1f}pt）"
+                elif _br_occ > target_upper * 100:
+                    _occ_severity = "danger"  # 上限超過
+                    _occ_delta = f"目標 {target_upper*100:.0f}% 超過（+{_br_occ - target_upper*100:.1f}pt）"
+                else:
+                    _occ_severity = "success"
+                    _occ_delta = f"目標レンジ内（{target_lower*100:.0f}〜{target_upper*100:.0f}%）"
+
+                # 空床の severity: 0 は危機、1-2 は注意、3以上はニュートラル
+                if _br_empty <= 0:
+                    _empty_severity = "danger"
+                    _empty_delta = "満床 — 入院受け入れ困難"
+                elif _br_empty <= 2:
+                    _empty_severity = "warning"
+                    _empty_delta = "余力わずか"
+                else:
+                    _empty_severity = "neutral"
+                    _empty_delta = f"{_view_beds}床中"
+
+                # 病棟ステータスの severity マッピング
+                _status_severity_map = {
+                    "healthy": "success",
+                    "caution": "warning",
+                    "warning": "warning",
+                    "critical": "danger",
+                }
+                _status_severity = _status_severity_map.get(_br_score_label, "neutral")
+
+                # 優先アクション（上位2件）— ブリーフィングとアラート両方で使う
                 _br_top_actions = sorted(_actions, key=lambda a: a.get("priority", 99))[:2]
-                _br_action_lines = ""
                 _cat_labels = {"discharge": "退院", "admission": "入院", "hold": "保持", "alert": "警告"}
-                for _i, _act in enumerate(_br_top_actions, 1):
-                    _cat = _cat_labels.get(_act.get("category", ""), "")
-                    _br_action_lines += f"{_i}. [{_cat}] {_act['action']}\n"
 
                 # 向こう3日の見通し
-                _br_forecast_lines = ""
                 _forecast_3 = _forecast[:3]
                 _forecast_labels = ["明日", "明後日", "3日後"]
                 _fc_values = []
+                _br_forecast_parts = []
                 for _fi, _fc in enumerate(_forecast_3):
                     _fc_occ = _fc["predicted_occupancy"] * 100
                     _fc_values.append(_fc_occ)
                     _lbl = _forecast_labels[_fi] if _fi < len(_forecast_labels) else f"{_fi+1}日後"
-                    _br_forecast_lines += f"{_lbl} {_fc_occ:.1f}%"
-                    if _fi < len(_forecast_3) - 1:
-                        _br_forecast_lines += " → "
+                    _br_forecast_parts.append(f"{_lbl} {_fc_occ:.1f}%")
+                _br_forecast_lines = " → ".join(_br_forecast_parts)
 
-                _br_forecast_comment = ""
                 if _fc_values and min(_fc_values) < target_lower * 100:
-                    _br_forecast_comment = f"→ 入院受入施策（外来への前倒し依頼・連携室経由の紹介促進）を強化しないと{target_lower*100:.0f}%を割る見込み"
+                    _br_forecast_comment = f"入院受入施策（外来への前倒し依頼・連携室経由の紹介促進）を強化しないと{target_lower*100:.0f}%を割る見込み"
                 elif _fc_values and max(_fc_values) > target_upper * 100:
-                    _br_forecast_comment = f"→ 退院調整を進めないと{target_upper*100:.0f}%を超える見込み"
+                    _br_forecast_comment = f"退院調整を進めないと{target_upper*100:.0f}%を超える見込み"
                 else:
-                    _br_forecast_comment = "→ 目標レンジ内で推移する見込み"
+                    _br_forecast_comment = "目標レンジ内で推移する見込み"
 
-                _briefing_text = f"""━━━ 本日の病床状況 ━━━
-        **病棟状態: {_br_score_ja}（{_br_score_numeric}点）**
-        在院 {_br_patients}名 / 空床 {_br_empty}床 / 稼働率 {_br_occ:.1f}%
-        A群 {_br_phase_a}名({_br_pct_a:.0f}%) / B群 {_br_phase_b}名({_br_pct_b:.0f}%) / C群 {_br_phase_c}名({_br_pct_c:.0f}%)
+                # -----------------------------------------------------------
+                # Hero: 今朝の病棟状況（3 カード、数値を大きく・色で状態を示す）
+                # -----------------------------------------------------------
+                _bc_section_title("今朝の病棟状況", icon="\U0001f305")
+                _hc1, _hc2, _hc3 = st.columns(3)
+                with _hc1:
+                    _bc_kpi_card(
+                        "稼働率", f"{_br_occ:.1f}", "%",
+                        delta=_occ_delta,
+                        severity=_occ_severity,
+                        size="lg",
+                    )
+                with _hc2:
+                    _bc_kpi_card(
+                        "空床", f"{_br_empty}", "床",
+                        delta=_empty_delta,
+                        severity=_empty_severity,
+                        size="lg",
+                    )
+                with _hc3:
+                    _bc_kpi_card(
+                        "病棟ステータス", _br_score_ja, "",
+                        delta=f"スコア {_br_score_numeric}点",
+                        severity=_status_severity,
+                        size="lg",
+                    )
 
-        **優先アクション:**
-        {_br_action_lines}
-        **向こう3日の見通し:**
-        {_br_forecast_lines}
-        {_br_forecast_comment}
-        """
-                if _br_score_label == "healthy":
-                    st.success(_briefing_text)
-                elif _br_score_label == "caution":
-                    st.warning(_briefing_text)
-                else:
-                    st.error(_briefing_text)
+                # フェーズ構成は Hero のすぐ下で触る程度に（phase testid はここで保持）
+                _phase_cols = st.columns(3)
+                with _phase_cols[0]:
+                    _bc_kpi_card(
+                        "A群（急性期）", f"{_br_phase_a}", "名",
+                        delta=f"{_br_pct_a:.0f}% 構成",
+                        severity="neutral",
+                        size="sm",
+                    )
+                with _phase_cols[1]:
+                    _bc_kpi_card(
+                        "B群（回復期）", f"{_br_phase_b}", "名",
+                        delta=f"{_br_pct_b:.0f}% 構成",
+                        severity="neutral",
+                        size="sm",
+                    )
+                with _phase_cols[2]:
+                    # C群カードに phase testid を埋め込む（E2E 互換）
+                    # hidden div のテキストは A+B+C 合計（Playwright テストが参照）
+                    _bc_kpi_card(
+                        "C群（退院準備）", f"{_br_phase_c}", "名",
+                        delta=f"{_br_pct_c:.0f}% 構成",
+                        severity="neutral",
+                        size="sm",
+                        testid="phase",
+                        testid_attrs={
+                            "a": str(_br_phase_a),
+                            "b": str(_br_phase_b),
+                            "c": str(_br_phase_c),
+                        },
+                        testid_text=str(_br_phase_a + _br_phase_b + _br_phase_c),
+                    )
 
-                st.markdown(
-                    f'<div data-testid="phase" data-a="{_br_phase_a}" data-b="{_br_phase_b}" data-c="{_br_phase_c}" style="display:none">{_br_phase_a + _br_phase_b + _br_phase_c}</div>',
-                    unsafe_allow_html=True,
+                # -----------------------------------------------------------
+                # 朝のブリーフィング: 優先アクション + 3日の見通しを1枚のアラートに
+                # -----------------------------------------------------------
+                _bc_section_title("朝のブリーフィング", icon="\U0001f304")
+                _br_action_html = ""
+                if _br_top_actions:
+                    _br_action_items = []
+                    for _i, _act in enumerate(_br_top_actions, 1):
+                        _cat = _cat_labels.get(_act.get("category", ""), "")
+                        _br_action_items.append(f"<li>[{_cat}] {_act['action']}</li>")
+                    _br_action_html = "<ul style='margin:4px 0 8px 20px;padding:0;'>" + "".join(_br_action_items) + "</ul>"
+                _briefing_html = (
+                    f"<div style='font-weight:600;margin-bottom:6px;'>在院 {_br_patients}名 / 空床 {_br_empty}床 / 稼働率 {_br_occ:.1f}%</div>"
+                    + (f"<div style='margin-top:6px;'><b>優先アクション</b></div>{_br_action_html}" if _br_action_html else "")
+                    + f"<div style='margin-top:6px;'><b>向こう3日の見通し</b>：{_br_forecast_lines}</div>"
+                    + f"<div style='color:#6B7280;margin-top:4px;font-size:13px;'>→ {_br_forecast_comment}</div>"
                 )
+                _briefing_severity_map = {
+                    "healthy": "success",
+                    "caution": "warning",
+                    "warning": "warning",
+                    "critical": "danger",
+                }
+                _bc_alert(_briefing_html, severity=_briefing_severity_map.get(_br_score_label, "info"))
 
-                # --- 病棟状態詳細 ---
+                # 病棟状態詳細のサブ KPI（運営貢献額）
+                _bc_section_title("詳細指標", icon="\U0001f4ca")
                 _ws_c1, _ws_c2, _ws_c3 = st.columns(3)
-                _ws_c1.metric("稼働率", f"{_ward_status['occupancy_rate']*100:.1f}%")
-                _ws_c2.metric("ステータススコア", f"{_ward_status['score_numeric']}")
-                _ws_c3.metric("1床あたり運営貢献額", fmt_yen(int(_ward_status.get('profit_per_bed', 0))))
+                with _ws_c1:
+                    _bc_kpi_card(
+                        "ステータススコア", f"{_ward_status['score_numeric']}", "点",
+                        severity=_status_severity,
+                        size="md",
+                    )
+                with _ws_c2:
+                    _bc_kpi_card(
+                        "1床あたり運営貢献額",
+                        fmt_yen(int(_ward_status.get('profit_per_bed', 0))), "",
+                        severity="neutral",
+                        size="md",
+                    )
+                with _ws_c3:
+                    _bc_kpi_card(
+                        "総在院患者数", f"{_br_patients}", "名",
+                        delta=f"定床 {_view_beds}床",
+                        severity="neutral",
+                        size="md",
+                    )
 
                 if _ward_status.get("messages"):
-                    for _msg in _ward_status["messages"]:
-                        st.markdown(f"- {_msg}")
+                    with st.expander("病棟状態に関する補足メッセージ", expanded=False):
+                        for _msg in _ward_status["messages"]:
+                            st.markdown(f"- {_msg}")
 
                 # --- 稼働率予測 ---
-                st.markdown("**稼働率予測（5日間）**")
+                _bc_section_title("稼働率予測（5日間）", icon="\U0001f4c8")
 
                 fig, ax = plt.subplots(figsize=(12, 3))
                 # 実績（最後の10日分）
@@ -6226,21 +6649,25 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                 plt.close(fig)
 
                 # --- 推奨アクション ---
-                st.markdown("**推奨アクション**")
+                _bc_section_title("推奨アクション", icon="\U0001f3af")
                 _cat_icons = {"discharge": "\U0001f504", "admission": "\U0001f4e5", "hold": "\u23f8\ufe0f", "alert": "\u26a0\ufe0f"}
                 for _act in sorted(_actions, key=lambda a: a.get("priority", 99)):
                     _icon = _cat_icons.get(_act.get("category", ""), "")
-                    _text = f"{_icon} **{_act['action']}**\n\n期待効果: {_act.get('expected_impact', 'N/A')}"
                     _prio = _act.get("priority", 5)
                     if _prio == 1:
-                        st.error(_text)
+                        _sev = "danger"
                     elif _prio == 2:
-                        st.warning(_text)
+                        _sev = "warning"
                     else:
-                        st.info(_text)
+                        _sev = "info"
+                    _act_html = (
+                        f"<div style='font-weight:600;margin-bottom:4px;'>{_icon} {_act['action']}</div>"
+                        f"<div style='color:#6B7280;font-size:13px;'>期待効果: {_act.get('expected_impact', 'N/A')}</div>"
+                    )
+                    _bc_alert(_act_html, severity=_sev)
 
                 # --- LOS最適化 ---
-                st.markdown("**平均在院日数 最適化分析**")
+                _bc_section_title("平均在院日数 最適化分析", icon="\U0001f4cf")
 
                 # 前提条件: 月間入院数をスライダーで変更可能にする
                 _los_default_adm = _cli_params["monthly_admissions"]
@@ -6359,15 +6786,16 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                         "100%付近では入院を断るリスクあり。退院促進と入院確保はセットで検討。"
                     )
 
-                st.info(
-                    f"**最適平均在院日数レンジ:** {_optimal_los['min_los']:.1f} 〜 {_optimal_los['max_los']:.1f} 日 "
-                    f"（最適値: {_optimal_los['optimal_los']} 日）\n\n"
-                    f"期待月次運営貢献額: {fmt_yen(_optimal_los['expected_monthly_profit'])}\n\n"
-                    f"現在の設定: {avg_los} 日"
+                _bc_alert(
+                    f"<b>最適平均在院日数レンジ:</b> {_optimal_los['min_los']:.1f} 〜 {_optimal_los['max_los']:.1f} 日"
+                    f"（最適値: {_optimal_los['optimal_los']} 日）<br>"
+                    f"期待月次運営貢献額: {fmt_yen(_optimal_los['expected_monthly_profit'])}<br>"
+                    f"現在の設定: {avg_los} 日",
+                    severity="info",
                 )
 
-                # --- 💰 病棟運営最適化アドバイザー ---
-                st.markdown("**\U0001f4b0 病棟運営最適化アドバイザー**")
+                # --- 病棟運営最適化アドバイザー ---
+                _bc_section_title("病棟運営最適化アドバイザー", icon="\U0001f4b0")
 
                 # 限界価値分析
                 _marginal = calculate_marginal_bed_value(_cli_params)
@@ -6379,32 +6807,60 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                 _breakeven = _marginal["breakeven_days"]
 
                 # 限界価値パネル
-                st.markdown("##### 限界価値分析")
+                st.markdown("**限界価値分析**")
                 _mv_c1, _mv_c2, _mv_c3 = st.columns(3)
-                _mv_c1.metric("A群 運営貢献額/日", fmt_yen(int(_gross_a)))
-                _mv_c2.metric("B群 運営貢献額/日", fmt_yen(int(_gross_b)), delta="安定貢献層")
-                _mv_c3.metric("C群 運営貢献額/日", fmt_yen(int(_gross_c)), delta="最高効率")
+                with _mv_c1:
+                    _bc_kpi_card(
+                        "A群 運営貢献額/日", fmt_yen(int(_gross_a)), "",
+                        severity="neutral", size="md",
+                    )
+                with _mv_c2:
+                    _bc_kpi_card(
+                        "B群 運営貢献額/日", fmt_yen(int(_gross_b)), "",
+                        delta="安定貢献層",
+                        severity="neutral", size="md",
+                    )
+                with _mv_c3:
+                    _bc_kpi_card(
+                        "C群 運営貢献額/日", fmt_yen(int(_gross_c)), "",
+                        delta="最高効率",
+                        severity="success", size="md",
+                    )
 
                 _mv_c4, _mv_c5, _mv_c6 = st.columns(3)
-                _mv_c4.metric("新規1名 生涯期待運営貢献額", fmt_yen(_lifetime))
-                _mv_c5.metric("新規1名 日平均運営貢献額", fmt_yen(_daily_avg))
-                _mv_c6.metric("損益分岐日数", f"{_breakeven}日")
+                with _mv_c4:
+                    _bc_kpi_card(
+                        "新規1名 生涯期待運営貢献額", fmt_yen(_lifetime), "",
+                        severity="neutral", size="md",
+                    )
+                with _mv_c5:
+                    _bc_kpi_card(
+                        "新規1名 日平均運営貢献額", fmt_yen(_daily_avg), "",
+                        severity="neutral", size="md",
+                    )
+                with _mv_c6:
+                    _bc_kpi_card(
+                        "損益分岐日数", f"{_breakeven}", "日",
+                        severity="neutral", size="md",
+                    )
 
                 # C群 vs 新規の判断基準
                 if _gross_c > _daily_avg:
-                    st.warning(
-                        f"**C群在院調整({fmt_yen(int(_gross_c))}/日) > 新規平均({fmt_yen(_daily_avg)}/日)**\n\n"
+                    _bc_alert(
+                        f"<b>C群在院調整({fmt_yen(int(_gross_c))}/日) &gt; 新規平均({fmt_yen(_daily_avg)}/日)</b><br>"
                         f"差額 +{fmt_yen(int(_gross_c - _daily_avg))}/日 → "
-                        f"空床がある限りC群は持たせる方が得。退院させるのは満床で入院を断る場合のみ。"
+                        f"空床がある限りC群は持たせる方が得。退院させるのは満床で入院を断る場合のみ。",
+                        severity="warning",
                     )
                 else:
-                    st.success(
-                        f"**新規平均({fmt_yen(_daily_avg)}/日) >= C群在院調整({fmt_yen(int(_gross_c))}/日)**\n\n"
-                        f"→ 回転させて新規を入れる方が効率的。"
+                    _bc_alert(
+                        f"<b>新規平均({fmt_yen(_daily_avg)}/日) &ge; C群在院調整({fmt_yen(int(_gross_c))}/日)</b><br>"
+                        f"→ 回転させて新規を入れる方が効率的。",
+                        severity="success",
                     )
 
                 # 今日の最適プラン
-                st.markdown("##### 今日の最適プラン")
+                _bc_section_title("今日の最適プラン", icon="\U0001f4c5")
 
                 _demand_default = 5
                 _opt_plan = optimize_discharge_plan(
@@ -6427,43 +6883,56 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
 
                 # 推奨アクション
                 _rec_text = (
-                    f"**推奨: C群退院 {_rec['c_discharge']}名"
+                    f"<b>推奨: C群退院 {_rec['c_discharge']}名"
                 )
                 if _rec["b_discharge"] > 0:
                     _rec_text += f" / B群退院 {_rec['b_discharge']}名"
-                _rec_text += f" / 新規入院 {_rec['new_admissions']}名**"
+                _rec_text += f" / 新規入院 {_rec['new_admissions']}名</b>"
 
                 if _rec["total_discharge"] == 0:
-                    st.success(_rec_text)
+                    _bc_alert(_rec_text, severity="success")
                 else:
-                    st.warning(_rec_text)
+                    _bc_alert(_rec_text, severity="warning")
 
                 # 理由
                 for _r in _opt_plan["reasoning"]:
                     st.markdown(f"- {_r}")
 
-                # 経済効果
+                # 経済効果 — 日次純効果を Hero 的に強調
+                _net_val = _econ["daily_net_impact"]
+                _net_sev = "success" if _net_val > 0 else ("danger" if _net_val < 0 else "neutral")
                 _econ_cols = st.columns(4)
-                _econ_cols[0].metric(
-                    "退院による運営貢献額減",
-                    fmt_yen(_econ["daily_lost_profit"]),
-                    delta=f"-{fmt_yen(_econ['daily_lost_profit'])}" if _econ["daily_lost_profit"] > 0 else "0",
-                    delta_color="inverse",
-                )
-                _econ_cols[1].metric(
-                    "新規入院の初日運営貢献額",
-                    fmt_yen(_econ["daily_gained_profit"]),
-                )
-                _econ_cols[2].metric(
-                    "日次純効果",
-                    fmt_yen(_econ["daily_net_impact"]),
-                    delta=f"{_econ['daily_net_impact']:+,}円",
-                    delta_color="normal",
-                )
-                _econ_cols[3].metric(
-                    "新規の将来期待運営貢献額",
-                    fmt_yen(_econ["future_gain_from_new"]),
-                )
+                with _econ_cols[0]:
+                    _lost = _econ["daily_lost_profit"]
+                    _bc_kpi_card(
+                        "退院による運営貢献額減",
+                        fmt_yen(_lost), "",
+                        delta=(f"-{fmt_yen(_lost)}" if _lost > 0 else "0"),
+                        severity=("warning" if _lost > 0 else "neutral"),
+                        size="md",
+                    )
+                with _econ_cols[1]:
+                    _bc_kpi_card(
+                        "新規入院の初日運営貢献額",
+                        fmt_yen(_econ["daily_gained_profit"]), "",
+                        severity="neutral",
+                        size="md",
+                    )
+                with _econ_cols[2]:
+                    _bc_kpi_card(
+                        "日次純効果",
+                        fmt_yen(_net_val), "",
+                        delta=f"{_net_val:+,}円",
+                        severity=_net_sev,
+                        size="md",
+                    )
+                with _econ_cols[3]:
+                    _bc_kpi_card(
+                        "新規の将来期待運営貢献額",
+                        fmt_yen(_econ["future_gain_from_new"]), "",
+                        severity="neutral",
+                        size="md",
+                    )
 
                 # 実施後の状態
                 st.markdown(
@@ -6471,8 +6940,8 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                     f"稼働率{_aft['occupancy']*100:.1f}%"
                 )
 
-                # 需要別シミュレーション
-                st.markdown("##### 需要別シミュレーション")
+                # 需要別シミュレーション（詳細 — expander に収納）
+                _bc_section_title("需要別シミュレーション", icon="\U0001f50d")
                 _demand_slider = st.slider(
                     "入院需要予測（名/日）", min_value=1, max_value=15, value=5,
                     key="revenue_advisor_demand",
@@ -6506,9 +6975,9 @@ if "\U0001f3af 意思決定ダッシュボード" in _tab_idx:
                         break
 
                 if _threshold:
-                    st.info(f"**ポイント:** 需要{_threshold}名以上でC群退院が必要になります")
+                    _bc_alert(f"<b>ポイント:</b> 需要{_threshold}名以上でC群退院が必要になります", severity="info")
                 else:
-                    st.info("**ポイント:** 現在の空床数では需要15名まで退院調整不要です")
+                    _bc_alert("<b>ポイント:</b> 現在の空床数では需要15名まで退院調整不要です", severity="info")
 
 # --- タブ6: What-if分析（シミュレーションモードのみ） ---
 if "\U0001f52e What-if分析" in _tab_idx:
@@ -7279,7 +7748,10 @@ if "💾 仮説管理" in _tab_idx and _SCENARIO_MANAGER_AVAILABLE:
                     st.rerun()
 
 
-# ===== タブ: 👨‍⚕️ 退院タイミング =====
+# ===== タブ: 👨‍⚕️ 退院タイミング（「🏥 退院調整」セクション内） =====
+# Phase 1 情報階層リデザイン（2026-04-18）で旧「🎯 意思決定支援」（Phase 3 で「🔮 What-if・戦略」に改名）から移設。
+# レンダリングは _tab_idx に "👨‍⚕️ 退院タイミング" が存在するかでガード。
+# _dt_raw / _view_beds / target_lower / target_upper はサイドバーで初期化済み。
 if "👨‍⚕️ 退院タイミング" in _tab_idx:
     with tabs[_tab_idx["👨‍⚕️ 退院タイミング"]]:
         st.subheader("🔄 入退院バランス・空床リスクモニター")
@@ -9471,20 +9943,63 @@ if "📥 データエクスポート" in _tab_idx:
 
 
 # ---------------------------------------------------------------------------
-# HOPE送信用サマリータブ
+# HOPE送信用サマリータブ（Phase 4 で「⚙️ データ・設定」配下へ統合）
 # ---------------------------------------------------------------------------
 if _HOPE_AVAILABLE and "📨 HOPE送信" in _tab_idx:
     with tabs[_tab_idx["📨 HOPE送信"]]:
         _render_hope_tab()
 
 # ---------------------------------------------------------------------------
-# 🗓 連休対策セクション: 3 タブ構成
-# タブ 1: 📊 今週の需要予測（今回実装）
-# タブ 2: 📋 退院候補リスト（Task 2 で実装予定 — placeholder）
-# タブ 3: 📅 予約可能枠（Task 3 で実装予定 — placeholder）
+# 🏃 短手3設定タブ（Phase 4: 2026-04-18）
+# サイドバーの「🏃 短手3（包括点数・種類別）パラメータ」エクスパンダーから移設。
+# session_state キー（short3_rev_*, short3_cost_*）は従来のまま維持しており、
+# 下流の集計（bed_control_simulator_app.py 上方で構築される _short3_revenue_map）が
+# 次回レンダリング時に新しい値を拾う。
+# ---------------------------------------------------------------------------
+if "🏃 短手3設定" in _tab_idx:
+    with tabs[_tab_idx["🏃 短手3設定"]]:
+        st.header("🏃 短手3（包括点数・種類別）パラメータ")
+        st.caption(
+            "短期滞在手術等基本料3 は包括点数で算定されます。種類別に1件あたりの収入とコストを設定できます。"
+            + ("（2026年改定で -10% を仮定）" if _is_2026 else "")
+        )
+        st.info(
+            "設定値は入院シミュレーションの **運営貢献額サマリー**・**短手3 分離表示パネル**・"
+            "**月次運営貢献額** に反映されます。変更後、シミュレーション実行または"
+            "再描画で結果が更新されます。"
+        )
+        _s3_cols = st.columns(2)
+        for _idx, _t in enumerate(
+            [SHORT3_TYPE_POLYP_S, SHORT3_TYPE_POLYP_L, SHORT3_TYPE_INGUINAL, SHORT3_TYPE_PSG, SHORT3_TYPE_OTHER]
+        ):
+            with _s3_cols[_idx % 2]:
+                st.markdown(f"**{_t}**")
+                _rev = st.number_input(
+                    f"{_t} 収入（円/件）",
+                    min_value=0, max_value=500000,
+                    value=_SHORT3_DEFAULT_REVENUE[_t],
+                    step=1000,
+                    key=f"short3_rev_{_t}",
+                )
+                _cost = st.number_input(
+                    f"{_t} コスト（円/件）",
+                    min_value=0, max_value=200000,
+                    value=_SHORT3_DEFAULT_COST[_t],
+                    step=1000,
+                    key=f"short3_cost_{_t}",
+                )
+                if _rev > 0:
+                    st.caption(f"→ 運営貢献額: **¥{_rev - _cost:,}/件**")
+                st.markdown("")
+
+# ---------------------------------------------------------------------------
+# 🏥 退院調整セクション（Phase 1 情報階層リデザイン・2026-04-18）:
+# 旧「🗓 連休対策」由来の 3 タブ（今週の需要予測・退院候補リスト・予約可能枠）
+# を「🏥 退院調整」セクションへ移設。共通データ準備ブロックはセクション名のみ
+# 差し替え、タブ名は原文を維持する。
 # ---------------------------------------------------------------------------
 if (
-    _selected_section == "\U0001f5d3 連休対策"
+    _selected_section == "\U0001f3e5 退院調整"
     and _DEMAND_FORECAST_AVAILABLE
     and _VIEWS_AVAILABLE
     and "\U0001f4ca 今週の需要予測" in _tab_idx
@@ -9594,13 +10109,13 @@ if (
             )
 
 # ---------------------------------------------------------------------------
-# 🏥 多職種退院調整カンファセクション: 単一タブ構成
+# 🏥 退院調整セクション — 🏥 カンファ資料 タブ
 # conference_material_view が自律的に病棟・モード切替・4 ブロック + ファクト
 # バーを描画するため、ここではタブコンテキストに入って関数を呼び出すだけ。
 # data-testid (conference-*) は view 内部で hidden div として出力される。
 # ---------------------------------------------------------------------------
 if (
-    _selected_section == "\U0001f3e5 多職種退院調整カンファ"
+    _selected_section == "\U0001f3e5 退院調整"
     and _CONFERENCE_VIEW_AVAILABLE
     and "\U0001f3e5 カンファ資料" in _tab_idx
 ):
@@ -9620,7 +10135,7 @@ if (
                 import traceback as _cv_render_tb
                 st.code(f"{_cv_render_err}\n{_cv_render_tb.format_exc()}")
 elif (
-    _selected_section == "\U0001f3e5 多職種退院調整カンファ"
+    _selected_section == "\U0001f3e5 退院調整"
     and not _CONFERENCE_VIEW_AVAILABLE
 ):
     # 通常ここには来ないが（_section_names に入らないため）、
