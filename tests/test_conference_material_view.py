@@ -181,15 +181,23 @@ class TestFactSelection:
         assert chosen is None
 
     def test_select_fact_weight_zero_skipped(self):
-        """weight=0 のファクトは抽選候補から除外される."""
+        """weight=0 のファクトは抽選候補から除外される。
+
+        2026-04-18: rotation_eligible=True のファクトのみが候補になるため
+        テスト入力にも rotation_eligible=True を付与する。
+        """
         facts = [
             {
-                "id": "zero", "text": "zero", "context": {
+                "id": "zero", "text": "zero",
+                "rotation_eligible": True,
+                "context": {
                     "wards": ["5F"], "modes": ["normal"], "weight": 0,
                 }
             },
             {
-                "id": "pos", "text": "positive", "context": {
+                "id": "pos", "text": "positive",
+                "rotation_eligible": True,
+                "context": {
                     "wards": ["5F"], "modes": ["normal"], "weight": 10,
                 }
             },
@@ -1409,3 +1417,300 @@ class TestHolidayModeRecommendBanner:
                     )
         finally:
             app.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# 📚 rotation_eligible フィルタと折りたたみファクトライブラリ（2026-04-18）
+# ---------------------------------------------------------------------------
+
+class TestRotationEligibleFilter:
+    """``_select_fact`` の rotation_eligible フィルタ（副院長指示 2026-04-18）."""
+
+    def _base_fact(self, fact_id, rotation_eligible, weight=5):
+        return {
+            "id": fact_id,
+            "text": f"{fact_id} text",
+            "author": "Test",
+            "journal": "Test J",
+            "year": 2024,
+            "n": "n=1",
+            "pmid": "12345",
+            "doi": "10.1234/test",
+            "layer": 1,
+            "layer_name": "退院時機能の最適化",
+            "rotation_eligible": rotation_eligible,
+            "context": {
+                "wards": ["5F"], "modes": ["normal"],
+                "audience": ["all"], "weight": weight,
+            },
+        }
+
+    def test_default_selects_only_rotation_eligible(self):
+        """デフォルト (rotation_only=True) では rotation_eligible=True のみ抽選."""
+        facts = [
+            self._base_fact("rot_true_1", True, weight=5),
+            self._base_fact("rot_false_1", False, weight=100),
+            self._base_fact("rot_false_2", False, weight=100),
+        ]
+        rng = random.Random(0)
+        for _ in range(30):
+            chosen = cmv._select_fact(facts, "5F", "normal", rng=rng)
+            assert chosen is not None
+            assert chosen["id"] == "rot_true_1", (
+                f"rotation_eligible=False のファクト {chosen['id']} が抽選された"
+            )
+
+    def test_rotation_only_false_includes_all(self):
+        """rotation_only=False なら rotation_eligible 無視（全件候補）."""
+        facts = [
+            self._base_fact("rot_true_1", True, weight=1),
+            self._base_fact("rot_false_1", False, weight=100),
+        ]
+        # 重みの差で rot_false_1 が選ばれる頻度が高いはず
+        rng = random.Random(0)
+        false_count = 0
+        for _ in range(100):
+            chosen = cmv._select_fact(
+                facts, "5F", "normal", rng=rng, rotation_only=False,
+            )
+            assert chosen is not None
+            if chosen["id"] == "rot_false_1":
+                false_count += 1
+        assert false_count > 50, (
+            f"rotation_only=False で rot_false_1 が十分選ばれない ({false_count}/100)"
+        )
+
+    def test_production_yaml_filter_returns_only_12(self):
+        """本番 facts.yaml からのローテーション候補は 12 件に限定される."""
+        facts = cmv._load_facts()
+        eligible = [f for f in facts if f.get("rotation_eligible") is True]
+        assert len(eligible) == 12, (
+            f"本番 YAML の rotation_eligible=True は 12 件 (実際 {len(eligible)})"
+        )
+
+    def test_all_production_5F_normal_selections_are_eligible(self):
+        """複数回抽選しても、選ばれたファクトは全て rotation_eligible=True."""
+        facts = cmv._load_facts()
+        # 多様な seed で複数回抽選して、全て rotation_eligible=True であることを確認
+        for seed in range(50):
+            rng = random.Random(seed)
+            chosen = cmv._select_fact(facts, "5F", "normal", rng=rng)
+            if chosen is None:
+                continue
+            assert chosen.get("rotation_eligible") is True, (
+                f"seed={seed} で選ばれた {chosen['id']} が rotation_eligible=False"
+            )
+
+
+class TestFilterFactsByKeyword:
+    """キーワード検索ヘルパー ``_filter_facts_by_keyword``."""
+
+    def _mk(self, **kwargs):
+        base = {
+            "id": "x", "text": "", "author": "", "journal": "",
+            "layer_name": "",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_empty_keyword_returns_all(self):
+        facts = [self._mk(text="AAA"), self._mk(text="BBB")]
+        assert cmv._filter_facts_by_keyword(facts, "") == facts
+        assert cmv._filter_facts_by_keyword(facts, "   ") == facts
+
+    def test_match_in_text(self):
+        facts = [
+            self._mk(id="1", text="Cochrane 2022 NNTH=25"),
+            self._mk(id="2", text="他のテキスト"),
+        ]
+        hits = cmv._filter_facts_by_keyword(facts, "Cochrane")
+        assert [f["id"] for f in hits] == ["1"]
+
+    def test_match_is_case_insensitive(self):
+        facts = [self._mk(text="JAMA Intern Med")]
+        hits = cmv._filter_facts_by_keyword(facts, "jama")
+        assert len(hits) == 1
+
+    def test_match_in_author(self):
+        facts = [self._mk(author="Martínez-Velilla 2019")]
+        hits = cmv._filter_facts_by_keyword(facts, "Martínez")
+        assert len(hits) == 1
+
+    def test_match_in_journal(self):
+        facts = [self._mk(journal="BMJ SPRINTT")]
+        hits = cmv._filter_facts_by_keyword(facts, "SPRINTT")
+        assert len(hits) == 1
+
+    def test_match_in_layer_name(self):
+        facts = [self._mk(layer_name="退院時機能の最適化")]
+        hits = cmv._filter_facts_by_keyword(facts, "機能")
+        assert len(hits) == 1
+
+
+class TestGroupFactsByLayer:
+    """レイヤーグループ化ヘルパー ``_group_facts_by_layer``."""
+
+    def test_groups_by_layer(self):
+        facts = [
+            {"id": "a", "layer": 1},
+            {"id": "b", "layer": 3},
+            {"id": "c", "layer": 1},
+        ]
+        grouped = cmv._group_facts_by_layer(facts)
+        assert set(grouped.keys()) == {1, 3}
+        assert [f["id"] for f in grouped[1]] == ["a", "c"]
+        assert [f["id"] for f in grouped[3]] == ["b"]
+
+    def test_sorted_by_id(self):
+        facts = [
+            {"id": "f010", "layer": 1},
+            {"id": "f001", "layer": 1},
+            {"id": "f005", "layer": 1},
+        ]
+        grouped = cmv._group_facts_by_layer(facts)
+        assert [f["id"] for f in grouped[1]] == ["f001", "f005", "f010"]
+
+    def test_skips_missing_layer(self):
+        facts = [{"id": "a", "layer": 1}, {"id": "b"}]
+        grouped = cmv._group_facts_by_layer(facts)
+        assert 1 in grouped
+        assert len(grouped[1]) == 1
+
+
+class TestFactLibraryExpanderIntegration:
+    """📚 折りたたみファクトライブラリの統合テスト（AppTest）."""
+
+    @pytest.fixture
+    def app_path(self, tmp_path: Path) -> Path:
+        repo_scripts = Path(__file__).resolve().parent.parent / "scripts"
+        entry = repo_scripts / "_conference_view_fact_library_entry.py"
+        _write_app_entry(entry)
+        yield entry
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            pass
+
+    def test_fact_library_expander_rendered(self, app_path: Path):
+        """ファクトライブラリ expander が画面に含まれる."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        # expander のラベルに「他のエビデンスを見る」が含まれる
+        labels = [e.label for e in at.expander]
+        has_library = any("他のエビデンスを見る" in lab for lab in labels)
+        assert has_library, (
+            f"ファクトライブラリ expander が画面にない。ラベル一覧: {labels}"
+        )
+
+    def test_fact_library_hidden_testids_present(self, app_path: Path):
+        """件数 testid が描画される (total/rotation/non-rotation)."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        assert 'data-testid="conference-fact-library-total"' in markdown_text
+        assert 'data-testid="conference-fact-library-rotation"' in markdown_text
+        assert 'data-testid="conference-fact-library-non-rotation"' in markdown_text
+
+    def test_fact_library_total_count_matches_yaml(self, app_path: Path):
+        """testid に出る total 件数が YAML の件数と一致."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        m = re.search(
+            r'data-testid="conference-fact-library-total"[^>]*>(\d+)<',
+            markdown_text,
+        )
+        assert m is not None, "fact-library-total testid に値が入っていない"
+        total_in_ui = int(m.group(1))
+        yaml_total = len(cmv._load_facts())
+        assert total_in_ui == yaml_total, (
+            f"UI 総件数 {total_in_ui} が YAML 件数 {yaml_total} と不一致"
+        )
+
+    def test_fact_library_rotation_count_is_12(self, app_path: Path):
+        """UI に出るローテーション件数が 12."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        m = re.search(
+            r'data-testid="conference-fact-library-rotation"[^>]*>(\d+)<',
+            markdown_text,
+        )
+        assert m is not None
+        assert int(m.group(1)) == 12, (
+            f"ローテーション件数が 12 件でない (実際 {m.group(1)})"
+        )
+
+    def test_fact_library_wrap_class_in_markdown(self, app_path: Path):
+        """conf-fact-library-wrap クラスが出力される（印刷 CSS 対象）."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        assert "conf-fact-library-wrap" in markdown_text
+
+    def test_fact_library_print_media_hides_wrap(self, app_path: Path):
+        """@media print で conf-fact-library-wrap が display:none."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        # @media print ブロックを抽出し、その中に display:none が指定されているか確認
+        print_blocks = re.findall(
+            r"@media print\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}",
+            markdown_text,
+        )
+        found_hide = False
+        for block in print_blocks:
+            if "conf-fact-library-wrap" in block and "display: none" in block:
+                found_hide = True
+                break
+            if "conf-fact-library-wrap" in block and "display:none" in block:
+                found_hide = True
+                break
+        assert found_hide, (
+            "@media print で conf-fact-library-wrap が非表示にされていない"
+        )
+
+
+class TestFactBarStillPrintsNormally:
+    """ローテーションバー自体は印刷表示される（副院長指示）."""
+
+    @pytest.fixture
+    def app_path(self, tmp_path: Path) -> Path:
+        repo_scripts = Path(__file__).resolve().parent.parent / "scripts"
+        entry = repo_scripts / "_conference_view_fact_bar_print_entry.py"
+        _write_app_entry(entry)
+        yield entry
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            pass
+
+    def test_print_hides_fact_bar_legacy(self, app_path: Path):
+        """既存仕様通り conf-fact-bar は @media print で非表示（既存挙動維持）."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        print_blocks = re.findall(
+            r"@media print\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}",
+            markdown_text,
+        )
+        # conf-fact-bar が print で display:none にされていることを確認（既存仕様）
+        found_fact_bar_hide = any(
+            "conf-fact-bar" in block
+            and ("display:none" in block or "display: none" in block)
+            for block in print_blocks
+        )
+        assert found_fact_bar_hide, (
+            "conf-fact-bar の印刷時非表示（既存仕様）が失われている"
+        )

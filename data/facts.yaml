@@ -16,12 +16,21 @@
 #   modes:    [normal, holiday]  表示するモード (normal=通常ハドル, holiday=連休対策)
 #   audience: [all, rehab, discharge_ns, doctor, nurse]  主な対象読者
 #   weight:   1-10  ローテーション重み (10 が最重要)
+#
+# rotation_eligible フィールド (2026-04-18 副院長指示で追加):
+#   true  = 下部バーのローテーション表示対象（入院延長×リハ介入×高齢者予後改善を示す強エビデンス）
+#   false = 折りたたみ閲覧のみ（勉強目的、ローテーション表示対象外）
+#   副院長の医療倫理的配慮:
+#     「退院調整が医学的エビデンスに反する印象を避けるため、
+#      ローテーションには入院延長がリハ介入を通じて予後を改善する
+#      エビデンスレベル強のものだけを表示する」
+#   rotation_eligible: true の件数は 12 件に限定。
 
-version: 1
-updated: 2026-04-17
+version: 2
+updated: 2026-04-18
 facts:
   # ============================================================
-  # レイヤー 1: 退院時機能の最適化 (6 件) — weight=10 (最重要)
+  # レイヤー 1: 退院時機能の最適化 (既存 6 件 + 新規) — weight=10
   # ============================================================
   - id: f001
     layer: 1
@@ -33,6 +42,7 @@ facts:
     n: "n=570 pooled RCT"
     pmid: "40188489"
     doi: "10.1093/ageing/afaf074"
+    rotation_eligible: true
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -49,6 +59,7 @@ facts:
     n: "n=370 RCT"
     pmid: "30419096"
     doi: "10.1001/jamainternmed.2018.4869"
+    rotation_eligible: true
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -65,6 +76,7 @@ facts:
     n: "n=6,519 J-Proof HF"
     pmid: "40101784"
     doi: "10.1016/j.jamda.2025.105524"
+    rotation_eligible: true
     context:
       wards: [6F]
       modes: [normal, holiday]
@@ -81,6 +93,7 @@ facts:
     n: "n=64,065"
     pmid: "26089042"
     doi: "10.2522/ptj.20140400"
+    rotation_eligible: true
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -97,6 +110,7 @@ facts:
     n: "n=972 ペア"
     pmid: "29496765"
     doi: "10.4037/ajcc2018354"
+    rotation_eligible: true
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -113,6 +127,7 @@ facts:
     n: "n=7,375"
     pmid: "31734122"
     doi: "10.1016/j.jamda.2019.09.015"
+    rotation_eligible: true
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -120,7 +135,7 @@ facts:
       weight: 10
 
   # ============================================================
-  # レイヤー 2: 退院タイミング判断 (4 件) — weight=8-9
+  # レイヤー 2: 退院タイミング判断 (既存 4 件) — weight=8-9
   # ============================================================
   - id: f007
     layer: 2
@@ -132,6 +147,7 @@ facts:
     n: "n=35,000"
     pmid: "30129263"
     doi: "10.1111/imj.14073"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
@@ -148,6 +164,7 @@ facts:
     n: "n=35,138"
     pmid: "41102596"
     doi: "10.1007/s41999-025-01213-z"
+    rotation_eligible: false
     context:
       wards: [5F]
       modes: [normal]
@@ -164,6 +181,7 @@ facts:
     n: "予期せぬ再入院分析"
     pmid: "30217155"
     doi: "10.1186/s12913-018-3446-6"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [holiday]
@@ -180,6 +198,7 @@ facts:
     n: "28 RCTs n=5,351"
     pmid: "34766330"
     doi: "10.1002/14651858.CD007125.pub3"
+    rotation_eligible: true
     context:
       wards: [5F]
       modes: [normal]
@@ -187,7 +206,7 @@ facts:
       weight: 8
 
   # ============================================================
-  # レイヤー 3: リハビリの時間・強度・継続 (3 件) — weight=8
+  # レイヤー 3: リハビリの時間・強度・継続 (既存 3 件) — weight=8
   # ============================================================
   - id: f011
     layer: 3
@@ -199,6 +218,7 @@ facts:
     n: "24 studies meta-analysis"
     pmid: "27224276"
     doi: "10.1016/j.joca.2016.05.015"
+    rotation_eligible: true
     context:
       wards: [5F]
       modes: [normal, holiday]
@@ -215,6 +235,7 @@ facts:
     n: "n=9,403"
     pmid: "38220172"
     doi: "10.1253/circj.CJ-23-0717"
+    rotation_eligible: false
     context:
       wards: [6F]
       modes: [normal, holiday]
@@ -231,6 +252,7 @@ facts:
     n: "n=1,519"
     pmid: "35545258"
     doi: "10.1136/bmj-2021-068788"
+    rotation_eligible: true
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -238,7 +260,7 @@ facts:
       weight: 8
 
   # ============================================================
-  # レイヤー 4: 多職種カンファ・連携の力 (4 件) — weight=7
+  # レイヤー 4: 多職種カンファ・連携の力 (既存 4 件) — weight=7
   # ============================================================
   - id: f014
     layer: 4
@@ -250,6 +272,7 @@ facts:
     n: "SIBR 導入前後比較"
     pmid: "31810994"
     doi: "10.1136/bmjqs-2019-010124"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -266,6 +289,7 @@ facts:
     n: "2 年間前後比較"
     pmid: "34211668"
     doi: "10.12788/jhm.3640"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -282,6 +306,7 @@ facts:
     n: "EDD 実装研究"
     pmid: "40741583"
     doi: "10.7759/cureus.70513"
+    rotation_eligible: false
     context:
       wards: [6F]
       modes: [normal, holiday]
@@ -298,6 +323,7 @@ facts:
     n: "国内 1 施設前後比較"
     pmid: null
     doi: null
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -305,7 +331,7 @@ facts:
       weight: 7
 
   # ============================================================
-  # レイヤー 5: 退院支援看護師の専門性 (3 件) — weight=7
+  # レイヤー 5: 退院支援看護師の専門性 (既存 3 件) — weight=7
   # ============================================================
   - id: f018
     layer: 5
@@ -317,6 +343,7 @@ facts:
     n: "n=2,494 cluster RCT"
     pmid: "30806695"
     doi: "10.1001/jama.2019.0710"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
@@ -333,6 +360,7 @@ facts:
     n: "n=6,838"
     pmid: "31663245"
     doi: "10.1111/acem.13891"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
@@ -349,6 +377,7 @@ facts:
     n: "国内 1 施設事例"
     pmid: null
     doi: null
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
@@ -356,7 +385,7 @@ facts:
       weight: 7
 
   # ============================================================
-  # レイヤー 6: 安全・既成概念の解除 (2 件) — weight=5
+  # レイヤー 6: 安全・既成概念の解除 (既存 2 件) — weight=5
   # ============================================================
   - id: f021
     layer: 6
@@ -368,6 +397,7 @@ facts:
     n: "24 RCTs n=7,511"
     pmid: "36355032"
     doi: "10.1002/14651858.CD012679.pub2"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -384,6 +414,7 @@ facts:
     n: "n=2,104 RCT"
     pmid: "25892679"
     doi: "10.1016/S0140-6736(15)60690-0"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal, holiday]
@@ -391,7 +422,7 @@ facts:
       weight: 5
 
   # ============================================================
-  # レイヤー 7: 病棟運営・社会的文脈 (3 件) — weight=4
+  # レイヤー 7: 病棟運営・社会的文脈 (既存 3 件) — weight=4
   # ============================================================
   - id: f023
     layer: 7
@@ -403,6 +434,7 @@ facts:
     n: "前向きコホート"
     pmid: "41672875"
     doi: "10.1136/emermed-2025-215012"
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
@@ -419,6 +451,7 @@ facts:
     n: "全国統計"
     pmid: null
     doi: null
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
@@ -435,8 +468,974 @@ facts:
     n: "将来推計"
     pmid: null
     doi: null
+    rotation_eligible: false
     context:
       wards: [5F, 6F]
       modes: [normal]
       audience: [all]
       weight: 4
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 1: 退院時機能の最適化
+  # ============================================================
+  - id: f026
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "12 週多要素運動メタ解析 28 RCTs n=4,857 で SPPB SMD +1.03、病院内実施が外来より効果大 — 急性期リハの意義"
+    author: "Yang 2024"
+    journal: "Exp Gerontol"
+    year: 2024
+    n: "28 RCTs n=4,857"
+    pmid: "39426607"
+    doi: "10.1016/j.exger.2024.112601"
+    rotation_eligible: true
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, all]
+      weight: 10
+
+  - id: f027
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "慢性期脳卒中の 4 週入院リハで 4 倍量群は 6MWD +58-61 m、1 年後も効果維持 — 量を増やせば効果が出る"
+    author: "Klassen 2020"
+    journal: "Stroke"
+    year: 2020
+    n: "n=75 phase II RCT"
+    pmid: "32811378"
+    doi: "10.1161/STROKEAHA.120.029245"
+    rotation_eligible: true
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, all]
+      weight: 10
+
+  - id: f028
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "高強度 interval 歩行訓練は中強度比で慢性期脳卒中 6MWD +44 m（12 週）— 強度が critical dosing parameter"
+    author: "Boyne 2023"
+    journal: "JAMA Neurol"
+    year: 2023
+    n: "n=55 多施設 RCT"
+    pmid: "36822187"
+    doi: "10.1001/jamaneurol.2023.0033"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 9
+
+  - id: f029
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "CGA を受けた高齢入院患者は 3-12 ヶ月後に生存かつ自宅在住 RR 1.06、施設入所 20% 減（RR 0.80）"
+    author: "Ellis 2017"
+    journal: "Cochrane"
+    year: 2017
+    n: "29 RCTs n=13,766"
+    pmid: "28898390"
+    doi: "10.1002/14651858.CD006211.pub3"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 9
+
+  - id: f030
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "ICU 早期離床メタ解析で自宅退院率 RR 1.16、ICU-AW 発生 RR 0.60 — 最重症でも早期介入が退院先を変える"
+    author: "Zhang 2019"
+    journal: "PLoS One"
+    year: 2019
+    n: "23 RCTs n=2,308"
+    pmid: "31581205"
+    doi: "10.1371/journal.pone.0223185"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 9
+
+  - id: f031
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "AM-PAC 6-Clicks 入院初日評価で退院先を AUC 0.80-0.81 で予測 — 初回評価が退院計画を決める"
+    author: "Warren 2021"
+    journal: "Phys Ther"
+    year: 2021
+    n: "n=17,546"
+    pmid: "33517463"
+    doi: "10.1093/ptj/pzab043"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, discharge_ns]
+      weight: 9
+
+  - id: f032
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "SICU で goal-directed 早期離床は在室を 10→7 日に短縮、退院時 mmFIM +3 点改善"
+    author: "Schaller 2016"
+    journal: "Lancet"
+    year: 2016
+    n: "n=200 多国籍 RCT"
+    pmid: "27707496"
+    doi: "10.1016/S0140-6736(16)31637-3"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 9
+
+  - id: f033
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "Inpatient rehab のメタ解析で early intervention・repeated practice・goal setting の組み合わせが自宅退院を増やす"
+    author: "Lambe 2022"
+    journal: "BMC Geriatr"
+    year: 2022
+    n: "12 SR 44 RCTs"
+    pmid: "35689181"
+    doi: "10.1186/s12877-022-03169-2"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, all]
+      weight: 9
+
+  - id: f034
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "日本 DPC n=4,669 で急性期脳卒中嚥下障害への高頻度高強度 ST リハは退院時経口摂取自立 OR 2.75"
+    author: "Ishizuka 2025"
+    journal: "Dysphagia"
+    year: 2025
+    n: "n=4,669"
+    pmid: "40057664"
+    doi: "10.1007/s00455-025-10826-2"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 9
+
+  - id: f035
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "日本 PEARL: 急性非代償性心不全高齢者への多面的心臓リハで SPPB +2.2 点差（p<.001）"
+    author: "Nakaya 2021"
+    journal: "Eur J Phys Rehabil Med"
+    year: 2021
+    n: "n=75 RCT"
+    pmid: "34291626"
+    doi: "10.23736/S1973-9087.21.06803-4"
+    rotation_eligible: false
+    context:
+      wards: [6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 9
+
+  - id: f036
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "急性期高齢者への多要素介入で ADL 改善、在院 -5 日、30 日再入院 aOR 0.12、90 日再入院 aOR 0.04"
+    author: "Wang YC 2023"
+    journal: "J Nutr Health Aging"
+    year: 2023
+    n: "n=352 台湾"
+    pmid: "37357324"
+    doi: "10.1007/s12603-023-1940-y"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 9
+
+  - id: f037
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "高齢脳卒中 IRF 入院が発症 7 日以内の群は重症群で community discharge OR 1.45、motor/cognition 改善も大"
+    author: "Wang H 2015"
+    journal: "Am J Phys Med Rehabil"
+    year: 2015
+    n: "n=5,224"
+    pmid: "25569470"
+    doi: "10.1097/PHM.0000000000000249"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 9
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 3: リハビリの時間・強度・継続
+  # ============================================================
+  - id: f038
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "急性期病棟の高リスク高齢者で週末 PT 追加は DEMMI・Barthel で有意改善、退院準備を加速"
+    author: "Rajendran 2022"
+    journal: "Gerontol Geriatr Med"
+    year: 2022
+    n: "週末 PT RCT"
+    pmid: "35529693"
+    doi: "10.1177/23337214221100072"
+    rotation_eligible: true
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 8
+
+  - id: f039
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "看護チーム主導の多要素介入 18 研究レビューで 74% が mobilization・機能改善・せん妄減少を報告"
+    author: "de Foubert 2021"
+    journal: "J Adv Nurs"
+    year: 2021
+    n: "18 研究レビュー"
+    pmid: "34240755"
+    doi: "10.1111/jan.14975"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [nurse, rehab]
+      weight: 8
+
+  - id: f040
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "Vivifrail 多要素運動（週 3-5 回×3 ヶ月）で SPPB +1.40 点差、認知・筋力・抑うつも改善"
+    author: "Casas-Herrero 2022"
+    journal: "J Cachexia Sarcopenia Muscle"
+    year: 2022
+    n: "n=188 RCT"
+    pmid: "35150086"
+    doi: "10.1002/jcsm.12925"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 8
+
+  - id: f041
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "心血管疾患入院高齢者への EFT de-frailing 介入で退院時 SPPB +1.52 点、30 日後 SARC-F +0.74 点改善"
+    author: "Ahmad 2023"
+    journal: "Eur Heart J Qual Care"
+    year: 2023
+    n: "n=135 TARGET-EFT"
+    pmid: "36026532"
+    doi: "10.1093/ehjqcco/qcac063"
+    rotation_eligible: false
+    context:
+      wards: [6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 8
+
+  - id: f042
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "Frail 高齢入院患者向け CGA メタ解析: QOL・ADL・患者満足度改善、polypharmacy 減少、6 ヶ月死亡率低下"
+    author: "Kuo 2025"
+    journal: "J Formos Med Assoc"
+    year: 2025
+    n: "18 RCTs n=2,724"
+    pmid: "40335426"
+    doi: "10.1016/j.jfma.2025.04.006"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 8
+
+  - id: f043
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "Frail 高齢入院患者への介入メタ解析で frailty 管理に有意差（ES 0.35）、CGA ユニット介入が最も寄与"
+    author: "Rezaei-Shahsavarloo 2020"
+    journal: "BMC Geriatr"
+    year: 2020
+    n: "3 介入 n=1,009"
+    pmid: "33272208"
+    doi: "10.1186/s12877-020-01935-8"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 8
+
+  - id: f044
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "入院高齢者のせん妄に個別多要素運動（1 日 1 セッション×3 日）で 1-3 ヶ月後の認知低下を抑制（IQCODE p=.017）"
+    author: "Lozano-Vicario 2024"
+    journal: "JAMDA"
+    year: 2024
+    n: "n=36 RCT"
+    pmid: "38593983"
+    doi: "10.1016/j.jamda.2024.105027"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, nurse]
+      weight: 8
+
+  - id: f045
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "ICU 早期離床 RCT 10 本 n=1,291 で ICU 在室日数短縮と機能独立性向上の傾向"
+    author: "Monsees 2023"
+    journal: "Nurs Crit Care"
+    year: 2023
+    n: "10 RCTs n=1,291"
+    pmid: "35649531"
+    doi: "10.1111/nicc.12785"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, nurse]
+      weight: 8
+
+  - id: f046
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "高齢心臓手術後（CABG）の早期離床で 2MWT +12 m 差、balance（TUG）と強い負相関 r=-0.77"
+    author: "Ceylan 2024"
+    journal: "Ir J Med Sci"
+    year: 2024
+    n: "n=100 RCT"
+    pmid: "39331264"
+    doi: "10.1007/s11845-024-03850-y"
+    rotation_eligible: false
+    context:
+      wards: [5F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 7
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 4: 多職種カンファ・連携の力
+  # ============================================================
+  - id: f047
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "1,830 論文のスコーピングレビューで高齢入院患者への多職種 CGA は 5 領域すべてで改善傾向"
+    author: "Choi 2023"
+    journal: "Arch Gerontol Geriatr"
+    year: 2023
+    n: "1,830 論文"
+    pmid: "36279806"
+    doi: "10.1016/j.archger.2022.104831"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  - id: f048
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "SIBR 導入病棟で多職種全員の参加率が上がり、ラウンド 1 人あたりの所要時間のばらつきも減少"
+    author: "Redley 2020"
+    journal: "Intern Med J"
+    year: 2020
+    n: "SIBR 実装"
+    pmid: "31069904"
+    doi: "10.1111/imj.14288"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  - id: f049
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "せん妄が HAD の最大の mediator: 認知症の 46.7%、併存疾患の 16.7% がせん妄を介して HAD を発症"
+    author: "Freeman 2023"
+    journal: "JAMDA"
+    year: 2023
+    n: "n=33,111"
+    pmid: "36931323"
+    doi: "10.1016/j.jamda.2023.02.006"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  - id: f050
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "入退院支援加算取得病棟は未取得病棟より平均在院日数が短く、急性期・地ケア・回リハ・療養すべてで確認"
+    author: "GemMed 入院医療分科会"
+    journal: "入院医療分科会解説"
+    year: 2024
+    n: "分科会レポート"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 6
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 5: 退院支援看護師の専門性
+  # ============================================================
+  - id: f051
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "7,038 件の準実験研究でケアコーディネーター看護師介入により 30 日再入院 OR 0.51、90 日費用 -$5,684"
+    author: "Kripalani 2019"
+    journal: "Contemp Clin Trials"
+    year: 2019
+    n: "n=7,038"
+    pmid: "31029692"
+    doi: "10.1016/j.cct.2019.04.014"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 7
+
+  - id: f052
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "心不全 1,617 例の多職種移行介入で薬剤師・看護師・CHW 連携により 30 日再入院 22.7→18.4% に低下"
+    author: "Craigo 2025"
+    journal: "Heart Lung"
+    year: 2025
+    n: "n=1,617"
+    pmid: "40064123"
+    doi: "10.1016/j.hrtlng.2025.03.001"
+    rotation_eligible: false
+    context:
+      wards: [6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 7
+
+  - id: f053
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "ACMA 標準準拠の移行期ケアマネジメントは高リスク患者の再入院を減らす — 薬剤調整・社会ニーズ・follow-up 統合"
+    author: "Kinard 2024"
+    journal: "Prof Case Manag"
+    year: 2024
+    n: "レビュー"
+    pmid: "38015801"
+    doi: "10.1097/NCM.0000000000000675"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 6
+
+  - id: f054
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "日本の退院調整 NS 配置は 2010 年 461 名→2014 年 479 名、経験年数 2.5→3.1 年と専門性向上"
+    author: "日本看護科学会誌"
+    journal: "日本看護科学会誌"
+    year: 2017
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 5
+
+  - id: f055
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "約 9,000 名の高齢入院患者分析で中等度以上の認知症・ADL 低下は長期療養施設退院リスク 2.8 倍"
+    author: "東京都健康長寿医療センター"
+    journal: "GemMed 解説"
+    year: 2023
+    n: "n≈9,000"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns, all]
+      weight: 5
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 2: 退院タイミング判断
+  # ============================================================
+  - id: f056
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "COPD 25,301 人の退院コホートで週末在院は LOS +0.59 日、週末退院の再入院・死亡は増えず"
+    author: "Rinne 2015"
+    journal: "Med Care"
+    year: 2015
+    n: "n=25,301"
+    pmid: "26147865"
+    doi: "10.1097/MLR.0000000000000395"
+    rotation_eligible: false
+    context:
+      wards: [6F]
+      modes: [normal]
+      audience: [doctor, discharge_ns]
+      weight: 8
+
+  - id: f057
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "119 ICU オーストリアレジストリで週末 ICU 入室は死亡リスク上昇、週末退室チャンスは 3-4 割低下"
+    author: "Zajic 2017"
+    journal: "Crit Care"
+    year: 2017
+    n: "119 ICU"
+    pmid: "28877753"
+    doi: "10.1186/s13054-017-1812-0"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [holiday]
+      audience: [doctor]
+      weight: 8
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 7: 病棟運営・社会的文脈
+  # ============================================================
+  - id: f058
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "68,632 件の ED 受診解析で待機 4 時間超は院内死亡 OR 1.13、LOS 中央値 +2 日"
+    author: "Boulain 2020"
+    journal: "Intern Emerg Med"
+    year: 2020
+    n: "n=68,632"
+    pmid: "31728759"
+    doi: "10.1007/s11739-019-02231-z"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f059
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "13 研究の系統的レビューで ED 混雑は鎮痛・抗菌薬・脳卒中評価・敗血症対応を遅延させる"
+    author: "Ahmed 2026"
+    journal: "Cureus"
+    year: 2026
+    n: "13 研究"
+    pmid: "41625046"
+    doi: "10.7759/cureus.100560"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f060
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "国際比較: 英国 NHS の過稼働は turn-away が常態化し安全と効率を同時に損なう"
+    author: "Jones 2024"
+    journal: "Int J Environ Res Public Health"
+    year: 2024
+    n: "国際比較研究"
+    pmid: "39200645"
+    doi: "10.3390/ijerph21081035"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f061
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "脳卒中 105 万例の全国データで週末リハ病棟入院は急性期転院リスク +6%、ACA 以降は差が縮小"
+    author: "Shih 2020"
+    journal: "Am J Phys Med Rehabil"
+    year: 2020
+    n: "n≈1,050,000"
+    pmid: "31335342"
+    doi: "10.1097/PHM.0000000000001266"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f062
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2024 年一般病床の平均在院日数 都道府県格差: 高知県 20.2 日 vs 愛知県 13.1 日（7.1 日の開き）"
+    author: "GemMed 2026"
+    journal: "GemMed 配信"
+    year: 2026
+    n: "全国統計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f063
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "人口 10 万対病床数 高知県 1169.1 床 vs 埼玉県 525.7 床（2.3 倍差）— ベッドが多い地域ほど LOS が長い"
+    author: "GemMed 2026"
+    journal: "GemMed 配信"
+    year: 2026
+    n: "全国統計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f064
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "一般病院数は 2024 年 7,003 施設（前年比 -62）、療養病床保有病院は 3,338 施設で縮小傾向"
+    author: "厚生労働省"
+    journal: "令和 6 年医療施設調査"
+    year: 2024
+    n: "全国統計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f065
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "地域包括医療病棟の届出病院数は 2024 年 6 月 22 施設→10 月 66→12 月 107 施設と徐々に増加"
+    author: "日本経営グループ"
+    journal: "病院戦略レポート"
+    year: 2024
+    n: "全国統計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f066
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "福祉医療機構調査: 地域包括医療病棟への転換予定は 2.0%、78.1% が転換予定なしと回答"
+    author: "福祉医療機構"
+    journal: "GemMed 解説"
+    year: 2024
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f067
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2024 年度医業赤字病院割合 74.6%（前年 70.8%）、経常赤字 65.6%（前年 52.1%）で悪化"
+    author: "四病協"
+    journal: "GemMed 最終報告"
+    year: 2024
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f068
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "100 床あたり医業利益 -1 億 8,044 万円、経常利益 -8,102 万円（2024 年度、前年より悪化）"
+    author: "四病協"
+    journal: "GemMed 最終報告"
+    year: 2024
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f069
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2024 年度: 医業収益 +2.8% に対し支出 +3.5% で増収減益、水道光熱費含む経費 4.3% 増"
+    author: "四病協"
+    journal: "GemMed 最終報告"
+    year: 2024
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f070
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2024 年救急搬送人員 676.5 万人（過去最多）、うち 65 歳以上が 428.2 万人（63%）"
+    author: "第一生命経済研究所"
+    journal: "谷口レポート"
+    year: 2024
+    n: "全国統計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f071
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "高齢者の救急搬送比率は 2010 年約 51%→2024 年約 63%（14 年で 12pt 上昇）"
+    author: "第一生命経済研究所"
+    journal: "谷口レポート"
+    year: 2024
+    n: "全国統計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f072
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "救急搬送件数は 2030 年ごろ 720 万人でピーク、2040 年も 710 万人と高水準が継続"
+    author: "第一生命経済研究所"
+    journal: "谷口レポート"
+    year: 2024
+    n: "将来推計"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f073
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2024 年病院看護実態調査: 看護師離職率 11.3%（正規）・8.8%（新卒）、夜勤 72h 超が 34.3%"
+    author: "日本看護協会"
+    journal: "病院看護実態調査"
+    year: 2024
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f074
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "地域一般病棟（13:1・15:1）と療養病棟の 3-4 割が入退院支援加算を未取得、全国的格差が残存"
+    author: "GemMed 入院医療分科会"
+    journal: "分科会解説"
+    year: 2024
+    n: "分科会レポート"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 6: 安全・既成概念の解除
+  # ============================================================
+  - id: f075
+    layer: 6
+    layer_name: "安全・既成概念の解除"
+    text: "急性期高齢者の構造化運動・漸増抵抗運動で転倒リスクは増えない（moderate-certainty, RR 0.99）"
+    author: "Hartley 2022 (exercise)"
+    journal: "Cochrane"
+    year: 2022
+    n: "24 RCTs n=7,511"
+    pmid: "36355032"
+    doi: "10.1002/14651858.CD005955.pub3"
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, nurse]
+      weight: 5
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 2: 地域包括医療病棟施設基準
+  # ============================================================
+  - id: f076
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "地域包括医療病棟 施設基準: 平均在院日数 21 日以内・救急搬送 15% 以上・在宅復帰率 80% 以上・ADL 低下 5% 以内"
+    author: "地域包括ケア推進病棟協会"
+    journal: "施設基準"
+    year: 2024
+    n: "施設基準"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 8
+
+  - id: f077
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "地域包括医療病棟の転換断念理由 43.9% が施設基準のハードル、在宅復帰率 80% 達成が最大障壁"
+    author: "福祉医療機構"
+    journal: "GemMed 解説"
+    year: 2024
+    n: "全国調査"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 8
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 1: 地域包括医療病棟構想
+  # ============================================================
+  - id: f078
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "地域包括医療病棟は 5 割を急性期・5 割を包括期で対応する将来構想（厚労省 地域医療構想検討会 2024）"
+    author: "厚生労働省"
+    journal: "地域医療構想検討会"
+    year: 2024
+    n: "構想資料"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 8
+
+  # ============================================================
+  # 新規追加（2026-04-18） - レイヤー 4: 多職種カンファ（国内統計補足）
+  # ============================================================
+  - id: f079
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "2024 年度診療報酬改定後も病院赤字構造は改善せず、多職種連携による効率化が急務（帝国データバンク 1,629 施設）"
+    author: "帝国データバンク"
+    journal: "病院経営動向調査"
+    year: 2024
+    n: "n=1,629"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 5
+
+  - id: f080
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "2024 年度病院経営定期調査: 調査対象 1,629 施設、診療報酬改定後も赤字構造が継続し経営圧迫（日本病院会）"
+    author: "日本病院会"
+    journal: "病院経営定期調査"
+    year: 2024
+    n: "n=1,629"
+    pmid: null
+    doi: null
+    rotation_eligible: false
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 5

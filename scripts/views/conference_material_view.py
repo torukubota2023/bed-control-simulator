@@ -337,6 +337,8 @@ def _select_fact(
     ward: str,
     mode: str,
     rng: Optional[random.Random] = None,
+    *,
+    rotation_only: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """現在の ward / mode に合致するファクトを weight 付き重み抽選で 1 件返す.
 
@@ -350,6 +352,13 @@ def _select_fact(
         "normal" | "holiday"
     rng : random.Random, optional
         乱数生成器（テスト用）。None なら ``random.Random()`` 新規生成。
+    rotation_only : bool, optional
+        2026-04-18 副院長指示で追加. True (デフォルト) なら
+        ``rotation_eligible=True`` のファクトのみを候補にする.
+        「退院調整が医学的エビデンスに反する印象を避ける」ため、
+        下部バーのローテーション表示は入院延長×リハ介入×高齢者予後改善を
+        示すエビデンス（12 件）に限定する. False ならこの制約を外す
+        （互換用、主にテスト用）.
 
     Returns
     -------
@@ -361,6 +370,8 @@ def _select_fact(
     candidates: List[Dict[str, Any]] = []
     weights: List[float] = []
     for fact in facts:
+        if rotation_only and fact.get("rotation_eligible") is not True:
+            continue
         ctx = fact.get("context") or {}
         wards = ctx.get("wards") or []
         modes = ctx.get("modes") or []
@@ -383,6 +394,62 @@ def _select_fact(
     # weighted sampling
     chosen = _rng.choices(candidates, weights=weights, k=1)[0]
     return chosen
+
+
+# ---------------------------------------------------------------------------
+# 折りたたみ UI 用: ファクトをレイヤー別にグループ化するヘルパー
+# ---------------------------------------------------------------------------
+
+# 折りたたみ expander 用のレイヤー表示順序と見出し（副院長指示 2026-04-18）
+# - レイヤー 1 / 3 を冒頭に置く（ローテーション対象と同じ領域を勉強目的に）
+# - 以降 2 / 4 / 5 / 7 / 6 の順で「退院判断」「多職種」「NS」「統計」「安全」と続ける
+_EXPANDER_LAYER_ORDER: List[Dict[str, Any]] = [
+    {"layer": 1, "emoji": "🏃", "title": "入院リハ強化で予後改善"},
+    {"layer": 3, "emoji": "⏱", "title": "リハビリの時間・強度・継続"},
+    {"layer": 2, "emoji": "🛌", "title": "退院タイミング判断"},
+    {"layer": 4, "emoji": "🤝", "title": "多職種カンファ・退院支援"},
+    {"layer": 5, "emoji": "👩‍⚕️", "title": "退院支援看護師の専門性"},
+    {"layer": 7, "emoji": "📊", "title": "病棟運営・国内統計"},
+    {"layer": 6, "emoji": "⚠️", "title": "安全性・反証"},
+]
+
+
+def _group_facts_by_layer(
+    facts: List[Dict[str, Any]],
+) -> Dict[int, List[Dict[str, Any]]]:
+    """facts を layer 番号でグループ化して返す（id 昇順でソート）."""
+    grouped: Dict[int, List[Dict[str, Any]]] = {}
+    for fact in facts:
+        layer = fact.get("layer")
+        if not isinstance(layer, int):
+            continue
+        grouped.setdefault(layer, []).append(fact)
+    # id 昇順でソート
+    for layer, items in grouped.items():
+        items.sort(key=lambda f: str(f.get("id", "")))
+    return grouped
+
+
+def _filter_facts_by_keyword(
+    facts: List[Dict[str, Any]],
+    keyword: str,
+) -> List[Dict[str, Any]]:
+    """キーワードを含むファクトだけに絞り込む（text / author / journal 対象）."""
+    kw = (keyword or "").strip().lower()
+    if not kw:
+        return facts
+    hits: List[Dict[str, Any]] = []
+    for fact in facts:
+        haystacks = [
+            str(fact.get("text", "")),
+            str(fact.get("author", "")),
+            str(fact.get("journal", "")),
+            str(fact.get("layer_name", "")),
+        ]
+        blob = " ".join(haystacks).lower()
+        if kw in blob:
+            hits.append(fact)
+    return hits
 
 
 # ---------------------------------------------------------------------------
@@ -452,22 +519,22 @@ def _inject_css() -> None:
         .conf-header .meta .days.urgent { color: #ff6b6b; font-weight: 700; }
         .conf-header .meta .days.warning { color: #f39c12; font-weight: 600; }
         /* ========================================================
-           3. KPI 行（125%拡大: padding 4→6, value 18→22, fonts +1-2）
+           3. KPI 行（2026-04-18 105%拡大: padding 6→8, value 22→23）
            ======================================================== */
         .conf-kpi-row {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 4px;
-            padding: 6px 12px;
+            padding: 8px 12px;
             display: grid;
             grid-template-columns: repeat(5, 1fr);
             gap: 12px;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
         }
-        .conf-kpi { text-align: center; line-height: 1.2; }
+        .conf-kpi { text-align: center; line-height: 1.25; }
         .conf-kpi .label { font-size: 11px; color: #666; }
         .conf-kpi .value {
-            font-size: 22px;
+            font-size: 23px;
             font-weight: 700;
             color: #2c3e50;
         }
@@ -486,7 +553,7 @@ def _inject_css() -> None:
             white-space: nowrap;
         }
         /* ========================================================
-           5. 患者行（125%拡大: padding 2→3, font 11→12, min-height 20→26）
+           5. 患者行（2026-04-18 105%拡大: min-height 26→28）
            ======================================================== */
         /* 患者行 — 医師/患者 170px / 病棟 32px / Day 46px / 予定 72px / 確認事項 1fr
            ステータスと編集は Streamlit 列側に分離（popover クリック用） */
@@ -499,9 +566,48 @@ def _inject_css() -> None:
             font-size: 12px;
             border-bottom: 1px solid #f3f3f3;
             line-height: 1.3;
-            min-height: 26px;
+            min-height: 28px;
         }
-        .conf-patient-row .doctor { font-weight: 600; color: #333; }
+        /* ヘッダー行専用クラス:
+           重なり防止のため、下側に明示的な余白と境界線を確保する.
+           Block C 内の `stHorizontalBlock:has(.conf-patient-row)` は
+           margin-bottom:0 で圧縮されているため、ヘッダー行だけは
+           独自セレクタで余白を差し戻す. */
+        .conf-patient-row-header {
+            min-height: 24px !important;
+            padding-top: 4px !important;
+            padding-bottom: 6px !important;
+            border-bottom: 2px solid #aaa !important;
+            margin-bottom: 0 !important;
+        }
+        /* ヘッダー行を含む stHorizontalBlock にヘッダー専用セレクタで
+           確実に下マージンを確保する（先行する :has(.conf-patient-row) の
+           margin-bottom:0 より詳細度を高める）.
+           さらに、Streamlit が stHorizontalBlock を子要素の高さに合わせず
+           圧縮する挙動（header_container 14px vs header_div 26px）に対抗し、
+           min-height と align-items で子のオーバーフローを吸収する. */
+        div[data-testid="stHorizontalBlock"]:has(.conf-patient-row-header),
+        div[data-testid="stHorizontalBlock"]:has(.conf-patient-row.conf-patient-row-header) {
+            margin-bottom: 4px !important;
+            padding-bottom: 0 !important;
+            min-height: 30px !important;
+            align-items: stretch !important;
+        }
+        /* ヘッダーを含む列と要素コンテナにも同じ最低高さを強制 */
+        [data-testid="stColumn"]:has(.conf-patient-row-header),
+        [data-testid="stElementContainer"]:has(.conf-patient-row-header) {
+            min-height: 30px !important;
+        }
+        /* 医師/患者セル: 170px 幅に文字列を収め、折り返しによる
+           行全体のオーバーフロー（副院長指摘 2026-04-18: ヘッダー行との
+           重なりの根本原因）を防止する. */
+        .conf-patient-row .doctor {
+            font-weight: 600;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .conf-patient-row .doctor .pname { color: #444; font-weight: 500; }
         .conf-patient-row .doctor .pid {
             color: #888;
@@ -585,15 +691,15 @@ def _inject_css() -> None:
             color: #e65100;
         }
         /* ========================================================
-           8. 役割ブロック（125%拡大: padding 4→6, role-name 11→13, li 10→11）
+           8. 役割ブロック（2026-04-18 105%拡大: padding 6→9, li line-height 1.35→1.5）
            ======================================================== */
         .conf-role {
-            padding: 6px 10px;
+            padding: 9px 11px;
             border-left: 3px solid #3498db;
             font-size: 12px;
             background: #fafbfc;
             border-radius: 2px;
-            margin-bottom: 3px;
+            margin-bottom: 4px;
         }
         .conf-role.reha { border-left-color: #27ae60; }
         .conf-role.disch { border-left-color: #e67e22; }
@@ -602,24 +708,24 @@ def _inject_css() -> None:
         .conf-role .role-name {
             font-weight: 700;
             font-size: 13px;
-            margin-bottom: 3px;
+            margin-bottom: 4px;
         }
         .conf-role ul { list-style: none; padding: 0; margin: 0; }
-        .conf-role li { font-size: 11px; line-height: 1.35; padding: 0; color: #444; }
+        .conf-role li { font-size: 11px; line-height: 1.5; padding: 1px 0; color: #444; }
         .conf-role li::before { content: "・"; margin-right: 2px; }
         /* ========================================================
-           9. ファクトバー（125%拡大: padding 4→6, fonts +1-2）
+           9. ファクトバー（2026-04-18 105%拡大: padding 6→8）
            ======================================================== */
         .conf-fact-bar {
             background: #2c3e50;
             color: #ecf0f1;
-            padding: 6px 14px;
+            padding: 8px 14px;
             border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             font-size: 12px;
-            margin-top: 5px;
+            margin-top: 6px;
         }
         .conf-fact-bar .fact-label {
             font-size: 11px;
@@ -703,8 +809,113 @@ def _inject_css() -> None:
             .conf-status-print-tag { display: inline-block !important; }
             /* データ管理 expander は印刷不要 */
             .conf-data-manage-wrap { display: none !important; }
+            /* 📚 ファクトライブラリ（折りたたみ）も印刷不要 */
+            .conf-fact-library-wrap { display: none !important; }
         }
         .conf-status-print-tag { display: none; }
+        /* ========================================================
+           14. 📚 ファクトライブラリ（折りたたみ expander）
+               副院長指示（2026-04-18）: ローテーション 12 件以外の
+               全 80 件を勉強目的で閲覧できる expander。画面下部の
+               ファクトバー直下に配置し、印刷時は非表示にする。
+           ======================================================== */
+        .conf-fact-library-wrap { margin-top: 4px; }
+        .conf-fact-library-wrap details.conf-fact-library {
+            background: #ecf0f1;
+            color: #2c3e50;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            padding: 0;
+            font-size: 12px;
+        }
+        .conf-fact-library-wrap details.conf-fact-library summary {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-weight: 600;
+            user-select: none;
+            list-style: none;
+        }
+        .conf-fact-library-wrap details.conf-fact-library summary::-webkit-details-marker {
+            display: none;
+        }
+        .conf-fact-library-wrap details.conf-fact-library summary::before {
+            content: "▶";
+            margin-right: 6px;
+            font-size: 10px;
+            display: inline-block;
+            transition: transform 0.15s;
+        }
+        .conf-fact-library-wrap details.conf-fact-library[open] summary::before {
+            transform: rotate(90deg);
+        }
+        .conf-fact-library-wrap .fact-lib-body {
+            padding: 8px 12px 12px 12px;
+            background: #ffffff;
+            max-height: 480px;
+            overflow-y: auto;
+            border-top: 1px solid #bdc3c7;
+        }
+        .conf-fact-library-wrap .fact-lib-section {
+            margin-bottom: 10px;
+        }
+        .conf-fact-library-wrap .fact-lib-section-title {
+            font-weight: 700;
+            font-size: 12px;
+            color: #2c3e50;
+            margin: 6px 0 4px 0;
+            border-bottom: 1px solid #d5dbdb;
+            padding-bottom: 2px;
+        }
+        .conf-fact-library-wrap .fact-lib-section-title .lib-count {
+            font-size: 11px;
+            color: #666;
+            font-weight: 500;
+            margin-left: 4px;
+        }
+        .conf-fact-library-wrap .fact-lib-item {
+            padding: 4px 6px;
+            border-left: 3px solid #bdc3c7;
+            margin: 3px 0 3px 4px;
+            background: #f8f9fa;
+            border-radius: 0 3px 3px 0;
+            line-height: 1.35;
+        }
+        .conf-fact-library-wrap .fact-lib-item.rotation {
+            border-left-color: #27ae60;
+            background: #eafaf1;
+        }
+        .conf-fact-library-wrap .fact-lib-item .lib-rot-badge {
+            display: inline-block;
+            background: #27ae60;
+            color: #fff;
+            padding: 0 5px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-right: 4px;
+            vertical-align: 1px;
+        }
+        .conf-fact-library-wrap .fact-lib-item .lib-text {
+            font-size: 12px;
+            color: #2c3e50;
+        }
+        .conf-fact-library-wrap .fact-lib-item .lib-meta {
+            font-size: 10px;
+            color: #7f8c8d;
+            margin-top: 2px;
+        }
+        .conf-fact-library-wrap .fact-lib-item .lib-meta .lib-pmid {
+            color: #2980b9;
+        }
+        .conf-fact-library-wrap .fact-lib-search {
+            margin-bottom: 6px;
+        }
+        .conf-fact-library-wrap .fact-lib-empty {
+            padding: 12px;
+            color: #7f8c8d;
+            text-align: center;
+            font-style: italic;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1049,7 +1260,7 @@ def _render_holiday_mode_recommendation_banner(
         <style>
         .conf-holiday-recommend-banner {{
             margin: 4px 0 6px 0;
-            padding: 6px 12px;
+            padding: 7px 12px;
             border-left: 4px solid {color["border"]};
             background: {color["bg"]};
             color: {color["fg"]};
@@ -1368,7 +1579,7 @@ def _render_block_c(
 
     st.markdown(
         f"""
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <div style="font-size:14px;font-weight:700;color:#555;">
             個別患者のステータス（カンファで更新）
           </div>
@@ -1386,9 +1597,11 @@ def _render_block_c(
         [0.80, 0.14, 0.06]
     )
     with header_col_html:
+        # 2026-04-18: ヘッダー行に conf-patient-row-header クラスを付与し、
+        # 1 行目との縦方向の重なりを防止（border-bottom / padding-bottom は CSS 側で統一）
         st.markdown(
-            '<div class="conf-patient-row" style="font-size:11px;color:#666;font-weight:600;'
-            'border-bottom:2px solid #aaa;">'
+            '<div class="conf-patient-row conf-patient-row-header" '
+            'style="font-size:11px;color:#666;font-weight:600;">'
             '<span>医師 / 患者</span><span>病棟</span><span>在院</span>'
             '<span>退院予定</span><span>確認事項</span>'
             "</div>",
@@ -1396,14 +1609,16 @@ def _render_block_c(
         )
     with header_col_status:
         st.markdown(
-            '<div style="font-size:11px;color:#666;font-weight:600;text-align:center;'
-            'padding:5px 0;border-bottom:2px solid #aaa;">ステータス</div>',
+            '<div class="conf-patient-row-header" '
+            'style="font-size:11px;color:#666;font-weight:600;text-align:center;">'
+            'ステータス</div>',
             unsafe_allow_html=True,
         )
     with header_col_edit:
         st.markdown(
-            '<div style="font-size:11px;color:#666;font-weight:600;text-align:center;'
-            'padding:5px 0;border-bottom:2px solid #aaa;">編集</div>',
+            '<div class="conf-patient-row-header" '
+            'style="font-size:11px;color:#666;font-weight:600;text-align:center;">'
+            '編集</div>',
             unsafe_allow_html=True,
         )
 
@@ -1689,7 +1904,15 @@ def _render_fact_bar(
     rng: Optional[random.Random] = None,
     facts_override: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
-    """facts.yaml から 1 件抽選して画面下部に表示する（印刷時非表示）."""
+    """facts.yaml から 1 件抽選して画面下部に表示する（印刷時非表示）.
+
+    2026-04-18 副院長指示で以下を追加:
+    - ローテーション表示は ``rotation_eligible=True`` の 12 件に限定
+      （入院延長×リハ介入×高齢者予後改善を示す強エビデンスのみ）
+    - 下部に「📚 他のエビデンスを見る」折りたたみ expander を配置し、
+      全 80 件をレイヤー別に勉強目的で閲覧できるようにする。
+    - 折りたたみ部は ``@media print`` で非表示にする（ローテーションは印刷表示）。
+    """
     facts = facts_override if facts_override is not None else _load_facts()
     fact = _select_fact(facts, ward, mode, rng=rng)
     if fact is None:
@@ -1703,6 +1926,8 @@ def _render_fact_bar(
             '<div data-testid="conference-fact-id" style="display:none"></div>',
             unsafe_allow_html=True,
         )
+        # ローテーションがなくても折りたたみライブラリは描画（勉強目的）
+        _render_fact_library(facts)
         return
 
     fact_id = str(fact.get("id", ""))
@@ -1733,6 +1958,133 @@ def _render_fact_bar(
         """,
         unsafe_allow_html=True,
     )
+
+    # 折りたたみファクトライブラリ（全 80 件、勉強目的、印刷時非表示）
+    _render_fact_library(facts)
+
+
+# ---------------------------------------------------------------------------
+# ブロック描画: 📚 ファクトライブラリ（折りたたみ expander）
+# ---------------------------------------------------------------------------
+
+def _render_fact_library(
+    facts: List[Dict[str, Any]],
+) -> None:
+    """ローテーション対象外のファクトも含めた全件をレイヤー別に表示する expander.
+
+    副院長指示（2026-04-18）:
+    - ローテーションバー（rotation_eligible=True の 12 件）とは別に、
+      残りのエビデンスも勉強目的で閲覧できるようにする
+    - 折りたたみで画面の密度を保つ
+    - 印刷時は自動で非表示（``@media print`` による）
+    - 検索ボックスで日本語キーワード絞り込み可能
+    """
+    if not facts:
+        return
+
+    # 件数内訳を事前計算
+    total = len(facts)
+    rotation_count = sum(1 for f in facts if f.get("rotation_eligible") is True)
+    non_rotation_count = total - rotation_count
+
+    # hidden div: E2E 用 testid（件数確認）
+    st.markdown(
+        '<div class="conf-fact-library-wrap">'
+        f'<div data-testid="conference-fact-library-total" style="display:none">{total}</div>'
+        f'<div data-testid="conference-fact-library-rotation" style="display:none">{rotation_count}</div>'
+        f'<div data-testid="conference-fact-library-non-rotation" style="display:none">{non_rotation_count}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Streamlit の st.expander を使って検索ボックスを内部に配置
+    # ラベルに件数を出して「何が見られるか」を明示
+    label = f"📚 他のエビデンスを見る（全 {total} 件・勉強用）"
+    with st.expander(label, expanded=False):
+        # data-testid: expander 本体の識別
+        st.markdown(
+            '<div data-testid="conference-fact-library-expander" style="display:none">open</div>',
+            unsafe_allow_html=True,
+        )
+
+        # 検索ボックス（日本語でキーワード絞り込み）
+        # key は session_state 経由で維持される
+        keyword = st.text_input(
+            "🔍 キーワード検索（著者名・雑誌名・本文）",
+            value="",
+            key="conf_fact_library_keyword",
+            placeholder="例: Cochrane / 脳卒中 / 日本 / HAD / Bernabei ...",
+        )
+
+        filtered = _filter_facts_by_keyword(facts, keyword)
+        grouped = _group_facts_by_layer(filtered)
+
+        if not filtered:
+            st.markdown(
+                '<div class="fact-lib-empty">該当するファクトが見つかりません（キーワードを変えてお試しください）</div>',
+                unsafe_allow_html=True,
+            )
+            return
+
+        # レイヤー順に表示
+        body_html_parts: List[str] = ['<div class="fact-lib-body">']
+        for section in _EXPANDER_LAYER_ORDER:
+            layer_num = section["layer"]
+            emoji = section["emoji"]
+            title = section["title"]
+            items = grouped.get(layer_num, [])
+            if not items:
+                continue
+            cnt = len(items)
+            body_html_parts.append(
+                f'<div class="fact-lib-section" data-testid="fact-lib-section-{layer_num}">'
+                f'<div class="fact-lib-section-title">{emoji} {title}'
+                f'<span class="lib-count">（{cnt} 件）</span></div>'
+            )
+            for fact in items:
+                is_rot = fact.get("rotation_eligible") is True
+                css_class = "fact-lib-item rotation" if is_rot else "fact-lib-item"
+                badge = (
+                    '<span class="lib-rot-badge">ROTATION</span>'
+                    if is_rot else ""
+                )
+                text = str(fact.get("text", ""))
+                author = str(fact.get("author", ""))
+                journal = str(fact.get("journal", ""))
+                year = fact.get("year", "")
+                n_val = str(fact.get("n", ""))
+                pmid = fact.get("pmid")
+                doi = fact.get("doi")
+                meta_parts: List[str] = []
+                if author:
+                    meta_parts.append(author)
+                if journal:
+                    meta_parts.append(journal)
+                if year:
+                    meta_parts.append(str(year))
+                if n_val:
+                    meta_parts.append(n_val)
+                if pmid:
+                    meta_parts.append(
+                        f'<span class="lib-pmid">PMID: {pmid}</span>'
+                    )
+                elif doi:
+                    meta_parts.append(f'DOI: {doi}')
+                meta_text = " | ".join(meta_parts)
+                fact_id = str(fact.get("id", ""))
+                body_html_parts.append(
+                    f'<div class="{css_class}" data-testid="fact-lib-item-{fact_id}">'
+                    f'<div class="lib-text">{badge}{text}</div>'
+                    f'<div class="lib-meta">{meta_text}</div>'
+                    f'</div>'
+                )
+            body_html_parts.append('</div>')
+
+        body_html_parts.append('</div>')
+        st.markdown(
+            '<div class="conf-fact-library-wrap">' + "".join(body_html_parts) + '</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ---------------------------------------------------------------------------
