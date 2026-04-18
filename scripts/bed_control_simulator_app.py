@@ -1363,21 +1363,14 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 戦略選択・実行ボタン（シミュレーションモードのみ） ---
+# --- 実行ボタン（シミュレーションモードのみ） ---
+# 戦略選択 UI は 2026-04-18 に削除、現状はバランス戦略固定。
+# 戦略別パラメータ辞書・ユニットテストは保持（将来の復活に備えて温存）。
 if not _is_actual_data_mode:
-    st.sidebar.subheader("戦略選択")
-    strategy = st.sidebar.radio(
-        "シミュレーション戦略",
-        ["バランス戦略", "回転重視戦略", "安定維持戦略"],
-        index=0,
-    )
-    compare_all = st.sidebar.checkbox("全戦略比較", value=False)
-
-    # --- 実行ボタン ---
+    strategy = "バランス戦略"  # ハードコード（UI 入力なし）
     run_button = st.sidebar.button("シミュレーション実行", type="primary", use_container_width=True)
 else:
     strategy = "バランス戦略"
-    compare_all = False
     run_button = False
 
 # --- サイドバー最下部: 使い方ガイド ---
@@ -3151,10 +3144,9 @@ elif _selected_section == "\U0001f52e What-if・戦略":
     # Phase 1: 「👨‍⚕️ 退院タイミング」タブを「🏥 退院調整」へ移設
     # Phase 2: 「意思決定ダッシュボード」「運営改善アラート」を「📊 今日の運営」へ移設
     # Phase 3: セクション名を「🎯 意思決定支援」→「🔮 What-if・戦略」へ改名（仮説検証・経営シミュレーション専用）
-    # → What-if 分析 + 仮説管理（+ 戦略比較があれば）の 1-3 タブ構成
+    # 2026-04-18: 「戦略比較」タブを削除（戦略選択 UI 廃止に伴う）
+    # → What-if 分析 + 仮説管理の 1-2 タブ構成
     tab_names = ["\U0001f52e What-if分析"]
-    if not _is_actual_data_mode and st.session_state.get("comparison") is not None:
-        tab_names.append("戦略比較")
     if _SCENARIO_MANAGER_AVAILABLE:
         tab_names.append("\U0001f4be 仮説管理")
 elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
@@ -7908,139 +7900,9 @@ if "\U0001f4c8 トレンド分析" in _tab_idx:
                     _bc_alert("現在、警告はありません。", severity="success")
 
 
-        # ===== タブ: 戦略比較（条件付き、シミュレーションモードのみ） =====
-        if "戦略比較" in _tab_idx and st.session_state.comparison is not None:
-            with tabs[_tab_idx["戦略比較"]]:
-                _bc_section_title("全戦略比較", icon="⚖️")
-                if _HELP_AVAILABLE and "tab_strategy_compare" in HELP_TEXTS:
-                    with st.expander("📖 このタブの見方と活用法"):
-                        st.markdown(HELP_TEXTS["tab_strategy_compare"])
-                comparison = st.session_state.comparison
-
-                # --- 戦略ごとの主要指標カード（3 列横並び） ---
-                _bc_section_title("戦略別サマリー", icon="📊")
-                strategies_list = list(comparison.keys())
-                _strat_cols = st.columns(len(strategies_list))
-
-                def _strat_occ_sev(occ_rate: float) -> str:
-                    if target_lower * 100 <= occ_rate <= target_upper * 100:
-                        return "success"
-                    if occ_rate < target_lower * 100:
-                        return "warning"
-                    return "danger"
-
-                for _si, (_strat_name, _strat_summary) in enumerate(comparison.items()):
-                    with _strat_cols[_si]:
-                        st.markdown(f"**{_strat_name}**")
-                        _bc_kpi_card(
-                            label="月次運営貢献額",
-                            value=fmt_yen(int(_strat_summary["月次運営貢献額"])),
-                            severity="success" if _strat_summary["月次運営貢献額"] > 0 else ("danger" if _strat_summary["月次運営貢献額"] < 0 else "neutral"),
-                            size="sm",
-                        )
-                        _bc_kpi_card(
-                            label="平均稼働率",
-                            value=f"{_strat_summary['平均稼働率']:.1f}",
-                            unit="%",
-                            severity=_strat_occ_sev(_strat_summary["平均稼働率"]),
-                            size="sm",
-                        )
-                        _bc_kpi_card(
-                            label="目標レンジ内率",
-                            value=f"{_strat_summary['目標レンジ内率']:.1f}",
-                            unit="%",
-                            severity="success" if _strat_summary["目標レンジ内率"] >= 70 else ("warning" if _strat_summary["目標レンジ内率"] >= 50 else "danger"),
-                            size="sm",
-                        )
-                        _bc_kpi_card(
-                            label="平均在院日数",
-                            value=f"{_strat_summary['平均在院日数']:.1f}",
-                            unit="日",
-                            severity="neutral",
-                            size="sm",
-                        )
-
-                # --- 比較テーブル ---
-                _bc_section_title("詳細比較テーブル", icon="📋")
-                compare_keys = [
-                    "月次診療報酬", "月次コスト", "月次運営貢献額",
-                    "平均稼働率", "月間入院数", "月間退院数",
-                    "平均在院日数",
-                    "目標レンジ内日数", "目標レンジ内率",
-                    "A群平均構成比", "B群平均構成比", "C群平均構成比",
-                ]
-                compare_data = {}
-                for strat_name, strat_summary in comparison.items():
-                    compare_data[strat_name] = {k: strat_summary[k] for k in compare_keys}
-
-                compare_df = pd.DataFrame(compare_data).T
-                compare_df.index.name = "戦略"
-
-                # 金額カラムをフォーマット
-                for col in ["月次診療報酬", "月次コスト", "月次運営貢献額"]:
-                    compare_df[col] = compare_df[col].apply(lambda x: fmt_yen_full(int(x)))
-
-                # パーセンテージカラム
-                for col in ["平均稼働率", "目標レンジ内率", "A群平均構成比", "B群平均構成比", "C群平均構成比"]:
-                    compare_df[col] = compare_df[col].apply(lambda x: f"{x}%")
-
-                st.dataframe(compare_df, use_container_width=True)
-
-                # --- 主要指標の棒グラフ比較 ---
-                _bc_section_title("主要指標の可視化", icon="📈")
-                profits = [comparison[s]["月次運営貢献額"] / 10000 for s in strategies_list]
-                occ_rates = [comparison[s]["平均稼働率"] for s in strategies_list]
-                in_range = [comparison[s]["目標レンジ内率"] for s in strategies_list]
-
-                fig, axes = plt.subplots(1, 3, figsize=(14, 4))
-                bar_colors = [COLOR_A, COLOR_B, COLOR_C]
-
-                axes[0].bar(strategies_list, profits, color=bar_colors, alpha=0.8)
-                axes[0].set_title("月次運営貢献額（万円）")
-                axes[0].grid(True, alpha=0.3, axis="y")
-                for i, v in enumerate(profits):
-                    axes[0].text(i, v + max(profits)*0.02, f"{v:.0f}", ha="center", fontsize=9)
-
-                axes[1].bar(strategies_list, occ_rates, color=bar_colors, alpha=0.8)
-                axes[1].set_title("平均稼働率 (%)")
-                axes[1].grid(True, alpha=0.3, axis="y")
-                for i, v in enumerate(occ_rates):
-                    axes[1].text(i, v + 0.2, f"{v:.1f}", ha="center", fontsize=9)
-
-                axes[2].bar(strategies_list, in_range, color=bar_colors, alpha=0.8)
-                axes[2].set_title("目標レンジ内率 (%)")
-                axes[2].grid(True, alpha=0.3, axis="y")
-                for i, v in enumerate(in_range):
-                    axes[2].text(i, v + 0.5, f"{v:.1f}", ha="center", fontsize=9)
-
-                plt.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
-
-                # --- 最適戦略のハイライト ---
-                _bc_section_title("推奨戦略", icon="🏆")
-                best_profit = max(comparison.items(), key=lambda x: x[1]["月次運営貢献額"])
-                best_occ = min(comparison.items(),
-                               key=lambda x: abs(x[1]["平均稼働率"] - (target_lower + target_upper) / 2 * 100))
-                best_range = max(comparison.items(), key=lambda x: x[1]["目標レンジ内率"])
-
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    _bc_alert(
-                        f"<strong>運営貢献額最大</strong><br>{best_profit[0]}<br>{fmt_yen(best_profit[1]['月次運営貢献額'])}",
-                        severity="success",
-                    )
-                with col2:
-                    _bc_alert(
-                        f"<strong>稼働率最適</strong><br>{best_occ[0]}<br>{best_occ[1]['平均稼働率']:.1f}%",
-                        severity="success",
-                    )
-                with col3:
-                    _bc_alert(
-                        f"<strong>レンジ内最大</strong><br>{best_range[0]}<br>{best_range[1]['目標レンジ内率']:.1f}%",
-                        severity="success",
-                    )
-
+# ===== タブ: 戦略比較（2026-04-18 削除） =====
+# サイドバーの戦略選択 UI 廃止に伴い、全戦略比較タブと関連ロジックを削除。
+# 戦略別パラメータ辞書・`simulate_bed_control(strategy=...)`・ユニットテストは保持。
 
 
 # ===== タブ: 💾 仮説管理 =====
@@ -10664,8 +10526,8 @@ if _is_actual_data_mode:
         f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}%"
     )
 else:
+    # 2026-04-18: 戦略選択 UI 廃止に伴い「戦略: バランス戦略」表示を削除
     st.caption(
-        f"戦略: **{strategy}** | "
         f"病床数: {_view_beds} | "
         f"目標稼働率: {target_lower*100:.0f}-{target_upper*100:.0f}% | "
         f"月間入院: {_active_cli_params.get('monthly_admissions', monthly_admissions)}件 | "

@@ -1,5 +1,12 @@
 # ベッドコントロールシミュレーター v3.3 実演シナリオ台本
 
+> ⚠️ **（v3.6 に移行済み、参考保存）**
+> 本ファイルは v3.3 時点の旧台本です。現行運用の台本は以下を参照してください：
+> - 臨床現場向け総合シナリオ: [demo_scenario_v3.6.md](demo_scenario_v3.6.md)
+> - 理事会向け講演原稿: [presentation_script_bedcontrol.md](presentation_script_bedcontrol.md)
+> - カンファ運用詳細台本: [carnf_scenario_v1.md](carnf_scenario_v1.md)
+> - 本ファイルは更新せず参考資料として保存。
+
 ## 想定場面
 経営会議または看護師長会議で、副院長がアプリの新機能を実演する
 

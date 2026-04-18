@@ -92,6 +92,15 @@
 - data-testid（conference-*, action-card, occupancy, alos, phase, vacancy, revenue, guardrail-summary）は一切変更していない
 - `st.session_state` キー（`short3_rev_*`, `short3_cost_*`）は変更なし
 
+### 2026-04-18: 戦略選択 UI 廃止
+サイドバーの「戦略選択」（バランス/回転重視/安定維持）を UI から削除。
+理由: 実運用で活用されておらず、選択ガイドも UI 上に存在しないため判断不能。
+- UI: サイドバーから radio + checkbox 削除、戦略比較タブ削除、フッターの「戦略: バランス戦略」表記も削除
+- ロジック: `simulate_bed_control(strategy="balanced")` にハードコード（`strategy = "バランス戦略"` 固定）
+- 戦略別パラメータ辞書（`STRATEGY_MAP`）・`run_comparison()` キャッシュ関数・戦略別ユニットテストは保持（将来の復活に備えて温存）
+- `playwright/tests/scenarios.json` の `strategy` フィールドはメタデータ扱いで未使用のため変更なし
+- 全 691 pytest + smoke test 通過、Streamlit 起動確認済
+
 ## 🎨 デザインシステム（2026-04-18 構築）
 
 ニュートラル・グレースケール中心の統一されたビジュアル言語。数値を目立たせ、装飾を抑え、医療専門職が毎日使う前提のトーン。
