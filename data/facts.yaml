@@ -174,7 +174,7 @@ facts:
   - id: f009
     layer: 2
     layer_name: "退院タイミング判断"
-    text: "退院 1 日以内の予期せぬ再入院の 1/4 が金曜退院、主因は痛み — 処方見直しで回避可能"
+    text: "退院 1 日以内の予期せぬ再入院の 1/4 が金曜〜週末退院、主因は痛み — 処方見直しで回避可能"
     author: "Considine 2018"
     journal: "BMC Health Serv Res"
     year: 2018
@@ -271,7 +271,7 @@ facts:
     year: 2020
     n: "SIBR 導入前後比較"
     pmid: "31810994"
-    doi: "10.1136/bmjqs-2019-010124"
+    doi: "10.1136/bmjqs-2019-009936"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
@@ -282,13 +282,13 @@ facts:
   - id: f015
     layer: 4
     layer_name: "多職種カンファ・連携の力"
-    text: "看護師・医師ペア管理＋毎日 SIBR の Accountable Care Unit で 2 年目調整後死亡 OR 0.58、予期せぬ死亡ゼロ達成"
+    text: "看護師・医師ペア管理＋毎日 SIBR の Accountable Care Unit で 2 年目調整後死亡 aOR 0.58、3 年目に予期せぬ死亡ゼロ達成"
     author: "Loertscher 2021"
-    journal: "J Hosp Med"
+    journal: "J Community Hosp Intern Med Perspect"
     year: 2021
-    n: "2 年間前後比較"
+    n: "n=12,158 5 年間前後比較"
     pmid: "34211668"
-    doi: "10.12788/jhm.3640"
+    doi: "10.1080/20009666.2021.1918945"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
@@ -305,7 +305,7 @@ facts:
     year: 2025
     n: "EDD 実装研究"
     pmid: "40741583"
-    doi: "10.7759/cureus.70513"
+    doi: "10.7759/cureus.87019"
     rotation_eligible: false
     context:
       wards: [6F]
@@ -359,7 +359,7 @@ facts:
     year: 2020
     n: "n=6,838"
     pmid: "31663245"
-    doi: "10.1111/acem.13891"
+    doi: "10.1111/acem.13880"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
@@ -390,13 +390,13 @@ facts:
   - id: f021
     layer: 6
     layer_name: "安全・既成概念の解除"
-    text: "動かすと転ぶは幻想 — Cochrane 24 RCTs n=7,511 で moderate-certainty に否定"
+    text: "動かすと転ぶは幻想 — Cochrane 24 RCTs n=7,511 で moderate-certainty に否定（RR 0.99）"
     author: "Hartley 2022"
     journal: "Cochrane"
     year: 2022
     n: "24 RCTs n=7,511"
     pmid: "36355032"
-    doi: "10.1002/14651858.CD012679.pub2"
+    doi: "10.1002/14651858.CD005955.pub3"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
@@ -651,7 +651,7 @@ facts:
   - id: f036
     layer: 1
     layer_name: "退院時機能の最適化"
-    text: "急性期高齢者への多要素介入で ADL 改善、在院 -5 日、30 日再入院 aOR 0.12、90 日再入院 aOR 0.04"
+    text: "急性期高齢者への多要素介入で ADL 改善、在院 -5 日、30 日再入院 aOR 0.12、60 日再入院 aOR 0.04"
     author: "Wang YC 2023"
     journal: "J Nutr Health Aging"
     year: 2023
@@ -867,7 +867,7 @@ facts:
     year: 2020
     n: "SIBR 実装"
     pmid: "31069904"
-    doi: "10.1111/imj.14288"
+    doi: "10.1111/imj.14330"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
@@ -955,7 +955,7 @@ facts:
     year: 2024
     n: "レビュー"
     pmid: "38015801"
-    doi: "10.1097/NCM.0000000000000675"
+    doi: "10.1097/NCM.0000000000000687"
     rotation_eligible: false
     context:
       wards: [5F, 6F]
