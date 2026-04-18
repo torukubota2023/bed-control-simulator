@@ -1,0 +1,37 @@
+version: 1
+updated: 2026-04-17
+
+# 稼働率目標（副院長決定：全病棟 全月 一律 90%）
+occupancy_target:
+  default: 90  # % — 全体一律
+  # 将来、病棟別・月別の上書き設定ができる構造だけ用意:
+  overrides: {}
+  # 例:
+  #   overrides:
+  #     5F:
+  #       2026-04: 88  # GW月は下げる（将来用）
+  #     6F:
+  #       2026-12: 85  # 年末は下げる
+
+# 平均在院日数（地域包括医療病棟 施設基準 rolling 3ヶ月 21日以内）
+alos_target:
+  regulatory_limit_days: 21          # 制度上限（rolling 3ヶ月）
+  warning_threshold_days: 19.95      # 95% 到達で警告
+  rolling_window_months: 3           # 6/1 以降は rolling 3ヶ月判定（CLAUDE.md 参照）
+  transitional_end_date: "2026-05-31"  # 経過措置終了日（本則適用開始は 6/1）
+
+# 救急搬送後患者割合（施設基準 15% 以上）
+emergency_ratio_target:
+  regulatory_minimum_pct: 15  # %
+  rolling_window_months: 3    # 6/1 以降
+  ward_specific: true         # 5F, 6F 各病棟単体で判定
+
+# 病床情報
+beds:
+  total: 94       # 総病床数（CLAUDE.md）
+  5F:
+    count: null   # 実運用で入力される前提、初期は null
+    specialty: "外科・整形"
+  6F:
+    count: null
+    specialty: "内科・ペイン"

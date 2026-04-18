@@ -35,6 +35,12 @@ pubmed-cache/
 # SQLite database (院内LAN環境で生成される実データ)
 data/*.db
 
+# 患者情報編集ストア（個人情報保護のため Git 追跡禁止）
+data/patient_names.json
+
+# 患者ステータス（カンファ区分）ストア（ユーザー固有の運用データのため Git 追跡禁止）
+data/patient_status.json
+
 # Playwright
 playwright/screenshots/*.png
 playwright-report/

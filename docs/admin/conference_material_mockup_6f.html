@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>カンファ資料画面 モックアップ</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    background: #e8e8e8;
+    padding: 10px;
+    min-height: 100vh;
+  }
+  .aspect-container {
+    width: min(100vw - 20px, calc((100vh - 140px) * 16 / 9));
+    aspect-ratio: 16 / 9;
+    background: #ffffff;
+    border: 1px solid #bbb;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    display: grid;
+    grid-template-rows: 4.5% 12% 1fr 16% 3.8%;
+    margin: 0 auto;
+    overflow: hidden;
+    font-size: clamp(10px, 1.0vw, 15px);
+    color: #222;
+  }
+  /* ヘッダー */
+  .header {
+    background: #2c3e50;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+  .header .title { font-size: 16px; font-weight: 600; }
+  .header .meta { font-size: 13px; opacity: 0.9; }
+  .header .mode {
+    background: #e67e22;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 8px;
+  }
+
+  /* ブロックA: 目標達成進捗 */
+  .block-a {
+    background: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    padding: 6px 20px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    align-items: center;
+  }
+  .kpi {
+    text-align: center;
+    border-right: 1px solid #dee2e6;
+    padding: 0 8px;
+  }
+  .kpi:last-child { border-right: none; }
+  .kpi .label { font-size: 10px; color: #666; margin-bottom: 2px; }
+  .kpi .value {
+    font-size: 19px;
+    font-weight: 700;
+    color: #2c3e50;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 4px;
+  }
+  .kpi .unit { font-size: 12px; color: #666; font-weight: normal; }
+  .kpi .target {
+    font-size: 11px;
+    color: #888;
+    margin-top: 2px;
+  }
+  .kpi.warning .value { color: #e67e22; }
+  .kpi.danger .value { color: #c0392b; }
+  .kpi.good .value { color: #27ae60; }
+  .kpi .countdown {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e67e22;
+  }
+
+  /* ステータスタグ（6カテゴリ） */
+  .status-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-new { background: #e9ecef; color: #495057; }
+  .status-medical { background: #d1ecf1; color: #0c5460; }
+  .status-family { background: #d4edda; color: #155724; }
+  .status-facility { background: #fff3cd; color: #856404; }
+  .status-insurance { background: #e2d5f1; color: #5b2c91; }
+  .status-rehab { background: #ffe0b2; color: #bf360c; }
+  .status-undecided { background: #424242; color: #fff; }
+
+  /* 中央: ブロックB (今週の見通し) + ブロックC (個別提案) */
+  .middle {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    border-bottom: 2px solid #dee2e6;
+    overflow: hidden;
+  }
+  .block-b {
+    border-right: 1px solid #dee2e6;
+    padding: 6px 12px;
+    background: #fefefe;
+    overflow: hidden;
+    font-size: 11px;
+  }
+  .section-title {
+    font-size: 12px;
+    color: #555;
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+  .forecast-row {
+    display: grid;
+    grid-template-columns: 50px 1fr 1fr;
+    gap: 4px;
+    font-size: 12px;
+    padding: 3px 0;
+    border-bottom: 1px dashed #eee;
+  }
+  .forecast-row .day { font-weight: 600; }
+  .forecast-row .vacancy.warn { color: #e67e22; font-weight: 600; }
+  .forecast-row .vacancy.danger { color: #c0392b; font-weight: 600; }
+  .forecast-summary {
+    margin-top: 8px;
+    padding: 8px;
+    background: #fff3e0;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    color: #e65100;
+  }
+
+  .block-c {
+    padding: 4px 12px;
+    overflow: hidden;
+  }
+  .block-c-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .block-c-header .count {
+    font-size: 11px;
+    color: #666;
+  }
+  .patient-row {
+    display: grid;
+    grid-template-columns: 52px 36px 48px 76px 130px 1fr 62px;
+    gap: 6px;
+    align-items: center;
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 1.2;
+    border-bottom: 1px solid #f3f3f3;
+    height: 32px;
+    white-space: nowrap;
+  }
+  .patient-row > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .patient-row .doctor { font-weight: 600; color: #333; }
+  .patient-row .ward.f5 { color: #2980b9; font-weight: 600; }
+  .patient-row .ward.f6 { color: #8e44ad; font-weight: 600; }
+  .patient-row .day { color: #666; font-size: 11px; }
+  .patient-row .plan-date { color: #555; font-size: 11px; }
+  .patient-row .note { font-size: 11px; color: #333; }
+  .patient-row .update-btn {
+    font-size: 9px;
+    color: #2c3e50;
+    background: #ecf0f1;
+    border: 1px solid #bdc3c7;
+    border-radius: 3px;
+    padding: 1px 4px;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* Block B: 退院予定の内訳 */
+  .breakdown-title {
+    font-size: 11px;
+    color: #555;
+    font-weight: 700;
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  .breakdown-row {
+    display: grid;
+    grid-template-columns: 1fr 40px;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 0;
+    align-items: center;
+  }
+  .breakdown-row .count { text-align: right; font-weight: 600; }
+
+  /* ブロックD: 職種別お願い */
+  .block-d {
+    padding: 6px 12px;
+    background: #fafbfc;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    border-bottom: 1px solid #dee2e6;
+    overflow: hidden;
+  }
+  .role {
+    padding: 2px 6px;
+    border-left: 3px solid #3498db;
+    font-size: 11px;
+  }
+  .role.reha { border-left-color: #27ae60; }
+  .role.disch { border-left-color: #e67e22; }
+  .role.doc { border-left-color: #8e44ad; }
+  .role.nurse { border-left-color: #3498db; }
+  .role .role-name {
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .role ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .role li {
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 1px 0;
+    color: #444;
+  }
+  .role li::before {
+    content: "・";
+    margin-right: 2px;
+  }
+
+  /* ファクト（最下部） */
+  .fact-bar {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+  }
+  .fact-bar .fact-label {
+    font-size: 9px;
+    background: #34495e;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  .fact-bar .fact-text { flex: 1; }
+  .fact-bar .fact-src {
+    font-size: 9px;
+    opacity: 0.75;
+    margin-left: 10px;
+  }
+
+  /* 印刷時: ファクトを非表示 */
+  @media print {
+    .fact-bar { display: none; }
+    body { padding: 0; background: #fff; }
+    .aspect-container { box-shadow: none; border: none; }
+  }
+
+  /* 注記 */
+  .note {
+    max-width: 1600px;
+    margin: 16px auto 0;
+    padding: 12px 16px;
+    background: #fff8dc;
+    border-left: 4px solid #f0a020;
+    font-size: 12px;
+    color: #444;
+    line-height: 1.6;
+  }
+  .note strong { color: #b8860b; }
+</style>
+</head>
+<body>
+<div class="aspect-container">
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <div>
+      <span class="title">🗓 多職種退院調整・連休対策カンファ</span>
+      <span class="mode">通常モード</span>
+    </div>
+    <div class="meta">
+      2026-04-17 (木) | 6F 表示中 | <span style="color:#f39c12">GW まで残 12日</span>
+    </div>
+  </div>
+
+  <!-- ブロックA: 今月の目標達成進捗 -->
+  <div class="block-a">
+    <div class="kpi">
+      <div class="label">今月の稼働率</div>
+      <div class="value warning">88<span class="unit">%</span></div>
+      <div class="target">目標 90% ・ -2pt</div>
+    </div>
+    <div class="kpi">
+      <div class="label">平均在院日数 (3ヶ月)</div>
+      <div class="value warning">20.3<span class="unit">日</span></div>
+      <div class="target">制度上限 21日 間近</div>
+    </div>
+    <div class="kpi">
+      <div class="label">救急搬送後 15%</div>
+      <div class="value warning">14<span class="unit">%</span></div>
+      <div class="target">基準未達・あと 2件</div>
+    </div>
+    <div class="kpi">
+      <div class="label">残り診療日</div>
+      <div class="value">9<span class="unit">日</span></div>
+      <div class="target">必要床日 +15</div>
+    </div>
+    <div class="kpi">
+      <div class="label">次の大型連休</div>
+      <div class="countdown">GW まで 12日</div>
+      <div class="target">4/29 (水) 開始・5連休</div>
+    </div>
+  </div>
+
+  <!-- 中央: ブロックB + ブロックC -->
+  <div class="middle">
+    <!-- ブロックB: 今週の見通し -->
+    <div class="block-b">
+      <div class="section-title">今週末の見通し（6F）</div>
+      <div class="forecast-row">
+        <span class="day">金</span>
+        <span>空床 <span class="vacancy warn">3</span></span>
+        <span>救急余力 +1</span>
+      </div>
+      <div class="forecast-row">
+        <span class="day">土</span>
+        <span>空床 <span class="vacancy warn">5</span></span>
+        <span>救急余力 0</span>
+      </div>
+      <div class="forecast-row">
+        <span class="day">日</span>
+        <span>空床 <span class="vacancy warn">4</span></span>
+        <span>救急余力 0</span>
+      </div>
+      <div class="forecast-summary">
+        週末受入余力 12床日（応需可能だった患者機会）
+      </div>
+
+      <div class="breakdown-title">在院患者ステータス内訳</div>
+      <div class="breakdown-row"><span><span class="status-tag status-undecided">⚫ 方向性未決</span></span><span class="count">3名</span></div>
+      <div class="breakdown-row"><span><span class="status-tag status-medical">🔵 医学的OK待ち</span></span><span class="count">1名</span></div>
+      <div class="breakdown-row"><span><span class="status-tag status-family">🟢 家族希望待ち</span></span><span class="count">1名</span></div>
+      <div class="breakdown-row"><span><span class="status-tag status-facility">🟡 施設待ち</span></span><span class="count">2名</span></div>
+      <div class="breakdown-row"><span><span class="status-tag status-insurance">🟣 介護保険待ち</span></span><span class="count">2名</span></div>
+      <div class="breakdown-row"><span><span class="status-tag status-rehab">🟠 リハ最適化中</span></span><span class="count">1名</span></div>
+      <div class="breakdown-row"><span><span class="status-tag status-new">🆕 新規</span></span><span class="count">0名</span></div>
+    </div>
+
+    <!-- ブロックC: 個別調整提案 -->
+    <div class="block-c">
+      <div class="block-c-header">
+        <div class="section-title">個別患者のステータス（カンファで更新）</div>
+        <div class="count">表示中 10 / 最大 10 名</div>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">渡辺</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 45</span>
+        <span class="plan-date">未定</span>
+        <span><span class="status-tag status-undecided">⚫ 方向性未決</span></span>
+        <span class="note">慢性痛 神経ブロック継続中、退院目処 再判定保留</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">大野</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 38</span>
+        <span class="plan-date">未定</span>
+        <span><span class="status-tag status-undecided">⚫ 方向性未決</span></span>
+        <span class="note">心不全増悪繰り返し、在宅療養可否を本日判断要</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">松本</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 32</span>
+        <span class="plan-date">未定</span>
+        <span><span class="status-tag status-undecided">⚫ 方向性未決</span></span>
+        <span class="note">誤嚥性肺炎 再発、嚥下評価＋帰宅先調整を本日議論</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">後藤</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 28</span>
+        <span class="plan-date">5/7 (木)</span>
+        <span><span class="status-tag status-facility">🟡 施設待ち</span></span>
+        <span class="note">療養病床 申請中、受入先 A病院 回答待ち</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">斎藤</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 25</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-insurance">🟣 介護保険待ち</span></span>
+        <span class="note">要介護認定調査 4/22 予定、結果待ち</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">岡田</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 22</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-family">🟢 家族希望待ち</span></span>
+        <span class="note">独居高齢、娘様との退院後支援相談 4/21 設定</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">福田</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 20</span>
+        <span class="plan-date">4/22 (水)</span>
+        <span><span class="status-tag status-facility">🟡 施設待ち</span></span>
+        <span class="note">老健 空床 4/22 確認、MSW 送迎調整中</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">河野</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 18</span>
+        <span class="plan-date">4/22 (水)</span>
+        <span><span class="status-tag status-medical">🔵 医学的OK待ち</span></span>
+        <span class="note">COPD 急性増悪、主治医最終判定 4/21 朝</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">藤原</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 15</span>
+        <span class="plan-date">4/25 (土)</span>
+        <span><span class="status-tag status-insurance">🟣 介護保険待ち</span></span>
+        <span class="note">認定結果 4/23 予定、在宅環境確認中（手すり・段差）</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">吉田</span>
+        <span class="ward f6">6F</span>
+        <span class="day">Day 12</span>
+        <span class="plan-date">4/24 (金)</span>
+        <span><span class="status-tag status-rehab">🟠 リハ最適化中</span></span>
+        <span class="note">ペイン治療後の歩行再獲得、退院前 ADL 評価</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ブロックD: 職種別お願い（ステータスから自動生成） -->
+  <div class="block-d">
+    <div class="role reha">
+      <div class="role-name">🏃 リハ PT/OT/ST</div>
+      <ul>
+        <li>🟠 リハ最適化中 1名：吉田 退院前 ADL 評価</li>
+        <li>⚫ 方向性未決 2名：松本 嚥下評価 / 渡辺 歩行再評価</li>
+      </ul>
+    </div>
+    <div class="role disch">
+      <div class="role-name">📋 退院支援 NS</div>
+      <ul>
+        <li>🟡 施設 2名：後藤 療養病床 / 福田 老健 送迎</li>
+        <li>🟣 介護 2名：斎藤・藤原 認定結果フォロー</li>
+        <li>🟢 家族 1名：岡田 娘様相談 4/21</li>
+      </ul>
+    </div>
+    <div class="role doc">
+      <div class="role-name">👔 医師</div>
+      <ul>
+        <li>🔵 OK待ち 1名：河野 COPD 4/21 朝判定</li>
+        <li>⚫ 未決 3名：渡辺・大野・松本 の退院可否本日議論</li>
+      </ul>
+    </div>
+    <div class="role nurse">
+      <div class="role-name">🧑‍⚕️ 看護</div>
+      <ul>
+        <li>慢性疼痛・心不全 患者の週末症状観察を強化</li>
+        <li>救急搬送後 15% 基準未達：あと 2件 受入確保の余力確認</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ファクト表示（印刷時非表示） -->
+  <div class="fact-bar">
+    <span class="fact-label">エビデンス</span>
+    <span class="fact-text">日本 96施設 心不全入院で Barthel -5点の軽度HADでも1年全死亡HR 1.75（退院時機能の維持は長期予後に直結）</span>
+    <span class="fact-src">Kato 2025 JAMDA J-Proof HF n=6,519 | PMID: 40101784</span>
+  </div>
+
+</div>
+
+<div class="note">
+  <strong>このモックアップについて:</strong> 数字はすべてサンプル。実装時は bed_data_manager から実データを取得します。医師名・患者名は匿名化表記（個人情報完全除外）。エビデンスファクトは25件マスターからローテーション表示、<strong>印刷時は自動で非表示</strong>になります (<code>@media print</code> で制御)。画面は 16:9 固定、1画面にすべて収まる設計。
+</div>
+
+</body>
+</html>

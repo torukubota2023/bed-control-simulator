@@ -377,6 +377,18 @@ except Exception as _v_err:
     import traceback as _v_tb
     _VIEWS_ERROR = f"{_v_err}\n{_v_tb.format_exc()}"
 
+# 多職種退院調整・連休対策カンファ ビュー（views と独立の try/except）
+# 依存: target_config / holiday_calendar / data/facts.yaml
+# 失敗しても他セクションに影響させない。
+_CONFERENCE_VIEW_AVAILABLE = False
+_CONFERENCE_VIEW_ERROR = ""
+try:
+    from views.conference_material_view import render_conference_material_view
+    _CONFERENCE_VIEW_AVAILABLE = True
+except Exception as _cv_err:
+    import traceback as _cv_tb
+    _CONFERENCE_VIEW_ERROR = f"{_cv_err}\n{_cv_tb.format_exc()}"
+
 # ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
 # ---------------------------------------------------------------------------
@@ -950,6 +962,10 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
 # 🗓 連休対策: 制度管理 の後、データ管理 の前（need demand_forecast + views）
 if _DEMAND_FORECAST_AVAILABLE and _VIEWS_AVAILABLE:
     _section_names.append("🗓 連休対策")
+# 🏥 多職種退院調整カンファ: 連休対策と関連が深いため直後に配置
+# （旧「🗓 連休対策」は連休期間限定／新カンファは通常+連休の統合資料）
+if _CONFERENCE_VIEW_AVAILABLE:
+    _section_names.append("🏥 多職種退院調整カンファ")
 if _DATA_MANAGER_AVAILABLE or _DOCTOR_MASTER_AVAILABLE:
     _section_names.append("📋 データ管理")
 if _HOPE_AVAILABLE:
@@ -3039,6 +3055,9 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
         tab_names.append("\U0001f4a1 改善のヒント")
 elif _selected_section == "\U0001f5d3 連休対策":
     tab_names = ["\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 予約可能枠"]
+elif _selected_section == "\U0001f3e5 多職種退院調整カンファ":
+    # カンファビューは単一タブ（内部で 4 ブロック + 病棟/モード切替を自律管理）
+    tab_names = ["\U0001f3e5 カンファ資料"]
 elif _selected_section == "\U0001f4cb データ管理":
     tab_names = []
     if _DATA_MANAGER_AVAILABLE:
@@ -9573,6 +9592,46 @@ if (
             st.caption(
                 "4 週間先までの日別予想需要を、予約受付事務員向けに色分け表示いたします。"
             )
+
+# ---------------------------------------------------------------------------
+# 🏥 多職種退院調整カンファセクション: 単一タブ構成
+# conference_material_view が自律的に病棟・モード切替・4 ブロック + ファクト
+# バーを描画するため、ここではタブコンテキストに入って関数を呼び出すだけ。
+# data-testid (conference-*) は view 内部で hidden div として出力される。
+# ---------------------------------------------------------------------------
+if (
+    _selected_section == "\U0001f3e5 多職種退院調整カンファ"
+    and _CONFERENCE_VIEW_AVAILABLE
+    and "\U0001f3e5 カンファ資料" in _tab_idx
+):
+    with tabs[_tab_idx["\U0001f3e5 カンファ資料"]]:
+        st.caption(
+            "木曜ハドル／連休対策カンファで 1 画面運用。病棟・モードを切り替え、"
+            "カンファ中にステータス欄を更新してください。"
+        )
+        try:
+            render_conference_material_view(today=date.today())
+        except Exception as _cv_render_err:
+            st.error(
+                "カンファ資料の描画中にエラーが発生しました。"
+                "設定（target_config / holiday_calendar / data/facts.yaml）を確認してください。"
+            )
+            with st.expander("エラー詳細（開発用）", expanded=False):
+                import traceback as _cv_render_tb
+                st.code(f"{_cv_render_err}\n{_cv_render_tb.format_exc()}")
+elif (
+    _selected_section == "\U0001f3e5 多職種退院調整カンファ"
+    and not _CONFERENCE_VIEW_AVAILABLE
+):
+    # 通常ここには来ないが（_section_names に入らないため）、
+    # 万が一ルート経由で来た場合のフォールバック。
+    st.error(
+        "カンファビューが読み込めませんでした。views/conference_material_view.py の"
+        "依存モジュール（yaml / target_config / holiday_calendar）を確認してください。"
+    )
+    if _CONFERENCE_VIEW_ERROR:
+        with st.expander("エラー詳細", expanded=False):
+            st.code(_CONFERENCE_VIEW_ERROR)
 
 # ---------------------------------------------------------------------------
 # フッター

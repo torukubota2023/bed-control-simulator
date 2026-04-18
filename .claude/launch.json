@@ -7,6 +7,20 @@
       "runtimeArgs": ["run", "scripts/bed_control_simulator_app.py", "--server.headless", "true", "--server.port", "8501"],
       "port": 8501,
       "autoPort": false
+    },
+    {
+      "name": "mockup",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8510", "--directory", "docs/admin"],
+      "port": 8510,
+      "autoPort": false
+    },
+    {
+      "name": "conference-view",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": ["run", "scripts/run_conference_view.py", "--server.headless", "true", "--server.port", "8511"],
+      "port": 8511,
+      "autoPort": false
     }
   ]
 }

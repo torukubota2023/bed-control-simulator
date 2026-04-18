@@ -186,6 +186,48 @@
         "claude_evaluation_narrative_contains": "詰まり",
         "action_card_exists": true
       }
+    },
+    {
+      "id": "conference_normal_5f",
+      "name": "カンファビュー：通常モード 5F の基本表示",
+      "description": "多職種退院調整カンファ画面 — 通常モード / 5F / サンプル患者 10 名表示",
+      "params": {
+        "section": "🏥 多職種退院調整カンファ",
+        "mode": "normal",
+        "ward": "5F"
+      },
+      "expectations": {
+        "mode": "normal",
+        "ward": "5F",
+        "patient_count": 10,
+        "testids_required": [
+          "conference-mode",
+          "conference-ward",
+          "conference-occupancy-pct",
+          "conference-alos-days",
+          "conference-emergency-pct",
+          "conference-holiday-days",
+          "conference-patient-count",
+          "conference-fact-id"
+        ]
+      }
+    },
+    {
+      "id": "conference_holiday_6f",
+      "name": "カンファビュー：連休対策モード 6F の表示切替",
+      "description": "多職種退院調整カンファ画面 — 連休対策モードトグル + 病棟 6F 切替後の表示",
+      "params": {
+        "section": "🏥 多職種退院調整カンファ",
+        "mode": "holiday",
+        "ward": "6F"
+      },
+      "expectations": {
+        "mode": "holiday",
+        "ward": "6F",
+        "patient_count": 10,
+        "status_categories_count": 3,
+        "fact_filter": "ward=6F & mode=holiday"
+      }
     }
   ]
 }

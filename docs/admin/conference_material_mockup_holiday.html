@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>カンファ資料画面 モックアップ</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    background: #e8e8e8;
+    padding: 10px;
+    min-height: 100vh;
+  }
+  .aspect-container {
+    width: min(100vw - 20px, calc((100vh - 140px) * 16 / 9));
+    aspect-ratio: 16 / 9;
+    background: #ffffff;
+    border: 1px solid #bbb;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    display: grid;
+    grid-template-rows: 4.5% 12% 1fr 16% 3.8%;
+    margin: 0 auto;
+    overflow: hidden;
+    font-size: clamp(10px, 1.0vw, 15px);
+    color: #222;
+  }
+  /* ヘッダー */
+  .header {
+    background: #2c3e50;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+  .header .title { font-size: 16px; font-weight: 600; }
+  .header .meta { font-size: 13px; opacity: 0.9; }
+  .header .mode {
+    background: #c0392b;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 8px;
+    font-weight: 700;
+  }
+
+  /* ブロックA: 目標達成進捗 */
+  .block-a {
+    background: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    padding: 6px 20px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    align-items: center;
+  }
+  .kpi {
+    text-align: center;
+    border-right: 1px solid #dee2e6;
+    padding: 0 8px;
+  }
+  .kpi:last-child { border-right: none; }
+  .kpi .label { font-size: 10px; color: #666; margin-bottom: 2px; }
+  .kpi .value {
+    font-size: 19px;
+    font-weight: 700;
+    color: #2c3e50;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 4px;
+  }
+  .kpi .unit { font-size: 12px; color: #666; font-weight: normal; }
+  .kpi .target {
+    font-size: 11px;
+    color: #888;
+    margin-top: 2px;
+  }
+  .kpi.warning .value { color: #e67e22; }
+  .kpi.danger .value { color: #c0392b; }
+  .kpi.good .value { color: #27ae60; }
+  .kpi .countdown {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e67e22;
+  }
+
+  /* ステータスタグ（6カテゴリ） */
+  .status-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-new { background: #e9ecef; color: #495057; }
+  .status-medical { background: #d1ecf1; color: #0c5460; }
+  .status-family { background: #d4edda; color: #155724; }
+  .status-facility { background: #fff3cd; color: #856404; }
+  .status-insurance { background: #e2d5f1; color: #5b2c91; }
+  .status-rehab { background: #ffe0b2; color: #bf360c; }
+  .status-undecided { background: #424242; color: #fff; }
+
+  /* 中央: ブロックB (今週の見通し) + ブロックC (個別提案) */
+  .middle {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    border-bottom: 2px solid #dee2e6;
+    overflow: hidden;
+  }
+  .block-b {
+    border-right: 1px solid #dee2e6;
+    padding: 6px 12px;
+    background: #fefefe;
+    overflow: hidden;
+    font-size: 11px;
+  }
+  .section-title {
+    font-size: 12px;
+    color: #555;
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+  .forecast-row {
+    display: grid;
+    grid-template-columns: 50px 1fr 1fr;
+    gap: 4px;
+    font-size: 12px;
+    padding: 3px 0;
+    border-bottom: 1px dashed #eee;
+  }
+  .forecast-row .day { font-weight: 600; }
+  .forecast-row .vacancy.warn { color: #e67e22; font-weight: 600; }
+  .forecast-row .vacancy.danger { color: #c0392b; font-weight: 600; }
+  .forecast-summary {
+    margin-top: 8px;
+    padding: 8px;
+    background: #fff3e0;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    color: #e65100;
+  }
+
+  .block-c {
+    padding: 4px 12px;
+    overflow: hidden;
+  }
+  .block-c-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .block-c-header .count {
+    font-size: 11px;
+    color: #666;
+  }
+  .patient-row {
+    display: grid;
+    grid-template-columns: 52px 36px 48px 76px 130px 1fr 62px;
+    gap: 6px;
+    align-items: center;
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 1.2;
+    border-bottom: 1px solid #f3f3f3;
+    height: 32px;
+    white-space: nowrap;
+  }
+  .patient-row > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .patient-row .doctor { font-weight: 600; color: #333; }
+  .patient-row .ward.f5 { color: #2980b9; font-weight: 600; }
+  .patient-row .ward.f6 { color: #8e44ad; font-weight: 600; }
+  .patient-row .day { color: #666; font-size: 11px; }
+  .patient-row .plan-date { color: #555; font-size: 11px; }
+  .patient-row .note { font-size: 11px; color: #333; }
+  .patient-row .update-btn {
+    font-size: 9px;
+    color: #2c3e50;
+    background: #ecf0f1;
+    border: 1px solid #bdc3c7;
+    border-radius: 3px;
+    padding: 1px 4px;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* Block B: 退院予定の内訳 */
+  .breakdown-title {
+    font-size: 11px;
+    color: #555;
+    font-weight: 700;
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  .breakdown-row {
+    display: grid;
+    grid-template-columns: 1fr 40px;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 0;
+    align-items: center;
+  }
+  .breakdown-row .count { text-align: right; font-weight: 600; }
+
+  /* ブロックD: 職種別お願い */
+  .block-d {
+    padding: 6px 12px;
+    background: #fafbfc;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    border-bottom: 1px solid #dee2e6;
+    overflow: hidden;
+  }
+  .role {
+    padding: 2px 6px;
+    border-left: 3px solid #3498db;
+    font-size: 11px;
+  }
+  .role.reha { border-left-color: #27ae60; }
+  .role.disch { border-left-color: #e67e22; }
+  .role.doc { border-left-color: #8e44ad; }
+  .role.nurse { border-left-color: #3498db; }
+  .role .role-name {
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .role ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .role li {
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 1px 0;
+    color: #444;
+  }
+  .role li::before {
+    content: "・";
+    margin-right: 2px;
+  }
+
+  /* ファクト（最下部） */
+  .fact-bar {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+  }
+  .fact-bar .fact-label {
+    font-size: 9px;
+    background: #34495e;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  .fact-bar .fact-text { flex: 1; }
+  .fact-bar .fact-src {
+    font-size: 9px;
+    opacity: 0.75;
+    margin-left: 10px;
+  }
+
+  /* 印刷時: ファクトを非表示 */
+  @media print {
+    .fact-bar { display: none; }
+    body { padding: 0; background: #fff; }
+    .aspect-container { box-shadow: none; border: none; }
+  }
+
+  /* 注記 */
+  .note {
+    max-width: 1600px;
+    margin: 16px auto 0;
+    padding: 12px 16px;
+    background: #fff8dc;
+    border-left: 4px solid #f0a020;
+    font-size: 12px;
+    color: #444;
+    line-height: 1.6;
+  }
+  .note strong { color: #b8860b; }
+</style>
+</head>
+<body>
+<div class="aspect-container">
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <div>
+      <span class="title">🗓 多職種退院調整・連休対策カンファ</span>
+      <span class="mode">🚨 連休対策モード</span>
+    </div>
+    <div class="meta">
+      2026-04-24 (金) | 5F 表示中 | <span style="color:#ff6b6b; font-weight:700">GW まで残 5日</span>
+    </div>
+  </div>
+
+  <!-- ブロックA: 今月の目標達成進捗 -->
+  <div class="block-a">
+    <div class="kpi">
+      <div class="label">今月の稼働率</div>
+      <div class="value warning">85<span class="unit">%</span></div>
+      <div class="target">目標 90% ・ -5pt</div>
+    </div>
+    <div class="kpi">
+      <div class="label">平均在院日数 (3ヶ月)</div>
+      <div class="value good">17.5<span class="unit">日</span></div>
+      <div class="target">制度上限 21日 まで余裕</div>
+    </div>
+    <div class="kpi">
+      <div class="label">救急搬送後 15%</div>
+      <div class="value good">17<span class="unit">%</span></div>
+      <div class="target">基準達成</div>
+    </div>
+    <div class="kpi">
+      <div class="label">残り診療日</div>
+      <div class="value">9<span class="unit">日</span></div>
+      <div class="target">必要床日 +28</div>
+    </div>
+    <div class="kpi">
+      <div class="label">GW までの準備</div>
+      <div class="countdown" style="color:#c0392b; font-size:18px">あと 5日</div>
+      <div class="target">4/29 (水) - 5/3 (日) 5連休</div>
+    </div>
+  </div>
+
+  <!-- 中央: ブロックB + ブロックC -->
+  <div class="middle">
+    <!-- ブロックB: 連休期間の見通し -->
+    <div class="block-b">
+      <div class="section-title">GW期間 5連休の見通し（5F）</div>
+      <div class="forecast-row">
+        <span class="day">4/29水</span>
+        <span>空床 <span class="vacancy danger">11</span></span>
+        <span>救急 -3</span>
+      </div>
+      <div class="forecast-row">
+        <span class="day">4/30木</span>
+        <span>空床 <span class="vacancy danger">13</span></span>
+        <span>救急 -4</span>
+      </div>
+      <div class="forecast-row">
+        <span class="day">5/1金</span>
+        <span>空床 <span class="vacancy danger">14</span></span>
+        <span>救急 -5</span>
+      </div>
+      <div class="forecast-row">
+        <span class="day">5/2土</span>
+        <span>空床 <span class="vacancy danger">15</span></span>
+        <span>救急 -5</span>
+      </div>
+      <div class="forecast-row">
+        <span class="day">5/3日</span>
+        <span>空床 <span class="vacancy danger">13</span></span>
+        <span>救急 -3</span>
+      </div>
+      <div class="forecast-summary" style="background:#ffebee; color:#b71c1c">
+        連休期間 週末受入余力 66床日（応需可能だった患者機会）
+      </div>
+
+      <div class="breakdown-title">連休前 退院目標 (5F)</div>
+      <div class="breakdown-row"><span>連休前退院 確定</span><span class="count">3名</span></div>
+      <div class="breakdown-row"><span>連休前退院 調整中</span><span class="count" style="color:#c0392b">4名</span></div>
+      <div class="breakdown-row"><span>連休中継続ケア</span><span class="count">3名</span></div>
+      <div class="breakdown-title" style="margin-top:8px">連休明けの入院予定</div>
+      <div class="breakdown-row"><span>5/7 (木) 入院予定</span><span class="count">6名</span></div>
+      <div class="breakdown-row"><span>5/8 (金) 入院予定</span><span class="count">4名</span></div>
+    </div>
+
+    <!-- ブロックC: 個別調整提案 -->
+    <div class="block-c">
+      <div class="block-c-header">
+        <div class="section-title">個別患者のステータス（カンファで更新）</div>
+        <div class="count">表示中 10 / 最大 10 名</div>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">伊藤</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 42</span>
+        <span class="plan-date">5/7 (木)</span>
+        <span><span class="status-tag status-rehab">🟠 リハ最適化中</span></span>
+        <span class="note">連休中継続ケア、5/7 退院目標 / 連休中 リハ要員調整済</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">渡辺</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 35</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-facility">🟡 施設待ち</span></span>
+        <span class="note">連休前退院 確定、老健 4/28 受入、転院搬送 本日手配</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">高橋</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 29</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-family">🟢 家族希望待ち</span></span>
+        <span class="note">連休前退院 確定、ご家族迎え 4/28 午後、処方7日分準備</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">田中</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 25</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-medical">🔵 医学的OK待ち</span></span>
+        <span class="note">連休前退院 調整中、主治医に4/28可否を本日確認</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">中村</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 23</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-family">🟢 家族希望待ち</span></span>
+        <span class="note">連休前退院 調整中、家族が連休中に旅行予定 → 前倒し交渉</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">鈴木</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 22</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-medical">🔵 医学的OK待ち</span></span>
+        <span class="note">連休前退院 調整中、連休中処方と頓用指示を確定</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">加藤</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 21</span>
+        <span class="plan-date">5/7 (木)</span>
+        <span><span class="status-tag status-facility">🟡 施設待ち</span></span>
+        <span class="note">連休中継続ケア、老健 5/7 受入、連休中 機能維持リハ</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">佐藤</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 19</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-insurance">🟣 介護保険待ち</span></span>
+        <span class="note">連休前退院 調整中、認定調査 4/26 前倒し依頼済</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">小林</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 17</span>
+        <span class="plan-date">5/7 (木)</span>
+        <span><span class="status-tag status-undecided">⚫ 方向性未決</span></span>
+        <span class="note">連休中継続ケア、連休明けカンファで方針再確認</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+      <div class="patient-row">
+        <span class="doctor">山田</span>
+        <span class="ward f5">5F</span>
+        <span class="day">Day 15</span>
+        <span class="plan-date">4/28 (火)</span>
+        <span><span class="status-tag status-rehab">🟠 リハ最適化中</span></span>
+        <span class="note">連休前退院 確定、自宅での自主訓練指導 本日実施</span>
+        <span class="update-btn">更新 ▾</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ブロックD: 職種別お願い（ステータスから自動生成） -->
+  <div class="block-d">
+    <div class="role reha">
+      <div class="role-name">🏃 リハ PT/OT/ST</div>
+      <ul>
+        <li>連休前退院 5名：退院前 ADL 最終評価・自宅訓練指導</li>
+        <li>連休中継続ケア 3名：要員シフト確保、機能維持リハ継続</li>
+      </ul>
+    </div>
+    <div class="role disch">
+      <div class="role-name">📋 退院支援 NS</div>
+      <ul>
+        <li>連休前 施設転院 1名：渡辺 搬送手配</li>
+        <li>介護保険 認定調査 前倒し：佐藤 4/26</li>
+        <li>家族前倒し交渉 1名：中村 連休中旅行予定</li>
+      </ul>
+    </div>
+    <div class="role doc">
+      <div class="role-name">👔 医師</div>
+      <ul>
+        <li>連休中処方確定 10名：頓用指示・発熱時対応を明記</li>
+        <li>連休前最終退院判定：鈴木・田中 4/28 可否確認</li>
+      </ul>
+    </div>
+    <div class="role nurse">
+      <div class="role-name">🧑‍⚕️ 看護</div>
+      <ul>
+        <li>連休前退院者の家族連絡先・緊急時対応を再確認</li>
+        <li>連休中継続ケア 3名の当番看護・夜勤体制確認</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ファクト表示（印刷時非表示） -->
+  <div class="fact-bar">
+    <span class="fact-label">エビデンス</span>
+    <span class="fact-text">退院1日以内の予期せぬ再入院の1/4が金曜退院、主因は痛み — 連休前の処方見直しと頓用指示で回避可能</span>
+    <span class="fact-src">Considine 2018 BMC Health Serv Res | PMID: 30217155</span>
+  </div>
+
+</div>
+
+<div class="note">
+  <strong>このモックアップについて:</strong> 数字はすべてサンプル。実装時は bed_data_manager から実データを取得します。医師名・患者名は匿名化表記（個人情報完全除外）。エビデンスファクトは25件マスターからローテーション表示、<strong>印刷時は自動で非表示</strong>になります (<code>@media print</code> で制御)。画面は 16:9 固定、1画面にすべて収まる設計。
+</div>
+
+</body>
+</html>

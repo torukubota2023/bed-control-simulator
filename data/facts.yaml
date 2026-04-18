@@ -1,0 +1,442 @@
+# ベッドコントロールアプリ — エビデンスファクト集
+# 対象画面: 多職種退院調整・連休対策カンファ画面の下部 1 行ローテーション表示
+# 出典マスター: docs/admin/bed_control_conference_facts_master.md
+#
+# layer 番号とレイヤー名:
+#   1 = 退院時機能の最適化
+#   2 = 退院タイミング判断
+#   3 = リハビリの時間・強度・継続
+#   4 = 多職種カンファ・連携の力
+#   5 = 退院支援看護師の専門性
+#   6 = 安全・既成概念の解除
+#   7 = 病棟運営・社会的文脈
+#
+# context フィールド:
+#   wards:    [5F, 6F]   対象病棟
+#   modes:    [normal, holiday]  表示するモード (normal=通常ハドル, holiday=連休対策)
+#   audience: [all, rehab, discharge_ns, doctor, nurse]  主な対象読者
+#   weight:   1-10  ローテーション重み (10 が最重要)
+
+version: 1
+updated: 2026-04-17
+facts:
+  # ============================================================
+  # レイヤー 1: 退院時機能の最適化 (6 件) — weight=10 (最重要)
+  # ============================================================
+  - id: f001
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "退院時 IC（intrinsic capacity）が 1 点高いごとに 1 年死亡 OR 0.98 — 退院時の力は生存に直結する"
+    author: "Valenzuela 2025"
+    journal: "Age Ageing"
+    year: 2025
+    n: "n=570 pooled RCT"
+    pmid: "40188489"
+    doi: "10.1093/ageing/afaf074"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 10
+
+  - id: f002
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "87 歳超でも多要素運動で Barthel が対照群 -5.0 → 介入群 +1.9 へ逆転 — 超高齢でも機能改善は可能"
+    author: "Martínez-Velilla 2019"
+    journal: "JAMA Intern Med"
+    year: 2019
+    n: "n=370 RCT"
+    pmid: "30419096"
+    doi: "10.1001/jamainternmed.2018.4869"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 10
+
+  - id: f003
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "日本 96 施設 心不全入院で Barthel -5 点の軽度 HAD でも 1 年全死亡 HR 1.75 — 小さな機能低下が長期予後を左右"
+    author: "Kato 2025"
+    journal: "JAMDA"
+    year: 2025
+    n: "n=6,519 J-Proof HF"
+    pmid: "40101784"
+    doi: "10.1016/j.jamda.2025.105524"
+    context:
+      wards: [6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 10
+
+  - id: f004
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "急性期脳卒中で高強度リハ群は 30 日再入院 HR 0.86、無リハ群は HR 1.30 — やらないことが再入院を増やす"
+    author: "Andrews 2015"
+    journal: "Phys Ther"
+    year: 2015
+    n: "n=64,065"
+    pmid: "26089042"
+    doi: "10.2522/ptj.20140400"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 10
+
+  - id: f005
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "日本 DPC 肺炎 ICU で入院 2 日以内の早期リハは院内死亡 17.9% vs 21.9%（傾向スコアマッチ）— 早期開始が生存を分ける"
+    author: "Sawada 2018"
+    journal: "Am J Crit Care"
+    year: 2018
+    n: "n=972 ペア"
+    pmid: "29496765"
+    doi: "10.4037/ajcc2018354"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 10
+
+  - id: f006
+    layer: 1
+    layer_name: "退院時機能の最適化"
+    text: "入院関連機能障害 (HAD) の有病率は 30%、在院日数短縮だけでは減らない — 解決は介入の質"
+    author: "Loyd 2020"
+    journal: "JAMDA meta"
+    year: 2020
+    n: "n=7,375"
+    pmid: "31734122"
+    doi: "10.1016/j.jamda.2019.09.015"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 10
+
+  # ============================================================
+  # レイヤー 2: 退院タイミング判断 (4 件) — weight=8-9
+  # ============================================================
+  - id: f007
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "一般内科 35,000 例で金曜退院と月曜・水曜退院の再入院・死亡に差なし — 金曜退院＝危険は一律には真ではない"
+    author: "Au 2019"
+    journal: "Intern Med J"
+    year: 2019
+    n: "n=35,000"
+    pmid: "30129263"
+    doi: "10.1111/imj.14073"
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [doctor, discharge_ns]
+      weight: 8
+
+  - id: f008
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "大腿骨近位部骨折 35,138 例で週末退院は 30 日死亡 HR 1.4、1 年死亡 HR 1.2 — 疾患により判断を変える"
+    author: "Boutera 2026"
+    journal: "Eur Geriatr Med"
+    year: 2026
+    n: "n=35,138"
+    pmid: "41102596"
+    doi: "10.1007/s41999-025-01213-z"
+    context:
+      wards: [5F]
+      modes: [normal]
+      audience: [doctor, discharge_ns]
+      weight: 8
+
+  - id: f009
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "退院 1 日以内の予期せぬ再入院の 1/4 が金曜退院、主因は痛み — 処方見直しで回避可能"
+    author: "Considine 2018"
+    journal: "BMC Health Serv Res"
+    year: 2018
+    n: "予期せぬ再入院分析"
+    pmid: "30217155"
+    doi: "10.1186/s12913-018-3446-6"
+    context:
+      wards: [5F, 6F]
+      modes: [holiday]
+      audience: [doctor, discharge_ns]
+      weight: 9
+
+  - id: f010
+    layer: 2
+    layer_name: "退院タイミング判断"
+    text: "大腿骨骨折後の多職種リハで 1 年死亡 or 施設入所が 12% 減、NNTH=25 — 25 人治療で 1 人救える"
+    author: "Handoll 2021"
+    journal: "Cochrane"
+    year: 2021
+    n: "28 RCTs n=5,351"
+    pmid: "34766330"
+    doi: "10.1002/14651858.CD007125.pub3"
+    context:
+      wards: [5F]
+      modes: [normal]
+      audience: [doctor, discharge_ns]
+      weight: 8
+
+  # ============================================================
+  # レイヤー 3: リハビリの時間・強度・継続 (3 件) — weight=8
+  # ============================================================
+  - id: f011
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "下肢人工関節術後メタ解析 24 本で週末リハ追加は LOS -1.04 日 — 週末継続は患者の回復を早める"
+    author: "Haas 2016"
+    journal: "Osteoarthr Cartil"
+    year: 2016
+    n: "24 studies meta-analysis"
+    pmid: "27224276"
+    doi: "10.1016/j.joca.2016.05.015"
+    context:
+      wards: [5F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 8
+
+  - id: f012
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "日本 J-Proof HF で 65 歳以上心不全入院の 37.1% が HAD を発症 — 3 人に 1 人は機能を落として帰る現実"
+    author: "Takahashi 2024"
+    journal: "Circ J"
+    year: 2024
+    n: "n=9,403"
+    pmid: "38220172"
+    doi: "10.1253/circj.CJ-23-0717"
+    context:
+      wards: [6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 8
+
+  - id: f013
+    layer: 3
+    layer_name: "リハビリの時間・強度・継続"
+    text: "サルコペニア＋frail 高齢者 1,519 名で運動＋栄養介入 36 ヶ月継続は mobility disability HR 0.78 — 長期予後の予防"
+    author: "Bernabei 2022"
+    journal: "BMJ SPRINTT"
+    year: 2022
+    n: "n=1,519"
+    pmid: "35545258"
+    doi: "10.1136/bmj-2021-068788"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab]
+      weight: 8
+
+  # ============================================================
+  # レイヤー 4: 多職種カンファ・連携の力 (4 件) — weight=7
+  # ============================================================
+  - id: f014
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "構造化多職種ベッドサイドラウンド (SIBR) 導入で 7 日再入院 OR 0.70 — カンファは結果を出す"
+    author: "Sunkara 2020"
+    journal: "BMJ Qual Saf"
+    year: 2020
+    n: "SIBR 導入前後比較"
+    pmid: "31810994"
+    doi: "10.1136/bmjqs-2019-010124"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  - id: f015
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "看護師・医師ペア管理＋毎日 SIBR の Accountable Care Unit で 2 年目調整後死亡 OR 0.58、予期せぬ死亡ゼロ達成"
+    author: "Loertscher 2021"
+    journal: "J Hosp Med"
+    year: 2021
+    n: "2 年間前後比較"
+    pmid: "34211668"
+    doi: "10.12788/jhm.3640"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  - id: f016
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "入院 24 時間以内の予定退院日 (EDD) 設定＋毎日の多職種確認は非医学的退院遅延と LOS を減らし、患者満足度も向上"
+    author: "Bechir 2025"
+    journal: "Cureus"
+    year: 2025
+    n: "EDD 実装研究"
+    pmid: "40741583"
+    doi: "10.7759/cureus.70513"
+    context:
+      wards: [6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  - id: f017
+    layer: 4
+    layer_name: "多職種カンファ・連携の力"
+    text: "日本の入退院支援カンファ導入で 14.7→13.7 日（脊椎・中枢神経）、20.6→19.0 日（内科・外科）と 1 日以上短縮"
+    author: "看護学雑誌 退院支援研究"
+    journal: "看護学雑誌"
+    year: 2021
+    n: "国内 1 施設前後比較"
+    pmid: null
+    doi: null
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [all]
+      weight: 7
+
+  # ============================================================
+  # レイヤー 5: 退院支援看護師の専門性 (3 件) — weight=7
+  # ============================================================
+  - id: f018
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "心不全 2,494 例 クラスター RCT (PACT-HF) で看護師主導の移行期介入は退院準備度・ケア移行の質・QOL を有意に改善"
+    author: "Van Spall 2019"
+    journal: "JAMA"
+    year: 2019
+    n: "n=2,494 cluster RCT"
+    pmid: "30806695"
+    doi: "10.1001/jama.2019.0710"
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 7
+
+  - id: f019
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "65 歳以上 6,838 例で ED 配置トランジショナルケア看護師 (TCN) の介入は初回 ED 再入院を最大 17%pt 減少"
+    author: "Dresden 2020"
+    journal: "Acad Emerg Med"
+    year: 2020
+    n: "n=6,838"
+    pmid: "31663245"
+    doi: "10.1111/acem.13891"
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 7
+
+  - id: f020
+    layer: 5
+    layer_name: "退院支援看護師の専門性"
+    text: "日本: 退院調整看護師参加で入院 7 日以内の早期依頼率が 30%→43% に上昇、支援患者の平均在院日数が短縮"
+    author: "日本医療マネジメント学会誌"
+    journal: "日本医療マネジメント学会誌"
+    year: 2016
+    n: "国内 1 施設事例"
+    pmid: null
+    doi: null
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [discharge_ns]
+      weight: 7
+
+  # ============================================================
+  # レイヤー 6: 安全・既成概念の解除 (2 件) — weight=5
+  # ============================================================
+  - id: f021
+    layer: 6
+    layer_name: "安全・既成概念の解除"
+    text: "動かすと転ぶは幻想 — Cochrane 24 RCTs n=7,511 で moderate-certainty に否定"
+    author: "Hartley 2022"
+    journal: "Cochrane"
+    year: 2022
+    n: "24 RCTs n=7,511"
+    pmid: "36355032"
+    doi: "10.1002/14651858.CD012679.pub2"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, nurse]
+      weight: 5
+
+  - id: f022
+    layer: 6
+    layer_name: "安全・既成概念の解除"
+    text: "脳卒中 <24 時間の高用量離床は逆効果 — AVERT n=2,104 で 3 ヶ月 mRS 0-2 達成が 50→46% へ減少。頻回・短時間が良い用量反応"
+    author: "Bernhardt 2015"
+    journal: "Lancet"
+    year: 2015
+    n: "n=2,104 RCT"
+    pmid: "25892679"
+    doi: "10.1016/S0140-6736(15)60690-0"
+    context:
+      wards: [5F, 6F]
+      modes: [normal, holiday]
+      audience: [rehab, nurse]
+      weight: 5
+
+  # ============================================================
+  # レイヤー 7: 病棟運営・社会的文脈 (3 件) — weight=4
+  # ============================================================
+  - id: f023
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "ED 待機 4 時間超で 30 日死亡オッズ +8.4%、入院待機 5 人増でカテゴリ 3 救急応答が 52 分遅延 — 病床回転は救急医療の命綱"
+    author: "Howlett 2026"
+    journal: "EMJ"
+    year: 2026
+    n: "前向きコホート"
+    pmid: "41672875"
+    doi: "10.1136/emermed-2025-215012"
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f024
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2024 年の病院全体の病床利用率は全国平均 77.0%、一般病床の平均在院日数は 15.5 日（厚労省 令和 6 年医療施設調査）"
+    author: "厚生労働省"
+    journal: "令和 6 年医療施設調査"
+    year: 2024
+    n: "全国統計"
+    pmid: null
+    doi: null
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
+
+  - id: f025
+    layer: 7
+    layer_name: "病棟運営・社会的文脈"
+    text: "2040 年までに 75 歳以上の救急搬送は 36% 増、85 歳以上は 75% 増 — 連休対策と病床運営の重要性はさらに増す"
+    author: "第一生命経済研究所"
+    journal: "将来推計レポート"
+    year: 2024
+    n: "将来推計"
+    pmid: null
+    doi: null
+    context:
+      wards: [5F, 6F]
+      modes: [normal]
+      audience: [all]
+      weight: 4
