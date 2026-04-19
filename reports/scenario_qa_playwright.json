@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-19T11:17:25.176Z",
+  "generated_at": "2026-04-19T11:33:07.918Z",
   "claims_json": "reports/scenario_claims.json",
   "total_claims": 60,
   "pass": 16,
@@ -63,9 +63,9 @@
       "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L387-holiday-thresh-banner-21",
+      "claim_id": "carnf-scenario-v4-L405-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 387,
+      "source_line": 405,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -81,9 +81,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L388-holiday-thresh-banner-14",
+      "claim_id": "carnf-scenario-v4-L406-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 388,
+      "source_line": 406,
       "metric": "holiday_banner_threshold_days",
       "expected": 14,
       "actual": null,
@@ -99,9 +99,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L388-holiday-thresh-banner-7",
+      "claim_id": "carnf-scenario-v4-L406-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 388,
+      "source_line": 406,
       "metric": "holiday_banner_threshold_days",
       "expected": 7,
       "actual": null,

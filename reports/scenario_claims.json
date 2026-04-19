@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-19T11:17:26.449652+00:00",
+  "generated_at": "2026-04-19T11:33:09.115474+00:00",
   "claim_count": 60,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
@@ -106,9 +106,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L387-holiday-thresh-banner-21",
+      "id": "carnf-scenario-v4-L405-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 387,
+      "source_line": 405,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -122,9 +122,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L388-holiday-thresh-banner-14",
+      "id": "carnf-scenario-v4-L406-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 388,
+      "source_line": 406,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -138,9 +138,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L388-holiday-thresh-banner-7",
+      "id": "carnf-scenario-v4-L406-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 388,
+      "source_line": 406,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,

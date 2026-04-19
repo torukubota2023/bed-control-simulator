@@ -1,7 +1,7 @@
-"""患者名・主治医名・患者ID の永続化ストア.
+"""患者名・主治医名・患者ID・確認事項 の永続化ストア.
 
-多職種退院調整カンファ画面で編集した患者情報（主治医名 / 患者名 / 患者ID）を
-ローカルの JSON ファイルに保存・復元するための軽量ストア。
+多職種退院調整カンファ画面で編集した患者情報（主治医名 / 患者名 / 患者ID /
+確認事項）をローカルの JSON ファイルに保存・復元するための軽量ストア。
 
 保存先
 -------
@@ -15,12 +15,15 @@
         "a1b2c3d4": {
             "doctor_name": "田中医師",
             "patient_name": "山田太郎",
-            "patient_id": "12345"
+            "patient_id": "12345",
+            "note": "4/24 までに退院目処を再評価"
         },
         ...
     }
 
 キーは ``SamplePatient.patient_id``（UUID 先頭 8 桁）をそのまま使う。
+``note`` は副院長指示（2026-04-19）で追加された確認事項フィールド。
+未設定時はサンプルデータの既定値を表示する（UI 側で解決）。
 
 設計上の方針
 -------------
@@ -55,6 +58,7 @@ _EMPTY_INFO: Dict[str, str] = {
     "doctor_name": "",
     "patient_name": "",
     "patient_id": "",
+    "note": "",  # 確認事項（副院長指示 2026-04-19 で追加）
 }
 
 
@@ -91,6 +95,7 @@ def load_all_patient_info() -> Dict[str, Dict[str, str]]:
             "doctor_name": str(value.get("doctor_name", "")),
             "patient_name": str(value.get("patient_name", "")),
             "patient_id": str(value.get("patient_id", "")),
+            "note": str(value.get("note", "")),
         }
     return cleaned
 
@@ -121,6 +126,7 @@ def save_patient_info(
     doctor_name: str = "",
     patient_name: str = "",
     patient_id: str = "",
+    note: str = "",
 ) -> None:
     """1 患者の情報を保存する（既存ファイルがあればマージ）.
 
@@ -134,6 +140,8 @@ def save_patient_info(
         患者名（空文字可）
     patient_id : str
         患者ID（空文字可）
+    note : str
+        確認事項（副院長指示 2026-04-19、空文字可）
 
     Notes
     -----
@@ -150,6 +158,7 @@ def save_patient_info(
         "doctor_name": str(doctor_name),
         "patient_name": str(patient_name),
         "patient_id": str(patient_id),
+        "note": str(note),
     }
 
     path = _get_storage_path()
@@ -206,6 +215,7 @@ def clear_patient_info(
     clear_doctor: bool = False,
     clear_name: bool = False,
     clear_id: bool = False,
+    clear_note: bool = False,
 ) -> None:
     """指定した項目のみ空文字にする（エントリ自体は残す）.
 
@@ -219,18 +229,20 @@ def clear_patient_info(
         True なら患者名を空文字にクリア
     clear_id : bool
         True なら患者IDを空文字にクリア
+    clear_note : bool
+        True なら確認事項を空文字にクリア（副院長指示 2026-04-19）
 
     Notes
     -----
     - 全てのフラグが False の場合は何もしない
     - 対象 UUID がストアに存在しない場合は何もしない
-    - クリア後、3 フィールド全てが空になった場合はエントリごと削除
+    - クリア後、4 フィールド全てが空になった場合はエントリごと削除
     - Atomic write で既存エントリは保護される
     """
     if not patient_uuid_prefix:
         raise ValueError("patient_uuid_prefix は空にできません")
 
-    if not (clear_doctor or clear_name or clear_id):
+    if not (clear_doctor or clear_name or clear_id or clear_note):
         return
 
     all_info = load_all_patient_info()
@@ -244,9 +256,12 @@ def clear_patient_info(
         entry["patient_name"] = ""
     if clear_id:
         entry["patient_id"] = ""
+    if clear_note:
+        entry["note"] = ""
 
-    # 全フィールド空なら エントリごと削除
-    if not entry["doctor_name"] and not entry["patient_name"] and not entry["patient_id"]:
+    # 全フィールド空なら エントリごと削除（note 追加で 4 フィールド判定）
+    if (not entry.get("doctor_name") and not entry.get("patient_name")
+            and not entry.get("patient_id") and not entry.get("note")):
         del all_info[patient_uuid_prefix]
     else:
         all_info[patient_uuid_prefix] = entry
@@ -258,6 +273,7 @@ def clear_all_patient_info(
     clear_doctor: bool = False,
     clear_name: bool = False,
     clear_id: bool = False,
+    clear_note: bool = False,
 ) -> int:
     """全患者の指定項目を一括クリアする.
 
@@ -269,6 +285,8 @@ def clear_all_patient_info(
         True なら全患者の患者名をクリア
     clear_id : bool
         True なら全患者の患者IDをクリア
+    clear_note : bool
+        True なら全患者の確認事項をクリア（副院長指示 2026-04-19）
 
     Returns
     -------
@@ -278,9 +296,9 @@ def clear_all_patient_info(
     Notes
     -----
     - 全フラグが False なら 0 を返す（何もしない）
-    - クリア後に 3 フィールド全て空になったエントリは削除
+    - クリア後に 4 フィールド全て空になったエントリは削除
     """
-    if not (clear_doctor or clear_name or clear_id):
+    if not (clear_doctor or clear_name or clear_id or clear_note):
         return 0
 
     all_info = load_all_patient_info()
@@ -295,6 +313,7 @@ def clear_all_patient_info(
             "doctor_name": entry.get("doctor_name", ""),
             "patient_name": entry.get("patient_name", ""),
             "patient_id": entry.get("patient_id", ""),
+            "note": entry.get("note", ""),
         }
         after = dict(before)
         if clear_doctor:
@@ -303,12 +322,15 @@ def clear_all_patient_info(
             after["patient_name"] = ""
         if clear_id:
             after["patient_id"] = ""
+        if clear_note:
+            after["note"] = ""
 
         if after != before:
             changed_count += 1
 
-        # 全フィールド空ならエントリ削除（new_all_info に追加しない）
-        if after["doctor_name"] or after["patient_name"] or after["patient_id"]:
+        # 4 フィールド全て空ならエントリ削除（new_all_info に追加しない）
+        if (after["doctor_name"] or after["patient_name"]
+                or after["patient_id"] or after["note"]):
             new_all_info[uuid_prefix] = after
 
     _atomic_write_all(new_all_info)

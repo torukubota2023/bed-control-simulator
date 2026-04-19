@@ -2525,6 +2525,56 @@ class TestWeeklyHistoryExpander:
             "タイトルより先にバッジが出現 → 視覚的な重なり問題が再発する可能性"
         )
 
+    # ======================================================================
+    # 確認事項（note）編集・表示（副院長指示 2026-04-19）
+    # ======================================================================
+
+    def test_note_edit_textarea_rendered_in_popover(self, app_path: Path):
+        """✏️ 編集 popover 内に「確認事項」text_area が存在する."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        # text_area ウィジェットのラベル確認
+        labels = []
+        for ta in at.text_area:
+            labels.append(ta.label)
+        # 少なくとも 1 つは「確認事項」が含まれるラベルがあるはず
+        assert any("確認事項" in lbl for lbl in labels), (
+            f"『確認事項』text_area が見つからない: labels={labels}"
+        )
+
+    def test_stored_note_displayed_instead_of_sample(
+        self, app_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """patient_name_store に note が保存されていれば、サンプル既定値より
+        優先して行に表示される（副院長指示 2026-04-19）."""
+        import patient_name_store as pns
+        import patient_status_store as pss
+        # 隔離されたストアに note を書き込む
+        monkeypatch.setattr(
+            pns, "_STORAGE_PATH", tmp_path / "patient_names.json"
+        )
+        monkeypatch.setattr(
+            pss, "_STORAGE_PATH", tmp_path / "patient_status.json"
+        )
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
+        pns.save_patient_info(
+            "a1b2c3d4",
+            doctor_name="田中医師",
+            note="◆ stored note からの確認事項 ◆",
+        )
+
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # stored note が表示される
+        assert "◆ stored note からの確認事項 ◆" in markdown_text, (
+            "stored note が行描画に反映されていない"
+        )
+
 
 class TestDemoStatusHistoryFallback:
     """副院長指示（2026-04-19）: 実履歴が空でも教育用デモ履歴で

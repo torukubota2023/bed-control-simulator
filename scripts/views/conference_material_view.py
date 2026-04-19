@@ -2459,6 +2459,10 @@ def _render_block_c(
         doctor_name = stored.get("doctor_name", "")
         patient_name = stored.get("patient_name", "")
         patient_id_str = stored.get("patient_id", "")
+        stored_note = stored.get("note", "")
+        # 確認事項は stored を優先、未設定時はサンプル既定値にフォールバック
+        # （副院長指示 2026-04-19: ✏️ 編集から入力可能に）
+        display_note = stored_note if stored_note else p.note
 
         # 医師/患者セルの表示 HTML を組み立てる
         doctor_patient_html = _format_doctor_patient_cell(
@@ -2480,6 +2484,9 @@ def _render_block_c(
         if p.patient_id in changed_uuids:
             row_classes += " conf-patient-row-changed"
         with row_col1:
+            # 2026-04-19: 確認事項は stored を優先表示（stored 空ならサンプル既定値）
+            # HTML インジェクション対策として最低限 " エスケープ
+            safe_note = (display_note or "").replace('"', '&quot;')
             st.markdown(
                 f"""
                 <div class="{row_classes}">
@@ -2487,7 +2494,7 @@ def _render_block_c(
                   <span class="ward {ward_cls}">{p.ward}</span>
                   <span class="day">Day {p.day_count}</span>
                   <span class="plan-date">{p.planned_date}</span>
-                  <span class="note" title="{p.note}">{p.note}</span>
+                  <span class="note" title="{safe_note}">{safe_note}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -2619,15 +2626,30 @@ def _render_block_c(
                     key=f"edit_pid_{p.patient_id}",
                     placeholder="例: 12345",
                 )
+                # 2026-04-19: 確認事項フィールド（副院長指示）
+                # 複数行可。表示列と同期し、カンファの議論内容をその場で記録
+                new_note = st.text_area(
+                    "確認事項",
+                    value=stored_note,
+                    key=f"edit_note_{p.patient_id}",
+                    placeholder=f"例: {p.note}",
+                    help=(
+                        "カンファで話し合った確認事項・次のアクションを記入してください。"
+                        "未入力時はサンプル既定値が表示されます。"
+                    ),
+                    height=80,
+                )
                 # 変更があれば即保存
                 if (new_doctor != doctor_name
                         or new_pname != patient_name
-                        or new_pid != patient_id_str):
+                        or new_pid != patient_id_str
+                        or new_note != stored_note):
                     save_patient_info(
                         p.patient_id,
                         doctor_name=new_doctor,
                         patient_name=new_pname,
                         patient_id=new_pid,
+                        note=new_note,
                     )
                     st.rerun()
 
@@ -2646,23 +2668,29 @@ def _render_block_c(
                         "患者ID",
                         key=f"clr_id_{p.patient_id}",
                     )
+                    clr_note = st.checkbox(
+                        "確認事項",
+                        key=f"clr_note_{p.patient_id}",
+                    )
                     clr_status = st.checkbox(
                         "ステータス（🆕 新規に戻す）",
                         key=f"clr_status_{p.patient_id}",
                     )
-                    any_checked = clr_doctor or clr_pname or clr_pid or clr_status
+                    any_checked = (clr_doctor or clr_pname or clr_pid
+                                   or clr_note or clr_status)
                     if st.button(
                         "この患者の選択項目をクリア",
                         key=f"clr_exec_{p.patient_id}",
                         disabled=not any_checked,
                     ):
                         cleared_items: List[str] = []
-                        if clr_doctor or clr_pname or clr_pid:
+                        if clr_doctor or clr_pname or clr_pid or clr_note:
                             clear_patient_info(
                                 p.patient_id,
                                 clear_doctor=clr_doctor,
                                 clear_name=clr_pname,
                                 clear_id=clr_pid,
+                                clear_note=clr_note,
                             )
                             if clr_doctor:
                                 cleared_items.append("主治医名")
@@ -2670,6 +2698,8 @@ def _render_block_c(
                                 cleared_items.append("患者名")
                             if clr_pid:
                                 cleared_items.append("患者ID")
+                            if clr_note:
+                                cleared_items.append("確認事項")
                         if clr_status:
                             try:
                                 clear_status(p.patient_id)

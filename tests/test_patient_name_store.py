@@ -53,6 +53,7 @@ class TestLoadMissingFile:
             "doctor_name": "",
             "patient_name": "",
             "patient_id": "",
+            "note": "",
         }
 
     def test_load_single_returns_empty_fields_for_unknown_uuid(self, temp_storage: Path):
@@ -63,6 +64,7 @@ class TestLoadMissingFile:
             "doctor_name": "",
             "patient_name": "",
             "patient_id": "",
+            "note": "",
         }
 
 
@@ -80,6 +82,58 @@ class TestRoundTrip:
         assert info["doctor_name"] == "田中医師"
         assert info["patient_name"] == "山田太郎"
         assert info["patient_id"] == "12345"
+        # note は省略時は空（副院長指示 2026-04-19）
+        assert info["note"] == ""
+
+    def test_note_field_roundtrip(self, temp_storage: Path):
+        """確認事項（note）フィールドを保存・復元できる.
+
+        副院長指示（2026-04-19）: カンファの ✏️ 編集から
+        確認事項をその場で記録可能に。
+        """
+        pns.save_patient_info(
+            "a1b2c3d4",
+            doctor_name="田中医師",
+            patient_name="山田太郎",
+            patient_id="12345",
+            note="4/24までに退院目処を再評価、要再カンファ",
+        )
+        info = pns.load_patient_info("a1b2c3d4")
+        assert info["note"] == "4/24までに退院目処を再評価、要再カンファ"
+
+    def test_note_field_multiline_preserved(self, temp_storage: Path):
+        """確認事項の改行が保持される（text_area 複数行入力想定）."""
+        note_multiline = "ご家族面談 4/19 実施\n迎え日時を確認\n着替え準備の依頼"
+        pns.save_patient_info("u1", note=note_multiline)
+        info = pns.load_patient_info("u1")
+        assert info["note"] == note_multiline
+        assert info["note"].count("\n") == 2
+
+    def test_clear_note_only(self, temp_storage: Path):
+        """clear_patient_info で note のみクリアできる."""
+        pns.save_patient_info(
+            "u1",
+            doctor_name="田中",
+            patient_name="山田",
+            patient_id="111",
+            note="初回確認",
+        )
+        pns.clear_patient_info("u1", clear_note=True)
+        info = pns.load_patient_info("u1")
+        assert info["note"] == ""
+        # 他フィールドは維持される
+        assert info["doctor_name"] == "田中"
+        assert info["patient_name"] == "山田"
+        assert info["patient_id"] == "111"
+
+    def test_note_only_entry_removed_when_cleared(self, temp_storage: Path):
+        """note のみ記入したエントリで note クリアするとエントリごと削除."""
+        pns.save_patient_info("u1", note="テスト")
+        pns.clear_patient_info("u1", clear_note=True)
+        # エントリが消えるので load は _EMPTY_INFO を返す
+        info = pns.load_patient_info("u1")
+        assert info["note"] == ""
+        assert info["doctor_name"] == ""
 
     def test_empty_fields_roundtrip(self, temp_storage: Path):
         """空文字列フィールドでも保存・復元できる."""
@@ -89,6 +143,7 @@ class TestRoundTrip:
             "doctor_name": "",
             "patient_name": "",
             "patient_id": "",
+            "note": "",
         }
 
     def test_partial_fields_roundtrip(self, temp_storage: Path):
