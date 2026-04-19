@@ -191,10 +191,10 @@ def test_los_estimate_returns_reasonable_values(adm_df: pd.DataFrame) -> None:
 
 
 def test_los_estimate_is_near_target_range(adm_df: pd.DataFrame) -> None:
-    """LOS 推定平均が制度上限（21〜22日）の±10日以内に収まる（近似値のサニティチェック）。"""
+    """LOS 推定平均が制度上限（20日、85+緩和時 21日）の±10日以内に収まる（近似値のサニティチェック）。"""
     los_5f = estimate_monthly_los(adm_df, "5F", BEDS_5F)
     los_6f = estimate_monthly_los(adm_df, "6F", BEDS_6F)
-    # 目標帯は 15〜22 日を想定
+    # 目標帯は 12〜28 日を想定（実測 16.5/15.6 を含む合理的範囲）
     assert 12 <= los_5f["los_estimate_days"].mean() <= 28
     assert 12 <= los_6f["los_estimate_days"].mean() <= 28
 
@@ -235,7 +235,8 @@ def test_build_markdown_contains_key_numbers(adm_df: pd.DataFrame) -> None:
     # 基準
     assert "15%" in md
     assert "20%" in md
-    assert "21" in md  # LOS 上限
+    assert "20 日" in md  # LOS 上限（2026-06-01 以降の本則）
+    assert "21 日" in md  # LOS 緩和後（85+ ≥ 20% 時）
     # データ出典
     assert "actual_admissions_2025fy.csv" in md
 
