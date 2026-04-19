@@ -2184,13 +2184,17 @@ class TestWeeklyHistoryExpander:
         assert 'data-testid="conference-history-stagnant-count"' in markdown_text
         assert 'data-testid="conference-history-long-undecided-count"' in markdown_text
 
-    def test_history_expander_initial_counts_zero(self, app_path: Path):
-        """初期状態（履歴ファイル未作成）では全カウントが 0."""
+    def test_history_expander_initial_uses_demo_fallback(self, app_path: Path):
+        """初期状態（履歴ファイル未作成）はデモフォールバックで件数が表示される.
+
+        副院長指示（2026-04-19）: 教育用デモ時に「次回から表示」では意味がない
+        ため、実履歴ゼロ → デモ履歴（ステータス変更 3 件 / 新規登録 1 件）に
+        切り替わる。5F デフォルト表示で total = 4 件を期待。
+        """
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(app_path), default_timeout=30)
         at.run()
         markdown_text = "\n".join(m.value for m in at.markdown)
-        # 0 が 3 箇所出るはず（changes/stagnant/long_undecided）
         import re
         m = re.search(
             r'data-testid="conference-history-changes-count" '
@@ -2198,7 +2202,10 @@ class TestWeeklyHistoryExpander:
             markdown_text,
         )
         assert m is not None
-        assert m.group(1) == "0"
+        # デモフォールバック: 5F で 3 transition + 1 new = 4 件
+        assert m.group(1) == "4", (
+            f"デモフォールバックで 4 件期待、実際 {m.group(1)}"
+        )
 
     def test_history_expander_shows_changes_after_save(self, app_path: Path):
         """履歴ファイルに記録があると expander の集計が 1 以上になる.
@@ -2372,15 +2379,40 @@ class TestWeeklyHistoryExpander:
         assert 'data-testid="conference-block-c-changes-count"' in markdown_text
         assert 'data-testid="conference-block-c-new-count"' in markdown_text
 
-    def test_block_c_summary_empty_state_initial(self, app_path: Path):
-        """履歴データなし → 空状態メッセージを表示."""
+    def test_block_c_summary_demo_fallback_counts(self, app_path: Path):
+        """履歴データなし → デモフォールバックで台本通りの件数を表示.
+
+        副院長指示（2026-04-19）: 教育用デモで「次回から表示」では意味がないため、
+        カンファ台本 v4 第0章「ステータス変更 3 件 / 新規登録 1 件」と一致する
+        件数を表示する。
+        """
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(app_path), default_timeout=30)
         at.run()
         markdown_text = "\n".join(m.value for m in at.markdown)
-        # 空状態クラス + 誘導文が含まれる
-        assert "conf-block-c-summary-empty" in markdown_text
-        assert "履歴データ蓄積中" in markdown_text
+        import re
+        # Block C changes-count = 3（遷移）
+        m_ch = re.search(
+            r'data-testid="conference-block-c-changes-count" '
+            r'style="display:none">(\d+)<',
+            markdown_text,
+        )
+        assert m_ch is not None
+        assert m_ch.group(1) == "3", (
+            f"デモ時の Block C ステータス変更件数は 3 を期待、実際 {m_ch.group(1)}"
+        )
+        # Block C new-count = 1（新規）
+        m_nw = re.search(
+            r'data-testid="conference-block-c-new-count" '
+            r'style="display:none">(\d+)<',
+            markdown_text,
+        )
+        assert m_nw is not None
+        assert m_nw.group(1) == "1", (
+            f"デモ時の Block C 新規登録件数は 1 を期待、実際 {m_nw.group(1)}"
+        )
+        # 空状態メッセージは表示されない
+        assert "履歴データ蓄積中" not in markdown_text
 
     def test_block_c_summary_counts_after_history_save(self, app_path: Path):
         """履歴 JSON に記録 → Block C 上部バッジの件数が正しく集計される.
@@ -2474,6 +2506,102 @@ class TestWeeklyHistoryExpander:
         # CSS ルール（selector）と主要プロパティが定義されている
         assert ".conf-patient-row-changed {" in markdown_text
         assert "border-left: 4px solid #9CA3AF" in markdown_text
+
+    def test_block_c_header_title_and_badge_separated(self, app_path: Path):
+        """タイトル「個別患者のステータス」と要約バッジが同一ラッパー内で
+        縦に並び、重なり問題を回避している（副院長指示 2026-04-19）."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # ヘッダー統合ラッパー + タイトル行クラスが両方存在
+        assert "conf-block-c-header-wrap" in markdown_text
+        assert "conf-block-c-title-row" in markdown_text
+        assert "個別患者のステータス" in markdown_text
+        # タイトルが先、バッジが後の順序で出現
+        idx_title = markdown_text.index("個別患者のステータス")
+        idx_badge = markdown_text.index('data-testid="conference-block-c-summary"')
+        assert idx_title < idx_badge, (
+            "タイトルより先にバッジが出現 → 視覚的な重なり問題が再発する可能性"
+        )
+
+
+class TestDemoStatusHistoryFallback:
+    """副院長指示（2026-04-19）: 実履歴が空でも教育用デモ履歴で
+    台本と一致する数字（変更 3 件・新規 1 件）が表示されることを検証."""
+
+    def test_demo_history_generates_5f_patients(self):
+        """5F サンプル UUID に対してデモ履歴が生成される."""
+        today = date(2026, 4, 19)
+        hist = cmv._get_demo_status_history(today)
+        # 5F サンプル（伊藤・渡辺・高橋・田中）4 UUID
+        assert "a1b2c3d4" in hist  # 伊藤
+        assert "b2c3d4e5" in hist  # 渡辺
+        assert "c3d4e5f6" in hist  # 高橋
+        assert "d4e5f6a7" in hist  # 田中
+
+    def test_demo_history_generates_6f_patients(self):
+        """6F サンプル UUID に対してもデモ履歴が対称的に生成される."""
+        today = date(2026, 4, 19)
+        hist = cmv._get_demo_status_history(today)
+        # 6F サンプル 4 UUID
+        assert "e1f2a3b4" in hist
+        assert "f2a3b4c5" in hist
+        assert "a3b4c5d6" in hist
+        assert "b4c5d6e7" in hist
+
+    def test_effective_changes_uses_demo_when_real_history_empty(
+        self, tmp_path, monkeypatch
+    ):
+        """実履歴ファイルが空 → デモフォールバック で変更 3 件 + 新規 1 件（5F or 6F）."""
+        import patient_status_store as pss
+        monkeypatch.setattr(
+            pss, "_HISTORY_PATH", tmp_path / "patient_status_history.json"
+        )
+        today = date(2026, 4, 19)
+        changes = cmv._get_effective_status_changes(today, days=7)
+        # 5F + 6F 合計: 3 + 1 + 3 + 1 = 8 件
+        assert len(changes) == 8, (
+            f"デモフォールバックは 5F+6F で 8 件期待、実際 {len(changes)}"
+        )
+        # 5F 4 UUID のうち 3 件が transition（from_status 非空）
+        five_f_uuids = {"a1b2c3d4", "b2c3d4e5", "c3d4e5f6", "d4e5f6a7"}
+        five_f_changes = [c for c in changes if c["uuid"] in five_f_uuids]
+        assert len(five_f_changes) == 4
+        transitions_5f = sum(1 for c in five_f_changes if c["from_status"])
+        new_5f = sum(1 for c in five_f_changes if not c["from_status"])
+        assert transitions_5f == 3, (
+            f"5F デモで transition 3 件期待、実際 {transitions_5f}"
+        )
+        assert new_5f == 1, f"5F デモで new 1 件期待、実際 {new_5f}"
+
+    def test_effective_changes_uses_real_when_history_exists(
+        self, tmp_path, monkeypatch
+    ):
+        """実履歴に 1 件でもデータがあれば実運用モード（デモは混入しない）."""
+        import patient_status_store as pss
+        import json
+        history_path = tmp_path / "patient_status_history.json"
+        monkeypatch.setattr(pss, "_HISTORY_PATH", history_path)
+        # 実運用データを書き込む（全く別の UUID）
+        history_path.write_text(
+            json.dumps({
+                "realuuid": [{
+                    "timestamp": "2026-04-15T10:00:00",
+                    "status": "undecided",
+                    "conference_date": "2026-04-15",
+                }]
+            }),
+            encoding="utf-8",
+        )
+        today = date(2026, 4, 19)
+        changes = cmv._get_effective_status_changes(today, days=7)
+        # 実運用モードなのでデモ UUID は含まれない
+        change_uuids = {c["uuid"] for c in changes}
+        assert "realuuid" in change_uuids
+        assert "a1b2c3d4" not in change_uuids, (
+            "実履歴があるのにデモ UUID が混入している"
+        )
 
 
 class TestHistoryStoreHelpers:

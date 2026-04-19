@@ -73,6 +73,7 @@ from patient_status_store import (  # noqa: E402
     get_stagnant_patients,
     get_status_changes_this_week,
     load_all_statuses,
+    load_all_status_history,
     load_status_history,
     save_status,
 )
@@ -1073,6 +1074,25 @@ def _inject_css() -> None:
                 transparent 60%
             );
         }
+        /* ブロック C ヘッダー統合ラッパー（タイトル + バッジ、重なり回避） */
+        .conf-block-c-header-wrap {
+            margin-bottom: 10px;
+        }
+        .conf-block-c-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .conf-block-c-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #555;
+        }
+        .conf-block-c-count {
+            font-size: 12px;
+            color: #666;
+        }
         /* ブロック C 冒頭の「📝 前回からの変化」要約バッジ（v4 新機能） */
         .conf-block-c-summary {
             display: flex;
@@ -1080,7 +1100,8 @@ def _inject_css() -> None:
             align-items: center;
             gap: 8px;
             padding: 6px 10px;
-            margin-bottom: 8px;
+            margin-top: 0;
+            margin-bottom: 0;
             font-size: 12px;
             color: #374151;
             background: #F3F4F6;
@@ -2198,6 +2219,105 @@ def _count_status(patients: List[SamplePatient]) -> Dict[str, int]:
 # が縦幅肥大を検知する。落ちたら必ず原因を追って直すこと。
 # ============================================================
 
+
+def _get_demo_status_history(today: date) -> Dict[str, List[Dict[str, str]]]:
+    """教育用のデモステータス履歴を today 相対で生成する.
+
+    副院長指示（2026-04-19）: 実履歴が空の状態でも「前回からの変化」が
+    意味のある数字（カンファ台本 v4 第0章と一致: ステータス変更 3 件 /
+    新規登録 1 件）で表示されるよう、デモ用の仮想履歴を提供する。
+
+    設計:
+      - today - 10 日（窓外）: 過去の「前回」エントリ
+      - today - 4 日（窓内）: 遷移エントリ（3 患者、transition 3 件）
+      - today - 5 日（窓内）: 初出エントリ（1 患者、new 1 件）
+
+    対象は 5F・6F 各 4 名ずつ（病棟切替時も同じ数字になる）。
+    """
+    outside = today - timedelta(days=10)
+    inside_trans = today - timedelta(days=4)
+    inside_new = today - timedelta(days=5)
+
+    def _entry(status: str, d: date) -> Dict[str, str]:
+        return {
+            "timestamp": f"{d.isoformat()}T10:00:00",
+            "status": status,
+            "conference_date": d.isoformat(),
+        }
+
+    return {
+        # === 5F サンプル患者（伊藤・渡辺・高橋・田中）===
+        # 伊藤 Day 35: new → undecided（遷移 1）
+        "a1b2c3d4": [_entry("new", outside), _entry("undecided", inside_trans)],
+        # 渡辺 Day 28: new → medical_ok_waiting（遷移 2）
+        "b2c3d4e5": [_entry("new", outside), _entry("medical_ok_waiting", inside_trans)],
+        # 高橋 Day 22: rehab_optimizing → family_wish_waiting（遷移 3）
+        "c3d4e5f6": [
+            _entry("rehab_optimizing", outside),
+            _entry("family_wish_waiting", inside_trans),
+        ],
+        # 田中 Day 18: 初出（新規登録 1）
+        "d4e5f6a7": [_entry("new", inside_new)],
+        # === 6F サンプル患者（渡辺・大野・松本・井上）===
+        # 6F 選択時も同じ 3 件 + 1 件になるよう対称的に配置
+        "e1f2a3b4": [_entry("new", outside), _entry("undecided", inside_trans)],
+        "f2a3b4c5": [
+            _entry("new", outside),
+            _entry("medical_ok_waiting", inside_trans),
+        ],
+        "a3b4c5d6": [
+            _entry("rehab_optimizing", outside),
+            _entry("family_wish_waiting", inside_trans),
+        ],
+        "b4c5d6e7": [_entry("new", inside_new)],
+    }
+
+
+def _get_effective_status_changes(today: date, days: int = 7) -> List[Dict[str, str]]:
+    """実履歴 + デモフォールバックで変化イベントを返す.
+
+    副院長指示（2026-04-19）: 実履歴が空の教育・デモ環境でも、
+    台本と一致する数字（変化 3 件 / 新規 1 件）で表示するため、
+    実運用履歴が 1 件もないときに限り、デモ履歴を使う。
+
+    実履歴に 1 件でもデータがあれば、そちらを優先（実運用モード）。
+    """
+    real_history = load_all_status_history()
+    if real_history:
+        # 実運用モード: 既存関数で集計
+        return get_status_changes_this_week(today, days)
+
+    # 実履歴ゼロ → 教育デモにフォールバック
+    demo_history = _get_demo_status_history(today)
+    window_start = today - timedelta(days=days)
+    demo_changes: List[Dict[str, str]] = []
+    for uuid, entries in demo_history.items():
+        sorted_entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
+        for i, entry in enumerate(sorted_entries):
+            ts_str = entry.get("timestamp", "")
+            try:
+                from datetime import datetime as _dt
+                ts_date = _dt.fromisoformat(ts_str).date()
+            except (ValueError, TypeError):
+                continue
+            if ts_date < window_start or ts_date > today:
+                continue
+            from_status = (
+                sorted_entries[i - 1].get("status") if i > 0 else None
+            )
+            change: Dict[str, str] = {
+                "uuid": uuid,
+                "from_status": from_status if from_status is not None else "",
+                "to_status": entry.get("status", ""),
+                "timestamp": ts_str,
+            }
+            cdate = entry.get("conference_date")
+            if isinstance(cdate, str):
+                change["conference_date"] = cdate
+            demo_changes.append(change)
+    return demo_changes
+
+
 def _render_block_c(
     patients: List[SamplePatient],
     mode: str,
@@ -2228,7 +2348,7 @@ def _render_block_c(
 
     if today is not None:
         try:
-            recent_changes = get_status_changes_this_week(today, days=7)
+            recent_changes = _get_effective_status_changes(today, days=7)
         except (OSError, ValueError):
             recent_changes = []
         changes_in_displayed = [
@@ -2242,25 +2362,9 @@ def _render_block_c(
             else:
                 new_entry_count += 1
 
-    st.markdown(
-        f"""
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-size:14px;font-weight:700;color:#555;">
-            個別患者のステータス（カンファで更新）
-          </div>
-          <div style="font-size:12px;color:#666;">
-            表示中 {len(displayed)} / 最大 {_MAX_PATIENTS_DISPLAYED} 名
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # 要約バッジ本体
+    # 要約バッジの中身 HTML を先に組み立てる
     if has_history_data:
-        badge_html = (
-            '<div class="conf-block-c-summary" '
-            'data-testid="conference-block-c-summary">'
+        badge_inner_html = (
             '<span class="summary-label">📝 前回からの変化:</span> '
             f'<span class="summary-item">ステータス変更 '
             f'<b>{transition_count}</b> 件</span>'
@@ -2268,23 +2372,34 @@ def _render_block_c(
             f'<span class="summary-item">新規登録 '
             f'<b>{new_entry_count}</b> 件</span>'
             '<span class="summary-hint">（詳細は下部「📈 先週からの変化」で確認）</span>'
-            '</div>'
         )
+        badge_class = "conf-block-c-summary"
     else:
-        badge_html = (
-            '<div class="conf-block-c-summary conf-block-c-summary-empty" '
-            'data-testid="conference-block-c-summary">'
+        badge_inner_html = (
             '<span class="summary-label">📝 前回からの変化:</span> '
-            '<span class="summary-empty">履歴データ蓄積中（次回カンファから変化を表示します）</span>'
-            '</div>'
+            '<span class="summary-empty">履歴データ蓄積中'
+            '（次回カンファから変化を表示します）</span>'
         )
-    st.markdown(badge_html, unsafe_allow_html=True)
-    # hidden testid for E2E
+        badge_class = "conf-block-c-summary conf-block-c-summary-empty"
+
+    # タイトル行 + 要約バッジ + hidden testid を 1 つの markdown に統合
+    # 副院長指示（2026-04-19）: タイトル「個別患者のステータス」と要約バッジが
+    # 重なって見える問題を回避するため、Streamlit のブロック間隔に依存せず
+    # 単一の HTML ブロック内で縦方向の順序を保証する
     st.markdown(
-        f'<div data-testid="conference-block-c-changes-count" style="display:none">'
-        f'{transition_count}</div>'
-        f'<div data-testid="conference-block-c-new-count" style="display:none">'
-        f'{new_entry_count}</div>',
+        f'''
+        <div class="conf-block-c-header-wrap">
+          <div class="conf-block-c-title-row">
+            <div class="conf-block-c-title">個別患者のステータス（カンファで更新）</div>
+            <div class="conf-block-c-count">表示中 {len(displayed)} / 最大 {_MAX_PATIENTS_DISPLAYED} 名</div>
+          </div>
+          <div class="{badge_class}" data-testid="conference-block-c-summary">
+            {badge_inner_html}
+          </div>
+          <div data-testid="conference-block-c-changes-count" style="display:none">{transition_count}</div>
+          <div data-testid="conference-block-c-new-count" style="display:none">{new_entry_count}</div>
+        </div>
+        ''',
         unsafe_allow_html=True,
     )
 
@@ -2921,7 +3036,8 @@ def _render_weekly_history_expander(
     note_by_uuid = {p.patient_id: p.note for p in patients}
 
     # 履歴データ取得（変化件数 + 停滞患者）
-    changes = get_status_changes_this_week(today)
+    # 2026-04-19: 実履歴が空でも教育デモが意味を持つよう effective 関数に切替
+    changes = _get_effective_status_changes(today, days=7)
     # 表示中の病棟の患者のみフィルタ
     changes_in_ward = [c for c in changes if c.get("uuid") in displayed_uuids]
 
