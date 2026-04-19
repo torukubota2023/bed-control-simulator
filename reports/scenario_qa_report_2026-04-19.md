@@ -1,8 +1,8 @@
 # シナリオ QA レポート
 
-**生成日:** 2026-04-19T10:27:21
-**対象台本:** 4 本 (60 クレーム抽出)
-**対象アプリ:** ベッドコントロール（commit `4993de6`）
+**生成日:** 2026-04-19T11:37:22
+**対象台本:** 4 本 (59 クレーム抽出)
+**対象アプリ:** ベッドコントロール（commit `f9c2a0d`）
 **総合判定:** **OK**
 
 ## 判定理由
@@ -11,8 +11,8 @@
 
 ## 1. 台本 ↔ 実アプリ 数値一致（Playwright）
 
-- 実行時刻: 2026-04-19T01:27:19.678Z
-- 対象クレーム数: 60（PASS 20 / FAIL 0 / SKIPPED 37 / MISSING_TESTID 0 / MISSING_DOM 3）
+- 実行時刻: 2026-04-19T02:37:21.032Z
+- 対象クレーム数: 59（PASS 16 / FAIL 0 / SKIPPED 41 / MISSING_TESTID 0 / MISSING_DOM 2）
 
 ### 重大不一致（0 件）
 なし。
@@ -20,8 +20,8 @@
 ### 軽微ズレ（0 件）
 なし。
 
-### Playwright 側で照合できなかった項目（3 件）
-- DOM 値パース不可: 3 件
+### Playwright 側で照合できなかった項目（2 件）
+- DOM 値パース不可: 2 件
 _これらは pytest 側の `tests/test_app_internal_consistency.py` で補完的に検証しています。_
 
 
@@ -55,28 +55,26 @@ pytest 総合: **OK**（23/23 pass, 0 fail）
 
 | ファイル | 件数 |
 |----|----|
-| `docs/admin/carnf_scenario_v1.md` | 15 |
-| `docs/admin/demo_scenario_v3.6.md` | 27 |
-| `docs/admin/presentation_script_bedcontrol.md` | 14 |
+| `docs/admin/carnf_scenario_v4.md` | 9 |
+| `docs/admin/demo_scenario_v4.md` | 31 |
+| `docs/admin/presentation_script_bedcontrol_v4.md` | 15 |
 | `docs/admin/slides/weekend_holiday_kpi/script.md` | 4 |
 
 ### 指標別クレーム数
 
 | 指標 | 件数 |
 |----|----|
-| holiday_banner_threshold_days | 20 |
-| emergency_pct | 14 |
-| alos_limit_days | 4 |
-| occupancy_pct | 4 |
-| occupancy_target_pct | 3 |
+| holiday_banner_threshold_days | 22 |
+| emergency_pct | 13 |
+| emergency_threshold_pct | 9 |
 | patient_count_rows | 3 |
-| revenue_per_1pct_manyen | 3 |
-| alos_days | 2 |
+| alos_limit_days | 2 |
 | status_count_normal | 2 |
+| revenue_per_1pct_manyen | 2 |
+| occupancy_target_pct | 2 |
 | c_group_contribution_yen | 2 |
-| revenue_per_empty_bed_day_yen | 1 |
-| friday_discharge_pct | 1 |
-| emergency_threshold_pct | 1 |
+| alos_days | 1 |
+| occupancy_pct | 1 |
 
 ## 総評
 

@@ -6,11 +6,11 @@
 副院長がカンファ台本を読みながらアプリを確認した際、稼働率や目標値の
 不一致（台本 85% vs 実画面 86.5% 等）を自動検出できる状態を作る。
 
-対象台本
+対象台本（v4、2026-04-19 以降）
 --------
-- docs/admin/carnf_scenario_v1.md            (カンファ運用台本)
-- docs/admin/demo_scenario_v3.6.md           (臨床現場向け総合台本)
-- docs/admin/presentation_script_bedcontrol.md (理事会講演原稿)
+- docs/admin/carnf_scenario_v4.md                 (カンファ運用台本)
+- docs/admin/demo_scenario_v4.md                  (臨床現場向け総合台本)
+- docs/admin/presentation_script_bedcontrol_v4.md (理事会講演原稿)
 - docs/admin/slides/weekend_holiday_kpi/script.md (連休対策経営会議台本)
 
 抽出方針
@@ -50,11 +50,11 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "reports" / "scenario_claims.json"
 
-# 抽出対象台本（相対パス）
+# 抽出対象台本（v4、相対パス）
 SCENARIO_FILES = [
-    "docs/admin/carnf_scenario_v1.md",
-    "docs/admin/demo_scenario_v3.6.md",
-    "docs/admin/presentation_script_bedcontrol.md",
+    "docs/admin/carnf_scenario_v4.md",
+    "docs/admin/demo_scenario_v4.md",
+    "docs/admin/presentation_script_bedcontrol_v4.md",
     "docs/admin/slides/weekend_holiday_kpi/script.md",
 ]
 
@@ -362,6 +362,14 @@ def extract_claims_from_file(path: Path, relative_to: Path | None = None) -> lis
     for idx, line in enumerate(lines, start=1):
         scene = headers_by_line[idx - 1]
         window = _window_around(lines, idx - 1)
+        # qa-skip ディレクティブ: 同行または前行に <!-- qa-skip --> があればスキップ
+        # 例: 「連休中 60% → 85% に改善 <!-- qa-skip --> 」のように
+        # 仮想シナリオ・前後比較・例示の数値を QA 照合から外すために使う
+        if "<!-- qa-skip -->" in line:
+            continue
+        if idx >= 2 and "<!-- qa-skip-block -->" in lines[idx - 2]:
+            # qa-skip-block は次の段落まで（空行で区切り）
+            continue
         ward = _infer_ward(line, window)
         mode = _infer_mode(line, window)
         data_source = _infer_data_source(line, scene)

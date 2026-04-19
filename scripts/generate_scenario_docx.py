@@ -45,19 +45,21 @@ from docx.text.run import Run
 FONT_NAME = "Hiragino Kaku Gothic ProN"
 BODY_PT = 11
 CODE_PT = 10
-APP_VERSION = "v3.6"
+APP_VERSION = "v4"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUTPUT_DIR = REPO_ROOT / "docs" / "admin" / "scenario_scripts_v3.6"
+OUTPUT_DIR = REPO_ROOT / "docs" / "admin" / "scenario_scripts_v4"
 
-# 変換対象: (入力 md, 出力ファイル名)
+# 変換対象: (入力 md, 出力ファイル名、v4)
 TARGETS: list[tuple[Path, str]] = [
-    (REPO_ROOT / "docs" / "admin" / "demo_scenario_v3.6.md",
-     "demo_scenario_v3.6.docx"),
-    (REPO_ROOT / "docs" / "admin" / "presentation_script_bedcontrol.md",
-     "presentation_script_bedcontrol_v3.6.docx"),
-    (REPO_ROOT / "docs" / "admin" / "carnf_scenario_v1.md",
-     "carnf_scenario_v1.docx"),
+    (REPO_ROOT / "docs" / "admin" / "demo_scenario_v4.md",
+     "demo_scenario_v4.docx"),
+    (REPO_ROOT / "docs" / "admin" / "presentation_script_bedcontrol_v4.md",
+     "presentation_script_bedcontrol_v4.docx"),
+    (REPO_ROOT / "docs" / "admin" / "carnf_scenario_v4.md",
+     "carnf_scenario_v4.docx"),
+    (REPO_ROOT / "docs" / "admin" / "BedControl_Manual_v4.md",
+     "BedControl_Manual_v4.docx"),
     (REPO_ROOT / "docs" / "admin" / "slides" / "weekend_holiday_kpi" / "script.md",
      "weekend_holiday_kpi_script.docx"),
 ]
