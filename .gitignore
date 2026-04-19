@@ -54,6 +54,12 @@ data/patient_status.json
 # 患者ステータス履歴（週次カンファの変化履歴、個人運用データのため Git 追跡禁止）
 data/patient_status_history.json
 
+# 実運用の入院取り込みデータ（個人情報ではないが実運用データのため Git 追跡禁止）
+data/actual_admissions_*.csv
+
+# 実データ由来の教育用デモ CSV（生成物、運用メタに近いため Git 追跡禁止）
+data/demo_from_actual_*/
+
 # Playwright
 playwright/screenshots/*.png
 playwright-report/
