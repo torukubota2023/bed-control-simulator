@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-19T02:37:22.166263+00:00",
+  "generated_at": "2026-04-19T02:58:30.783779+00:00",
   "claim_count": 59,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
@@ -10,9 +10,9 @@
   ],
   "claims": [
     {
-      "id": "carnf-scenario-v4-L76-alos-limit-21",
+      "id": "carnf-scenario-v4-L91-alos-limit-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 76,
+      "source_line": 91,
       "scene": "見る場所：画面中央上部の KPI 横並び（Block A）",
       "context": {
         "ward": null,
@@ -26,9 +26,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L77-emerg-pct-15",
+      "id": "carnf-scenario-v4-L92-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 77,
+      "source_line": 92,
       "scene": "見る場所：画面中央上部の KPI 横並び（Block A）",
       "context": {
         "ward": null,
@@ -42,9 +42,9 @@
       "unit": "%"
     },
     {
-      "id": "carnf-scenario-v4-L81-emerg-pct-15",
+      "id": "carnf-scenario-v4-L96-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 81,
+      "source_line": 96,
       "scene": "見る場所：画面中央上部の KPI 横並び（Block A）",
       "context": {
         "ward": null,
@@ -58,9 +58,9 @@
       "unit": "%"
     },
     {
-      "id": "carnf-scenario-v4-L126-patient-rows-10",
+      "id": "carnf-scenario-v4-L141-patient-rows-10",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 126,
+      "source_line": 141,
       "scene": "見る場所：画面中央右側（Block C・ここが議論の中心）",
       "context": {
         "ward": null,
@@ -74,9 +74,9 @@
       "unit": "名"
     },
     {
-      "id": "carnf-scenario-v4-L138-status-cnt-7",
+      "id": "carnf-scenario-v4-L153-status-cnt-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 138,
+      "source_line": 153,
       "scene": "7 つのステータス（通常モード）",
       "context": {
         "ward": null,
@@ -90,9 +90,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L150-status-cnt-5",
+      "id": "carnf-scenario-v4-L165-status-cnt-5",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 150,
+      "source_line": 165,
       "scene": "5 つのステータス（連休対策モード、v4 分散退院型）",
       "context": {
         "ward": null,
@@ -106,9 +106,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L365-holiday-thresh-banner-21",
+      "id": "carnf-scenario-v4-L380-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 365,
+      "source_line": 380,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -122,9 +122,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L366-holiday-thresh-banner-14",
+      "id": "carnf-scenario-v4-L381-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 366,
+      "source_line": 381,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -138,9 +138,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L366-holiday-thresh-banner-7",
+      "id": "carnf-scenario-v4-L381-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 366,
+      "source_line": 381,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -362,9 +362,9 @@
       "unit": "名"
     },
     {
-      "id": "demo-scenario-v4-L376-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L386-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 376,
+      "source_line": 386,
       "scene": "5-1. カンファ資料を連休対策モードに切替",
       "context": {
         "ward": null,
@@ -378,9 +378,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L376-holiday-thresh-banner-14",
+      "id": "demo-scenario-v4-L386-holiday-thresh-banner-14",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 376,
+      "source_line": 386,
       "scene": "5-1. カンファ資料を連休対策モードに切替",
       "context": {
         "ward": null,
@@ -394,9 +394,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L376-holiday-thresh-banner-7",
+      "id": "demo-scenario-v4-L386-holiday-thresh-banner-7",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 376,
+      "source_line": 386,
       "scene": "5-1. カンファ資料を連休対策モードに切替",
       "context": {
         "ward": null,
@@ -410,9 +410,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L462-emerg-pct-15",
+      "id": "demo-scenario-v4-L472-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 462,
+      "source_line": 472,
       "scene": "締め：朝会・カンファ・月次レビューの使い分け（1 分）",
       "context": {
         "ward": null,
@@ -426,9 +426,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L464-holiday-thresh-banner-21-6f",
+      "id": "demo-scenario-v4-L474-holiday-thresh-banner-21-6f",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 464,
+      "source_line": 474,
       "scene": "締め：朝会・カンファ・月次レビューの使い分け（1 分）",
       "context": {
         "ward": "6F",
@@ -442,9 +442,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L471-emerg-pct-15",
+      "id": "demo-scenario-v4-L481-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 471,
+      "source_line": 481,
       "scene": "締め：朝会・カンファ・月次レビューの使い分け（1 分）",
       "context": {
         "ward": null,
@@ -458,9 +458,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L495-emerg-pct-15",
+      "id": "demo-scenario-v4-L505-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 495,
+      "source_line": 505,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -474,9 +474,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L495-emerg-thresh-15",
+      "id": "demo-scenario-v4-L505-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 495,
+      "source_line": 505,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -490,9 +490,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L507-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L517-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 507,
+      "source_line": 517,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -506,9 +506,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L508-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L518-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 508,
+      "source_line": 518,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -522,9 +522,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L508-holiday-thresh-banner-7",
+      "id": "demo-scenario-v4-L518-holiday-thresh-banner-7",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 508,
+      "source_line": 518,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -538,9 +538,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L524-rev-per-1pct-1199",
+      "id": "demo-scenario-v4-L534-rev-per-1pct-1199",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 524,
+      "source_line": 534,
       "scene": "A-1. 稼働率と診療報酬収入の関係",
       "context": {
         "ward": null,
@@ -554,9 +554,9 @@
       "unit": "万円/年"
     },
     {
-      "id": "demo-scenario-v4-L525-occ-target-90",
+      "id": "demo-scenario-v4-L535-occ-target-90",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 525,
+      "source_line": 535,
       "scene": "A-1. 稼働率と診療報酬収入の関係",
       "context": {
         "ward": null,
@@ -570,9 +570,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L526-rev-per-1pct-1199",
+      "id": "demo-scenario-v4-L536-rev-per-1pct-1199",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 526,
+      "source_line": 536,
       "scene": "A-1. 稼働率と診療報酬収入の関係",
       "context": {
         "ward": null,
@@ -586,9 +586,9 @@
       "unit": "万円/年"
     },
     {
-      "id": "demo-scenario-v4-L542-holiday-thresh-banner-20",
+      "id": "demo-scenario-v4-L552-holiday-thresh-banner-20",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 542,
+      "source_line": 552,
       "scene": "A-2. 施設基準実態レポート（v4 新規）",
       "context": {
         "ward": null,
@@ -602,9 +602,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L543-holiday-thresh-banner-20",
+      "id": "demo-scenario-v4-L553-holiday-thresh-banner-20",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 543,
+      "source_line": 553,
       "scene": "A-2. 施設基準実態レポート（v4 新規）",
       "context": {
         "ward": null,
@@ -618,9 +618,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L566-c-contrib-28900",
+      "id": "demo-scenario-v4-L576-c-contrib-28900",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 566,
+      "source_line": 576,
       "scene": "A-5. C 群の運営貢献",
       "context": {
         "ward": null,
@@ -634,9 +634,9 @@
       "unit": "円/日"
     },
     {
-      "id": "demo-scenario-v4-L584-emerg-pct-15",
+      "id": "demo-scenario-v4-L594-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 584,
+      "source_line": 594,
       "scene": "A-7. 2026 年度診療報酬改定 + 2026-06-01 本則適用の影響",
       "context": {
         "ward": null,

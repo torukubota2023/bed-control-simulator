@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-19T02:37:21.032Z",
+  "generated_at": "2026-04-19T02:58:29.538Z",
   "claims_json": "reports/scenario_claims.json",
   "total_claims": 59,
   "pass": 16,
@@ -9,9 +9,9 @@
   "missing_dom": 2,
   "results": [
     {
-      "claim_id": "carnf-scenario-v4-L76-alos-limit-21",
+      "claim_id": "carnf-scenario-v4-L91-alos-limit-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 76,
+      "source_line": 91,
       "metric": "alos_limit_days",
       "expected": 21,
       "actual": null,
@@ -27,9 +27,9 @@
       "note": "alos_limit_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L138-status-cnt-7",
+      "claim_id": "carnf-scenario-v4-L153-status-cnt-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 138,
+      "source_line": 153,
       "metric": "status_count_normal",
       "expected": 7,
       "actual": null,
@@ -45,9 +45,9 @@
       "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L150-status-cnt-5",
+      "claim_id": "carnf-scenario-v4-L165-status-cnt-5",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 150,
+      "source_line": 165,
       "metric": "status_count_normal",
       "expected": 5,
       "actual": null,
@@ -63,9 +63,9 @@
       "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L365-holiday-thresh-banner-21",
+      "claim_id": "carnf-scenario-v4-L380-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 365,
+      "source_line": 380,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -81,9 +81,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L366-holiday-thresh-banner-14",
+      "claim_id": "carnf-scenario-v4-L381-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 366,
+      "source_line": 381,
       "metric": "holiday_banner_threshold_days",
       "expected": 14,
       "actual": null,
@@ -99,9 +99,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L366-holiday-thresh-banner-7",
+      "claim_id": "carnf-scenario-v4-L381-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 366,
+      "source_line": 381,
       "metric": "holiday_banner_threshold_days",
       "expected": 7,
       "actual": null,
@@ -243,9 +243,9 @@
       "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L376-holiday-thresh-banner-21",
+      "claim_id": "demo-scenario-v4-L386-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 376,
+      "source_line": 386,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -261,9 +261,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L376-holiday-thresh-banner-14",
+      "claim_id": "demo-scenario-v4-L386-holiday-thresh-banner-14",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 376,
+      "source_line": 386,
       "metric": "holiday_banner_threshold_days",
       "expected": 14,
       "actual": null,
@@ -279,9 +279,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L376-holiday-thresh-banner-7",
+      "claim_id": "demo-scenario-v4-L386-holiday-thresh-banner-7",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 376,
+      "source_line": 386,
       "metric": "holiday_banner_threshold_days",
       "expected": 7,
       "actual": null,
@@ -297,9 +297,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L464-holiday-thresh-banner-21-6f",
+      "claim_id": "demo-scenario-v4-L474-holiday-thresh-banner-21-6f",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 464,
+      "source_line": 474,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -315,9 +315,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L495-emerg-thresh-15",
+      "claim_id": "demo-scenario-v4-L505-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 495,
+      "source_line": 505,
       "metric": "emergency_threshold_pct",
       "expected": 15,
       "actual": null,
@@ -333,9 +333,9 @@
       "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L507-holiday-thresh-banner-21",
+      "claim_id": "demo-scenario-v4-L517-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 507,
+      "source_line": 517,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -351,9 +351,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L508-holiday-thresh-banner-21",
+      "claim_id": "demo-scenario-v4-L518-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 508,
+      "source_line": 518,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -369,9 +369,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L508-holiday-thresh-banner-7",
+      "claim_id": "demo-scenario-v4-L518-holiday-thresh-banner-7",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 508,
+      "source_line": 518,
       "metric": "holiday_banner_threshold_days",
       "expected": 7,
       "actual": null,
@@ -387,9 +387,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L524-rev-per-1pct-1199",
+      "claim_id": "demo-scenario-v4-L534-rev-per-1pct-1199",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 524,
+      "source_line": 534,
       "metric": "revenue_per_1pct_manyen",
       "expected": 1199,
       "actual": null,
@@ -405,9 +405,9 @@
       "note": "revenue_per_1pct_manyen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L525-occ-target-90",
+      "claim_id": "demo-scenario-v4-L535-occ-target-90",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 525,
+      "source_line": 535,
       "metric": "occupancy_target_pct",
       "expected": 90,
       "actual": null,
@@ -423,9 +423,9 @@
       "note": "occupancy_target_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L526-rev-per-1pct-1199",
+      "claim_id": "demo-scenario-v4-L536-rev-per-1pct-1199",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 526,
+      "source_line": 536,
       "metric": "revenue_per_1pct_manyen",
       "expected": 1199,
       "actual": null,
@@ -441,9 +441,9 @@
       "note": "revenue_per_1pct_manyen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L542-holiday-thresh-banner-20",
+      "claim_id": "demo-scenario-v4-L552-holiday-thresh-banner-20",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 542,
+      "source_line": 552,
       "metric": "holiday_banner_threshold_days",
       "expected": 20,
       "actual": null,
@@ -459,9 +459,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L543-holiday-thresh-banner-20",
+      "claim_id": "demo-scenario-v4-L553-holiday-thresh-banner-20",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 543,
+      "source_line": 553,
       "metric": "holiday_banner_threshold_days",
       "expected": 20,
       "actual": null,
@@ -477,9 +477,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "demo-scenario-v4-L566-c-contrib-28900",
+      "claim_id": "demo-scenario-v4-L576-c-contrib-28900",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 566,
+      "source_line": 576,
       "metric": "c_group_contribution_yen",
       "expected": 28900,
       "actual": null,
@@ -747,9 +747,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L77-emerg-pct-15",
+      "claim_id": "carnf-scenario-v4-L92-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 77,
+      "source_line": 92,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -765,9 +765,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "carnf-scenario-v4-L81-emerg-pct-15",
+      "claim_id": "carnf-scenario-v4-L96-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 81,
+      "source_line": 96,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -783,9 +783,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "carnf-scenario-v4-L126-patient-rows-10",
+      "claim_id": "carnf-scenario-v4-L141-patient-rows-10",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 126,
+      "source_line": 141,
       "metric": "patient_count_rows",
       "expected": 10,
       "actual": 10,
@@ -873,9 +873,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "demo-scenario-v4-L471-emerg-pct-15",
+      "claim_id": "demo-scenario-v4-L481-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 471,
+      "source_line": 481,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -891,9 +891,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "demo-scenario-v4-L495-emerg-pct-15",
+      "claim_id": "demo-scenario-v4-L505-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 495,
+      "source_line": 505,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -909,9 +909,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "demo-scenario-v4-L584-emerg-pct-15",
+      "claim_id": "demo-scenario-v4-L594-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 584,
+      "source_line": 594,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -1053,9 +1053,9 @@
       "note": "遷移失敗: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[role=\"option\"]:has-text(\"6F\"), li:has-text(\"6F\")').first()\u001b[22m\n\u001b[2m    - locator resolved to <li>…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    19 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
     },
     {
-      "claim_id": "demo-scenario-v4-L462-emerg-pct-15",
+      "claim_id": "demo-scenario-v4-L472-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 462,
+      "source_line": 472,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
