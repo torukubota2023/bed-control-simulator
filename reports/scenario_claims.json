@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-19T02:58:30.783779+00:00",
-  "claim_count": 59,
+  "generated_at": "2026-04-19T03:31:49.836557+00:00",
+  "claim_count": 60,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
     "docs/admin/demo_scenario_v4.md",
@@ -890,67 +890,83 @@
       "unit": "%"
     },
     {
-      "id": "script-L368-holiday-thresh-banner-21",
+      "id": "script-L59-emerg-pct-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 368,
-      "scene": "話す内容（2分）",
-      "context": {
-        "ward": null,
-        "mode": "holiday",
-        "data_source": "demo"
-      },
-      "claim_text": "は師長が **手動で ON** する運用。連休まで **21 日以下** になると画面上部に推奨バナー「💡 連休まで N 日",
-      "metric": "holiday_banner_threshold_days",
-      "expected_value": 21.0,
-      "tolerance": 0.5,
-      "unit": "日"
-    },
-    {
-      "id": "script-L368-holiday-thresh-banner-14",
-      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 368,
-      "scene": "話す内容（2分）",
-      "context": {
-        "ward": null,
-        "mode": "holiday",
-        "data_source": "demo"
-      },
-      "claim_text": "— 連休対策モードへの切替を推奨します」が自動表示され（14 日を切ると橙色、7 日以内は赤色）、師長はそれを合図にサイドバー",
-      "metric": "holiday_banner_threshold_days",
-      "expected_value": 14.0,
-      "tolerance": 0.5,
-      "unit": "日"
-    },
-    {
-      "id": "script-L368-holiday-thresh-banner-7",
-      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 368,
-      "scene": "話す内容（2分）",
-      "context": {
-        "ward": null,
-        "mode": "holiday",
-        "data_source": "demo"
-      },
-      "claim_text": "切替を推奨します」が自動表示され（14 日を切ると橙色、7 日以内は赤色）、師長はそれを合図にサイドバーのトグルを ON",
-      "metric": "holiday_banner_threshold_days",
-      "expected_value": 7.0,
-      "tolerance": 0.5,
-      "unit": "日"
-    },
-    {
-      "id": "script-L411-emerg-pct-15",
-      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 411,
-      "scene": "話す内容（3分）",
+      "source_line": 59,
+      "scene": "話す内容（2 分 30 秒）",
       "context": {
         "ward": null,
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "ーに経過措置終了までのカウントダウンバナーを常時表示し、救急搬送 15% の rolling 3 ヶ月判定・LOS の短手 3",
+      "claim_text": "、85 歳以上 20% で +1 日緩和 = 21 日、救急 15% の rolling 3 ヶ月判定）への移行を安全に進め",
       "metric": "emergency_pct",
       "expected_value": 15.0,
       "tolerance": 2.0,
+      "unit": "%"
+    },
+    {
+      "id": "script-L59-emerg-thresh-15",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 59,
+      "scene": "話す内容（2 分 30 秒）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "5F **53.1%** / 6F **61.1%**（基準 15% の約 3.5〜4.1 倍）、85 歳以上 **27.3",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "script-L567-emerg-thresh-15",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 567,
+      "scene": "話す内容（2 分 30 秒）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "**54.4%** / 6F **60.1%** で、基準 15% の約 3.6〜4.0 倍。単月の揺らぎに左右されず、安",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "script-L570-holiday-thresh-banner-8",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 570,
+      "scene": "話す内容（2 分 30 秒）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "リペク後下血が主因でございます。Day 6 超過患者も 8 日以内で退院しており、LOS への影響は限定的でございます。",
+      "metric": "holiday_banner_threshold_days",
+      "expected_value": 8.0,
+      "tolerance": 0.5,
+      "unit": "日"
+    },
+    {
+      "id": "script-L659-emerg-thresh-15",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 659,
+      "scene": "Q2: 2026-06-01 本則適用は本当に安全か？",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "全マージンを持って達成**しております。救急搬送後割合は基準 15% に対し 5F 53.1% / 6F 61.1%、約 3",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
       "unit": "%"
     }
   ]

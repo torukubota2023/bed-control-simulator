@@ -1,8 +1,8 @@
 # シナリオ QA レポート
 
-**生成日:** 2026-04-19T11:58:31
-**対象台本:** 4 本 (59 クレーム抽出)
-**対象アプリ:** ベッドコントロール（commit `1ecb3c1`）
+**生成日:** 2026-04-19T12:31:50
+**対象台本:** 4 本 (60 クレーム抽出)
+**対象アプリ:** ベッドコントロール（commit `90d4630`）
 **総合判定:** **OK**
 
 ## 判定理由
@@ -11,8 +11,8 @@
 
 ## 1. 台本 ↔ 実アプリ 数値一致（Playwright）
 
-- 実行時刻: 2026-04-19T02:58:29.538Z
-- 対象クレーム数: 59（PASS 16 / FAIL 0 / SKIPPED 41 / MISSING_TESTID 0 / MISSING_DOM 2）
+- 実行時刻: 2026-04-19T03:31:48.602Z
+- 対象クレーム数: 60（PASS 16 / FAIL 0 / SKIPPED 42 / MISSING_TESTID 0 / MISSING_DOM 2）
 
 ### 重大不一致（0 件）
 なし。
@@ -58,15 +58,15 @@ pytest 総合: **OK**（23/23 pass, 0 fail）
 | `docs/admin/carnf_scenario_v4.md` | 9 |
 | `docs/admin/demo_scenario_v4.md` | 31 |
 | `docs/admin/presentation_script_bedcontrol_v4.md` | 15 |
-| `docs/admin/slides/weekend_holiday_kpi/script.md` | 4 |
+| `docs/admin/slides/weekend_holiday_kpi/script.md` | 5 |
 
 ### 指標別クレーム数
 
 | 指標 | 件数 |
 |----|----|
-| holiday_banner_threshold_days | 22 |
+| holiday_banner_threshold_days | 20 |
 | emergency_pct | 13 |
-| emergency_threshold_pct | 9 |
+| emergency_threshold_pct | 12 |
 | patient_count_rows | 3 |
 | alos_limit_days | 2 |
 | status_count_normal | 2 |

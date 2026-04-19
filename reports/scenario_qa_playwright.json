@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-04-19T02:58:29.538Z",
+  "generated_at": "2026-04-19T03:31:48.602Z",
   "claims_json": "reports/scenario_claims.json",
-  "total_claims": 59,
+  "total_claims": 60,
   "pass": 16,
   "fail": 0,
-  "skipped": 41,
+  "skipped": 42,
   "missing_testid": 0,
   "missing_dom": 2,
   "results": [
@@ -693,58 +693,76 @@
       "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "script-L368-holiday-thresh-banner-21",
+      "claim_id": "script-L59-emerg-thresh-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 368,
-      "metric": "holiday_banner_threshold_days",
-      "expected": 21,
+      "source_line": 59,
+      "metric": "emergency_threshold_pct",
+      "expected": 15,
       "actual": null,
       "tolerance": 0.5,
       "status": "SKIPPED",
       "delta": null,
-      "claim_text": "は師長が **手動で ON** する運用。連休まで **21 日以下** になると画面上部に推奨バナー「💡 連休まで N 日",
+      "claim_text": "5F **53.1%** / 6F **61.1%**（基準 15% の約 3.5〜4.1 倍）、85 歳以上 **27.3",
       "context": {
         "ward": null,
-        "mode": "holiday",
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "script-L567-emerg-thresh-15",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 567,
+      "metric": "emergency_threshold_pct",
+      "expected": 15,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "**54.4%** / 6F **60.1%** で、基準 15% の約 3.6〜4.0 倍。単月の揺らぎに左右されず、安",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "script-L570-holiday-thresh-banner-8",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 570,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 8,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "リペク後下血が主因でございます。Day 6 超過患者も 8 日以内で退院しており、LOS への影響は限定的でございます。",
+      "context": {
+        "ward": null,
+        "mode": "normal",
         "data_source": "demo"
       },
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "script-L368-holiday-thresh-banner-14",
+      "claim_id": "script-L659-emerg-thresh-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 368,
-      "metric": "holiday_banner_threshold_days",
-      "expected": 14,
+      "source_line": 659,
+      "metric": "emergency_threshold_pct",
+      "expected": 15,
       "actual": null,
       "tolerance": 0.5,
       "status": "SKIPPED",
       "delta": null,
-      "claim_text": "— 連休対策モードへの切替を推奨します」が自動表示され（14 日を切ると橙色、7 日以内は赤色）、師長はそれを合図にサイドバー",
+      "claim_text": "全マージンを持って達成**しております。救急搬送後割合は基準 15% に対し 5F 53.1% / 6F 61.1%、約 3",
       "context": {
         "ward": null,
-        "mode": "holiday",
+        "mode": "normal",
         "data_source": "demo"
       },
-      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
-    },
-    {
-      "claim_id": "script-L368-holiday-thresh-banner-7",
-      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 368,
-      "metric": "holiday_banner_threshold_days",
-      "expected": 7,
-      "actual": null,
-      "tolerance": 0.5,
-      "status": "SKIPPED",
-      "delta": null,
-      "claim_text": "切替を推奨します」が自動表示され（14 日を切ると橙色、7 日以内は赤色）、師長はそれを合図にサイドバーのトグルを ON",
-      "context": {
-        "ward": null,
-        "mode": "holiday",
-        "data_source": "demo"
-      },
-      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+      "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
       "claim_id": "carnf-scenario-v4-L92-emerg-pct-15",
@@ -999,16 +1017,16 @@
       "note": "許容内"
     },
     {
-      "claim_id": "script-L411-emerg-pct-15",
+      "claim_id": "script-L59-emerg-pct-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 411,
+      "source_line": 59,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
       "tolerance": 2,
       "status": "PASS",
       "delta": 2,
-      "claim_text": "ーに経過措置終了までのカウントダウンバナーを常時表示し、救急搬送 15% の rolling 3 ヶ月判定・LOS の短手 3",
+      "claim_text": "、85 歳以上 20% で +1 日緩和 = 21 日、救急 15% の rolling 3 ヶ月判定）への移行を安全に進め",
       "context": {
         "ward": null,
         "mode": "normal",
