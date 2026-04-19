@@ -54,11 +54,15 @@ data/patient_status.json
 # 患者ステータス履歴（週次カンファの変化履歴、個人運用データのため Git 追跡禁止）
 data/patient_status_history.json
 
-# 実運用の入院取り込みデータ（個人情報ではないが実運用データのため Git 追跡禁止）
-data/actual_admissions_*.csv
-
 # 実データ由来の教育用デモ CSV（生成物、運用メタに近いため Git 追跡禁止）
 data/demo_from_actual_*/
+
+# 注: data/actual_admissions_*.csv は以下の理由で Git 追跡対象とする（.gitignore に入れない）
+#   - patient_id は UUID v5 ハッシュ（不可逆）
+#   - attending_doctor は全て「不明」
+#   - age_years は年単位のみ（既存追跡中の admissions_consolidated_dedup.csv の day 精度より匿名性が高い）
+#   - notes 列は全て空
+#   - Streamlit Cloud 側で「📉 過去実績分析」タブと施設基準レポートが動作するために必要
 
 # Playwright
 playwright/screenshots/*.png
