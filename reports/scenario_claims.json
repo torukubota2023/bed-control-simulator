@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-19T03:31:49.836557+00:00",
+  "generated_at": "2026-04-19T11:04:07.544567+00:00",
   "claim_count": 60,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
@@ -10,9 +10,9 @@
   ],
   "claims": [
     {
-      "id": "carnf-scenario-v4-L91-alos-limit-21",
+      "id": "carnf-scenario-v4-L98-alos-limit-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 91,
+      "source_line": 98,
       "scene": "見る場所：画面中央上部の KPI 横並び（Block A）",
       "context": {
         "ward": null,
@@ -26,9 +26,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L92-emerg-pct-15",
+      "id": "carnf-scenario-v4-L99-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 92,
+      "source_line": 99,
       "scene": "見る場所：画面中央上部の KPI 横並び（Block A）",
       "context": {
         "ward": null,
@@ -42,9 +42,9 @@
       "unit": "%"
     },
     {
-      "id": "carnf-scenario-v4-L96-emerg-pct-15",
+      "id": "carnf-scenario-v4-L103-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 96,
+      "source_line": 103,
       "scene": "見る場所：画面中央上部の KPI 横並び（Block A）",
       "context": {
         "ward": null,
@@ -58,9 +58,9 @@
       "unit": "%"
     },
     {
-      "id": "carnf-scenario-v4-L141-patient-rows-10",
+      "id": "carnf-scenario-v4-L148-patient-rows-10",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 141,
+      "source_line": 148,
       "scene": "見る場所：画面中央右側（Block C・ここが議論の中心）",
       "context": {
         "ward": null,
@@ -74,9 +74,9 @@
       "unit": "名"
     },
     {
-      "id": "carnf-scenario-v4-L153-status-cnt-7",
+      "id": "carnf-scenario-v4-L160-status-cnt-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 153,
+      "source_line": 160,
       "scene": "7 つのステータス（通常モード）",
       "context": {
         "ward": null,
@@ -90,9 +90,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L165-status-cnt-5",
+      "id": "carnf-scenario-v4-L172-status-cnt-5",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 165,
+      "source_line": 172,
       "scene": "5 つのステータス（連休対策モード、v4 分散退院型）",
       "context": {
         "ward": null,
@@ -106,9 +106,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L380-holiday-thresh-banner-21",
+      "id": "carnf-scenario-v4-L387-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 380,
+      "source_line": 387,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -122,9 +122,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L381-holiday-thresh-banner-14",
+      "id": "carnf-scenario-v4-L388-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 381,
+      "source_line": 388,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -138,9 +138,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L381-holiday-thresh-banner-7",
+      "id": "carnf-scenario-v4-L388-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 381,
+      "source_line": 388,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,

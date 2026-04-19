@@ -2356,6 +2356,125 @@ class TestWeeklyHistoryExpander:
                 f"既存 testid '{testid}' が壊れている"
             )
 
+    # ======================================================================
+    # v4 新機能（2026-04-19、対応策 B）: Block C 冒頭の「📝 前回からの変化」
+    # 要約バッジ + 変化行の左端グレーハイライト
+    # 台本（carnf_scenario_v4.md 第0章）との整合性を担保するテスト
+    # ======================================================================
+
+    def test_block_c_summary_testid_present(self, app_path: Path):
+        """Block C 冒頭の要約バッジ testid が markdown に含まれる."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        assert 'data-testid="conference-block-c-summary"' in markdown_text
+        assert 'data-testid="conference-block-c-changes-count"' in markdown_text
+        assert 'data-testid="conference-block-c-new-count"' in markdown_text
+
+    def test_block_c_summary_empty_state_initial(self, app_path: Path):
+        """履歴データなし → 空状態メッセージを表示."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 空状態クラス + 誘導文が含まれる
+        assert "conf-block-c-summary-empty" in markdown_text
+        assert "履歴データ蓄積中" in markdown_text
+
+    def test_block_c_summary_counts_after_history_save(self, app_path: Path):
+        """履歴 JSON に記録 → Block C 上部バッジの件数が正しく集計される.
+
+        台本「ステータス変更が X 件、新規 Y 件」を画面で表示するための検証。
+        """
+        import patient_status_store as pss
+        import json
+        # 5F サンプル患者 a1b2c3d4 に 2 件の履歴（初出→遷移）
+        # reference_date=2026-04-17 の 7 日窓（4/10-4/17）に収める
+        history_path = Path(pss._HISTORY_PATH)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(
+            json.dumps({
+                "a1b2c3d4": [
+                    {
+                        "timestamp": "2026-04-12T10:00:00",
+                        "status": "new",
+                        "conference_date": "2026-04-12",
+                    },
+                    {
+                        "timestamp": "2026-04-15T10:00:00",
+                        "status": "undecided",
+                        "conference_date": "2026-04-15",
+                    },
+                ]
+            }),
+            encoding="utf-8",
+        )
+
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        # changes-count: from_status 非空の遷移 = 1 件（new → undecided）
+        m_ch = re.search(
+            r'data-testid="conference-block-c-changes-count" '
+            r'style="display:none">(\d+)<',
+            markdown_text,
+        )
+        assert m_ch is not None, "changes-count testid がない"
+        assert int(m_ch.group(1)) == 1, (
+            f"Block C の遷移件数が 1 ではない: {m_ch.group(1)}"
+        )
+        # new-count: from_status 空の初出 = 1 件
+        m_nw = re.search(
+            r'data-testid="conference-block-c-new-count" '
+            r'style="display:none">(\d+)<',
+            markdown_text,
+        )
+        assert m_nw is not None, "new-count testid がない"
+        assert int(m_nw.group(1)) == 1, (
+            f"Block C の新規件数が 1 ではない: {m_nw.group(1)}"
+        )
+
+    def test_block_c_row_changed_class_applied(self, app_path: Path):
+        """履歴に記録のある患者行に conf-patient-row-changed クラスが付与される."""
+        import patient_status_store as pss
+        import json
+        history_path = Path(pss._HISTORY_PATH)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(
+            json.dumps({
+                "a1b2c3d4": [
+                    {
+                        "timestamp": "2026-04-15T10:00:00",
+                        "status": "undecided",
+                        "conference_date": "2026-04-15",
+                    },
+                ]
+            }),
+            encoding="utf-8",
+        )
+
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 変化のあった患者には row-changed クラスが付与される
+        assert "conf-patient-row-changed" in markdown_text, (
+            "変化のあった患者行に conf-patient-row-changed クラスが付かない"
+        )
+
+    def test_block_c_row_changed_css_rule_defined(self, app_path: Path):
+        """conf-patient-row-changed に左端グレーハイライトの CSS が定義されている."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # CSS ルール（selector）と主要プロパティが定義されている
+        assert ".conf-patient-row-changed {" in markdown_text
+        assert "border-left: 4px solid #9CA3AF" in markdown_text
+
 
 class TestHistoryStoreHelpers:
     """新規ヘルパ関数 _format_status_label / _aggregate_status_changes."""

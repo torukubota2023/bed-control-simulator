@@ -20,7 +20,7 @@ output/*.png
 # Claude Code
 .claude/settings.local.json
 .claude/projects/
-.mcp.json
+.claude/worktrees/
 
 # Codex IDE (ローカル設定)
 .codex/

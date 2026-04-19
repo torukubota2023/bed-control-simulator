@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-19T03:31:48.602Z",
+  "generated_at": "2026-04-19T11:04:06.322Z",
   "claims_json": "reports/scenario_claims.json",
   "total_claims": 60,
   "pass": 16,
@@ -9,9 +9,9 @@
   "missing_dom": 2,
   "results": [
     {
-      "claim_id": "carnf-scenario-v4-L91-alos-limit-21",
+      "claim_id": "carnf-scenario-v4-L98-alos-limit-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 91,
+      "source_line": 98,
       "metric": "alos_limit_days",
       "expected": 21,
       "actual": null,
@@ -27,9 +27,9 @@
       "note": "alos_limit_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L153-status-cnt-7",
+      "claim_id": "carnf-scenario-v4-L160-status-cnt-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 153,
+      "source_line": 160,
       "metric": "status_count_normal",
       "expected": 7,
       "actual": null,
@@ -45,9 +45,9 @@
       "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L165-status-cnt-5",
+      "claim_id": "carnf-scenario-v4-L172-status-cnt-5",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 165,
+      "source_line": 172,
       "metric": "status_count_normal",
       "expected": 5,
       "actual": null,
@@ -63,9 +63,9 @@
       "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L380-holiday-thresh-banner-21",
+      "claim_id": "carnf-scenario-v4-L387-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 380,
+      "source_line": 387,
       "metric": "holiday_banner_threshold_days",
       "expected": 21,
       "actual": null,
@@ -81,9 +81,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L381-holiday-thresh-banner-14",
+      "claim_id": "carnf-scenario-v4-L388-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 381,
+      "source_line": 388,
       "metric": "holiday_banner_threshold_days",
       "expected": 14,
       "actual": null,
@@ -99,9 +99,9 @@
       "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L381-holiday-thresh-banner-7",
+      "claim_id": "carnf-scenario-v4-L388-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 381,
+      "source_line": 388,
       "metric": "holiday_banner_threshold_days",
       "expected": 7,
       "actual": null,
@@ -765,9 +765,9 @@
       "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
     },
     {
-      "claim_id": "carnf-scenario-v4-L92-emerg-pct-15",
+      "claim_id": "carnf-scenario-v4-L99-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 92,
+      "source_line": 99,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -783,9 +783,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "carnf-scenario-v4-L96-emerg-pct-15",
+      "claim_id": "carnf-scenario-v4-L103-emerg-pct-15",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 96,
+      "source_line": 103,
       "metric": "emergency_pct",
       "expected": 15,
       "actual": 17,
@@ -801,9 +801,9 @@
       "note": "許容内"
     },
     {
-      "claim_id": "carnf-scenario-v4-L141-patient-rows-10",
+      "claim_id": "carnf-scenario-v4-L148-patient-rows-10",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 141,
+      "source_line": 148,
       "metric": "patient_count_rows",
       "expected": 10,
       "actual": 10,

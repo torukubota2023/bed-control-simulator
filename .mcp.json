@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "pubmed-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ncukondo/pubmed-mcp",
+        "--email",
+        "t.kubochan@gmail.com",
+        "--cache-dir",
+        "./pubmed-cache"
+      ],
+      "env": {}
+    },
+    "sequentialthinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "env": {}
+    }
+  }
+}

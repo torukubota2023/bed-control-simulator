@@ -1059,6 +1059,60 @@ def _inject_css() -> None:
             line-height: 1.3;
             min-height: 28px;
         }
+        /* v4 新機能（2026-04-19、対応策 B）: 前回カンファから変化のあった
+           患者行の左端にグレーハイライトを付与。台本（carnf_scenario_v4.md
+           第0章「黒帯のハイライトが付いているのが前回から変わった患者さん」）
+           の記述と実画面を一致させる. */
+        .conf-patient-row-changed {
+            border-left: 4px solid #9CA3AF !important;
+            padding-left: 6px !important;
+            background: linear-gradient(
+                90deg,
+                rgba(156, 163, 175, 0.08) 0%,
+                rgba(156, 163, 175, 0.02) 30%,
+                transparent 60%
+            );
+        }
+        /* ブロック C 冒頭の「📝 前回からの変化」要約バッジ（v4 新機能） */
+        .conf-block-c-summary {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #374151;
+            background: #F3F4F6;
+            border-left: 3px solid #6B7280;
+            border-radius: 2px;
+        }
+        .conf-block-c-summary .summary-label {
+            font-weight: 600;
+            color: #1F2937;
+        }
+        .conf-block-c-summary .summary-item b {
+            color: #2563EB;
+            font-size: 13px;
+        }
+        .conf-block-c-summary .summary-sep {
+            color: #9CA3AF;
+            font-weight: 300;
+        }
+        .conf-block-c-summary .summary-hint {
+            color: #6B7280;
+            font-size: 11px;
+            margin-left: auto;
+        }
+        .conf-block-c-summary-empty {
+            background: #FAFAFA;
+            border-left-color: #D1D5DB;
+            color: #6B7280;
+        }
+        .conf-block-c-summary-empty .summary-empty {
+            font-style: italic;
+            font-size: 11px;
+        }
         /* ヘッダー行専用クラス:
            重なり防止のため、下側に明示的な余白と境界線を確保する.
            Block C 内の `stHorizontalBlock:has(.conf-patient-row)` は
@@ -2147,15 +2201,46 @@ def _count_status(patients: List[SamplePatient]) -> Dict[str, int]:
 def _render_block_c(
     patients: List[SamplePatient],
     mode: str,
+    today: Optional[date] = None,
 ) -> None:
     """ブロック C: 10 名の患者行 + ステータス popover + 編集 popover.
 
     副院長決定（2026-04-17）: ステータスタグ自体をクリック → その場でプルダウン表示
     → 選択 → 即保存 の一貫した UX に刷新（右側の selectbox 列は撤去）。
+
+    副院長指示（2026-04-19、v4 対応策 B）: Block C 冒頭に「📝 前回からの変化」
+    要約バッジを表示。変化のあった患者行は左端にグレーハイライトを付与する。
+    台本（carnf_scenario_v4.md 第0章）と実画面を一致させるための実装。
     """
     # 在院日数降順でソート
     sorted_patients = sorted(patients, key=lambda p: p.day_count, reverse=True)
     displayed = sorted_patients[:_MAX_PATIENTS_DISPLAYED]
+
+    # ==================================================================
+    # 「📝 前回からの変化」要約バッジ（v4 新機能、2026-04-19）
+    # 履歴 JSON から直近 7 日間のステータス変化を集計
+    # ==================================================================
+    displayed_uuids = {p.patient_id for p in displayed}
+    changed_uuids: set = set()
+    transition_count = 0
+    new_entry_count = 0
+    has_history_data = False
+
+    if today is not None:
+        try:
+            recent_changes = get_status_changes_this_week(today, days=7)
+        except (OSError, ValueError):
+            recent_changes = []
+        changes_in_displayed = [
+            c for c in recent_changes if c.get("uuid") in displayed_uuids
+        ]
+        has_history_data = len(changes_in_displayed) > 0
+        changed_uuids = {c.get("uuid") for c in changes_in_displayed}
+        for c in changes_in_displayed:
+            if c.get("from_status"):
+                transition_count += 1
+            else:
+                new_entry_count += 1
 
     st.markdown(
         f"""
@@ -2168,6 +2253,38 @@ def _render_block_c(
           </div>
         </div>
         """,
+        unsafe_allow_html=True,
+    )
+
+    # 要約バッジ本体
+    if has_history_data:
+        badge_html = (
+            '<div class="conf-block-c-summary" '
+            'data-testid="conference-block-c-summary">'
+            '<span class="summary-label">📝 前回からの変化:</span> '
+            f'<span class="summary-item">ステータス変更 '
+            f'<b>{transition_count}</b> 件</span>'
+            '<span class="summary-sep">/</span>'
+            f'<span class="summary-item">新規登録 '
+            f'<b>{new_entry_count}</b> 件</span>'
+            '<span class="summary-hint">（詳細は下部「📈 先週からの変化」で確認）</span>'
+            '</div>'
+        )
+    else:
+        badge_html = (
+            '<div class="conf-block-c-summary conf-block-c-summary-empty" '
+            'data-testid="conference-block-c-summary">'
+            '<span class="summary-label">📝 前回からの変化:</span> '
+            '<span class="summary-empty">履歴データ蓄積中（次回カンファから変化を表示します）</span>'
+            '</div>'
+        )
+    st.markdown(badge_html, unsafe_allow_html=True)
+    # hidden testid for E2E
+    st.markdown(
+        f'<div data-testid="conference-block-c-changes-count" style="display:none">'
+        f'{transition_count}</div>'
+        f'<div data-testid="conference-block-c-new-count" style="display:none">'
+        f'{new_entry_count}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2242,10 +2359,15 @@ def _render_block_c(
 
         # 患者行: 左（HTML 5 列, 確認事項まで）+ 中央（ステータス popover, タグ風）+ 右（編集 popover）
         row_col1, row_col_status, row_col_edit = st.columns([0.80, 0.14, 0.06])
+        # v4 新機能（2026-04-19）: 前回カンファから変化のあった患者には
+        # 左端グレーハイライト用クラスを付与
+        row_classes = "conf-patient-row"
+        if p.patient_id in changed_uuids:
+            row_classes += " conf-patient-row-changed"
         with row_col1:
             st.markdown(
                 f"""
-                <div class="conf-patient-row">
+                <div class="{row_classes}">
                   <span class="doctor">{doctor_patient_html}</span>
                   <span class="ward {ward_cls}">{p.ward}</span>
                   <span class="day">Day {p.day_count}</span>
@@ -3103,7 +3225,7 @@ def render_conference_material_view(
     with middle_left:
         _render_block_b(ward, mode, patients)
     with middle_right:
-        _render_block_c(patients, mode)
+        _render_block_c(patients, mode, _today)
 
     # --- ブロック D: 職種別 今週のお願い ---
     # 2026-04-18 圧縮: 不要な &nbsp; 余白を削除（縦 26px 削減）
