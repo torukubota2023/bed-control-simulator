@@ -1,24 +1,24 @@
 # シナリオ QA レポート
 
-**生成日:** 2026-04-19T08:57:25
-**対象台本:** 4 本 (61 クレーム抽出)
-**対象アプリ:** ベッドコントロール（commit `79d47a6`）
-**総合判定:** **NG**
+**生成日:** 2026-04-19T09:55:22
+**対象台本:** 4 本 (60 クレーム抽出)
+**対象アプリ:** ベッドコントロール（commit `b1484b5`）
+**総合判定:** **OK**
 
 ## 判定理由
 
-- 台本と実アプリの重大ズレ 1 件
+- すべての QA チェックをパス
 
 ## 1. 台本 ↔ 実アプリ 数値一致（Playwright）
 
-- 実行時刻: 2026-04-18T23:57:23.559Z
-- 対象クレーム数: 61（PASS 20 / FAIL 1 / SKIPPED 37 / MISSING_TESTID 0 / MISSING_DOM 3）
+- 実行時刻: 2026-04-19T00:55:20.412Z
+- 対象クレーム数: 60（PASS 20 / FAIL 0 / SKIPPED 37 / MISSING_TESTID 0 / MISSING_DOM 3）
 
 ### 重大不一致（0 件）
 なし。
 
-### 軽微ズレ（1 件）
-1. `docs/admin/demo_scenario_v3.6.md:L366` occupancy_pct — 実 85 vs 台本 88.8（ズレ -3.80、許容 ±1.5）
+### 軽微ズレ（0 件）
+なし。
 
 ### Playwright 側で照合できなかった項目（3 件）
 - DOM 値パース不可: 3 件
@@ -56,7 +56,7 @@ pytest 総合: **OK**（23/23 pass, 0 fail）
 | ファイル | 件数 |
 |----|----|
 | `docs/admin/carnf_scenario_v1.md` | 15 |
-| `docs/admin/demo_scenario_v3.6.md` | 28 |
+| `docs/admin/demo_scenario_v3.6.md` | 27 |
 | `docs/admin/presentation_script_bedcontrol.md` | 14 |
 | `docs/admin/slides/weekend_holiday_kpi/script.md` | 4 |
 
@@ -66,8 +66,8 @@ pytest 総合: **OK**（23/23 pass, 0 fail）
 |----|----|
 | holiday_banner_threshold_days | 20 |
 | emergency_pct | 14 |
-| occupancy_pct | 5 |
 | alos_limit_days | 4 |
+| occupancy_pct | 4 |
 | occupancy_target_pct | 3 |
 | patient_count_rows | 3 |
 | revenue_per_1pct_manyen | 3 |
@@ -80,10 +80,7 @@ pytest 総合: **OK**（23/23 pass, 0 fail）
 
 ## 総評
 
-以下の項目を優先して修正してください。
-- 台本と実アプリの重大ズレ 1 件
-
-修正後、再度 `npm run qa` を実行してください。
+すべての QA 層（台本一致・アプリ内整合・現実性・教育性）をパス。副院長がカンファ中に台本を読み上げる際、実アプリの数値と齟齬なく進められる状態です。
 
 ---
 

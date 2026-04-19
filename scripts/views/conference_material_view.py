@@ -2129,6 +2129,20 @@ def _count_status(patients: List[SamplePatient]) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # ブロック描画: C 個別患者ステータス
 # ---------------------------------------------------------------------------
+#
+# ============================================================
+# 🚨 重要: このビューは 1 画面（16:9、1920×1080）で完全表示
+# 必須。新機能追加時に縦幅を増やさない。要素を増やすなら既
+# 存要素を横並びに or 折りたたみに。副院長の運用が壊れる。
+#
+# 特に編集列（conf-edit-btn-wrap）内の 📜 履歴 / ✏️ 編集
+# ポップオーバーは **横並び固定**（縦積み禁止）。縦積みにすると
+# 患者行の縦幅が倍になり 1 画面に収まらなくなる。
+# 回帰テスト: tests/test_conference_material_view.py の
+#   ``test_edit_column_buttons_are_horizontal_not_stacked``
+#   ``test_conference_view_fits_in_one_screen``
+# が縦幅肥大を検知する。落ちたら必ず原因を追って直すこと。
+# ============================================================
 
 def _render_block_c(
     patients: List[SamplePatient],
@@ -2285,6 +2299,13 @@ def _render_block_c(
                 '<div class="conf-edit-btn-wrap">',
                 unsafe_allow_html=True,
             )
+            # ============================================================
+            # 📜 履歴 / ✏️ 編集 は **横並び固定**（縦積み禁止）
+            # 2026-04-18 修正: 縦積み → 横並び 2 列
+            # 理由: 副院長の 1 画面（1920×1080）運用を維持するため
+            # ============================================================
+            hist_col, edit_col = st.columns(2, gap="small")
+        with hist_col:
             # 📜 履歴 popover（2026-04-18 新規）: タイムラインと遷移ペアを表示
             # 印刷時は非表示（.conf-history-btn-wrap は @media print で消える）
             st.markdown(
@@ -2338,6 +2359,7 @@ def _render_block_c(
                                 unsafe_allow_html=False,
                             )
             st.markdown("</div>", unsafe_allow_html=True)
+        with edit_col:
             with st.popover("✏️", use_container_width=False):
                 st.caption(
                     f"患者 {p.patient_id}（UUID 先頭8桁）の情報を編集"

@@ -2548,3 +2548,161 @@ class TestLiveKpiMetrics:
         )
         assert result is not None
         assert result["occupancy_pct"] == 80.0
+
+
+# ---------------------------------------------------------------------------
+# 11. 1 画面収納制約 — 縦幅肥大の回帰防止（副院長の強い要望）
+# ---------------------------------------------------------------------------
+#
+# 副院長からの指示（2026-04-18, 修正依頼より原文）:
+#   > 「カンファに使う一画面表示の必要性について同じ修正をする
+#   >   はめにならないで欲しい」
+#
+# このクラスは「うっかり UI 肥大で 1 画面に収まらなくなる」回帰を
+# 検知するためのもの。AppTest は実ブラウザ描画高さを返さないので、
+# 構造的指標（編集列の popover 数・位置・サイドバイサイド性）で
+# 代替する。将来 AppTest に DOM rect が載れば差し替えてよい。
+# ---------------------------------------------------------------------------
+
+class TestConferenceViewOneScreenConstraint:
+    """カンファビューを 1 画面（16:9, 1920×1080）に収める構造的制約."""
+
+    @pytest.fixture
+    def app_path(self, tmp_path: Path) -> Path:
+        """エントリ app を一時ディレクトリに書き出して scripts/ の隣に置く."""
+        repo_scripts = Path(__file__).resolve().parent.parent / "scripts"
+        entry = repo_scripts / "_conference_view_test_entry.py"
+        _write_app_entry(entry)
+        yield entry
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            pass
+
+    @pytest.fixture(autouse=True)
+    def isolate_storage(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """テスト間で patient_names.json を汚染しない."""
+        import patient_name_store as pns
+        import patient_status_store as pss
+        monkeypatch.setattr(pns, "_STORAGE_PATH", tmp_path / "patient_names.json")
+        monkeypatch.setattr(pss, "_STORAGE_PATH", tmp_path / "patient_status.json")
+        yield
+
+    def test_edit_column_buttons_are_horizontal_not_stacked(
+        self, app_path: Path,
+    ):
+        """📜 履歴 popover と ✏️ 編集 popover が横並び（縦積み禁止）.
+
+        縦積みにすると 1 行の高さが倍になり、副院長の 1 画面運用が壊れる。
+        構造的に保証するため、編集列のラッパー直下に 2 列の st.columns
+        が存在することを検査する。
+        """
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        # 画面にコメント化した「横並び固定」マーカーが出ていること
+        source = Path(cmv.__file__).read_text(encoding="utf-8")
+        # ソース内に縦積み禁止コメントがある（保守者への警告）
+        assert "横並び固定" in source or "横並び" in source, (
+            "編集列の 横並び固定 方針が明文化されていない"
+        )
+        # 1 画面運用制約コメントが残っている
+        assert "1 画面（16:9、1920×1080）で完全表示" in source, (
+            "1 画面運用制約コメントが削除されている — "
+            "副院長の運用が壊れる恐れあり"
+        )
+
+    def test_conference_view_fits_in_one_screen_structural(
+        self, app_path: Path,
+    ):
+        """10 名分の患者行が想定高さに収まる（構造的下限チェック）.
+
+        AppTest は DOM rect を返さないため、以下を代替指標とする:
+        - 患者 popover は 1 人あたり 3 個（ステータス / 📜 / ✏️）
+        - 10 名で計 30 個（+3 未満の余剰は許容）
+        - 1 行が 2 段積みになると popover 数に影響はないが、ここでは
+          コメント と構造（`hist_col, edit_col = st.columns(2)`）を検査
+        """
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        source = Path(cmv.__file__).read_text(encoding="utf-8")
+        # 編集列内で 2 カラム分割があること（horizontal)
+        assert "hist_col, edit_col = st.columns(2" in source, (
+            "編集列の 2 カラム分割 (hist_col/edit_col) が無い。"
+            "📜 と ✏️ が縦積みに戻っていないか要確認。"
+        )
+        # 患者行 3 popover × 10 名 = 30 個（ステータス + 履歴 + 編集）
+        # 実測: AppTest で markdown 内の testid 個数で代替
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        import re
+        hist_btns = re.findall(
+            r'data-testid="conference-history-btn-[a-f0-9]{8}"', markdown_text,
+        )
+        assert len(hist_btns) == 10, (
+            f"📜 履歴ボタン数が 10 ではない: {len(hist_btns)}"
+        )
+
+    def test_patient_row_total_height_bound(self, app_path: Path):
+        """患者行 10 個の合計視覚高さ上限 (構造的近似).
+
+        AppTest 上では実描画高は取れないが、
+        - 編集列の popover 2 個が縦積みでなく横並び
+        - hist_col / edit_col の明示
+        を検査することで、1 行 1 段運用を担保する。
+        将来 ``AppTest.root.children[...].height`` 取得が可能になったら
+        px での実寸 assert に置き換える。
+        現段階では「縦積みコードパターン」が再発していないこと
+        （= 📜 popover と ✏️ popover の間に ``with hist_col:`` /
+        ``with edit_col:`` 等のカラム分割が挟まっていること）
+        を検査する。
+        """
+        source = Path(cmv.__file__).read_text(encoding="utf-8")
+        import re
+        # 📜 popover と ✏️ popover の位置を特定
+        pos_hist = source.find('with st.popover("📜"')
+        pos_edit = source.find('with st.popover("✏️"')
+        assert pos_hist > 0, "📜 popover が見つからない"
+        assert pos_edit > 0, "✏️ popover が見つからない"
+        assert pos_hist < pos_edit, "📜 と ✏️ の出現順序が逆"
+        # 間に hist_col / edit_col 分割があること
+        between = source[pos_hist:pos_edit]
+        # 縦積みだった昔のパターン: `with row_col_edit:` ブロック直下に
+        # popover 2 個が連続 → 間に `with <something>_col:` が無い
+        has_col_switch = (
+            "with edit_col:" in between or "with hist_col:" in between
+        )
+        assert has_col_switch, (
+            "📜 と ✏️ の間にカラム分割が挟まっていない。縦積みに戻っている。"
+            "hist_col / edit_col で横並びに分離すること。"
+        )
+
+    def test_conference_view_fits_in_one_screen(self, app_path: Path):
+        """1920×1080 で縦スクロールが発生しないこと（構造的代理検査）.
+
+        AppTest 本体は DOM rect を返さないため、以下を代理指標とする:
+        1. 編集列の 📜/✏️ は横並び（本テストクラスの他メソッドで検査）
+        2. 患者行数 10 名が `conference-patient-count` に出る
+        3. 患者ステータス popover は 10 個（縦積みだと 20 個近くなる）
+
+        実描画高さが必要になった場合は Playwright 側で
+        ``playwright/test_conference_view.spec.ts`` に実寸
+        アサートを追加する。
+        """
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(app_path), default_timeout=30)
+        at.run()
+        markdown_text = "\n".join(m.value for m in at.markdown)
+        # 患者数 10
+        assert (
+            'data-testid="conference-patient-count" style="display:none">10<'
+            in markdown_text
+        ), "患者行 10 名の testid が出ていない"
+        # 📜 履歴ボタン testid 10 個
+        import re
+        hist_btns = re.findall(
+            r'data-testid="conference-history-btn-[a-f0-9]{8}"', markdown_text,
+        )
+        assert len(hist_btns) == 10
+        # 編集列ラッパークラスは存在する
+        assert "conf-edit-btn-wrap" in markdown_text

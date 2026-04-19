@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-18T23:58:28.297680+00:00",
-  "claim_count": 61,
+  "generated_at": "2026-04-19T00:55:29.788810+00:00",
+  "claim_count": 60,
   "source_files": [
     "docs/admin/carnf_scenario_v1.md",
     "docs/admin/demo_scenario_v3.6.md",
@@ -618,22 +618,6 @@
       "unit": "万円/年"
     },
     {
-      "id": "demo-scenario-v3.6-L366-occ-pct-88p8",
-      "source_file": "docs/admin/demo_scenario_v3.6.md",
-      "source_line": 366,
-      "scene": "A-1. 稼働率と収益の関係",
-      "context": {
-        "ward": null,
-        "mode": "normal",
-        "data_source": "demo"
-      },
-      "claim_text": "- デモデータの全体稼働率は約 88.8%。目標の 90% まであと 1.2 ポイント",
-      "metric": "occupancy_pct",
-      "expected_value": 88.8,
-      "tolerance": 1.5,
-      "unit": "%"
-    },
-    {
       "id": "demo-scenario-v3.6-L366-occ-target-90",
       "source_file": "docs/admin/demo_scenario_v3.6.md",
       "source_line": 366,
@@ -643,7 +627,7 @@
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "- デモデータの全体稼働率は約 88.8%。目標の 90% まであと 1.2 ポイント",
+      "claim_text": "ファ画面で 5F 約 85%、6F 約 82%（いずれも目標 90% 未満）。サマリー画面では病棟合算値を表示",
       "metric": "occupancy_target_pct",
       "expected_value": 90.0,
       "tolerance": 0.5,

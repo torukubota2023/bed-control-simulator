@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-04-18T23:57:23.559Z",
+  "generated_at": "2026-04-19T00:55:20.412Z",
   "claims_json": "reports/scenario_claims.json",
-  "total_claims": 61,
+  "total_claims": 60,
   "pass": 20,
-  "fail": 1,
+  "fail": 0,
   "skipped": 37,
   "missing_testid": 0,
   "missing_dom": 3,
@@ -396,7 +396,7 @@
       "tolerance": 0.5,
       "status": "SKIPPED",
       "delta": null,
-      "claim_text": "- デモデータの全体稼働率は約 88.8%。目標の 90% まであと 1.2 ポイント",
+      "claim_text": "ファ画面で 5F 約 85%、6F 約 82%（いずれも目標 90% 未満）。サマリー画面では病棟合算値を表示",
       "context": {
         "ward": null,
         "mode": "normal",
@@ -907,24 +907,6 @@
         "data_source": "demo"
       },
       "note": "許容内"
-    },
-    {
-      "claim_id": "demo-scenario-v3.6-L366-occ-pct-88p8",
-      "source_file": "docs/admin/demo_scenario_v3.6.md",
-      "source_line": 366,
-      "metric": "occupancy_pct",
-      "expected": 88.8,
-      "actual": 85,
-      "tolerance": 1.5,
-      "status": "FAIL",
-      "delta": -3.799999999999997,
-      "claim_text": "- デモデータの全体稼働率は約 88.8%。目標の 90% まであと 1.2 ポイント",
-      "context": {
-        "ward": null,
-        "mode": "normal",
-        "data_source": "demo"
-      },
-      "note": "ズレ -3.80%（許容 ±1.5%）"
     },
     {
       "claim_id": "demo-scenario-v3.6-L403-emerg-pct-15",

@@ -6,12 +6,15 @@
 PYTHON := .venv/bin/python3
 REPORTS_DIR := reports
 
-.PHONY: help qa qa-claims qa-playwright qa-internal qa-realism qa-report qa-clean
+.PHONY: help qa qa-claims qa-playwright qa-internal qa-realism qa-report qa-clean check 動作チェック チェック 確認
 
 help:
 	@echo "ベッドコントロール QA ハーネス"
 	@echo ""
-	@echo "  make qa             — 全チェック実行（推奨）"
+	@echo "【推奨】覚えやすい言葉どれでも OK:"
+	@echo "  make 動作チェック  / make チェック / make 確認 / make check / make qa"
+	@echo ""
+	@echo "【細かく実行したい時】"
 	@echo "  make qa-claims      — 台本から数値主張を抽出"
 	@echo "  make qa-playwright  — Playwright で DOM 照合"
 	@echo "  make qa-internal    — アプリ内 整合性テスト（pytest）"
@@ -22,6 +25,12 @@ help:
 qa: qa-claims qa-playwright qa-internal qa-realism qa-report
 	@echo ""
 	@echo "✅ QA 完走。レポート: $(REPORTS_DIR)/scenario_qa_report_*.md"
+
+# 日本語エイリアス（同じ QA 実行）
+動作チェック: qa
+チェック: qa
+確認: qa
+check: qa
 
 qa-claims:
 	@echo "[1/5] 台本から数値主張を抽出中..."
