@@ -404,6 +404,18 @@ except Exception as _cv_err:
     import traceback as _cv_tb
     _CONFERENCE_VIEW_ERROR = f"{_cv_err}\n{_cv_tb.format_exc()}"
 
+# 過去実績分析ビュー（views と独立の try/except）
+# 依存: data/actual_admissions_2025fy.csv（無くても view 内でフォールバック）
+# 失敗しても他セクションに影響させない。
+_PAST_PERF_VIEW_AVAILABLE = False
+_PAST_PERF_VIEW_ERROR = ""
+try:
+    from views.past_performance_view import render_past_performance_view
+    _PAST_PERF_VIEW_AVAILABLE = True
+except Exception as _pp_err:
+    import traceback as _pp_tb
+    _PAST_PERF_VIEW_ERROR = f"{_pp_err}\n{_pp_tb.format_exc()}"
+
 # ---------------------------------------------------------------------------
 # 入退院予測エンジン（曜日別・祝日対応）
 # ---------------------------------------------------------------------------
@@ -3154,7 +3166,10 @@ if _selected_section == "\U0001f4ca 今日の運営":
     # 旧「🎯 意思決定支援」（Phase 3 で「🔮 What-if・戦略」に改名）から
     # 「意思決定ダッシュボード」「運営改善アラート」を集約。
     # 朝の目線の流れ（総合状況 → アラート → 詳細指標）に沿って 6 タブ構成。
+    # 2026-04-18 追加: 「📉 過去実績分析」タブ（FY2025 実績可視化）を末尾に追加
     tab_names = ["\U0001f3af 意思決定ダッシュボード", "\U0001f6a8 運営改善アラート", "\U0001f4ca 日次推移", "\U0001f504 フェーズ構成", "\U0001f4b0 運営分析", "\U0001f4c8 トレンド分析"]
+    if _PAST_PERF_VIEW_AVAILABLE:
+        tab_names.append("\U0001f4c9 過去実績分析")
 elif _selected_section == "\U0001f52e What-if・戦略":
     # Phase 1: 「👨‍⚕️ 退院タイミング」タブを「🏥 退院調整」へ移設
     # Phase 2: 「意思決定ダッシュボード」「運営改善アラート」を「📊 今日の運営」へ移設
@@ -3296,7 +3311,13 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                 # デモデータが既にロード済みかチェック
                 _demo_loaded = isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0
 
-                dm_demo_col1, dm_demo_col2, dm_demo_col3, dm_demo_col4 = st.columns(4)
+                (
+                    dm_demo_col1,
+                    dm_demo_col2,
+                    dm_demo_col3,
+                    dm_demo_col4,
+                    dm_demo_col5,
+                ) = st.columns(5)
                 with dm_demo_col1:
                     if _demo_loaded:
                         _demo_ward_count = st.session_state.demo_data["ward"].nunique() if "ward" in st.session_state.demo_data.columns else 0
@@ -3343,6 +3364,54 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                             _bc_alert(f"年度デモデータ生成に失敗しました: {_e}", severity="danger")
 
                 with dm_demo_col3:
+                    if st.button(
+                        "📊 実データ由来デモを読み込む（2025FY）",
+                        key="dm_load_from_actual",
+                        help="actual_admissions_2025fy.csv をベースに生成した教育用デモ（実データの入院日・病棟・経路を保持し、退院日・医師・短手3 を補完合成）をロードします。data/demo_from_actual_2025fy/ に CSV が生成されていない場合は自動生成します。",
+                    ):
+                        try:
+                            from pathlib import Path as _Path
+                            _actual_demo_dir = _Path(__file__).resolve().parent.parent / "data" / "demo_from_actual_2025fy"
+                            _actual_demo_csv = _actual_demo_dir / "sample_actual_data_ward.csv"
+                            # CSV がなければ生成
+                            if not _actual_demo_csv.exists():
+                                from generate_demo_from_actual import (
+                                    generate_demo_from_actual,
+                                    write_csvs,
+                                )
+                                _data = generate_demo_from_actual(seed=42)
+                                write_csvs(_data, _actual_demo_dir)
+                            _actual_daily = pd.read_csv(_actual_demo_csv, encoding="utf-8-sig")
+                            _actual_daily["date"] = pd.to_datetime(_actual_daily["date"])
+                            if "num_beds" not in _actual_daily.columns:
+                                _actual_daily["num_beds"] = _actual_daily["ward"].map(lambda w: get_ward_beds(w))
+                            if "occupancy_rate" not in _actual_daily.columns:
+                                _actual_daily["occupancy_rate"] = (
+                                    (_actual_daily["total_patients"] + _actual_daily["discharges"])
+                                    / _actual_daily["num_beds"] * 100
+                                ).round(1)
+                            st.session_state.demo_data = _actual_daily.sort_values(["date", "ward"]).reset_index(drop=True)
+                            _bc_alert(
+                                f"実データ由来デモ（2025FY 365日分 = {len(_actual_daily)}レコード）を読み込みました。"
+                                "実データの入院イベント（5F 951件 / 6F 996件）をベースに、退院日・担当医・短手3（13.5%）・Day 6+ 延長（~5%）を合成しています。",
+                                severity="success",
+                            )
+                            _auto_save_to_db()
+                            st.rerun()
+                        except ImportError as _e:
+                            _bc_alert(
+                                f"実データ由来デモ生成モジュールが読み込めません: {_e}",
+                                severity="danger",
+                            )
+                        except FileNotFoundError as _e:
+                            _bc_alert(
+                                f"実データ CSV が見つかりません: {_e}",
+                                severity="danger",
+                            )
+                        except Exception as _e:  # noqa: BLE001
+                            _bc_alert(f"実データ由来デモのロードに失敗しました: {_e}", severity="danger")
+
+                with dm_demo_col4:
                     if st.button("🔄 ランダムデータで再生成（30日分）", key="dm_gen_sample",
                                  help="教育用デモの代わりにランダムなダミーデータを生成します"):
                         _demo_5f = generate_sample_data(num_days=30, num_beds=get_ward_beds("5F"))
@@ -3354,7 +3423,7 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         _auto_save_to_db()
                         st.rerun()
 
-                with dm_demo_col4:
+                with dm_demo_col5:
                     if isinstance(st.session_state.demo_data, pd.DataFrame) and len(st.session_state.demo_data) > 0:
                         _demo_csv_str = dm_export_to_csv(st.session_state.demo_data)
                         _demo_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
@@ -7948,6 +8017,33 @@ if "\U0001f4c8 トレンド分析" in _tab_idx:
                         _bc_alert(_alert, severity="warning")
                 else:
                     _bc_alert("現在、警告はありません。", severity="success")
+
+
+# --- タブ: 📉 過去実績分析（FY2025 実データ可視化） ---
+# 2026-04-18 追加: actual_admissions_2025fy.csv を読み込み、月別推移・曜日パターン・
+# 時間帯・年齢分布・予約リードタイムを 1 画面で俯瞰する。
+# シミュレーション実行の有無に関わらず動作する（CSV 依存のみ）。
+if "\U0001f4c9 過去実績分析" in _tab_idx:
+    with tabs[_tab_idx["\U0001f4c9 過去実績分析"]]:
+        if not _PAST_PERF_VIEW_AVAILABLE:
+            _bc_alert(
+                "過去実績分析ビューの読み込みに失敗しました。",
+                severity="danger",
+            )
+            if _PAST_PERF_VIEW_ERROR:
+                with st.expander("エラー詳細（開発用）", expanded=False):
+                    st.code(_PAST_PERF_VIEW_ERROR)
+        else:
+            try:
+                render_past_performance_view()
+            except Exception as _pp_render_err:
+                _bc_alert(
+                    "過去実績分析の描画中にエラーが発生しました。",
+                    severity="danger",
+                )
+                with st.expander("エラー詳細（開発用）", expanded=False):
+                    import traceback as _pp_render_tb
+                    st.code(f"{_pp_render_err}\n{_pp_render_tb.format_exc()}")
 
 
 # ===== タブ: 戦略比較（2026-04-18 削除） =====
