@@ -1,0 +1,1110 @@
+{
+  "generated_at": "2026-04-18T23:57:23.559Z",
+  "claims_json": "reports/scenario_claims.json",
+  "total_claims": 61,
+  "pass": 20,
+  "fail": 1,
+  "skipped": 37,
+  "missing_testid": 0,
+  "missing_dom": 3,
+  "results": [
+    {
+      "claim_id": "carnf-scenario-v1-L66-alos-limit-21",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 66,
+      "metric": "alos_limit_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "数（3ヶ月） | rolling 3 ヶ月の ALOS。制度上限 21 日が基準 |",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "alos_limit_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L73-occ-target-90",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 73,
+      "metric": "occupancy_target_pct",
+      "expected": 90,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "> 「今月の稼働率は 85%、目標 90% に対してマイナス 5 ポイントです。残り 9 診療日で",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "occupancy_target_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L73-alos-limit-21",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 73,
+      "metric": "alos_limit_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "9 診療日で必要床日 28。ALOS は 17.5 日で制度上限 21 日までまだ余裕があります。救急搬送 17% で基準達成」",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "alos_limit_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L75-holiday-thresh-banner-21",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 75,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "> 「次の大型連休は GW、あと○日です。21 日を切ると画面上部に推奨バナーが自動で出るので、それを合図に連休",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L128-status-cnt-7",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 128,
+      "metric": "status_count_normal",
+      "expected": 7,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "### 7 つのステータス（通常モード）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L140-status-cnt-4",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 140,
+      "metric": "status_count_normal",
+      "expected": 4,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "### 4 つのステータス（連休対策モード）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "status_count_normal は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L276-holiday-thresh-banner-21",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 276,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- 連休まで **21 日以下** になると、画面上部に推奨バナー「💡 連休まで N",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L277-holiday-thresh-banner-14",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 277,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 14,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- **14 日を切ると警告色（橙）、7 日以内は危険色（赤）** で強調表示",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L277-holiday-thresh-banner-7",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 277,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 7,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- **14 日を切ると警告色（橙）、7 日以内は危険色（赤）** で強調表示されます",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L131-alos-limit-21",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 131,
+      "metric": "alos_limit_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "約 17.7 日、6F が約 21.3 日です。6F は制度上限の 21 日を **わずかに超過** しています」",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "alos_limit_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L160-holiday-thresh-banner-21",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 160,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- 「C 群候補の平均在院日数が 21 日以下になるまで、在院日数の長い順に何人退院させればよいかを計",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L193-occ-target-90",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 193,
+      "metric": "occupancy_target_pct",
+      "expected": 90,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- 稼働率 85% / 目標 90% / -5pt",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "occupancy_target_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L194-alos-limit-21",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 194,
+      "metric": "alos_limit_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- 平均在院日数 17.5 日 / 上限 21 日まで余裕",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "alos_limit_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L246-holiday-thresh-banner-21",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 246,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "します（自動切替ではありません）。ただし、連休まで **21 日以下** になると画面上部に推奨バナー「💡 連休まで N 日",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L246-holiday-thresh-banner-14",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 246,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 14,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "動表示されるため、師長はそれを合図に切替判断を行います。14 日を切ると警告色（橙）、7 日以内は危険色（赤）で強調表示されま",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L246-holiday-thresh-banner-7",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 246,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 7,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "合図に切替判断を行います。14 日を切ると警告色（橙）、7 日以内は危険色（赤）で強調表示されます。",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L316-holiday-thresh-banner-21-6f",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 316,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "| 連休推奨バナー表示時（21 日以下） | 🏥 退院調整 → 連休対策モードを手動 ON |",
+      "context": {
+        "ward": "6F",
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L352-holiday-thresh-banner-21",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 352,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "ファ資料のブロック B・C・D が連休向けに切り替わる。連休まで 21 日以下になると画面上部に推奨バナーが表示され、それを合図に O",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L353-holiday-thresh-banner-21",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 353,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "| **連休対策モード推奨バナー** | 通常モード時、連休まで 21 日以下で画面上部に自動表示される「💡 連休まで N 日 — 連",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L353-holiday-thresh-banner-7",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 353,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 7,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "ードへの切替を推奨します」。8-21 日は警告色（橙）、7 日以内は危険色（赤）。モード ON で非表示、OFF で再表示",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L365-rev-per-1pct-1046",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 365,
+      "metric": "revenue_per_1pct_manyen",
+      "expected": 1046,
+      "actual": null,
+      "tolerance": 10,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- 当院（94 床）では、稼働率 1% の変動は年間約 1,046 万円の診療報酬収入差に相当する",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "revenue_per_1pct_manyen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L366-occ-target-90",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 366,
+      "metric": "occupancy_target_pct",
+      "expected": 90,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- デモデータの全体稼働率は約 88.8%。目標の 90% まであと 1.2 ポイント",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "occupancy_target_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L367-rev-per-1pct-1046",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 367,
+      "metric": "revenue_per_1pct_manyen",
+      "expected": 1046,
+      "actual": null,
+      "tolerance": 10,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- サイドバーに常時表示される「稼働率 1% ≒ 年間約 1,046 万円」はこの計算に基づく",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "revenue_per_1pct_manyen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L386-c-contrib-28900",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 386,
+      "metric": "c_group_contribution_yen",
+      "expected": 28900,
+      "actual": null,
+      "tolerance": 500,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- C 群患者 1 名・1 日あたりの運営貢献は約 28,900 円（推計）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "c_group_contribution_yen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L55-holiday-thresh-banner-21",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 55,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "応** です。地域包括医療病棟入院料では、平均在院日数 21 日以内等の施設基準を満たしつつ、稼働率とのバランスを取ることが",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L67-rev-per-bed-day-30500",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 67,
+      "metric": "revenue_per_empty_bed_day_yen",
+      "expected": 30500,
+      "actual": null,
+      "tolerance": 300,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "の入院料をもとに運営貢献額ベースで計算すると、**空床 1 床は、毎日約 3 万 500 円相当の医療を届ける余力です。**",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "revenue_per_empty_bed_day_yen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L117-c-contrib-28900",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 117,
+      "metric": "c_group_contribution_yen",
+      "expected": 28900,
+      "actual": null,
+      "tolerance": 500,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "- **C 群**：入院 15 日目以降。退院調整が主体となる時期。運営貢献額は約 28,900 円／日",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "c_group_contribution_yen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L179-holiday-thresh-banner-21",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 179,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "が **手動で ON** します。ただし、連休まで **21 日以下** になると画面上部に推奨バナー「💡 連休まで N 日",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L179-holiday-thresh-banner-14",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 179,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 14,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "連休対策モードへの切替を推奨します」が自動表示されます（14 日を切ると橙色、7 日以内は赤色で強調）。師長はそのバナーを合図",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L179-holiday-thresh-banner-7",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 179,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 7,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "を推奨します」が自動表示されます（14 日を切ると橙色、7 日以内は赤色で強調）。師長はそのバナーを合図にトグルを ON",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L214-holiday-thresh-banner-21",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 214,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "| 連休推奨バナー表示時（連休まで 21 日以下） | 🏥 退院調整 → 連休対策モードを手動 ON |",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L258-friday-discharge-31",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 258,
+      "metric": "friday_discharge_pct",
+      "expected": 31,
+      "actual": null,
+      "tolerance": 3,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "たとえば「金曜退院の集中」。先月の退院の 31% が金曜に集中していた場合、土日の稼働率が低下する原因に",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "friday_discharge_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L289-emerg-thresh-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 289,
+      "metric": "emergency_threshold_pct",
+      "expected": 15,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "1. **救急搬送後患者割合 15% 判定**：単月判定 → rolling 3 ヶ月判定",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "emergency_threshold_pct は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L349-rev-per-1pct-1046",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 349,
+      "metric": "revenue_per_1pct_manyen",
+      "expected": 1046,
+      "actual": null,
+      "tolerance": 10,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "定量的な効果としては、**稼働率 1% の改善で年間約 1,046 万円の運営改善** が見込めます。これは年間黒字額 3,55",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "revenue_per_1pct_manyen は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "script-L368-holiday-thresh-banner-21",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 368,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 21,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "は師長が **手動で ON** する運用。連休まで **21 日以下** になると画面上部に推奨バナー「💡 連休まで N 日",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "script-L368-holiday-thresh-banner-14",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 368,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 14,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "— 連休対策モードへの切替を推奨します」が自動表示され（14 日を切ると橙色、7 日以内は赤色）、師長はそれを合図にサイドバー",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "script-L368-holiday-thresh-banner-7",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 368,
+      "metric": "holiday_banner_threshold_days",
+      "expected": 7,
+      "actual": null,
+      "tolerance": 0.5,
+      "status": "SKIPPED",
+      "delta": null,
+      "claim_text": "切替を推奨します」が自動表示され（14 日を切ると橙色、7 日以内は赤色）、師長はそれを合図にサイドバーのトグルを ON",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "holiday_banner_threshold_days は data-testid 非対応の閾値・定数・集計値。pytest 側で別途検証"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L67-emerg-pct-15",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 67,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "| 3 | 救急搬送後 15% | 地域包括医療病棟の施設基準。未達だと減算 |",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L73-occ-pct-85",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 73,
+      "metric": "occupancy_pct",
+      "expected": 85,
+      "actual": 85,
+      "tolerance": 1.5,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "> 「今月の稼働率は 85%、目標 90% に対してマイナス 5 ポイントです。残り",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L73-alos-days-17p5",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 73,
+      "metric": "alos_days",
+      "expected": 17.5,
+      "actual": 17.5,
+      "tolerance": 1,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "ス 5 ポイントです。残り 9 診療日で必要床日 28。ALOS は 17.5 日で制度上限 21 日までまだ余裕があります。救急搬送 1",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L73-emerg-pct-17",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 73,
+      "metric": "emergency_pct",
+      "expected": 17,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "17.5 日で制度上限 21 日までまだ余裕があります。救急搬送 17% で基準達成」",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L80-occ-pct-85",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 80,
+      "metric": "occupancy_pct",
+      "expected": 85,
+      "actual": 85,
+      "tolerance": 1.5,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "- 「稼働率 85%・ALOS 余裕あり・救急達成」なら、**延ばすより新し",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "carnf-scenario-v1-L116-patient-rows-10",
+      "source_file": "docs/admin/carnf_scenario_v1.md",
+      "source_line": 116,
+      "metric": "patient_count_rows",
+      "expected": 10,
+      "actual": 10,
+      "tolerance": 0.5,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "画面に最大 10 名の患者行が表示される。在院日数の降順。各行の構成：",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L121-emerg-pct-15",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 121,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "4 つのサブタブ（制度余力・需要波・C 群コントロール・救急搬送 15%）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L163-emerg-pct-15",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 163,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "#### 2-4. 救急搬送 15% サブタブ — 基準達成の確認",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L165-emerg-pct-15",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 165,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "**操作：** 「🚑 救急搬送 15%」サブタブ",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L193-occ-pct-85",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 193,
+      "metric": "occupancy_pct",
+      "expected": 85,
+      "actual": 85,
+      "tolerance": 1.5,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "- 稼働率 85% / 目標 90% / -5pt",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L194-alos-days-17p5",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 194,
+      "metric": "alos_days",
+      "expected": 17.5,
+      "actual": 17.5,
+      "tolerance": 1,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "- 平均在院日数 17.5 日 / 上限 21 日まで余裕",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L195-emerg-pct-17",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 195,
+      "metric": "emergency_pct",
+      "expected": 17,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "- 救急搬送後 17% / 基準達成",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L210-patient-rows-10",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 210,
+      "metric": "patient_count_rows",
+      "expected": 10,
+      "actual": 10,
+      "tolerance": 0.5,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "- 最大 10 名の患者行、在院日数の降順",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L366-occ-pct-88p8",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 366,
+      "metric": "occupancy_pct",
+      "expected": 88.8,
+      "actual": 85,
+      "tolerance": 1.5,
+      "status": "FAIL",
+      "delta": -3.799999999999997,
+      "claim_text": "- デモデータの全体稼働率は約 88.8%。目標の 90% まであと 1.2 ポイント",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "ズレ -3.80%（許容 ±1.5%）"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L403-emerg-pct-15",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 403,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "- 2026-06-01 以降は経過措置終了。救急搬送 15% は rolling 3 ヶ月判定、LOS は短手 3",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L55-emerg-pct-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 55,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "ん。2026 年 6 月 1 日以降は経過措置も終了し、救急搬送 15% 基準の本則完全適用が始まります。",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L139-emerg-pct-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 139,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "5 つの指標が横並びで表示されます。稼働率・ALOS・救急搬送 15%・残り診療日・次の大型連休カウントダウン。**これを見れ",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L147-patient-rows-10",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 147,
+      "metric": "patient_count_rows",
+      "expected": 10,
+      "actual": 10,
+      "tolerance": 0.5,
+      "status": "PASS",
+      "delta": 0,
+      "claim_text": "在院日数の降順で最大 10 名の患者行が並びます。各行に色付きのステータスタグ：",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "presentation-script-bedcontrol-L289-emerg-pct-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol.md",
+      "source_line": 289,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "1. **救急搬送後患者割合 15% 判定**：単月判定 → rolling 3 ヶ月判定",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "script-L411-emerg-pct-15",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 411,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "ーに経過措置終了までのカウントダウンバナーを常時表示し、救急搬送 15% の rolling 3 ヶ月判定・LOS の短手 3",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L68-occ-pct-91-6f",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 68,
+      "metric": "occupancy_pct",
+      "expected": 91,
+      "actual": null,
+      "tolerance": 1.5,
+      "status": "MISSING_DOM",
+      "delta": null,
+      "claim_text": "> 「6F は稼働率 91% で高めに見えます。一方で、救急搬送後患者割合が 15%",
+      "context": {
+        "ward": "6F",
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "遷移失敗: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[role=\"option\"]:has-text(\"6F\"), li:has-text(\"6F\")').first()\u001b[22m\n\u001b[2m    - locator resolved to <li>…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    19 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L68-emerg-pct-15-6f",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 68,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": null,
+      "tolerance": 2,
+      "status": "MISSING_DOM",
+      "delta": null,
+      "claim_text": "> 「6F は稼働率 91% で高めに見えます。一方で、救急搬送後患者割合が 15% を下回るリスクがあります。退院を遅らせて稼働率を維持す",
+      "context": {
+        "ward": "6F",
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "遷移失敗: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[role=\"option\"]:has-text(\"6F\"), li:has-text(\"6F\")').first()\u001b[22m\n\u001b[2m    - locator resolved to <li>…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    19 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L322-emerg-pct-15-6f",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 322,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": null,
+      "tolerance": 2,
+      "status": "MISSING_DOM",
+      "delta": null,
+      "claim_text": "2. LOS 余力・施設基準・救急 15% で原因を分解した（制度管理）",
+      "context": {
+        "ward": "6F",
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "note": "遷移失敗: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[role=\"option\"]:has-text(\"6F\"), li:has-text(\"6F\")').first()\u001b[22m\n\u001b[2m    - locator resolved to <li>…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    19 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "claim_id": "demo-scenario-v3.6-L315-emerg-pct-15",
+      "source_file": "docs/admin/demo_scenario_v3.6.md",
+      "source_line": 315,
+      "metric": "emergency_pct",
+      "expected": 15,
+      "actual": 17,
+      "tolerance": 2,
+      "status": "PASS",
+      "delta": 2,
+      "claim_text": "🛡️ 制度管理 + 📊 運営改善アラート | 施設基準・救急 15%・改善のタネ |",
+      "context": {
+        "ward": null,
+        "mode": "holiday",
+        "data_source": "demo"
+      },
+      "note": "許容内"
+    }
+  ]
+}
