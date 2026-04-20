@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-19T11:33:09.115474+00:00",
-  "claim_count": 60,
+  "generated_at": "2026-04-20T23:11:40.872928+00:00",
+  "claim_count": 68,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
     "docs/admin/demo_scenario_v4.md",
@@ -19,7 +19,7 @@
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "2 | 平均在院日数（3 ヶ月 rolling） | 制度上限 21 日が基準、推定 LOS 5F 16.5 日 / 6F 15",
+      "claim_text": "2 | 平均在院日数（3 ヶ月 rolling） | 制度上限 21 日が基準。rolling 90 日の実績値を自動計算 |",
       "metric": "alos_limit_days",
       "expected_value": 21.0,
       "tolerance": 0.5,
@@ -58,9 +58,41 @@
       "unit": "%"
     },
     {
-      "id": "carnf-scenario-v4-L148-patient-rows-10",
+      "id": "carnf-scenario-v4-L112-occ-pct-86",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 148,
+      "source_line": 112,
+      "scene": "なぜこの共有が必要か",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "- **稼働率 86% / ALOS 余裕 / 救急達成** なら：",
+      "metric": "occupancy_pct",
+      "expected_value": 86.0,
+      "tolerance": 1.5,
+      "unit": "%"
+    },
+    {
+      "id": "carnf-scenario-v4-L119-occ-pct-95",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 119,
+      "scene": "なぜこの共有が必要か",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "- **稼働率 95%+ / ALOS 21 日近い / 救急ぎりぎり** な",
+      "metric": "occupancy_pct",
+      "expected_value": 95.0,
+      "tolerance": 1.5,
+      "unit": "%"
+    },
+    {
+      "id": "carnf-scenario-v4-L192-patient-rows-10",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 192,
       "scene": "見る場所：画面中央右側（Block C・ここが議論の中心）",
       "context": {
         "ward": null,
@@ -74,9 +106,9 @@
       "unit": "名"
     },
     {
-      "id": "carnf-scenario-v4-L160-status-cnt-7",
+      "id": "carnf-scenario-v4-L204-status-cnt-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 160,
+      "source_line": 204,
       "scene": "7 つのステータス（通常モード）",
       "context": {
         "ward": null,
@@ -90,9 +122,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L172-status-cnt-5",
+      "id": "carnf-scenario-v4-L216-status-cnt-5",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 172,
+      "source_line": 216,
       "scene": "5 つのステータス（連休対策モード、v4 分散退院型）",
       "context": {
         "ward": null,
@@ -106,9 +138,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L405-holiday-thresh-banner-21",
+      "id": "carnf-scenario-v4-L449-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 405,
+      "source_line": 449,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -122,9 +154,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L406-holiday-thresh-banner-14",
+      "id": "carnf-scenario-v4-L450-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 406,
+      "source_line": 450,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -138,9 +170,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L406-holiday-thresh-banner-7",
+      "id": "carnf-scenario-v4-L450-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 406,
+      "source_line": 450,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -202,41 +234,41 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L153-emerg-thresh-15",
+      "id": "demo-scenario-v4-L157-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 153,
+      "source_line": 157,
       "scene": "画面で見るもの（6 セクション）",
       "context": {
         "ward": null,
         "mode": "normal",
-        "data_source": "demo"
+        "data_source": "actual"
       },
-      "claim_text": "| 緊急率 5F | **53.1%** | 基準 15% の約 3.5 倍 |",
+      "claim_text": "、ここには外来紹介・連携室・ウォークインも含まれる。制度基準 15% の厳密判定には入院経路の 5 区分での再分類が必要で、",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L154-emerg-thresh-15",
+      "id": "demo-scenario-v4-L159-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 154,
+      "source_line": 159,
       "scene": "画面で見るもの（6 セクション）",
       "context": {
         "ward": null,
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "| 緊急率 6F | **61.1%** | 基準 15% の約 4.1 倍 |",
+      "claim_text": "送後』より広い概念（外来紹介・連携室含む）ですので、制度基準 15% の厳密達成判定には、入院経路の詳細分類を事務に依頼中で",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L186-holiday-thresh-banner-12",
+      "id": "demo-scenario-v4-L188-holiday-thresh-banner-12",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 186,
+      "source_line": 188,
       "scene": "画面で見るもの（6 セクション）",
       "context": {
         "ward": null,
@@ -250,9 +282,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L192-emerg-thresh-15",
+      "id": "demo-scenario-v4-L194-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 192,
+      "source_line": 194,
       "scene": "言うこと（まとめの発言例）",
       "context": {
         "ward": null,
@@ -266,9 +298,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L202-emerg-pct-15",
+      "id": "demo-scenario-v4-L204-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 202,
+      "source_line": 204,
       "scene": "第3章：制度と需要の健全性 — 🛡️ 制度管理（3 分）",
       "context": {
         "ward": null,
@@ -282,9 +314,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L245-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L247-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 245,
+      "source_line": 247,
       "scene": "3-3. C 群コントロールサブタブ — トレードオフの核心",
       "context": {
         "ward": null,
@@ -298,9 +330,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L247-emerg-pct-15",
+      "id": "demo-scenario-v4-L249-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 247,
+      "source_line": 249,
       "scene": "3-4. 救急搬送 15% サブタブ — 2026-06-01 本則完全適用（🅰）",
       "context": {
         "ward": null,
@@ -314,9 +346,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L249-emerg-pct-15",
+      "id": "demo-scenario-v4-L251-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 249,
+      "source_line": 251,
       "scene": "3-4. 救急搬送 15% サブタブ — 2026-06-01 本則完全適用（🅰）",
       "context": {
         "ward": null,
@@ -330,25 +362,41 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L257-emerg-thresh-15",
+      "id": "demo-scenario-v4-L261-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 257,
+      "source_line": 261,
       "scene": "3-4. 救急搬送 15% サブタブ — 2026-06-01 本則完全適用（🅰）",
       "context": {
         "ward": null,
         "mode": "normal",
-        "data_source": "actual"
+        "data_source": "demo"
       },
-      "claim_text": "5F 53.1% / 6F 61.1% で **いずれも基準 15% を大幅達成** です。基準の 3.5〜4.1 倍の余裕",
+      "claim_text": "> 「制度基準 15% の厳密達成判定には、入院経路の詳細 5 分類が必要です",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L312-patient-rows-10",
+      "id": "demo-scenario-v4-L301-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 312,
+      "source_line": 301,
+      "scene": "ブロック A：今月の目標達成進捗（5 つの KPI 横並び）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "率 60.1%（※制度上の「救急搬送後」厳密値は精査中、基準 15% 達成見込み）",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "demo-scenario-v4-L316-patient-rows-10",
+      "source_file": "docs/admin/demo_scenario_v4.md",
+      "source_line": 316,
       "scene": "ブロック C：個別患者のステータス分類（議論の中心）",
       "context": {
         "ward": null,
@@ -362,9 +410,9 @@
       "unit": "名"
     },
     {
-      "id": "demo-scenario-v4-L386-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L390-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 386,
+      "source_line": 390,
       "scene": "5-1. カンファ資料を連休対策モードに切替",
       "context": {
         "ward": null,
@@ -378,9 +426,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L386-holiday-thresh-banner-14",
+      "id": "demo-scenario-v4-L390-holiday-thresh-banner-14",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 386,
+      "source_line": 390,
       "scene": "5-1. カンファ資料を連休対策モードに切替",
       "context": {
         "ward": null,
@@ -394,9 +442,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L386-holiday-thresh-banner-7",
+      "id": "demo-scenario-v4-L390-holiday-thresh-banner-7",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 386,
+      "source_line": 390,
       "scene": "5-1. カンファ資料を連休対策モードに切替",
       "context": {
         "ward": null,
@@ -410,9 +458,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L472-emerg-pct-15",
+      "id": "demo-scenario-v4-L476-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 472,
+      "source_line": 476,
       "scene": "締め：朝会・カンファ・月次レビューの使い分け（1 分）",
       "context": {
         "ward": null,
@@ -426,9 +474,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L474-holiday-thresh-banner-21-6f",
+      "id": "demo-scenario-v4-L478-holiday-thresh-banner-21-6f",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 474,
+      "source_line": 478,
       "scene": "締め：朝会・カンファ・月次レビューの使い分け（1 分）",
       "context": {
         "ward": "6F",
@@ -442,9 +490,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L481-emerg-pct-15",
+      "id": "demo-scenario-v4-L485-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 481,
+      "source_line": 485,
       "scene": "締め：朝会・カンファ・月次レビューの使い分け（1 分）",
       "context": {
         "ward": null,
@@ -458,9 +506,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L505-emerg-pct-15",
+      "id": "demo-scenario-v4-L509-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 505,
+      "source_line": 509,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -474,9 +522,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L505-emerg-thresh-15",
+      "id": "demo-scenario-v4-L509-emerg-thresh-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 505,
+      "source_line": 509,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -490,9 +538,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L517-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L521-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 517,
+      "source_line": 521,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -506,9 +554,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L518-holiday-thresh-banner-21",
+      "id": "demo-scenario-v4-L522-holiday-thresh-banner-21",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 518,
+      "source_line": 522,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -522,9 +570,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L518-holiday-thresh-banner-7",
+      "id": "demo-scenario-v4-L522-holiday-thresh-banner-7",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 518,
+      "source_line": 522,
       "scene": "用語集",
       "context": {
         "ward": null,
@@ -538,9 +586,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L534-rev-per-1pct-1199",
+      "id": "demo-scenario-v4-L538-rev-per-1pct-1199",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 534,
+      "source_line": 538,
       "scene": "A-1. 稼働率と診療報酬収入の関係",
       "context": {
         "ward": null,
@@ -554,9 +602,9 @@
       "unit": "万円/年"
     },
     {
-      "id": "demo-scenario-v4-L535-occ-target-90",
+      "id": "demo-scenario-v4-L539-occ-target-90",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 535,
+      "source_line": 539,
       "scene": "A-1. 稼働率と診療報酬収入の関係",
       "context": {
         "ward": null,
@@ -570,9 +618,9 @@
       "unit": "%"
     },
     {
-      "id": "demo-scenario-v4-L536-rev-per-1pct-1199",
+      "id": "demo-scenario-v4-L540-rev-per-1pct-1199",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 536,
+      "source_line": 540,
       "scene": "A-1. 稼働率と診療報酬収入の関係",
       "context": {
         "ward": null,
@@ -586,9 +634,9 @@
       "unit": "万円/年"
     },
     {
-      "id": "demo-scenario-v4-L552-holiday-thresh-banner-20",
+      "id": "demo-scenario-v4-L557-holiday-thresh-banner-20",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 552,
+      "source_line": 557,
       "scene": "A-2. 施設基準実態レポート（v4 新規）",
       "context": {
         "ward": null,
@@ -602,9 +650,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L553-holiday-thresh-banner-20",
+      "id": "demo-scenario-v4-L558-holiday-thresh-banner-20",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 553,
+      "source_line": 558,
       "scene": "A-2. 施設基準実態レポート（v4 新規）",
       "context": {
         "ward": null,
@@ -618,9 +666,9 @@
       "unit": "日"
     },
     {
-      "id": "demo-scenario-v4-L576-c-contrib-28900",
+      "id": "demo-scenario-v4-L581-c-contrib-28900",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 576,
+      "source_line": 581,
       "scene": "A-5. C 群の運営貢献",
       "context": {
         "ward": null,
@@ -634,9 +682,9 @@
       "unit": "円/日"
     },
     {
-      "id": "demo-scenario-v4-L594-emerg-pct-15",
+      "id": "demo-scenario-v4-L599-emerg-pct-15",
       "source_file": "docs/admin/demo_scenario_v4.md",
-      "source_line": 594,
+      "source_line": 599,
       "scene": "A-7. 2026 年度診療報酬改定 + 2026-06-01 本則適用の影響",
       "context": {
         "ward": null,
@@ -647,6 +695,54 @@
       "metric": "emergency_pct",
       "expected_value": 15.0,
       "tolerance": 2.0,
+      "unit": "%"
+    },
+    {
+      "id": "presentation-script-bedcontrol-v4-L64-emerg-pct-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol_v4.md",
+      "source_line": 64,
+      "scene": "(1) 予定外入院割合 — 制度基準「救急搬送後 15%」の参考値",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "#### (1) 予定外入院割合 — 制度基準「救急搬送後 15%」の参考値",
+      "metric": "emergency_pct",
+      "expected_value": 15.0,
+      "tolerance": 2.0,
+      "unit": "%"
+    },
+    {
+      "id": "presentation-script-bedcontrol-v4-L66-emerg-pct-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol_v4.md",
+      "source_line": 66,
+      "scene": "(1) 予定外入院割合 — 制度基準「救急搬送後 15%」の参考値",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "制度基準は「救急搬送後患者割合 15% 以上」ですが、**2025 年度の事務データは「当日(",
+      "metric": "emergency_pct",
+      "expected_value": 15.0,
+      "tolerance": 2.0,
+      "unit": "%"
+    },
+    {
+      "id": "presentation-script-bedcontrol-v4-L66-emerg-thresh-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol_v4.md",
+      "source_line": 66,
+      "scene": "(1) 予定外入院割合 — 制度基準「救急搬送後 15%」の参考値",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "制度基準は「救急搬送後患者割合 15% 以上」ですが、**2025 年度の事務データは「当日(",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
       "unit": "%"
     },
     {
@@ -762,7 +858,7 @@
       "unit": "%"
     },
     {
-      "id": "presentation-script-bedcontrol-v4-L237-emerg-thresh-15",
+      "id": "presentation-script-bedcontrol-v4-L237-emerg-pct-15",
       "source_file": "docs/admin/presentation_script_bedcontrol_v4.md",
       "source_line": 237,
       "scene": "施設基準実態レポート(v4 で新設)",
@@ -771,10 +867,10 @@
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "率: **5F 53.1% / 6F 61.1%** (基準 15% の 3.5〜4.1 倍)",
-      "metric": "emergency_threshold_pct",
+      "claim_text": "61.1%** (※ 2 値分類による参考値。制度上の「救急搬送後 15%」の厳密判定は精査中だが、達成見込み)",
+      "metric": "emergency_pct",
       "expected_value": 15.0,
-      "tolerance": 0.5,
+      "tolerance": 2.0,
       "unit": "%"
     },
     {
@@ -858,6 +954,22 @@
       "unit": "日"
     },
     {
+      "id": "presentation-script-bedcontrol-v4-L494-emerg-thresh-15",
+      "source_file": "docs/admin/presentation_script_bedcontrol_v4.md",
+      "source_line": 494,
+      "scene": "Q2:「2026 年 6 月 1 日の本則適用で、本当に大丈夫か？」",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "actual"
+      },
+      "claim_text": "中）します。予定外入院の過半を救急搬送が占める想定で、基準 15% は十分な余裕で達成する見込みです。",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
       "id": "presentation-script-bedcontrol-v4-L555-emerg-thresh-15",
       "source_file": "docs/admin/presentation_script_bedcontrol_v4.md",
       "source_line": 555,
@@ -867,7 +979,7 @@
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "送後割合は 5F 53.1% / 6F 61.1% で、基準 15% の 3.5〜4.1 倍です。",
+      "claim_text": "査中ですが、この広い分類でも 50% 以上あることから、基準 15% は十分な余裕があると考えられます。",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
@@ -883,7 +995,7 @@
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "基準 15% には大幅な余力があるため、短手 3 増加は制度リスクな",
+      "claim_text": "基準 15% には十分な余力があるため、短手 3 増加は制度リスクな",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
@@ -897,7 +1009,7 @@
       "context": {
         "ward": null,
         "mode": "normal",
-        "data_source": "demo"
+        "data_source": "actual"
       },
       "claim_text": "、85 歳以上 20% で +1 日緩和 = 21 日、救急 15% の rolling 3 ヶ月判定）への移行を安全に進め",
       "metric": "emergency_pct",
@@ -906,41 +1018,41 @@
       "unit": "%"
     },
     {
-      "id": "script-L59-emerg-thresh-15",
+      "id": "script-L484-emerg-thresh-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 59,
-      "scene": "話す内容（2 分 30 秒）",
+      "source_line": 484,
+      "scene": "話す内容（3 分）",
       "context": {
         "ward": null,
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "5F **53.1%** / 6F **61.1%**（基準 15% の約 3.5〜4.1 倍）、85 歳以上 **27.3",
+      "claim_text": "致せず、外来紹介・連携室・ウォークインが含まれます。制度基準 15% の厳密判定は、入院経路の 5 区分での再分類が必要で、",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
       "unit": "%"
     },
     {
-      "id": "script-L567-emerg-thresh-15",
+      "id": "script-L569-emerg-thresh-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 567,
+      "source_line": 569,
       "scene": "話す内容（2 分 30 秒）",
       "context": {
         "ward": null,
         "mode": "normal",
-        "data_source": "demo"
+        "data_source": "actual"
       },
-      "claim_text": "**54.4%** / 6F **60.1%** で、基準 15% の約 3.6〜4.0 倍。単月の揺らぎに左右されず、安",
+      "claim_text": "動シード入力で bridge 中）しますが、十分な余裕で基準 15% を達成する見込みです。",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,
       "unit": "%"
     },
     {
-      "id": "script-L570-holiday-thresh-banner-8",
+      "id": "script-L572-holiday-thresh-banner-8",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 570,
+      "source_line": 572,
       "scene": "話す内容（2 分 30 秒）",
       "context": {
         "ward": null,
@@ -954,16 +1066,32 @@
       "unit": "日"
     },
     {
-      "id": "script-L659-emerg-thresh-15",
+      "id": "script-L661-emerg-thresh-15",
       "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
-      "source_line": 659,
+      "source_line": 661,
       "scene": "Q2: 2026-06-01 本則適用は本当に安全か？",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "actual"
+      },
+      "claim_text": "中）しますが、この広い分類でも 50% 超あることから基準 15% は十分に達成見込み。85 歳以上割合 27.3% で",
+      "metric": "emergency_threshold_pct",
+      "expected_value": 15.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "script-L665-emerg-thresh-15",
+      "source_file": "docs/admin/slides/weekend_holiday_kpi/script.md",
+      "source_line": 665,
+      "scene": "Q3: 短手 3 の戦略的増加余力はあるのか？",
       "context": {
         "ward": null,
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "全マージンを持って達成**しております。救急搬送後割合は基準 15% に対し 5F 53.1% / 6F 61.1%、約 3",
+      "claim_text": "水準にあることから、制度上の救急搬送後厳密値（精査中）も基準 15% に対して十分な余裕がある見込みで、**短手 3 を増や",
       "metric": "emergency_threshold_pct",
       "expected_value": 15.0,
       "tolerance": 0.5,

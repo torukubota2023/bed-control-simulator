@@ -2115,49 +2115,144 @@ def _render_block_a(
 # ブロック描画: B 今週の見通し + 内訳
 # ---------------------------------------------------------------------------
 
+def _compute_weekend_forecast(
+    ward: str, mode: str,
+    daily_df: Optional[pd.DataFrame] = None,
+    detail_df: Optional[pd.DataFrame] = None,
+    today: Optional[date] = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Block B の予測データを返す。
+
+    通常モード: 実データ (daily_df, detail_df) があれば weekend_forecast モジュール
+    で来週末の予測を計算。データ不足時はサンプル値にフォールバック。
+    連休対策モード: 現行通りサンプル値を使う (連休は次の大型連休固定のため)。
+
+    Returns:
+        (forecast_rows, meta) のタプル。
+        meta には coverage_pct, total_uncertainty, is_real などを含む。
+    """
+    # 連休対策モードはサンプル固定
+    if mode == "holiday":
+        rows = _sample_weekend_forecast(ward, mode)
+        return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
+
+    # 通常モード: 実データが揃えば計算、足りなければサンプル
+    has_real = (
+        daily_df is not None and isinstance(daily_df, pd.DataFrame)
+        and len(daily_df) >= 56  # 少なくとも 8 週間分の履歴
+    )
+    if not has_real:
+        rows = _sample_weekend_forecast(ward, mode)
+        return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
+
+    try:
+        from weekend_forecast import forecast_next_weekend as _fcast
+        from bed_data_manager import get_ward_beds as _get_ward_beds
+        ward_key = ward if ward in ("5F", "6F") else None
+        ward_beds = _get_ward_beds(ward) if ward_key else 47
+        result = _fcast(
+            daily_df, detail_df=detail_df, ward=ward_key,
+            today=today, ward_beds=ward_beds,
+        )
+        rows = result["rows"]
+        return rows, {
+            "is_real": True,
+            "coverage_pct": result["coverage_pct"],
+            "total_uncertainty": result["uncertainty_bed_days"],
+            "target_dates": result.get("target_dates", []),
+        }
+    except Exception:
+        rows = _sample_weekend_forecast(ward, mode)
+        return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
+
+
 def _render_block_b(
     ward: str,
     mode: str,
     patients: List[SamplePatient],
+    daily_df: Optional[pd.DataFrame] = None,
+    detail_df: Optional[pd.DataFrame] = None,
+    today: Optional[date] = None,
 ) -> None:
-    """ブロック B: 週末見通し + ステータス内訳."""
-    forecast = _sample_weekend_forecast(ward, mode)
+    """ブロック B: 来週末見通し + ステータス内訳.
 
-    title = (
-        f"GW期間 {len(forecast)}連休の見通し（{ward}）"
-        if mode == "holiday"
-        else f"今週末の見通し（{ward}）"
+    副院長決定 2026-04-20: カンファは来週以降の退院戦略を議論する場なので、
+    今週末ではなく「来週末」の見通しを表示する (カンファの意思決定レバーと
+    結果指標を同期させる)。
+    """
+    forecast, forecast_meta = _compute_weekend_forecast(
+        ward, mode, daily_df=daily_df, detail_df=detail_df, today=today,
     )
-    forecast_rows_html = "".join(
-        (
+
+    if mode == "holiday":
+        title = f"GW期間 {len(forecast)}連休の見通し（{ward}）"
+    elif forecast_meta.get("is_real"):
+        title = f"来週末の見通し（{ward}・カンファ決定の影響を反映）"
+    else:
+        title = f"来週末の見通し（{ward}・サンプル表示）"
+
+    def _fmt_row(row: Dict[str, Any]) -> str:
+        """1 行分の HTML を返す。±バンドがあれば併記する。"""
+        day = row["day"]
+        vac = row["vacancy"]
+        sev = row["severity"]
+        er = row["er_margin"]
+        # ±バンド (実データ計算時のみ)
+        low = row.get("vacancy_low")
+        high = row.get("vacancy_high")
+        if low is not None and high is not None and high > low:
+            band = f'<span style="color:#888;font-size:11px;margin-left:4px;">[{low}〜{high}]</span>'
+        else:
+            band = ""
+        return (
             f'<div class="conf-forecast-row">'
-            f'<span class="day">{row["day"]}</span>'
-            f'<span>空床 <span class="vacancy {row["severity"]}">{row["vacancy"]}</span></span>'
-            f'<span>救急余力 {row["er_margin"]:+d}</span>'
+            f'<span class="day">{day}</span>'
+            f'<span>空床 <span class="vacancy {sev}">{vac}</span>{band}</span>'
+            f'<span>救急余力 {er:+d}</span>'
             f"</div>"
         )
-        for row in forecast
-    )
 
-    # 週末受入余力（床日）— 週末または連休期間の空床 vacancy を床日として合計する.
-    # 副院長決定（2026-04-17）: 「経営的損失（金額）」から「医療者として応需可能
-    # だった患者機会（床日）」への意味転換. 医療倫理上、空床を金額で語らず
-    # 「受け入れられた可能性のある患者数」として可視化する.
+    forecast_rows_html = "".join(_fmt_row(r) for r in forecast)
+
+    # 週末受入余力（床日）
     total_bed_days = sum(int(row.get("vacancy", 0)) for row in forecast)
+    uncert = forecast_meta.get("total_uncertainty", 0) if forecast_meta.get("is_real") else 0
+    uncert_suffix = f"（± {uncert} 床日）" if uncert > 0 else ""
     if mode == "holiday":
         cost_text = (
             f"連休期間 週末受入余力 {total_bed_days}床日"
-            f"（応需可能だった患者機会）"
+            f"{uncert_suffix}（応需可能だった患者機会）"
         )
         cost_bg = "#ffebee"
         cost_fg = "#b71c1c"
     else:
         cost_text = (
-            f"週末受入余力 {total_bed_days}床日"
-            f"（応需可能だった患者機会）"
+            f"来週末受入余力 {total_bed_days}床日"
+            f"{uncert_suffix}（応需可能な患者機会）"
         )
         cost_bg = "#fff3e0"
         cost_fg = "#e65100"
+
+    # 退院予定入力カバレッジ（実データ計算時のみ）
+    coverage_html = ""
+    if forecast_meta.get("is_real") and forecast_meta.get("coverage_pct") is not None:
+        cov = forecast_meta["coverage_pct"]
+        if cov >= 66.7:
+            cov_color = "#10B981"  # success green
+            cov_label = "精度高"
+        elif cov >= 33.3:
+            cov_color = "#F59E0B"  # warning orange
+            cov_label = "精度中"
+        else:
+            cov_color = "#DC2626"  # danger red
+            cov_label = "曜日平均で補完"
+        coverage_html = (
+            f'<div style="font-size:11px;color:#666;margin-top:6px;">'
+            f'退院予定入力カバレッジ '
+            f'<span style="color:{cov_color};font-weight:600;">{cov:.0f}%</span> '
+            f'<span style="color:#888;">({cov_label})</span>'
+            f'</div>'
+        )
 
     # 内訳 — 現在の患者リストから集計
     status_counts = _count_status(patients)
@@ -2190,6 +2285,7 @@ def _render_block_b(
           <div style="font-size:14px;font-weight:700;color:#555;margin-bottom:7px;">{title}</div>
           {forecast_rows_html}
           <div class="conf-forecast-summary" style="background:{cost_bg};color:{cost_fg};">{cost_text}</div>
+          {coverage_html}
           <div style="font-size:13px;font-weight:700;color:#555;margin-top:12px;margin-bottom:5px;">
             {breakdown_title}
           </div>
@@ -3386,9 +3482,30 @@ def render_conference_material_view(
             unsafe_allow_html=True,
         )
 
+    # Block B: 来週末の見通しに必要な日次・詳細データを session_state から取得
+    # (None なら _render_block_b 側で自動的にサンプル表示にフォールバック)
+    _block_b_daily_df = None
+    _block_b_detail_df = None
+    try:
+        _ward_dfs_full = (
+            st.session_state.get("sim_ward_raw_dfs_full")
+            or st.session_state.get("ward_raw_dfs_full")
+            or {}
+        )
+        if ward in _ward_dfs_full:
+            _block_b_daily_df = _ward_dfs_full[ward]
+        _block_b_detail_df = st.session_state.get("admission_details")
+    except Exception:
+        pass
+
     middle_left, middle_right = st.columns([0.3, 0.7])
     with middle_left:
-        _render_block_b(ward, mode, patients)
+        _render_block_b(
+            ward, mode, patients,
+            daily_df=_block_b_daily_df,
+            detail_df=_block_b_detail_df,
+            today=_today,
+        )
     with middle_right:
         _render_block_c(patients, mode, _today)
 
