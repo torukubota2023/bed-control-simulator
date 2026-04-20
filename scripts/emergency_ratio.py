@@ -274,19 +274,86 @@ def calculate_dual_ratio(
 # ---------------------------------------------------------------------------
 
 
+def load_manual_seeds_from_yaml(
+    yaml_path: Optional[str] = None,
+) -> Dict[str, Dict[str, Optional[float]]]:
+    """手動シード YAML を読み込み、月×病棟のシード辞書を返す。
+
+    Args:
+        yaml_path: YAML ファイルパス。None の場合、デフォルトパス
+            (`settings/manual_seed_emergency_ratio.yaml`) を参照する。
+
+    Returns:
+        ``{year_month: {ward: emergency_pct_or_None}}`` 形式の辞書。
+        シード値が未入力 (None) の場合は値も None のまま返す。
+        ファイルが存在しないか読み込めない場合は空辞書。
+
+    Example:
+        >>> seeds = load_manual_seeds_from_yaml()
+        >>> seeds.get("2026-03", {}).get("5F")
+        22.5
+    """
+    try:
+        import yaml as _yaml  # type: ignore
+    except ImportError:
+        return {}
+
+    if yaml_path is None:
+        from pathlib import Path as _Path
+        yaml_path = str(
+            _Path(__file__).resolve().parent.parent
+            / "settings" / "manual_seed_emergency_ratio.yaml"
+        )
+
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = _yaml.safe_load(f) or {}
+    except (FileNotFoundError, OSError):
+        return {}
+
+    seeds_raw = data.get("seeds", {}) or {}
+    out: Dict[str, Dict[str, Optional[float]]] = {}
+    for ym, ward_map in seeds_raw.items():
+        if not isinstance(ward_map, dict):
+            continue
+        ward_out: Dict[str, Optional[float]] = {}
+        for ward, val in ward_map.items():
+            if isinstance(val, dict):
+                pct = val.get("emergency_pct")
+            else:
+                pct = val
+            if pct is None:
+                ward_out[ward] = None
+            else:
+                try:
+                    ward_out[ward] = float(pct)
+                except (TypeError, ValueError):
+                    ward_out[ward] = None
+        out[str(ym)] = ward_out
+    return out
+
+
 def calculate_rolling_emergency_ratio(
     detail_df: pd.DataFrame,
     ward: Optional[str] = None,
     target_date: Optional[date] = None,
     window_months: int = 3,
     monthly_summary: Optional[Dict[str, Any]] = None,
+    manual_seeds: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
 ) -> Dict[str, Any]:
     """直近3ヶ月の救急搬送後患者割合をrolling平均で計算する。
 
-    3ヶ月分の入院件数と救急搬送件数を合算してから割り算する
-    （比率の単純平均ではなく、厚労省公式の計算方法）。
+    **計算方式:**
+    - 通常（全 3 ヶ月が日次データ or summary）: **ratio-of-sums**
+      （3 ヶ月分の入院件数と救急搬送件数を合算してから割る、厚労省公式方法）
+    - **シード利用時** (manual_seeds が採用された月が 1 つでもある)：
+      **mean-of-ratios** に切り替え。月別比率の単純平均 (%) を採用する。
 
-    運用開始時は monthly_summary で過去月のサマリーデータを補完可能。
+    ソース選択の優先順位（各月ごと）:
+        1. ``detail_df`` に該当月の日次データがある → ``source: "daily"``
+        2. ``monthly_summary`` に該当月・病棟のサマリーがある → ``source: "summary"``
+        3. ``manual_seeds`` に該当月・病棟のシード値がある → ``source: "manual_seed"``
+        4. いずれもなければ 0 扱い → ``source: "no_data"``
 
     Args:
         detail_df: 入退院詳細データ
@@ -294,20 +361,22 @@ def calculate_rolling_emergency_ratio(
         target_date: 基準日。None なら今日
         window_months: rolling window 月数（デフォルト3）
         monthly_summary: 過去月サマリー dict（任意）
-            {
-                "2026-02": {"5F": {"admissions": 70, "emergency": 11, ...}, "6F": {...}},
-                "2026-03": {"5F": {...}, "6F": {...}},
-            }
+            ``{"2026-02": {"5F": {"admissions": 70, "emergency": 11, ...}, ...}, ...}``
+        manual_seeds: 手動シード dict（任意）
+            ``{"2026-02": {"5F": 22.5, "6F": 28.0}, "2026-03": {"5F": 24.0, "6F": 30.0}}``
+            値は救急搬送後割合 (%)。``load_manual_seeds_from_yaml()`` で YAML から読み込み可能。
 
     Returns:
         dict: {
-            "ratio_pct": 3ヶ月平均の割合,
-            "numerator": 3ヶ月合計の救急搬送数,
-            "denominator": 3ヶ月合計の入院数,
+            "ratio_pct": 3ヶ月 rolling の割合,
+            "numerator": 3ヶ月合計の救急搬送数（シード利用時は None）,
+            "denominator": 3ヶ月合計の入院数（シード利用時は None）,
             "status": "green"/"yellow"/"red",
-            "monthly_breakdown": [{month, numerator, denominator, ratio_pct}, ...],
+            "monthly_breakdown": [{month, numerator, denominator, ratio_pct, source}, ...],
             "ward": ward,
             "window_months": window_months,
+            "calculation_method": "ratio_of_sums" or "mean_of_ratios_with_seeds",
+            "seed_used_months": [<ym>, ...],  # シードが採用された月一覧
         }
     """
     d = target_date if target_date is not None else date.today()
@@ -326,6 +395,7 @@ def calculate_rolling_emergency_ratio(
     monthly_breakdown: list[dict] = []
     total_numerator = 0
     total_denominator = 0
+    seed_used_months: list[str] = []
 
     for ym in target_months:
         # まず detail_df から計算を試みる
@@ -368,6 +438,22 @@ def calculate_rolling_emergency_ratio(
                     "ratio_pct": 0.0,
                     "source": "no_data",
                 })
+        elif (
+            manual_seeds
+            and ym in manual_seeds
+            and manual_seeds[ym].get(ward if ward else "all") is not None
+        ):
+            # 手動シードを採用
+            ward_key = ward if ward else "all"
+            seed_pct = float(manual_seeds[ym][ward_key])
+            monthly_breakdown.append({
+                "year_month": ym,
+                "numerator": None,
+                "denominator": None,
+                "ratio_pct": round(seed_pct, 2),
+                "source": "manual_seed",
+            })
+            seed_used_months.append(ym)
         else:
             monthly_breakdown.append({
                 "year_month": ym,
@@ -377,17 +463,41 @@ def calculate_rolling_emergency_ratio(
                 "source": "no_data",
             })
 
-    ratio_pct = (total_numerator / total_denominator * 100.0) if total_denominator > 0 else 0.0
+    # 計算方式の決定: シードが 1 つでも使われたら mean-of-ratios
+    if seed_used_months:
+        calculation_method = "mean_of_ratios_with_seeds"
+        # 有効な月（no_data 以外）の比率平均
+        valid = [
+            m for m in monthly_breakdown
+            if m["source"] in ("daily", "summary", "manual_seed")
+        ]
+        ratio_pct = (
+            sum(m["ratio_pct"] for m in valid) / len(valid)
+            if valid else 0.0
+        )
+        # numerator/denominator は集計不能のため None（シード利用時）
+        result_numerator: Optional[int] = None
+        result_denominator: Optional[int] = None
+    else:
+        calculation_method = "ratio_of_sums"
+        ratio_pct = (
+            total_numerator / total_denominator * 100.0
+            if total_denominator > 0 else 0.0
+        )
+        result_numerator = total_numerator
+        result_denominator = total_denominator
 
     return {
-        "numerator": total_numerator,
-        "denominator": total_denominator,
+        "numerator": result_numerator,
+        "denominator": result_denominator,
         "ratio_pct": round(ratio_pct, 2),
         "gap_to_target_pt": round(ratio_pct - EMERGENCY_THRESHOLD_PCT, 2),
         "status": _status_from_ratio(ratio_pct),
         "ward": ward,
         "window_months": window_months,
         "monthly_breakdown": monthly_breakdown,
+        "calculation_method": calculation_method,
+        "seed_used_months": seed_used_months,
     }
 
 

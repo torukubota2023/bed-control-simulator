@@ -36,6 +36,7 @@ from scripts.emergency_ratio import (
     get_monthly_history,
     get_ward_emergency_summary,
     is_transitional_period,
+    load_manual_seeds_from_yaml,
     project_month_end,
 )
 
@@ -1151,3 +1152,149 @@ class TestTransitionalGateSwitch:
         assert is_transitional_period(date(2026, 5, 30)) is True
         assert is_transitional_period(date(2026, 5, 31)) is True  # 最終日も含む
         assert is_transitional_period(date(2026, 6, 1)) is False  # 翌日から本則
+
+
+class TestManualSeedsRolling:
+    """手動シード入力による rolling 3 ヶ月 bridge の挙動テスト。
+
+    2026-04〜2026-06 の運用開始直後は、past 2 ヶ月分の 5 区分詳細データが
+    蓄積していないため、副院長が手入力した救急搬送後割合を YAML から
+    読み込んで rolling 計算に組み込む機構を検証する。
+    """
+
+    def _make_apr_only_df(self) -> pd.DataFrame:
+        """2026-04 の実データだけを持つ DataFrame を返す（Feb/Mar は無し）。"""
+        records = []
+        # April: 10 admissions, 3 emergency = 30%
+        for _ in range(7):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(3):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+        return _make_detail_df(records)
+
+    def test_seed_used_when_past_month_data_missing(self):
+        """2026-02/2026-03 の実データが無いときにシード値が採用される。"""
+        df = self._make_apr_only_df()
+        seeds = {
+            "2026-02": {"5F": 22.0},
+            "2026-03": {"5F": 24.0},
+        }
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15),
+            window_months=3, manual_seeds=seeds,
+        )
+        # シード使用月が記録される
+        assert sorted(result["seed_used_months"]) == ["2026-02", "2026-03"]
+        # 計算方式がシード対応モードに切り替わる
+        assert result["calculation_method"] == "mean_of_ratios_with_seeds"
+        # 3 ヶ月比率の平均: (22 + 24 + 30) / 3 = 25.333...
+        assert abs(result["ratio_pct"] - 25.33) < 0.1
+        # numerator/denominator は集計不能（シード利用時）
+        assert result["numerator"] is None
+        assert result["denominator"] is None
+
+    def test_pure_data_no_seed_still_uses_ratio_of_sums(self):
+        """全 3 ヶ月が実データならシードは使われず ratio-of-sums のまま。"""
+        records = []
+        for _ in range(8):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(2):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "救急"})
+        for _ in range(16):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(4):
+            records.append({"date": "2026-03-10", "ward": "5F", "route": "救急"})
+        for _ in range(7):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(3):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+        df = _make_detail_df(records)
+        seeds = {
+            "2026-02": {"5F": 99.0},  # 採用されてはいけない
+            "2026-03": {"5F": 99.0},
+        }
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15),
+            window_months=3, manual_seeds=seeds,
+        )
+        # 実データ優先でシード不使用
+        assert result["seed_used_months"] == []
+        assert result["calculation_method"] == "ratio_of_sums"
+        # 合算: 9/40 = 22.5%
+        assert result["numerator"] == 9
+        assert result["denominator"] == 40
+        assert result["ratio_pct"] == 22.5
+
+    def test_seed_not_used_when_value_is_none(self):
+        """seed 値が None の月はシード不使用とみなす。"""
+        df = self._make_apr_only_df()
+        seeds = {
+            "2026-02": {"5F": None},  # 未入力
+            "2026-03": {"5F": 24.0},  # 入力済
+        }
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15),
+            window_months=3, manual_seeds=seeds,
+        )
+        # 2026-03 だけシード利用、2026-02 は no_data
+        assert result["seed_used_months"] == ["2026-03"]
+        # 計算は有効月（2026-03 = 24%, 2026-04 = 30%）の平均: 27.0%
+        # 2026-02 は no_data なので計算から除外される
+        assert abs(result["ratio_pct"] - 27.0) < 0.1
+
+    def test_data_priority_over_seed(self):
+        """同一月に実データとシードが両方あれば実データが優先される。"""
+        records = []
+        # 2026-02 に実データ 10 件、うち 1 件救急 = 10%
+        for _ in range(9):
+            records.append({"date": "2026-02-10", "ward": "5F", "route": "外来紹介"})
+        records.append({"date": "2026-02-10", "ward": "5F", "route": "救急"})
+        # 2026-04 に実データ 10 件、うち 3 件救急 = 30%
+        for _ in range(7):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "外来紹介"})
+        for _ in range(3):
+            records.append({"date": "2026-04-10", "ward": "5F", "route": "救急"})
+        df = _make_detail_df(records)
+        seeds = {
+            "2026-02": {"5F": 99.0},  # 実データ 10% があるのでこちらは無視
+            "2026-03": {"5F": 24.0},  # 実データ無しなのでシード採用
+        }
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=date(2026, 4, 15),
+            window_months=3, manual_seeds=seeds,
+        )
+        # 2026-03 のみシード利用
+        assert result["seed_used_months"] == ["2026-03"]
+        assert result["calculation_method"] == "mean_of_ratios_with_seeds"
+        # 平均: (10 + 24 + 30) / 3 = 21.33%
+        assert abs(result["ratio_pct"] - 21.33) < 0.1
+
+    def test_load_seed_yaml_returns_empty_when_missing(self, tmp_path):
+        """存在しないファイルパスでも空辞書を返して例外を上げない。"""
+        bogus = tmp_path / "does_not_exist.yaml"
+        assert load_manual_seeds_from_yaml(str(bogus)) == {}
+
+    def test_load_seed_yaml_parses_nested_structure(self, tmp_path):
+        """ネスト構造の YAML を正しくパースする。"""
+        yaml_path = tmp_path / "seeds.yaml"
+        yaml_path.write_text(
+            "seeds:\n"
+            "  '2026-02':\n"
+            "    '5F':\n"
+            "      emergency_pct: 22.5\n"
+            "      memo: test\n"
+            "    '6F':\n"
+            "      emergency_pct: null\n"
+            "      memo: ''\n"
+            "  '2026-03':\n"
+            "    '5F':\n"
+            "      emergency_pct: 24\n"
+            "    '6F':\n"
+            "      emergency_pct: 30.1\n",
+            encoding="utf-8",
+        )
+        seeds = load_manual_seeds_from_yaml(str(yaml_path))
+        assert seeds["2026-02"]["5F"] == 22.5
+        assert seeds["2026-02"]["6F"] is None
+        assert seeds["2026-03"]["5F"] == 24.0
+        assert seeds["2026-03"]["6F"] == 30.1

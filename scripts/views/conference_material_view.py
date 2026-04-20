@@ -719,6 +719,7 @@ def _compute_live_kpi_metrics(
                 calculate_emergency_ratio as _calc_er,
                 calculate_rolling_emergency_ratio as _calc_rolling_er,
                 is_transitional_period as _is_transitional,
+                load_manual_seeds_from_yaml as _load_seeds,
             )
             target_ward = ward if ward in ("5F", "6F") else None
             ym = f"{today.year:04d}-{today.month:02d}"
@@ -727,11 +728,24 @@ def _compute_live_kpi_metrics(
                 er = _calc_er(detail_df, ward=target_ward, year_month=ym, target_date=today)
             else:
                 # 本則完全適用 (2026-06-01~): rolling 3ヶ月
+                # 過去月の実データ不足時に備えて手動シード YAML を読み込む
+                seeds = _load_seeds()
                 er = _calc_rolling_er(
-                    detail_df, ward=target_ward, target_date=today, window_months=3,
+                    detail_df,
+                    ward=target_ward,
+                    target_date=today,
+                    window_months=3,
+                    manual_seeds=seeds if seeds else None,
                 )
             if er is not None and er.get("ratio_pct") is not None:
                 result["emergency_pct"] = round(float(er["ratio_pct"]), 1)
+                # シードが採用された月があれば記録する（KPI キャプション用）
+                seed_months = er.get("seed_used_months") or []
+                if seed_months:
+                    result["emergency_seed_months"] = seed_months
+                    result["emergency_calculation_method"] = er.get(
+                        "calculation_method", "mean_of_ratios_with_seeds"
+                    )
         except Exception:
             pass
 
@@ -2019,6 +2033,11 @@ def _render_block_a(
         er_target_label = "基準達成"
     else:
         er_target_label = f"基準 {emergency_min:.0f}% 未達"
+
+    # シードが採用されている場合、KPI ラベルに注記を付与
+    seed_months = kpi.get("emergency_seed_months", []) if isinstance(kpi, dict) else []
+    if seed_months:
+        er_target_label = f"{er_target_label} ・ ※{'/'.join(seed_months)} は手入力シード"
 
     # 連休残日数
     days_remaining = banner.get("days_remaining")
