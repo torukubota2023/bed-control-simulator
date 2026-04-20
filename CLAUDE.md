@@ -7,6 +7,20 @@
 
 （現在、事務確認待ちの新規課題はありません）
 
+## ⚙️ 環境設定 todo
+
+### torumac-mini のみ：git identity を GitHub noreply に揃える（2026-04-20 記録）
+
+torumac-mini 側で `git config --global user.name/email` が GitHub と紐付かないローカル値のまま。Claude Code セッション開始時にこの項目を見つけたら、副院長に以下を実行するよう促す（完了後はこの節を削除）：
+
+```bash
+git config --global user.name "久保田徹"
+git config --global user.email "132826774+torukubota2023@users.noreply.github.com"
+```
+
+**判別方法:** `hostname` が `torumac-mini` であれば対象。`mac-mini`（=別の Mac）なら設定済なのでスルー。
+**目的:** 両 Mac からの commit を GitHub 上で同一アカウント扱いにし、contribution グラフに正しく反映させる。
+
 ## 📐 制度ルール確定事項（2026-06-01 以降の地域包括医療病棟運用）
 
 **確定日:** 2026-04-15（事務担当者からの仕様確定を受領）
