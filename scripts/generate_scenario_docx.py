@@ -375,6 +375,10 @@ def md_to_docx(md_path: Path, docx_path: Path, commit_hash: str) -> None:
     _init_document_styles(doc)
 
     md_text = md_path.read_text(encoding="utf-8")
+    # HTML コメント（<!-- ... -->）を除去。
+    # scenario QA ハーネスのスキップマーカー (<!-- qa-skip -->) 等が docx に
+    # 漏れ出るのを防ぐ。複数行にまたがるコメントにも対応。
+    md_text = re.sub(r"<!--.*?-->", "", md_text, flags=re.DOTALL)
     lines = md_text.split("\n")
 
     # メタデータ（先頭に）
