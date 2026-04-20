@@ -2117,10 +2117,10 @@ def _render_block_a(
 
 def _compute_weekend_forecast(
     ward: str, mode: str,
-    daily_df: Optional[pd.DataFrame] = None,
-    detail_df: Optional[pd.DataFrame] = None,
+    daily_df: Optional[Any] = None,
+    detail_df: Optional[Any] = None,
     today: Optional[date] = None,
-) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Block B の予測データを返す。
 
     通常モード: 実データ (daily_df, detail_df) があれば weekend_forecast モジュール
@@ -2137,8 +2137,11 @@ def _compute_weekend_forecast(
         return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
 
     # 通常モード: 実データが揃えば計算、足りなければサンプル
+    # 注: pandas は遅延 import 方針なので、ここでは duck-typing で判定
     has_real = (
-        daily_df is not None and isinstance(daily_df, pd.DataFrame)
+        daily_df is not None
+        and hasattr(daily_df, "columns")
+        and hasattr(daily_df, "__len__")
         and len(daily_df) >= 56  # 少なくとも 8 週間分の履歴
     )
     if not has_real:
@@ -2170,8 +2173,8 @@ def _render_block_b(
     ward: str,
     mode: str,
     patients: List[SamplePatient],
-    daily_df: Optional[pd.DataFrame] = None,
-    detail_df: Optional[pd.DataFrame] = None,
+    daily_df: Optional[Any] = None,
+    detail_df: Optional[Any] = None,
     today: Optional[date] = None,
 ) -> None:
     """ブロック B: 来週末見通し + ステータス内訳.
