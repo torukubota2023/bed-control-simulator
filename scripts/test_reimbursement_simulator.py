@@ -16,6 +16,7 @@ from reimbursement_config import (
     AdditionalFee,
     AdmissionTier,
     CaseMixCell,
+    classify_admission_tier,
     Department,
     POINT_OVER_90_DAYS,
     POINT_TABLE,
@@ -125,6 +126,33 @@ class TestAdmissionTier:
     def test_tier_planned_with_surgery(self):
         case = _make_case(is_emergency=False, has_surgery=True)
         assert case.admission_tier == AdmissionTier.TIER_3
+
+
+class TestClassifyAdmissionTierStandalone:
+    """`classify_admission_tier()` のスタンドアロン判定関数のテスト。"""
+
+    def test_emergency_no_surgery_is_tier1(self):
+        """イ（入院料1）: 緊急・手術なし → TIER_1（最高点）"""
+        assert classify_admission_tier(True, False) == AdmissionTier.TIER_1
+
+    def test_emergency_with_surgery_is_tier2(self):
+        """ロ（入院料2）: 緊急・手術あり → TIER_2"""
+        assert classify_admission_tier(True, True) == AdmissionTier.TIER_2
+
+    def test_planned_no_surgery_is_tier2(self):
+        """ロ（入院料2）: 予定・手術なし → TIER_2"""
+        assert classify_admission_tier(False, False) == AdmissionTier.TIER_2
+
+    def test_planned_with_surgery_is_tier3(self):
+        """ハ（入院料3）: 予定・手術あり → TIER_3（最低点）"""
+        assert classify_admission_tier(False, True) == AdmissionTier.TIER_3
+
+    def test_classify_matches_patient_group(self):
+        """スタンドアロン関数と PatientGroup.admission_tier の結果が一致する。"""
+        for is_emg in (True, False):
+            for has_surg in (True, False):
+                case = _make_case(is_emergency=is_emg, has_surgery=has_surg)
+                assert classify_admission_tier(is_emg, has_surg) == case.admission_tier
 
 
 # ===========================================================================

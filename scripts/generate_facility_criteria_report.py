@@ -412,9 +412,9 @@ def plot_emergency_ratio_trend(rep: FacilityCriteriaReport) -> Path:
         alpha=0.8, label=f"施設基準 {EMERGENCY_THRESHOLD_PCT:.0f}%",
     )
 
-    ax.set_title("月別 救急搬送後患者割合の推移（2025年度実データ）", fontsize=13, color=COLOR_ACCENT)
+    ax.set_title("月別 予定外入院割合の推移（2025年度実データ・2値分類）", fontsize=13, color=COLOR_ACCENT)
     ax.set_xlabel("年月", fontsize=10)
-    ax.set_ylabel("救急搬送後割合 (%)", fontsize=10)
+    ax.set_ylabel("予定外入院割合 (%)", fontsize=10)
     ax.set_ylim(0, 80)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower right", fontsize=9)
@@ -479,7 +479,7 @@ def plot_admission_routes(rep: FacilityCriteriaReport) -> Path:
     emg_pcts.append(rep.routes_overall["emergency_pct"])
     sch_pcts.append(rep.routes_overall["scheduled_pct"])
 
-    ax.barh(wards, emg_pcts, color=COLOR_ACCENT, label="救急搬送")
+    ax.barh(wards, emg_pcts, color=COLOR_ACCENT, label="予定外入院")
     ax.barh(wards, sch_pcts, left=emg_pcts, color=COLOR_MUTED, label="予定入院")
 
     # ラベル
@@ -493,7 +493,7 @@ def plot_admission_routes(rep: FacilityCriteriaReport) -> Path:
         alpha=0.8, label=f"基準 {EMERGENCY_THRESHOLD_PCT:.0f}%",
     )
 
-    ax.set_title("入院経路の内訳（2025年度通年、救急搬送後割合）", fontsize=13, color=COLOR_ACCENT)
+    ax.set_title("入院経路の内訳（2025年度通年、予定外入院割合・2値分類）", fontsize=13, color=COLOR_ACCENT)
     ax.set_xlabel("割合 (%)", fontsize=10)
     ax.set_xlim(0, 100)
     ax.legend(loc="upper right", fontsize=9)
@@ -512,11 +512,11 @@ def plot_admission_routes(rep: FacilityCriteriaReport) -> Path:
 
 
 def _fmt_table_monthly_emergency(df: pd.DataFrame, ward: str) -> str:
-    """月別救急率の markdown 表を作る。"""
+    """月別 予定外入院率の markdown 表を作る。"""
     lines = [
         f"#### {ward} 月別",
         "",
-        "| 年月 | 入院総数 | 救急搬送 | 予定入院 | 月別救急率 | rolling 3ヶ月救急率 |",
+        "| 年月 | 入院総数 | 予定外入院 | 予定入院 | 月別 予定外入院率 | rolling 3ヶ月 予定外入院率 |",
         "|------|----------:|----------:|----------:|-----------:|---------------------:|",
     ]
     for _, row in df.iterrows():
@@ -609,47 +609,57 @@ def build_markdown(rep: FacilityCriteriaReport) -> str:
 
 | 指標 | 制度基準 | 当院実績 | 判定 |
 |------|----------|----------|:----:|
-| 救急搬送後患者割合（5F 通年） | 15% 以上 | **{emg_5f['ratio_pct']:.1f}%** | {'🟢' if emg_5f['meets_target'] else '🔴'} |
-| 救急搬送後患者割合（6F 通年） | 15% 以上 | **{emg_6f['ratio_pct']:.1f}%** | {'🟢' if emg_6f['meets_target'] else '🔴'} |
-| 救急搬送後割合 rolling 3ヶ月（5F、2026-01〜03） | 15% 以上 | **{rolling_5f['rolling_ratio_pct']:.1f}%** | {'🟢' if rolling_5f['meets_target'] else '🔴'} |
-| 救急搬送後割合 rolling 3ヶ月（6F、2026-01〜03） | 15% 以上 | **{rolling_6f['rolling_ratio_pct']:.1f}%** | {'🟢' if rolling_6f['meets_target'] else '🔴'} |
+| **予定外入院割合※**（5F 通年） | ─（参考値） | **{emg_5f['ratio_pct']:.1f}%** | ─ |
+| **予定外入院割合※**（6F 通年） | ─（参考値） | **{emg_6f['ratio_pct']:.1f}%** | ─ |
+| **予定外入院割合※** rolling 3ヶ月（5F、2026-01〜03） | ─（参考値） | **{rolling_5f['rolling_ratio_pct']:.1f}%** | ─ |
+| **予定外入院割合※** rolling 3ヶ月（6F、2026-01〜03） | ─（参考値） | **{rolling_6f['rolling_ratio_pct']:.1f}%** | ─ |
 | 85歳以上患者割合（5F+6F 通年） | 20% 以上で LOS 緩和 | **{eld['elderly_85_pct']:.1f}%** | {'🟢' if elderly_safe else '🔴'} |
 | 平均在院日数 5F（推定） | 20 日以下（緩和時 21 日）※2026-06-01 以降本則 | **{los_5f_avg:.1f} 日** | {'🟢' if los_5f_avg <= los_threshold else '🟡'} |
 | 平均在院日数 6F（推定） | 20 日以下（緩和時 21 日）※2026-06-01 以降本則 | **{los_6f_avg:.1f} 日** | {'🟢' if los_6f_avg <= los_threshold else '🟡'} |
 
+> **※ 重要な注記:** 2025FY 事務データの `admission_route` は **「当日(予定外/緊急) / 予定」の 2 値のみ** で、制度上の「救急搬送後」（救急車搬送 + 下り搬送）と **同一ではない**。`emergency` ラベルには、外来紹介・連携室・ウォークインも含まれる。したがって本表の 53.1% / 61.1% は **予定外入院割合** であり、**制度上の「救急搬送後患者割合（15% 以上）」の直接判定には使えない**。
+>
+> 制度基準の厳密判定には、入院経路の 5 区分（救急 / 下り搬送 / 外来紹介 / 連携室 / ウォークイン）での再分類が必要。事務への再エクスポート依頼および 2026-04 以降の新規入院データでの詳細入力実装にて、別途精査中。
+
 ### 結論（2026-06-01 本則完全適用時の安全性判断）
 
-**{overall_emoji} {overall_verdict}**
+**🟢 LOS・高齢者割合は問題なし / 救急搬送後割合は精査中**
 
-- **救急搬送後 15%** — 5F **{emg_5f['ratio_pct']:.1f}%** / 6F **{emg_6f['ratio_pct']:.1f}%** で基準の約 {emg_5f['ratio_pct']/EMERGENCY_THRESHOLD_PCT:.1f}〜{emg_6f['ratio_pct']/EMERGENCY_THRESHOLD_PCT:.1f} 倍 → 余裕で達成
+- **予定外入院割合** — 5F {emg_5f['ratio_pct']:.1f}% / 6F {emg_6f['ratio_pct']:.1f}%（2 値分類の粗い指標）。制度上の「救急搬送後（15% 以上）」に厳密相当する値は **現データからは算出できない**（再分類後に確定）
 - **85歳以上 20%** — 通年 **{eld['elderly_85_pct']:.1f}%**（閾値 +{eld['elderly_85_pct']-ELDERLY_85_THRESHOLD_PCT:.1f}pt）→ **LOS +1日緩和（20日 → 21日）の条件クリア**
 - **平均在院日数（2026-06-01 以降: 20 日、緩和時 21 日）** — 推定 5F {los_5f_avg:.1f} 日 / 6F {los_6f_avg:.1f} 日（稼働率 90% 仮定での近似値、退院データ不在のため実績確認推奨）
 - 注: 〜2026-05-31 の経過措置期間は現行ルール（21 日 / 緩和 22 日）が適用
 
 ---
 
-## 1. 救急搬送後患者割合
+## 1. 予定外入院割合（制度上の「救急搬送後患者割合」の参考値）
 
-### 制度基準（2026-06-01 以降）
+### ⚠️ データ粒度の制約
+
+2025FY の事務データ（`data/admissions_consolidated.csv`）における `admission_type` は **「当日(予定外/緊急) / 予定」の 2 値のみ**。これを `actual_admissions_2025fy.csv` では便宜的に `emergency / scheduled` としてラベリングしている。
+
+**制度上の「救急搬送後」は救急車搬送 + 下り搬送の 2 経路のみ** を指す狭義の定義。一方、本データの `emergency` ラベルは **予定入院ではない全入院** を含むため、外来紹介・連携室・ウォークインが混入している。したがって本章の数値は **予定外入院割合** として読み、制度基準 15% の厳密な達成判定には使用しない。
+
+### 制度基準（2026-06-01 以降、参考情報）
 
 - 地域包括医療病棟の入院患者について、**救急搬送後入院の割合が 15% 以上**
 - 判定期間: **rolling 3 ヶ月**（2026-06-01 以降の本則）
 - 病棟別: **5F / 6F 各病棟単体で判定**
 - 分母: **短手3 を含む**（最初からカウント、除外しない）
 
-### 通年実績
+### 通年 予定外入院割合
 
-| 病棟 | 総入院数 | 救急搬送 | 通年救急率 | 基準との差 |
-|------|----------:|----------:|-----------:|-----------:|
-| 5F | {emg_5f['total']} | {emg_5f['emergency']} | **{emg_5f['ratio_pct']:.2f}%** | +{emg_5f['gap_to_target_pt']:.2f}pt |
-| 6F | {emg_6f['total']} | {emg_6f['emergency']} | **{emg_6f['ratio_pct']:.2f}%** | +{emg_6f['gap_to_target_pt']:.2f}pt |
+| 病棟 | 総入院数 | 予定外入院 | 通年 予定外入院率 |
+|------|----------:|-----------:|-----------------:|
+| 5F | {emg_5f['total']} | {emg_5f['emergency']} | **{emg_5f['ratio_pct']:.2f}%** |
+| 6F | {emg_6f['total']} | {emg_6f['emergency']} | **{emg_6f['ratio_pct']:.2f}%** |
 
-### rolling 3 ヶ月の最終値（2026-06-01 本則適用時と同じ計算方法）
+### rolling 3 ヶ月の最終値
 
-| 病棟 | rolling 期間 | 合算入院数 | 合算救急数 | rolling 救急率 | 判定 |
-|------|--------------|------------:|------------:|----------------:|:----:|
-| 5F | 〜{rolling_5f['year_month']} | {rolling_5f['rolling_total']} | {rolling_5f['rolling_emergency']} | **{rolling_5f['rolling_ratio_pct']:.2f}%** | {'🟢 達成' if rolling_5f['meets_target'] else '🔴 未達'} |
-| 6F | 〜{rolling_6f['year_month']} | {rolling_6f['rolling_total']} | {rolling_6f['rolling_emergency']} | **{rolling_6f['rolling_ratio_pct']:.2f}%** | {'🟢 達成' if rolling_6f['meets_target'] else '🔴 未達'} |
+| 病棟 | rolling 期間 | 合算入院数 | 合算予定外数 | rolling 予定外入院率 |
+|------|--------------|------------:|-------------:|-------------------:|
+| 5F | 〜{rolling_5f['year_month']} | {rolling_5f['rolling_total']} | {rolling_5f['rolling_emergency']} | **{rolling_5f['rolling_ratio_pct']:.2f}%** |
+| 6F | 〜{rolling_6f['year_month']} | {rolling_6f['rolling_total']} | {rolling_6f['rolling_emergency']} | **{rolling_6f['rolling_ratio_pct']:.2f}%** |
 
 ### 月別データ
 
@@ -659,7 +669,7 @@ def build_markdown(rep: FacilityCriteriaReport) -> str:
 
 ### 可視化
 
-![救急搬送後割合の推移](figures/facility_criteria_emergency_ratio.png)
+![予定外入院割合の推移](figures/facility_criteria_emergency_ratio.png)
 
 ![入院経路内訳](figures/facility_criteria_admission_routes.png)
 
@@ -737,12 +747,13 @@ LOS ≈ (病床数 × 稼働率 × 月日数) / 月入院数
 
 ## 5. 副院長の運用判断に使える観点
 
-### (1) 救急搬送後 15% は大幅達成 — 戦略的余力あり
+### (1) 予定外入院割合は高いが、制度上の「救急搬送後割合」は精査中
 
-- 5F **{emg_5f['ratio_pct']:.1f}%** / 6F **{emg_6f['ratio_pct']:.1f}%** は基準の {emg_5f['ratio_pct']/EMERGENCY_THRESHOLD_PCT:.1f}〜{emg_6f['ratio_pct']/EMERGENCY_THRESHOLD_PCT:.1f} 倍
-- → **短手3（予定入院）を増やす余地**は制度上十分にある
-- 副院長校正値: 月間短手3 約 22 名（うち Day 6 超過は約 1 名/月、4.5%）
-- Day 6 超過患者も 8 日以内で退院しており、LOS 階段関数（短手3 Day 5 境界）の影響は限定的
+- 予定外入院率 5F **{emg_5f['ratio_pct']:.1f}%** / 6F **{emg_6f['ratio_pct']:.1f}%**（2 値分類の粗い指標）
+- 制度上の「救急搬送後（救急車搬送+下り搬送）」に限定した値は現データからは算出できない
+- 2026FY デモデータの経路内訳から推定すると、予定外入院のうち「救急搬送後」に該当するのは 6 割前後 → **実値は 30% 前後と推定**（5F・6F とも制度基準 15% はクリア見込み）
+- 厳密値は事務データの再エクスポート後に確定予定
+- 短手3 戦略的増加の余地の判断は、正確な「救急搬送後」値が確定してから再検討
 
 ### (2) 85歳以上割合が高い → LOS 緩和の恩恵を受けられる
 
@@ -847,7 +858,7 @@ def main() -> int:
     print()
     print("主要指標:")
     print(f"  入院総数: {summary['admissions_total']:,} 件")
-    print(f"  救急搬送後割合 5F: {summary['emergency_5f_pct']}% / 6F: {summary['emergency_6f_pct']}%")
+    print(f"  予定外入院割合 5F: {summary['emergency_5f_pct']}% / 6F: {summary['emergency_6f_pct']}%")
     print(f"  rolling 3ヶ月最終 5F: {summary['rolling3_5f_final_pct']}% / 6F: {summary['rolling3_6f_final_pct']}%")
     print(f"  85歳以上割合: {summary['elderly_85_pct']}%")
     print(f"  推定 LOS 5F: {summary['los_5f_estimate']} 日 / 6F: {summary['los_6f_estimate']} 日")

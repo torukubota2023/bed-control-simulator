@@ -73,6 +73,55 @@ POINT_TABLE: dict[tuple[WardType, AdmissionTier], int] = {
 POINT_OVER_90_DAYS: int = 988  # 地域一般入院料3相当
 
 
+# ---------------------------------------------------------------------------
+# 入院料区分（イ/ロ/ハ）判定 — 令和8年度改定
+# ---------------------------------------------------------------------------
+
+def classify_admission_tier(
+    is_emergency: bool, has_surgery: bool
+) -> AdmissionTier:
+    """入院形態と手術有無から入院料区分（イ/ロ/ハ）を判定する。
+
+    令和 8 年度診療報酬改定の地域包括医療病棟入院料 1/2 における
+    「入院料1（イ）/ 入院料2（ロ）/ 入院料3（ハ）」の判定条件:
+
+    +------------+---------------+----------------+
+    | 入院形態   | 主傷病に対する手術  | 区分          |
+    +------------+---------------+----------------+
+    | 緊急入院   | なし          | イ（入院料1） |
+    | 緊急入院   | あり          | ロ（入院料2） |
+    | 予定入院   | なし          | ロ（入院料2） |
+    | 予定入院   | あり          | ハ（入院料3） |
+    +------------+---------------+----------------+
+
+    ※ 手術は医科点数表 第二章第十部第一節に掲げるものに限る。
+
+    この関数は ``PatientGroup`` を構築せずに、生の
+    ``(is_emergency, has_surgery)`` フラグから区分だけを取り出したい
+    ケース（データ入力フォーム・レポート生成・集計スクリプト等）で
+    使用することを想定している。
+
+    Args:
+        is_emergency: 緊急入院（救急搬送後）かどうか。True なら緊急、False なら予定。
+        has_surgery: 主傷病に対して手術を行ったかどうか。
+
+    Returns:
+        AdmissionTier: TIER_1 / TIER_2 / TIER_3 のいずれか。
+
+    Examples:
+        >>> classify_admission_tier(True, False)
+        <AdmissionTier.TIER_1: '入院料1'>
+        >>> classify_admission_tier(False, True)
+        <AdmissionTier.TIER_3: '入院料3'>
+    """
+    if is_emergency and not has_surgery:
+        return AdmissionTier.TIER_1  # イ: 緊急・手術なし
+    if not is_emergency and has_surgery:
+        return AdmissionTier.TIER_3  # ハ: 予定・手術あり
+    # ロ: 緊急・手術あり or 予定・手術なし
+    return AdmissionTier.TIER_2
+
+
 # ===========================================================================
 # 加算定義
 # ===========================================================================
