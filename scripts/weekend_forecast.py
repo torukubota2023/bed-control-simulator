@@ -312,6 +312,8 @@ def forecast_next_weekend(
                     "vacancy": vacancy_mid,
                     "vacancy_low": vacancy_low,
                     "vacancy_high": vacancy_high,
+                    # float 版の CI 半幅 (丸め前) — UI で常に ±N 床 を見せるため
+                    "vacancy_ci_half": round(ci_half_width, 2),
                     "er_margin": er_margin,
                     "severity": severity,
                     "discharges_input": input_discharges,

@@ -2195,16 +2195,19 @@ def _render_block_b(
         title = f"来週末の見通し（{ward}・サンプル表示）"
 
     def _fmt_row(row: Dict[str, Any]) -> str:
-        """1 行分の HTML を返す。±バンドがあれば併記する。"""
+        """1 行分の HTML を返す。±バンドを常に併記する (実データ計算時のみ)。"""
         day = row["day"]
         vac = row["vacancy"]
         sev = row["severity"]
         er = row["er_margin"]
-        # ±バンド (実データ計算時のみ)
-        low = row.get("vacancy_low")
-        high = row.get("vacancy_high")
-        if low is not None and high is not None and high > low:
-            band = f'<span style="color:#888;font-size:11px;margin-left:4px;">[{low}〜{high}]</span>'
+        # ±バンド: float 版の CI 半幅を使用（丸め前の生値で信頼性を表現）
+        ci_half = row.get("vacancy_ci_half")
+        if ci_half is not None:
+            # ±N 床 常に表示（±0 でも「確信度高い」の意味で表示する）
+            band = (
+                f'<span style="color:#888;font-size:11px;margin-left:6px;">'
+                f'±{ci_half:.1f}床</span>'
+            )
         else:
             band = ""
         return (
@@ -2236,7 +2239,7 @@ def _render_block_b(
         cost_bg = "#fff3e0"
         cost_fg = "#e65100"
 
-    # 退院予定入力カバレッジ（実データ計算時のみ）
+    # 退院予定入力カバレッジ + 凡例（実データ計算時のみ）
     coverage_html = ""
     if forecast_meta.get("is_real") and forecast_meta.get("coverage_pct") is not None:
         cov = forecast_meta["coverage_pct"]
@@ -2254,6 +2257,10 @@ def _render_block_b(
             f'退院予定入力カバレッジ '
             f'<span style="color:{cov_color};font-weight:600;">{cov:.0f}%</span> '
             f'<span style="color:#888;">({cov_label})</span>'
+            f'</div>'
+            f'<div style="font-size:10px;color:#999;margin-top:2px;line-height:1.4;">'
+            f'※ 各日 "±N 床" は 80% 信頼区間（過去の同曜日の揺らぎから算出）。'
+            f'±0 は実質的なブレなし（確信度高）、±1〜2 は通常、±3+ は大きいブレ。'
             f'</div>'
         )
 
