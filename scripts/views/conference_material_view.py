@@ -1088,6 +1088,18 @@ def _inject_css() -> None:
                 transparent 60%
             );
         }
+        /* 退院ヒートマップからのハイライト（2026-04-21 新規） */
+        .conf-patient-row-discharge-highlight {
+            border-left: 4px solid #F59E0B !important;
+            padding-left: 6px !important;
+            background: linear-gradient(
+                90deg,
+                rgba(245, 158, 11, 0.18) 0%,
+                rgba(245, 158, 11, 0.06) 40%,
+                transparent 70%
+            ) !important;
+            box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+        }
         /* ブロック C ヘッダー統合ラッパー（タイトル + バッジ、重なり回避） */
         .conf-block-c-header-wrap {
             margin-bottom: 10px;
@@ -2608,6 +2620,13 @@ def _render_block_c(
         row_classes = "conf-patient-row"
         if p.patient_id in changed_uuids:
             row_classes += " conf-patient-row-changed"
+        # 退院予定ヒートマップからのハイライト（2026-04-21 新規）
+        try:
+            _hl_ids = st.session_state.get("_discharge_highlight_patient_ids") or []
+        except Exception:
+            _hl_ids = []
+        if p.patient_id in _hl_ids:
+            row_classes += " conf-patient-row-discharge-highlight"
         with row_col1:
             # 2026-04-19: 確認事項は stored を優先表示（stored 空ならサンプル既定値）
             # HTML インジェクション対策として最低限 " エスケープ
@@ -3163,6 +3182,243 @@ def _aggregate_status_changes(
     return agg
 
 
+def _render_discharge_heatmap_expander(
+    patients: List[SamplePatient],
+    today: date,
+    banner: Optional[Dict[str, Any]] = None,
+) -> None:
+    """🗓 退院予定ヒートマップ エクスパンダーを描画する。
+
+    副院長決定 2026-04-21:
+      - 折りたたみ式で常時表示せず、議論したいときに開く
+      - 表示期間: 14 日先まで（連休があれば連休末まで、最大 21 日）
+      - 各日マス: 全退院件数（大）/ うち C 群 N（小字）
+      - 色判定: 全退院件数（0/1-3/4/5+ → 灰/緑/橙/赤）
+      - 日付をクリックすると、その日の C 群患者 ID が
+        `st.session_state["_discharge_highlight_patient_ids"]` に格納され、
+        次の rerun で Block C が該当行を黄色ハイライトする。
+
+    Args:
+        patients: 在院患者リスト
+        today: 基準日
+        banner: get_holiday_mode_banner の戻り値（連休延長判定用）
+    """
+    try:
+        from discharge_heatmap import compute_discharge_heatmap_from_patients
+    except Exception as e:
+        st.caption(f"退院予定ヒートマップを初期化できませんでした: {e}")
+        return
+
+    # 連休期間を banner から取得（あれば期間延長）
+    holiday_start = banner.get("holiday_start") if banner else None
+    holiday_end = banner.get("holiday_end") if banner else None
+
+    heatmap = compute_discharge_heatmap_from_patients(
+        patients, today,
+        holiday_start=holiday_start,
+        holiday_end=holiday_end,
+    )
+    cells = heatmap["cells"]
+
+    # サマリーラベル（折りたたみ見出しに出す）
+    n_concentrated = len(heatmap["concentrated_days"])
+    n_warning = len(heatmap["warning_days"])
+    summary_parts = [f"{heatmap['total_days']}日先まで"]
+    if n_concentrated > 0:
+        summary_parts.append(f"🔴 集中日 {n_concentrated} 日")
+    elif n_warning > 0:
+        summary_parts.append(f"🟡 注意日 {n_warning} 日")
+    else:
+        summary_parts.append("🟢 集中なし")
+    summary_parts.append(f"計 {heatmap['grand_total']}名退院予定（うち C 群 {heatmap['grand_c_group']}名）")
+    header_label = f"🗓 退院予定ヒートマップ — {' ・ '.join(summary_parts)}"
+
+    with st.expander(header_label, expanded=False):
+        st.caption(
+            "今後の退院予定を日別に並べ、**集中（🔴 5+）・注意（🟡 4）・適正（🟢 1-3）・"
+            "空白（⚪ 0、稼働率リスク）** を一目で可視化。"
+            "大きい数字 = 全退院件数、小字 = うち C 群（LOS ≥ 15 日、カンファで動かせる対象）。"
+        )
+
+        # 集中日バナー（あれば）
+        if heatmap["concentrated_days"]:
+            banners = "、".join(
+                f"{d['date'][5:]} ({d['dow_label']}) に {d['total']}名（うち C 群 {d['c_group']}名）"
+                for d in heatmap["concentrated_days"]
+            )
+            st.warning(f"⚠️ 集中日: {banners} — 前倒し / 後ろ倒しを議論")
+
+        # 週ごとに横 7 列で並べる
+        _render_heatmap_grid(cells, heatmap["total_days"])
+
+        # 集中日 / 空白日の詳細
+        col1, col2 = st.columns(2)
+        with col1:
+            if heatmap["concentrated_days"] or heatmap["warning_days"]:
+                st.markdown("**🔴🟡 集中 / 注意日の詳細**")
+                for d in heatmap["concentrated_days"] + heatmap["warning_days"]:
+                    st.markdown(
+                        f"- {d['date'][5:]} ({d['dow_label']}): "
+                        f"**{d['total']} 名**退院予定（C 群 {d['c_group']}名）"
+                    )
+            else:
+                st.caption("🟢 集中日・注意日はありません")
+        with col2:
+            weekend_empty = [d for d in heatmap["empty_days"] if d["is_weekend"]]
+            if weekend_empty:
+                st.markdown("**⚪ 週末の退院予定ゼロ（稼働率低下リスク）**")
+                for d in weekend_empty:
+                    st.markdown(f"- {d['date'][5:]} ({d['dow_label']})")
+            else:
+                st.caption("週末の退院予定ゼロ日はありません")
+
+        # C 群患者を選択してハイライト
+        st.markdown("---")
+        st.markdown("**🎯 日付を選んで、Block C で C 群退院予定者をハイライト**")
+        pickable_cells = [c for c in cells if c["c_group"] > 0]
+        if pickable_cells:
+            labels = [
+                f"{c['date'][5:]} ({c['dow_label']}) — C 群 {c['c_group']}名"
+                for c in pickable_cells
+            ]
+            picked = st.selectbox(
+                "ハイライトする日を選択",
+                options=["（選択しない）"] + labels,
+                key="discharge_heatmap_pick",
+            )
+            if picked != "（選択しない）":
+                idx = labels.index(picked)
+                selected_cell = pickable_cells[idx]
+                st.session_state["_discharge_highlight_patient_ids"] = (
+                    selected_cell["c_group_patient_ids"]
+                )
+                st.caption(
+                    f"✨ {selected_cell['date'][5:]} の C 群 "
+                    f"{selected_cell['c_group']}名を Block C でハイライト中。"
+                    "次回の画面更新でリセットされます。"
+                )
+            else:
+                st.session_state.pop("_discharge_highlight_patient_ids", None)
+        else:
+            st.caption("C 群の退院予定者は現在ありません")
+
+
+def _render_heatmap_grid(cells: List[Dict[str, Any]], total_days: int) -> None:
+    """ヒートマップを日別セルの横並びで描画する（7 列 × 複数週）。
+
+    CSS グリッドで 7 列の固定レイアウト。土日はグレー背景、連休は橙の帯。
+    """
+    # 色マップ: severity → 背景・縁
+    severity_styles = {
+        "empty":  ("#f1f3f5", "#ced4da", "#6c757d"),  # 灰
+        "ok":     ("#d4edda", "#c3e6cb", "#155724"),  # 緑
+        "warn":   ("#fff3cd", "#ffeeba", "#856404"),  # 橙
+        "danger": ("#f8d7da", "#f5c6cb", "#721c24"),  # 赤
+    }
+
+    # 最初のセルの曜日でオフセット調整（グリッドの左端を月曜にする）
+    if not cells:
+        st.caption("表示するセルがありません")
+        return
+
+    first_dow = cells[0]["dow"]
+    # 空白セル（オフセット）
+    pad = '<div class="dh-cell dh-pad"></div>' * first_dow
+
+    cell_html_parts = [pad]
+    for c in cells:
+        bg, border, fg = severity_styles.get(c["severity"], severity_styles["empty"])
+        date_md = c["date"][5:]  # "MM-DD"
+        dow_label = c["dow_label"]
+        total = c["total"]
+        c_group = c["c_group"]
+        is_weekend = c.get("is_weekend", False)
+        is_holiday = c.get("is_holiday", False)
+        extra_label = []
+        if is_holiday:
+            extra_label.append("連休")
+        elif is_weekend:
+            extra_label.append("週末")
+        label_suffix = f' <span class="dh-tag">{" / ".join(extra_label)}</span>' if extra_label else ""
+
+        # C 群の小字
+        if c_group > 0:
+            c_line = f'<div class="dh-cgroup">C 群 {c_group}</div>'
+        elif total > 0:
+            c_line = '<div class="dh-cgroup">&nbsp;</div>'
+        else:
+            c_line = '<div class="dh-cgroup">&nbsp;</div>'
+
+        # メイン数字
+        if total == 0:
+            main = '<div class="dh-total dh-zero">—</div>'
+        else:
+            main = f'<div class="dh-total">{total}</div>'
+
+        cell_html_parts.append(
+            f'<div class="dh-cell" style="background:{bg};border-color:{border};color:{fg};">'
+            f'  <div class="dh-date">{date_md} ({dow_label}){label_suffix}</div>'
+            f'  {main}{c_line}'
+            f'</div>'
+        )
+
+    grid_html = f"""
+    <style>
+    .dh-grid {{
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+        margin: 8px 0;
+    }}
+    .dh-cell {{
+        padding: 6px 4px;
+        border: 1px solid;
+        border-radius: 4px;
+        text-align: center;
+        min-height: 62px;
+    }}
+    .dh-pad {{
+        background: transparent;
+        border: none;
+    }}
+    .dh-date {{
+        font-size: 10px;
+        font-weight: 600;
+        margin-bottom: 2px;
+    }}
+    .dh-tag {{
+        font-size: 9px;
+        color: #888;
+        font-weight: 400;
+    }}
+    .dh-total {{
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.1;
+    }}
+    .dh-zero {{
+        font-size: 14px;
+        color: #aaa;
+    }}
+    .dh-cgroup {{
+        font-size: 10px;
+        color: #555;
+        margin-top: 2px;
+    }}
+    </style>
+    <div class="dh-grid">
+      <div class="dh-header" style="grid-column: 1 / span 7;
+          display:grid;grid-template-columns:repeat(7, 1fr);
+          font-size:10px;color:#888;text-align:center;">
+        <div>月</div><div>火</div><div>水</div><div>木</div>
+        <div>金</div><div>土</div><div>日</div>
+      </div>
+      {"".join(cell_html_parts)}
+    </div>
+    """
+    st.markdown(grid_html, unsafe_allow_html=True)
+
+
 def _render_weekly_history_expander(
     patients: List[SamplePatient],
     today: date,
@@ -3522,6 +3778,13 @@ def render_conference_material_view(
     # --- ブロック D: 職種別 今週のお願い ---
     # 2026-04-18 圧縮: 不要な &nbsp; 余白を削除（縦 26px 削減）
     _render_block_d(patients, mode)
+
+    # --- 🗓 退院予定ヒートマップ（2026-04-21 新規） ---
+    # 副院長決定: カンファで「退院集中と空白」を一目で見るための視覚化。
+    # 折りたたみ式で常時表示せず、議論したいときに開く。
+    # クリック / 選択した日の C 群患者 ID を session_state に積み、
+    # 次の rerun で Block C が該当行をハイライトする。
+    _render_discharge_heatmap_expander(patients, _today, banner)
 
     # --- 📈 週次カンファ履歴エクスパンダー（エビデンスバー直上） ---
     # 2026-04-18 新規: 先週からの変化・停滞警告・要議論リストを可視化
