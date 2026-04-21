@@ -6,7 +6,7 @@
     その判断のレバー (= カンファで決める退院計画) と結果指標 (= 来週末の
     空床予測) が同じ画面に出ていることを保証する。
 
-設計方針 (副院長決定 2026-04-20):
+設計方針 (副院長決定 2026-04-20 / 21):
     1. 対象期間は「今週末」ではなく「**来週の金・土・日**」。
        今週末はカンファ時点で既に退院予定が確定しており、議論で動かせない。
     2. 退院予測は「**同曜日 × 過去 8 週間平均**」をベースに、
@@ -15,8 +15,12 @@
     3. 入院予測は同曜日 × 過去 8 週間平均 (退院と同じ)。
     4. 救急余力 = 予測空床 − 同曜日の過去 12 週間平均救急搬送件数。
     5. 誤差を隠さず **80% 信頼区間 (±バンド)** を UI に渡す。
-    6. 退院予定入力カバレッジ % を返して「入力が薄い週は幅広めに見る」
-       判断を副院長側で可能にする。
+    6. **カバレッジ % は廃止** (2026-04-21 副院長決定)。
+       理由: 分母 (未来の全体退院数) が予測値であり、循環参照になる。
+       代わりに素直な **「入力数 / 曜日平均数」の 2 数値比較** と、
+       **予測稼働率の極端な低下警告** を返す。
+    7. 各日の **予測稼働率** を算出し、70% 未満の日を「低稼働警告」
+       として UI に渡す (週末・連休での稼働率落ち込みを事前に検知)。
 
 バックテスト精度 (2026FY デモデータ、43 週分):
     5F 来週末 3 日合計: MAE 1.35 人 (18% of 平均 7.4 人)
@@ -47,6 +51,14 @@ CI80_SIGMA_MULTIPLIER: float = 1.28
 
 # 制度上「救急搬送後」に該当するルート
 EMERGENCY_ROUTES: Tuple[str, ...] = ("救急", "下り搬送")
+
+# 予測稼働率の極端な低下を警告する閾値 (%)
+LOW_OCCUPANCY_WARN_THRESHOLD: float = 80.0    # 80% 未満で「注意」
+LOW_OCCUPANCY_DANGER_THRESHOLD: float = 70.0  # 70% 未満で「極端に低い」
+
+# 入力数 vs 曜日平均 の判定閾値
+# 入力数 ≥ 曜日平均 × この係数 なら "平均並"
+DISCHARGE_INPUT_ADEQUATE_RATIO: float = 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -249,14 +261,14 @@ def forecast_next_weekend(
     fri, sat, sun = next_week_weekend(td)
     target_days = [(fri, "金"), (sat, "土"), (sun, "日")]
 
-    # 現在の空床
+    # 現在の在院患者数と空床
     current_empty = _current_empty_beds(daily_df, ward, ward_beds)
+    current_patients = max(ward_beds - current_empty, 0)
 
     # 各日の予測を計算
     rows: List[Dict[str, Any]] = []
     cumulative_vacancy = float(current_empty)
     cumulative_var = 0.0  # 分散の累積 (独立仮定で加算)
-    discharges_input_sum = 0
     target_dates: List[str] = []
 
     # 対象日ごとに中間日 (今日～対象日まで) の退院・入院も累積する
@@ -298,13 +310,35 @@ def forecast_next_weekend(
                 vacancy_high = int(round(cumulative_vacancy + ci_half_width))
                 er_margin = int(round(cumulative_vacancy - expected_emergency))
 
-                # severity 判定
+                # severity 判定 (救急余力ベース)
                 if er_margin >= 1:
                     severity = "ok"
                 elif er_margin == 0:
                     severity = "warn"
                 else:
                     severity = "danger"
+
+                # --- 予測稼働率 (2026-04-21 新規) ---
+                predicted_patients = max(ward_beds - vacancy_mid, 0)
+                occupancy_pct = (predicted_patients / ward_beds * 100.0) if ward_beds > 0 else 0.0
+                if occupancy_pct < LOW_OCCUPANCY_DANGER_THRESHOLD:
+                    occupancy_severity = "danger"
+                elif occupancy_pct < LOW_OCCUPANCY_WARN_THRESHOLD:
+                    occupancy_severity = "warn"
+                else:
+                    occupancy_severity = "ok"
+
+                # --- 退院予定入力 vs 曜日平均 判定 (2026-04-21 新規) ---
+                if predicted_discharges > 0:
+                    ratio = input_discharges / predicted_discharges
+                else:
+                    ratio = 1.0 if input_discharges > 0 else 0.0
+                if input_discharges == 0 and predicted_discharges > 0:
+                    input_vs_avg = "未入力"
+                elif ratio >= DISCHARGE_INPUT_ADEQUATE_RATIO:
+                    input_vs_avg = "平均並"
+                else:
+                    input_vs_avg = "薄い"
 
                 rows.append({
                     "day": label,
@@ -320,16 +354,14 @@ def forecast_next_weekend(
                     "discharges_predicted": round(predicted_discharges, 2),
                     "admissions_predicted": round(predicted_admissions, 2),
                     "expected_emergency": round(expected_emergency, 2),
+                    # 2026-04-21 新規フィールド
+                    "occupancy_pct": round(occupancy_pct, 1),
+                    "occupancy_severity": occupancy_severity,
+                    "input_vs_avg": input_vs_avg,
                 })
-                if input_discharges > 0:
-                    discharges_input_sum += 1
-
                 target_dates.append(target_date.isoformat())
             d += timedelta(days=1)
         prev_day = target_date
-
-    # カバレッジ = 入力のあった対象日数 / 対象日数
-    coverage_pct = (discharges_input_sum / len(target_days) * 100.0) if target_days else 0.0
 
     total_vacancy = sum(r["vacancy"] for r in rows)
     # 不確実性合計: 各日の半幅を平方和で合成
@@ -337,11 +369,31 @@ def forecast_next_weekend(
         max(r["vacancy_high"] - r["vacancy"], 1) for r in rows
     ) ** 0.5))
 
+    # 低稼働警告日の抽出 (2026-04-21 新規)
+    low_occupancy_days = [
+        {
+            "date": r["date"],
+            "day": r["day"],
+            "occupancy_pct": r["occupancy_pct"],
+            "severity": r["occupancy_severity"],
+        }
+        for r in rows
+        if r["occupancy_severity"] in ("warn", "danger")
+    ]
+    # 入力薄い日の抽出
+    sparse_input_days = [
+        {"date": r["date"], "day": r["day"],
+         "input": r["discharges_input"], "avg": r["discharges_predicted"]}
+        for r in rows
+        if r["input_vs_avg"] in ("薄い", "未入力")
+    ]
+
     return {
         "rows": rows,
-        "coverage_pct": round(coverage_pct, 1),
         "total_vacancy_bed_days": total_vacancy,
         "uncertainty_bed_days": total_uncertainty,
+        "low_occupancy_days": low_occupancy_days,
+        "sparse_input_days": sparse_input_days,
         "ward": ward,
         "target_dates": target_dates,
         "is_proxy": True,

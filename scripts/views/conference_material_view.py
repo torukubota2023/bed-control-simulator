@@ -2141,15 +2141,21 @@ def _compute_weekend_forecast(
 
     Returns:
         (forecast_rows, meta) のタプル。
-        meta には coverage_pct, total_uncertainty, is_real などを含む。
+        meta には is_real, total_uncertainty, low_occupancy_days,
+        sparse_input_days を含む (2026-04-21 以降 coverage_pct は廃止)。
     """
+    _default_meta = {
+        "is_real": False,
+        "total_uncertainty": 0,
+        "low_occupancy_days": [],
+        "sparse_input_days": [],
+    }
     # 連休対策モードはサンプル固定
     if mode == "holiday":
         rows = _sample_weekend_forecast(ward, mode)
-        return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
+        return rows, dict(_default_meta)
 
     # 通常モード: 実データが揃えば計算、足りなければサンプル
-    # 注: pandas は遅延 import 方針なので、ここでは duck-typing で判定
     has_real = (
         daily_df is not None
         and hasattr(daily_df, "columns")
@@ -2158,7 +2164,7 @@ def _compute_weekend_forecast(
     )
     if not has_real:
         rows = _sample_weekend_forecast(ward, mode)
-        return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
+        return rows, dict(_default_meta)
 
     try:
         from weekend_forecast import forecast_next_weekend as _fcast
@@ -2172,13 +2178,14 @@ def _compute_weekend_forecast(
         rows = result["rows"]
         return rows, {
             "is_real": True,
-            "coverage_pct": result["coverage_pct"],
             "total_uncertainty": result["uncertainty_bed_days"],
+            "low_occupancy_days": result.get("low_occupancy_days", []),
+            "sparse_input_days": result.get("sparse_input_days", []),
             "target_dates": result.get("target_dates", []),
         }
     except Exception:
         rows = _sample_weekend_forecast(ward, mode)
-        return rows, {"is_real": False, "coverage_pct": None, "total_uncertainty": 0}
+        return rows, dict(_default_meta)
 
 
 def _render_block_b(
@@ -2251,28 +2258,110 @@ def _render_block_b(
         cost_bg = "#fff3e0"
         cost_fg = "#e65100"
 
-    # 退院予定入力カバレッジ + 凡例（実データ計算時のみ）
+    # 入力状況 (実数 vs 曜日平均) + 稼働率予測 (実データ計算時のみ)
+    # 副院長決定 2026-04-21: カバレッジ % は循環参照で意味がないため廃止。
+    # 代わりに「入力数 vs 曜日平均」と「予測稼働率の極端な低下警告」を表示。
     coverage_html = ""
-    if forecast_meta.get("is_real") and forecast_meta.get("coverage_pct") is not None:
-        cov = forecast_meta["coverage_pct"]
-        if cov >= 66.7:
-            cov_color = "#10B981"  # success green
-            cov_label = "精度高"
-        elif cov >= 33.3:
-            cov_color = "#F59E0B"  # warning orange
-            cov_label = "精度中"
-        else:
-            cov_color = "#DC2626"  # danger red
-            cov_label = "曜日平均で補完"
+    if forecast_meta.get("is_real"):
+        # ① 退院予定入力 vs 曜日平均 (3 日分の小テーブル)
+        input_rows_html = ""
+        for r in forecast:
+            d = r.get("day", "")
+            inp = int(r.get("discharges_input", 0) or 0)
+            avg = float(r.get("discharges_predicted", 0.0) or 0.0)
+            vs = r.get("input_vs_avg", "")
+            if vs == "平均並":
+                vs_color, vs_label = "#10B981", "🟢 平均並"
+            elif vs == "薄い":
+                vs_color, vs_label = "#F59E0B", "🟡 薄い"
+            elif vs == "未入力":
+                vs_color, vs_label = "#DC2626", "🔴 未入力"
+            else:
+                vs_color, vs_label = "#6B7280", "—"
+            input_rows_html += (
+                f'<tr>'
+                f'<td style="padding:2px 6px;">{d}</td>'
+                f'<td style="padding:2px 6px;text-align:right;">{inp}名</td>'
+                f'<td style="padding:2px 6px;text-align:right;color:#888;">{avg:.1f}名</td>'
+                f'<td style="padding:2px 6px;color:{vs_color};font-weight:600;">{vs_label}</td>'
+                f'</tr>'
+            )
+        # ② 予測稼働率
+        occ_rows_html = ""
+        for r in forecast:
+            d = r.get("day", "")
+            occ = float(r.get("occupancy_pct", 0.0) or 0.0)
+            sev = r.get("occupancy_severity", "ok")
+            if sev == "danger":
+                occ_color, occ_label = "#DC2626", "🔴 極端に低い"
+            elif sev == "warn":
+                occ_color, occ_label = "#F59E0B", "🟡 低下気味"
+            else:
+                occ_color, occ_label = "#10B981", "🟢 正常範囲"
+            occ_rows_html += (
+                f'<tr>'
+                f'<td style="padding:2px 6px;">{d}</td>'
+                f'<td style="padding:2px 6px;text-align:right;font-weight:600;color:{occ_color};">'
+                f'{occ:.0f}%</td>'
+                f'<td style="padding:2px 6px;color:{occ_color};">{occ_label}</td>'
+                f'</tr>'
+            )
+        # 低稼働警告バナー
+        low_days = forecast_meta.get("low_occupancy_days", [])
+        low_banner = ""
+        if low_days:
+            low_list = "、".join(
+                f"{d['day']}曜 {d['occupancy_pct']:.0f}%" for d in low_days
+            )
+            low_banner = (
+                f'<div style="font-size:11px;color:#856404;background:#fff3cd;'
+                f'padding:4px 6px;border-radius:3px;margin-top:4px;">'
+                f'⚠️ 稼働率が目標 90% を大きく下回る見込み: {low_list} '
+                f'— 退院を前倒しせず平準化するか、緊急入院の受入でバランス'
+                f'</div>'
+            )
+        # 入力薄い日バナー
+        sparse_days = forecast_meta.get("sparse_input_days", [])
+        sparse_banner = ""
+        if sparse_days:
+            sparse_list = "、".join(
+                f"{d['day']}曜 (入力{d['input']} / 平均{d['avg']:.1f})"
+                for d in sparse_days
+            )
+            sparse_banner = (
+                f'<div style="font-size:11px;color:#4a5568;background:#f7fafc;'
+                f'padding:4px 6px;border-radius:3px;margin-top:4px;">'
+                f'📝 退院予定入力が薄い日: {sparse_list} — 曜日平均で補完中'
+                f'</div>'
+            )
         coverage_html = (
-            f'<div style="font-size:11px;color:#666;margin-top:6px;">'
-            f'退院予定入力カバレッジ '
-            f'<span style="color:{cov_color};font-weight:600;">{cov:.0f}%</span> '
-            f'<span style="color:#888;">({cov_label})</span>'
+            f'<div style="margin-top:8px;font-size:11px;color:#555;">'
+            f'<div style="font-weight:600;margin-bottom:3px;">'
+            f'📝 退院予定 入力状況（vs 過去 8 週同曜日平均）</div>'
+            f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
+            f'<thead><tr style="background:#f1f3f5;color:#555;">'
+            f'<th style="padding:2px 6px;text-align:left;">曜日</th>'
+            f'<th style="padding:2px 6px;text-align:right;">入力</th>'
+            f'<th style="padding:2px 6px;text-align:right;">平均</th>'
+            f'<th style="padding:2px 6px;text-align:left;">判定</th>'
+            f'</tr></thead>'
+            f'<tbody>{input_rows_html}</tbody></table>'
+            f'{sparse_banner}'
+            f'<div style="font-weight:600;margin-top:8px;margin-bottom:3px;">'
+            f'📊 予測稼働率（目標 90%）</div>'
+            f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
+            f'<thead><tr style="background:#f1f3f5;color:#555;">'
+            f'<th style="padding:2px 6px;text-align:left;">曜日</th>'
+            f'<th style="padding:2px 6px;text-align:right;">稼働率</th>'
+            f'<th style="padding:2px 6px;text-align:left;">判定</th>'
+            f'</tr></thead>'
+            f'<tbody>{occ_rows_html}</tbody></table>'
+            f'{low_banner}'
+            f'<div style="font-size:10px;color:#999;margin-top:6px;line-height:1.4;">'
+            f'※ 各日 "±N 床" は 80% 信頼区間。'
+            f'平均は過去 8 週の同曜日実績。'
+            f'稼働率 70% 未満は「極端に低い」、80% 未満は「低下気味」。'
             f'</div>'
-            f'<div style="font-size:10px;color:#999;margin-top:2px;line-height:1.4;">'
-            f'※ 各日 "±N 床" は 80% 信頼区間（過去の同曜日の揺らぎから算出）。'
-            f'±0 は実質的なブレなし（確信度高）、±1〜2 は通常、±3+ は大きいブレ。'
             f'</div>'
         )
 

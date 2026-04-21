@@ -158,34 +158,79 @@ class TestForecastNextWeekend:
         # 金曜の空床は入力があるほうがずっと多くなる (退院 10 名分前倒し反映)
         assert result_with_detail["rows"][0]["vacancy"] > result_no_detail["rows"][0]["vacancy"]
         # 入力カバレッジ: 1/3 = 33.3%
-        assert abs(result_with_detail["coverage_pct"] - 33.3) < 1.0
+        # coverage_pct は 2026-04-21 廃止済み
+        assert "coverage_pct" not in result_with_detail
         # 金曜の discharges_input は 10 として記録される
         assert result_with_detail["rows"][0]["discharges_input"] == 10
 
-    def test_coverage_pct_when_all_days_have_input(self):
-        """3 日すべてに退院予定入力があればカバレッジ 100%。"""
-        today = date(2026, 4, 23)
-        history = _make_daily_history(
-            date(2026, 1, 1), today, "5F",
-            daily_admissions=2.0, daily_discharges=2.0, total_patients=40,
-        )
-        detail = _make_detail_df([
-            {"date": "2026-05-01", "ward": "5F", "event_type": "discharge", "route": None},
-            {"date": "2026-05-02", "ward": "5F", "event_type": "discharge", "route": None},
-            {"date": "2026-05-03", "ward": "5F", "event_type": "discharge", "route": None},
-        ])
-        result = forecast_next_weekend(history, detail_df=detail, ward="5F", today=today)
-        assert result["coverage_pct"] == 100.0
-
-    def test_coverage_pct_when_no_input(self):
-        """入力が 0 件ならカバレッジ 0%。"""
+    def test_coverage_pct_field_is_removed(self):
+        """coverage_pct は 2026-04-21 廃止された (分母が循環参照で意味なし)。"""
         today = date(2026, 4, 23)
         history = _make_daily_history(
             date(2026, 1, 1), today, "5F",
             daily_admissions=2.0, daily_discharges=2.0, total_patients=40,
         )
         result = forecast_next_weekend(history, detail_df=None, ward="5F", today=today)
-        assert result["coverage_pct"] == 0.0
+        assert "coverage_pct" not in result
+
+    def test_input_vs_avg_when_all_input(self):
+        """3 日すべて平均を上回る入力があれば input_vs_avg="平均並"。"""
+        today = date(2026, 4, 23)
+        history = _make_daily_history(
+            date(2026, 1, 1), today, "5F",
+            daily_admissions=2.0, daily_discharges=2.0, total_patients=40,
+        )
+        # 各日 5 件の退院入力 (曜日平均 2 件を大きく上回る)
+        detail = _make_detail_df([
+            {"date": d, "ward": "5F", "event_type": "discharge", "route": None}
+            for d in ["2026-05-01"] * 5 + ["2026-05-02"] * 5 + ["2026-05-03"] * 5
+        ])
+        result = forecast_next_weekend(history, detail_df=detail, ward="5F", today=today)
+        for r in result["rows"]:
+            assert r["input_vs_avg"] == "平均並"
+        assert result["sparse_input_days"] == []
+
+    def test_input_vs_avg_when_no_input(self):
+        """入力ゼロで曜日平均がある → '未入力'。"""
+        today = date(2026, 4, 23)
+        history = _make_daily_history(
+            date(2026, 1, 1), today, "5F",
+            daily_admissions=2.0, daily_discharges=2.0, total_patients=40,
+        )
+        result = forecast_next_weekend(history, detail_df=None, ward="5F", today=today)
+        for r in result["rows"]:
+            # 曜日平均 2 件がある状況で入力 0 → 未入力
+            assert r["input_vs_avg"] == "未入力"
+            assert r["discharges_input"] == 0
+        assert len(result["sparse_input_days"]) == 3
+
+    def test_occupancy_severity_reflects_predicted_vacancy(self):
+        """予測空床が大きい (稼働率低い) 日は severity=warn or danger。"""
+        today = date(2026, 4, 23)
+        # 退院 >>> 入院 で毎日空床が増える → 稼働率低下
+        history = _make_daily_history(
+            date(2026, 1, 1), today, "5F",
+            daily_admissions=1.0, daily_discharges=4.0, total_patients=40,
+        )
+        result = forecast_next_weekend(history, ward="5F", today=today, ward_beds=47)
+        # 稼働率 70% 未満は danger、70-80% は warn、80%+ は ok
+        all_sev = {r["occupancy_severity"] for r in result["rows"]}
+        assert all_sev & {"warn", "danger"}  # 少なくとも 1 日は警告レベル
+        # low_occupancy_days サマリーが埋まる
+        assert len(result["low_occupancy_days"]) >= 1
+
+    def test_occupancy_severity_ok_when_full(self):
+        """ほぼ満床 (空床少) → 稼働率高く ok。"""
+        today = date(2026, 4, 23)
+        # 入院 > 退院 で空床が減る
+        history = _make_daily_history(
+            date(2026, 1, 1), today, "5F",
+            daily_admissions=4.0, daily_discharges=2.0, total_patients=44,
+        )
+        result = forecast_next_weekend(history, ward="5F", today=today, ward_beds=47)
+        all_sev = {r["occupancy_severity"] for r in result["rows"]}
+        assert all_sev == {"ok"}
+        assert result["low_occupancy_days"] == []
 
     def test_er_margin_uses_emergency_routes_only(self):
         """救急余力は EMERGENCY_ROUTES (救急+下り搬送) のみで計算される。"""
@@ -262,4 +307,6 @@ class TestForecastNextWeekend:
         )
         assert len(result["rows"]) == 3
         assert all(r["vacancy"] == 0 for r in result["rows"])
-        assert result["coverage_pct"] == 0.0
+        # coverage_pct は廃止済み。代わりに low_occupancy_days が空リストで返る
+        assert "coverage_pct" not in result
+        assert result["low_occupancy_days"] == []  # daily 空なら全員 100% (満床相当)
