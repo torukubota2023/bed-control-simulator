@@ -132,6 +132,7 @@ class SamplePatient:
     planned_date: str  # 退院予定日表示文字列（例: "4/24 (金)" or "未定"）
     status_key: str  # _STATUS_NORMAL / _STATUS_HOLIDAY の key
     note: str  # 確認事項の短文
+    risk_flag: bool = False  # 入院初期からマーク: 出口未定・長期化リスク予想
 
 
 # ---------------------------------------------------------------------------
@@ -143,27 +144,31 @@ def _sample_patients_5f_normal() -> List[SamplePatient]:
 
     全員の初期ステータスは "new"（🆕 新規）. カンファで各々カテゴライズする流れに統一する.
     """
+    # 副院長決定 2026-04-21: カンファで議論すべき患者 (LOS ≥ 15 日が中心) +
+    # 入院初期からマークすべき出口未定の超短期患者を 1 名含める構成に変更。
+    # 短期入院者 (LOS < 15 日、退院パス明確) はカンファ対象外という実運用方針。
     return [
-        SamplePatient("a1b2c3d4", "伊藤", "5F", 35, "未定", "new",
-                      "4/24までに田中医師が退院目処を再評価、要再カンファ"),
-        SamplePatient("b2c3d4e5", "渡辺", "5F", 28, "未定", "new",
-                      "ADL再評価を佐々木PTに依頼、その後MSWが施設候補検討"),
-        SamplePatient("c3d4e5f6", "高橋", "5F", 22, "4/24 (金)", "new",
+        SamplePatient("a1b2c3d4", "伊藤", "5F", 72, "未定", "new",
+                      "超長期化例（Day 72）: 包括入院料 90日上限まで 18日。家族非協力＋施設決まらず、要緊急カンファ"),
+        SamplePatient("b2c3d4e5", "渡辺", "5F", 45, "未定", "new",
+                      "心不全反復入院＋独居。在宅困難で施設調整中、第2候補まで打診済"),
+        SamplePatient("c3d4e5f6", "高橋", "5F", 32, "未定", "new",
+                      "脳梗塞後 ADL 改善中、回復期リハ病院への転院可否を本日判断"),
+        SamplePatient("d4e5f6a7", "田中", "5F", 25, "未定", "new",
+                      "退院調整中、老健 4/28 受入内定。搬送・持参品の確認"),
+        SamplePatient("e5f6a7b8", "中村", "5F", 22, "4/24 (金)", "new",
                       "ご家族面談 4/19 設定、迎え日時の確認"),
-        SamplePatient("d4e5f6a7", "田中", "5F", 18, "4/20 (月)", "new",
-                      "退院目処 Day 21 を確認、歩行速度+0.1 m/s 達成見込み"),
-        SamplePatient("e5f6a7b8", "中村", "5F", 16, "4/21 (火)", "new",
+        SamplePatient("f6a7b8c9", "鈴木", "5F", 19, "4/25 (金)", "new",
                       "Barthel +5 目標、退院前に ADL 最終評価"),
-        SamplePatient("f6a7b8c9", "鈴木", "5F", 15, "4/20 (月)", "new",
+        SamplePatient("a7b8c9d0", "加藤", "5F", 17, "4/24 (金)", "new",
+                      "退院目処 Day 21 を確認、歩行速度+0.1 m/s 達成見込み"),
+        SamplePatient("b8c9d0e1", "佐藤", "5F", 16, "4/24 (金)", "new",
                       "主治医に退院可否の最終確認、処方見直し検討"),
-        SamplePatient("a7b8c9d0", "加藤", "5F", 14, "未定", "new",
-                      "老健 空床確認中、MSW が他施設も打診"),
-        SamplePatient("b8c9d0e1", "佐藤", "5F", 12, "4/18 (土)", "new",
-                      "認定調査 4/19 予定、ケアマネから連絡待ち"),
-        SamplePatient("c9d0e1f2", "小林", "5F", 10, "4/18 (土)", "new",
+        SamplePatient("c9d0e1f2", "小林", "5F", 15, "4/23 (木)", "new",
                       "金朝カンファで退院判定、痛みコントロール確認"),
-        SamplePatient("d0e1f2a3", "山田", "5F", 8, "未定", "new",
-                      "本日初回カテゴライズ"),
+        SamplePatient("d0e1f2a3", "山田", "5F", 6, "未定", "new",
+                      "入院初期マーク例: 独居・軽度認知症・家族遠方。出口未定で長期化リスクあり、MSW 本日初期介入",
+                      risk_flag=True),
     ]
 
 
@@ -172,27 +177,30 @@ def _sample_patients_6f_normal() -> List[SamplePatient]:
 
     全員の初期ステータスは "new"（🆕 新規）. カンファで各々カテゴライズする流れに統一する.
     """
+    # 副院長決定 2026-04-21: 5F と同じ再構築方針。LOS ≥ 15 日中心 + 入院初期
+    # マーク対象 1 名で構成。
     return [
-        SamplePatient("e1f2a3b4", "渡辺", "6F", 45, "未定", "new",
-                      "慢性痛 神経ブロック継続中、退院目処 再判定保留"),
-        SamplePatient("f2a3b4c5", "大野", "6F", 38, "未定", "new",
-                      "心不全増悪繰り返し、在宅療養可否を本日判断要"),
-        SamplePatient("a3b4c5d6", "松本", "6F", 32, "未定", "new",
-                      "誤嚥性肺炎 再発、嚥下評価＋帰宅先調整を本日議論"),
+        SamplePatient("e1f2a3b4", "渡辺", "6F", 78, "未定", "new",
+                      "超長期化例（Day 78）: 包括入院料 90日上限まで 12日。慢性痛＋施設調整難航、要緊急カンファ"),
+        SamplePatient("f2a3b4c5", "大野", "6F", 48, "未定", "new",
+                      "心不全＋腎機能悪化、在宅酸素導入検討。長男と今週末最終調整"),
+        SamplePatient("a3b4c5d6", "松本", "6F", 35, "未定", "new",
+                      "誤嚥性肺炎 再発、嚥下評価＋回復期リハ病院への転院調整"),
         SamplePatient("b4c5d6e7", "井上", "6F", 27, "4/25 (土)", "new",
                       "老健 4/25 受入内定、搬送手配の確認"),
-        SamplePatient("c5d6e7f8", "木村", "6F", 23, "4/24 (金)", "new",
-                      "特養空床確認中、優先順位 3 番目"),
+        SamplePatient("c5d6e7f8", "木村", "6F", 22, "4/24 (金)", "new",
+                      "特養空床確認中、訪問看護導入も並行"),
         SamplePatient("d6e7f8a9", "林", "6F", 19, "未定", "new",
-                      "要介護認定申請中、訪看導入の調整"),
-        SamplePatient("e7f8a9b0", "清水", "6F", 16, "4/23 (木)", "new",
+                      "要介護認定申請中、ケアマネ 4/22 面談予定"),
+        SamplePatient("e7f8a9b0", "清水", "6F", 17, "4/23 (木)", "new",
                       "ケアマネ初回面談 4/21、担当者会議 4/22"),
-        SamplePatient("f8a9b0c1", "山本", "6F", 13, "4/22 (水)", "new",
+        SamplePatient("f8a9b0c1", "山本", "6F", 16, "4/22 (水)", "new",
                       "心機能再評価後、退院可否確定"),
-        SamplePatient("a9b0c1d2", "中島", "6F", 11, "4/21 (火)", "new",
+        SamplePatient("a9b0c1d2", "中島", "6F", 15, "4/22 (水)", "new",
                       "独居のため家族調整が必要、長男面談予定"),
-        SamplePatient("b0c1d2e3", "森", "6F", 9, "4/20 (月)", "new",
-                      "歩行訓練継続中、退院前に浴室動作確認"),
+        SamplePatient("b0c1d2e3", "森", "6F", 5, "未定", "new",
+                      "入院初期マーク例: 透析導入予定・家族遠方で在宅困難予想。出口未定、MSW が早期から施設打診",
+                      risk_flag=True),
     ]
 
 
@@ -2127,6 +2135,143 @@ def _render_block_a(
 # ブロック描画: B 今週の見通し + 内訳
 # ---------------------------------------------------------------------------
 
+def _count_next_week_discharges(
+    detail_df: Optional[Any], ward: str, today: date,
+) -> Optional[int]:
+    """来週（月〜日）の退院予定件数を ``detail_df`` から集計する。
+
+    ``event_type == "discharge"`` を対象とし、今日を含む週の翌週月曜〜日曜の
+    範囲に入る予定退院数を返す。データ不足時は ``None`` を返して呼び出し側で
+    「—」表示に切替えられるようにする。
+    """
+    if detail_df is None or not hasattr(detail_df, "columns") or len(detail_df) == 0:
+        return None
+    try:
+        import pandas as _pd
+        df = detail_df.copy()
+        if "event_type" in df.columns:
+            df = df[df["event_type"] == "discharge"]
+        if ward in ("5F", "6F") and "ward" in df.columns:
+            df = df[df["ward"] == ward]
+        if df.empty:
+            return 0
+        # 来週の月〜日 (ISO 準拠: 月=0 ... 日=6)
+        days_to_next_monday = (7 - today.weekday()) % 7
+        if days_to_next_monday == 0:
+            days_to_next_monday = 7
+        next_monday = today + timedelta(days=days_to_next_monday)
+        next_sunday = next_monday + timedelta(days=6)
+        dates = _pd.to_datetime(df["date"]).dt.date
+        mask = (dates >= next_monday) & (dates <= next_sunday)
+        return int(mask.sum())
+    except Exception:
+        return None
+
+
+def _compute_priority_discharge_risk(
+    patients: List[SamplePatient],
+    detail_df: Optional[Any],
+    ward: str,
+    today: date,
+    los_limit: float = 21.0,
+    inpatient_cap_days: int = 90,
+) -> Dict[str, Optional[Any]]:
+    """在院 ``los_limit`` 日超過者の退院優先度と期限を算出する。
+
+    副院長決定 2026-04-21: カンファで「誰を / いつまでに」退院させるかの
+    根拠を与えるため、優先退院人数と期限日数を返す。
+
+    表示されている患者リスト (Block C) と同じデータソースで N と ΣL_i を
+    計算することで、表示と計算の乖離（サンプル表示なのに実データで集計
+    してしまう等）を防ぐ。
+
+    期限 D は **2 つの制度上限のうち厳しい方**:
+        1. ALOS 21日 超過到達まで（当月実績ベース）
+           D_alos = (los_limit × (K + N) − S_K − ΣL_i) / N
+        2. 包括入院料 ``inpatient_cap_days`` 日上限まで（最長在院者起点）
+           D_cap = inpatient_cap_days − max_L
+        D = min(D_alos, D_cap)  (両方正の場合)
+
+    Returns:
+        {
+            "count": int or None,            # N
+            "deadline_days": int or None,    # D（min of alos/cap）
+            "deadline_reason": str or None,  # "alos" / "cap" / "both"
+            "max_los": int or None,
+            "d_alos": int or None,           # 参考: ALOS ベース単独
+            "d_cap": int or None,            # 参考: 90日 cap ベース単独
+            "status": str,                   # "ok" / "urgent" / "overdue" / "unknown"
+        }
+    """
+    over_limit = [p for p in (patients or []) if p.day_count >= int(los_limit)]
+    N = len(over_limit)
+    if N == 0:
+        return {
+            "count": 0, "deadline_days": None, "deadline_reason": None,
+            "max_los": None, "d_alos": None, "d_cap": None, "status": "ok",
+        }
+    max_L = max(p.day_count for p in over_limit)
+    sum_L = sum(p.day_count for p in over_limit)
+
+    # 90日 cap 基準: 最長在院者の 90日到達まで
+    d_cap_raw = inpatient_cap_days - max_L
+    d_cap = max(0, int(d_cap_raw))
+
+    # ALOS 基準: 当月実績から算出
+    d_alos: Optional[int] = None
+    if detail_df is not None and hasattr(detail_df, "columns") and len(detail_df) > 0:
+        try:
+            import pandas as _pd
+            df = detail_df.copy()
+            if "event_type" in df.columns:
+                df = df[df["event_type"] == "discharge"]
+            ward_key = ward if ward in ("5F", "6F") else None
+            if ward_key and "ward" in df.columns:
+                df = df[df["ward"] == ward_key]
+            if len(df) > 0 and "date" in df.columns and "los_days" in df.columns:
+                df["_d"] = _pd.to_datetime(df["date"])
+                mtd = df[
+                    (df["_d"].dt.year == today.year)
+                    & (df["_d"].dt.month == today.month)
+                    & (df["_d"].dt.date <= today)
+                ]
+                K = int(len(mtd))
+                if K > 0:
+                    S_K = float(mtd["los_days"].sum())
+                    D_alos_raw = (los_limit * (K + N) - S_K - sum_L) / N
+                    d_alos = max(0, int(D_alos_raw))
+        except Exception:
+            d_alos = None
+
+    # 厳しい方を採用
+    candidates = [(v, label) for v, label in [(d_alos, "alos"), (d_cap, "cap")] if v is not None]
+    if not candidates:
+        return {
+            "count": N, "deadline_days": None, "deadline_reason": None,
+            "max_los": max_L, "d_alos": None, "d_cap": d_cap, "status": "unknown",
+        }
+    # 最小値を選ぶ (複数同値なら "both")
+    min_d = min(v for v, _ in candidates)
+    reasons = [label for v, label in candidates if v == min_d]
+    reason = "both" if len(reasons) > 1 else reasons[0]
+
+    if min_d == 0:
+        # 両制約のどちらかを既に超過
+        if d_alos == 0 and max_L >= inpatient_cap_days:
+            status = "overdue"
+        elif max_L >= inpatient_cap_days:
+            status = "overdue"
+        else:
+            status = "overdue"
+    else:
+        status = "urgent"
+
+    return {
+        "count": N, "deadline_days": min_d, "deadline_reason": reason,
+        "max_los": max_L, "d_alos": d_alos, "d_cap": d_cap, "status": status,
+    }
+
+
 def _compute_weekend_forecast(
     ward: str, mode: str,
     daily_df: Optional[Any] = None,
@@ -2258,111 +2403,124 @@ def _render_block_b(
         cost_bg = "#fff3e0"
         cost_fg = "#e65100"
 
-    # 入力状況 (実数 vs 曜日平均) + 稼働率予測 (実データ計算時のみ)
-    # 副院長決定 2026-04-21: カバレッジ % は循環参照で意味がないため廃止。
-    # 代わりに「入力数 vs 曜日平均」と「予測稼働率の極端な低下警告」を表示。
+    # 退院行動 2 指標カード (来週退院予定 / 優先退院 N名・D日以内)
+    # 副院長決定 2026-04-21: カンファで最も重要な「誰を / いつまでに」を 2 指標
+    # に絞る。入力状況/予測稼働率/警告 3 テーブルは情報密度過剰のため廃止。
+    # 優先退院の期限 D は当月 ALOS ベースで「放置すると 21日 超過になるまで」を算出。
     coverage_html = ""
     if forecast_meta.get("is_real"):
-        # ① 退院予定入力 vs 曜日平均 (3 日分の小テーブル)
-        input_rows_html = ""
-        for r in forecast:
-            d = r.get("day", "")
-            inp = int(r.get("discharges_input", 0) or 0)
-            avg = float(r.get("discharges_predicted", 0.0) or 0.0)
-            vs = r.get("input_vs_avg", "")
-            if vs == "平均並":
-                vs_color, vs_label = "#10B981", "🟢 平均並"
-            elif vs == "薄い":
-                vs_color, vs_label = "#F59E0B", "🟡 薄い"
-            elif vs == "未入力":
-                vs_color, vs_label = "#DC2626", "🔴 未入力"
+        _td = today or date.today()
+        next_week_n = _count_next_week_discharges(detail_df, ward, _td)
+        priority = _compute_priority_discharge_risk(patients, detail_df, ward, _td)
+
+        def _metric_card_simple(
+            label: str, value: Optional[int], unit: str, sub: str, accent: str,
+        ) -> str:
+            if value is None:
+                main = '<span style="color:#9CA3AF;font-size:22px;">—</span>'
             else:
-                vs_color, vs_label = "#6B7280", "—"
-            input_rows_html += (
-                f'<tr>'
-                f'<td style="padding:2px 6px;">{d}</td>'
-                f'<td style="padding:2px 6px;text-align:right;">{inp}名</td>'
-                f'<td style="padding:2px 6px;text-align:right;color:#888;">{avg:.1f}名</td>'
-                f'<td style="padding:2px 6px;color:{vs_color};font-weight:600;">{vs_label}</td>'
-                f'</tr>'
-            )
-        # ② 予測稼働率
-        occ_rows_html = ""
-        for r in forecast:
-            d = r.get("day", "")
-            occ = float(r.get("occupancy_pct", 0.0) or 0.0)
-            sev = r.get("occupancy_severity", "ok")
-            if sev == "danger":
-                occ_color, occ_label = "#DC2626", "🔴 極端に低い"
-            elif sev == "warn":
-                occ_color, occ_label = "#F59E0B", "🟡 低下気味"
-            else:
-                occ_color, occ_label = "#10B981", "🟢 正常範囲"
-            occ_rows_html += (
-                f'<tr>'
-                f'<td style="padding:2px 6px;">{d}</td>'
-                f'<td style="padding:2px 6px;text-align:right;font-weight:600;color:{occ_color};">'
-                f'{occ:.0f}%</td>'
-                f'<td style="padding:2px 6px;color:{occ_color};">{occ_label}</td>'
-                f'</tr>'
-            )
-        # 低稼働警告バナー
-        low_days = forecast_meta.get("low_occupancy_days", [])
-        low_banner = ""
-        if low_days:
-            low_list = "、".join(
-                f"{d['day']}曜 {d['occupancy_pct']:.0f}%" for d in low_days
-            )
-            low_banner = (
-                f'<div style="font-size:11px;color:#856404;background:#fff3cd;'
-                f'padding:4px 6px;border-radius:3px;margin-top:4px;">'
-                f'⚠️ 稼働率が目標 90% を大きく下回る見込み: {low_list} '
-                f'— 退院を前倒しせず平準化するか、緊急入院の受入でバランス'
+                main = (
+                    f'<span style="color:{accent};font-weight:700;font-size:22px;">'
+                    f'{value}</span><span style="color:#555;font-size:12px;">{unit}</span>'
+                )
+            return (
+                f'<div style="flex:1;border:1px solid #e5e7eb;border-radius:4px;'
+                f'padding:8px 10px;background:#ffffff;">'
+                f'<div style="font-size:11px;color:#6B7280;font-weight:600;">{label}</div>'
+                f'<div style="margin-top:2px;line-height:1.1;">{main}</div>'
+                f'<div style="font-size:10px;color:#9CA3AF;margin-top:3px;">{sub}</div>'
                 f'</div>'
             )
-        # 入力薄い日バナー
-        sparse_days = forecast_meta.get("sparse_input_days", [])
-        sparse_banner = ""
-        if sparse_days:
-            sparse_list = "、".join(
-                f"{d['day']}曜 (入力{d['input']} / 平均{d['avg']:.1f})"
-                for d in sparse_days
+
+        # 優先退院カード: N 名 + D 日以内 (status で表示差替)
+        p_count = priority.get("count")
+        p_deadline = priority.get("deadline_days")
+        p_status = priority.get("status", "unknown")
+        p_max_los = priority.get("max_los")
+        p_reason = priority.get("deadline_reason")
+
+        # 制約理由の短いラベル
+        def _reason_label(reason: Optional[str]) -> str:
+            if reason == "cap":
+                return "90日上限"
+            if reason == "alos":
+                return "ALOS 21日"
+            if reason == "both":
+                return "90日/ALOS 両方"
+            return ""
+
+        if p_count is None:
+            priority_main = '<span style="color:#9CA3AF;font-size:22px;">—</span>'
+            priority_sub = "データ不足で算出不可"
+        elif p_count == 0 or p_status == "ok":
+            priority_main = (
+                '<span style="color:#10B981;font-weight:700;font-size:22px;">0</span>'
+                '<span style="color:#555;font-size:12px;">名</span>'
             )
-            sparse_banner = (
-                f'<div style="font-size:11px;color:#4a5568;background:#f7fafc;'
-                f'padding:4px 6px;border-radius:3px;margin-top:4px;">'
-                f'📝 退院予定入力が薄い日: {sparse_list} — 曜日平均で補完中'
-                f'</div>'
+            priority_sub = "LOS 21日超過者なし"
+        elif p_status == "overdue":
+            priority_main = (
+                f'<span style="color:#DC2626;font-weight:700;font-size:22px;">'
+                f'{p_count}</span>'
+                f'<span style="color:#555;font-size:12px;">名</span>'
+                f'<span style="color:#DC2626;font-size:13px;font-weight:600;margin-left:8px;">'
+                f'最急: 今すぐ</span>'
             )
+            max_suffix = f" 最長 Day {p_max_los}" if p_max_los else ""
+            priority_sub = f"制度上限を既に超過{max_suffix}（他 N-1 名は個別判断）"
+        elif p_status == "urgent" and p_deadline is not None:
+            deadline_color = "#DC2626" if p_deadline <= 7 else "#F59E0B"
+            # 「最急 あと D日」と表記し、D はあくまで最長在院者 (or 集約最厳) の
+            # 期限であることを明示。他患者は個別に期限が異なる旨を sub に記載。
+            priority_main = (
+                f'<span style="color:#DC2626;font-weight:700;font-size:22px;">'
+                f'{p_count}</span>'
+                f'<span style="color:#555;font-size:12px;">名</span>'
+                f'<span style="color:{deadline_color};font-size:13px;font-weight:600;margin-left:8px;">'
+                f'最急: あと {p_deadline} 日</span>'
+            )
+            reason_text = _reason_label(p_reason)
+            d_alos_val = priority.get("d_alos")
+            d_cap_val = priority.get("d_cap")
+            if p_reason == "cap" and p_max_los:
+                priority_sub = (
+                    f"最長 Day {p_max_los} の 90日上限まで "
+                    f"{p_deadline} 日 / 全体の ALOS 21日 まで {d_alos_val} 日"
+                    if d_alos_val is not None
+                    else f"最長 Day {p_max_los} の 90日上限まで {p_deadline} 日"
+                )
+            elif p_reason == "alos":
+                priority_sub = (
+                    f"当月 ALOS 21日 到達まで {p_deadline} 日（全員個別判断）"
+                )
+            else:
+                max_suffix = f" / 最長 Day {p_max_los}" if p_max_los else ""
+                priority_sub = f"制約: {reason_text}{max_suffix}" if reason_text else f"要退院調整{max_suffix}"
+        else:
+            priority_main = (
+                f'<span style="color:#F59E0B;font-weight:700;font-size:22px;">'
+                f'{p_count}</span>'
+                f'<span style="color:#555;font-size:12px;">名</span>'
+            )
+            priority_sub = "期限算出は当月退院実績の蓄積後"
+
+        priority_card = (
+            f'<div style="flex:1;border:1px solid #e5e7eb;border-radius:4px;'
+            f'padding:8px 10px;background:#ffffff;">'
+            f'<div style="font-size:11px;color:#6B7280;font-weight:600;">優先退院</div>'
+            f'<div style="margin-top:2px;line-height:1.1;">{priority_main}</div>'
+            f'<div style="font-size:10px;color:#9CA3AF;margin-top:3px;">{priority_sub}</div>'
+            f'</div>'
+        )
+
         coverage_html = (
-            f'<div style="margin-top:8px;font-size:11px;color:#555;">'
-            f'<div style="font-weight:600;margin-bottom:3px;">'
-            f'📝 退院予定 入力状況（vs 過去 8 週同曜日平均）</div>'
-            f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
-            f'<thead><tr style="background:#f1f3f5;color:#555;">'
-            f'<th style="padding:2px 6px;text-align:left;">曜日</th>'
-            f'<th style="padding:2px 6px;text-align:right;">入力</th>'
-            f'<th style="padding:2px 6px;text-align:right;">平均</th>'
-            f'<th style="padding:2px 6px;text-align:left;">判定</th>'
-            f'</tr></thead>'
-            f'<tbody>{input_rows_html}</tbody></table>'
-            f'{sparse_banner}'
-            f'<div style="font-weight:600;margin-top:8px;margin-bottom:3px;">'
-            f'📊 予測稼働率（目標 90%）</div>'
-            f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
-            f'<thead><tr style="background:#f1f3f5;color:#555;">'
-            f'<th style="padding:2px 6px;text-align:left;">曜日</th>'
-            f'<th style="padding:2px 6px;text-align:right;">稼働率</th>'
-            f'<th style="padding:2px 6px;text-align:left;">判定</th>'
-            f'</tr></thead>'
-            f'<tbody>{occ_rows_html}</tbody></table>'
-            f'{low_banner}'
-            f'<div style="font-size:10px;color:#999;margin-top:6px;line-height:1.4;">'
-            f'※ 各日 "±N 床" は 80% 信頼区間。'
-            f'平均は過去 8 週の同曜日実績。'
-            f'稼働率 70% 未満は「極端に低い」、80% 未満は「低下気味」。'
-            f'</div>'
-            f'</div>'
+            '<div style="display:flex;gap:8px;margin-top:10px;">'
+            + _metric_card_simple(
+                "来週退院予定", next_week_n, "名",
+                "月〜日 退院入力済", "#2563EB",
+            )
+            + priority_card
+            + '</div>'
         )
 
     # 内訳 — 現在の患者リストから集計
@@ -2720,12 +2878,21 @@ def _render_block_c(
             # 2026-04-19: 確認事項は stored を優先表示（stored 空ならサンプル既定値）
             # HTML インジェクション対策として最低限 " エスケープ
             safe_note = (display_note or "").replace('"', '&quot;')
+            # 2026-04-21: 入院初期マーク (risk_flag) — 出口未定・長期化リスクを
+            # 入院初期から識別しカンファに含める副院長指示。Day の前に ⚠️ を付与。
+            day_label = (
+                f'<span title="入院初期マーク: 出口未定・長期化リスク" '
+                f'style="color:#DC2626;margin-right:3px;">⚠️</span>'
+                f'Day {p.day_count}'
+                if getattr(p, "risk_flag", False)
+                else f'Day {p.day_count}'
+            )
             st.markdown(
                 f"""
                 <div class="{row_classes}">
                   <span class="doctor">{doctor_patient_html}</span>
                   <span class="ward {ward_cls}">{p.ward}</span>
-                  <span class="day">Day {p.day_count}</span>
+                  <span class="day">{day_label}</span>
                   <span class="plan-date">{p.planned_date}</span>
                   <span class="note" title="{safe_note}">{safe_note}</span>
                 </div>

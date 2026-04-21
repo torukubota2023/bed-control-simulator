@@ -4529,11 +4529,11 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
 # =====================================================================
 # シミュレーション結果タブ / 実績データタブ
 # =====================================================================
-# データが必要なセクション（今日の運営・What-if・戦略）かどうか
-# ※「🏥 退院調整」は含めない — カンファ資料／需要予測／退院候補／予約可能枠は
-#  sim データ未準備でも自己完結で描画し、退院タイミングタブ自体も内部で
-#  「シミュレーションを実行するか、実績データを入力してください」ガードを持つため。
-_needs_sim_data = _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]
+# データが必要なセクション（今日の運営・What-if・戦略・退院調整）かどうか
+# 2026-04-21 副院長決定: 退院調整セクションも sim/実績データなしでは
+# 実値に見えるサンプル表示が誤解を招くためガード対象に含める。
+# カンファ資料はビュー単独起動 (run_conference_view.py) でのみサンプル表示。
+_needs_sim_data = _selected_section in ["📊 今日の運営", "🔮 What-if・戦略", "🏥 退院調整"]
 # データ準備完了フラグ（st.stop()の代わりに各タブでガードに使用）
 _data_ready = False
 
@@ -10671,6 +10671,7 @@ if (
     _selected_section == "\U0001f3e5 退院調整"
     and _DEMAND_FORECAST_AVAILABLE
     and _VIEWS_AVAILABLE
+    and _data_ready
     and "\U0001f4ca 今週の需要予測" in _tab_idx
 ):
     # --- 共通データ準備 ---
@@ -10786,6 +10787,7 @@ if (
 if (
     _selected_section == "\U0001f3e5 退院調整"
     and _CONFERENCE_VIEW_AVAILABLE
+    and _data_ready
     and "\U0001f3e5 カンファ資料" in _tab_idx
 ):
     with tabs[_tab_idx["\U0001f3e5 カンファ資料"]]:

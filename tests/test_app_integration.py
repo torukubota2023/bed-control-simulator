@@ -610,7 +610,11 @@ class TestNeedsSimDataLogic:
     """_needs_sim_data の定義が全データ依存セクションをカバーしているか"""
 
     def test_データ依存セクションが_needs_sim_dataに含まれる(self):
-        """今日の運営・What-if・戦略が _needs_sim_data の判定に含まれること"""
+        """今日の運営・What-if・戦略・退院調整が _needs_sim_data の判定に含まれること
+
+        2026-04-21: 退院調整セクションは sim/実績データなしのサンプル表示が
+        実値と誤認されるため、ガード対象に追加された。
+        """
         pattern = r'_needs_sim_data\s*=\s*_selected_section\s+in\s+\[([^\]]+)\]'
         match = re.search(pattern, APP_SOURCE)
         assert match, "_needs_sim_data の定義が見つからない"
@@ -619,6 +623,10 @@ class TestNeedsSimDataLogic:
         # 今日の運営と What-if・戦略が含まれていること（Phase 3 情報階層リデザインで改名）
         assert "今日の運営" in sections_in_check, "今日の運営が _needs_sim_data に含まれていない"
         assert "What-if・戦略" in sections_in_check, "What-if・戦略が _needs_sim_data に含まれていない"
+        assert "退院調整" in sections_in_check, (
+            "退院調整が _needs_sim_data に含まれていない — シミュレーション未実行時に "
+            "カンファ画面でサンプル値が実値と誤認されるリスクあり"
+        )
 
     def test_データ不要セクションが_needs_sim_dataに含まれない(self):
         """制度管理・データ・設定が _needs_sim_data に含まれないこと
