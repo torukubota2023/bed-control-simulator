@@ -370,6 +370,59 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 - **アプリ修正時の品質保証:** [app-quality-assurance.md](.claude/rules/app-quality-assurance.md) の固定ルールに従い、詳細手順は [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) を参照する。リリース前は `/qa` コマンドで最終確認を行う
 - **Claude Code でのベッドコントロール開発:** 実装は `scripts/` と `tests/` を優先し、可変の運用メモや教訓は [bed_control_claude_code_workflow.md](docs/admin/bed_control_claude_code_workflow.md) と [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) に集約する。`.claude` は固定ルールとコマンド定義を中心に保つ
 
+## 🔀 ブランチ・PR 運用ルール（2026-04-22 副院長決定、2PC 運用対応）
+
+**原則:** 変更作業は **常に作業ブランチ**で行い、副院長が納得・承認した時に PR → main マージで本番反映する。`main` に直接コミットしない。
+
+### セッション標準ワークフロー
+
+**セッション開始時（自動化済み）:**
+- `.claude/settings.json` の SessionStart フックが `git fetch && git pull` を自動実行
+- 起動メッセージ「✅ GitHub から最新を取得しました」を確認
+
+**作業開始時:**
+```bash
+git checkout -b <ブランチ名>   # 新規作業ブランチを切る
+# もしくは既存ブランチで続行する場合
+git checkout <ブランチ名> && git pull origin <ブランチ名>
+```
+
+**作業中:**
+- `git add` / `git commit` でこまめに変更を確定
+- ブランチ名は内容を反映: `feature/...` / `fix/...` / `refactor/...` / `docs/...`
+
+**セッション終了時（必須）:**
+```bash
+git push origin <ブランチ名>
+```
+- **必ず push してから終了**（別 PC で引継げるようにするため）
+- 次の作業予定・残タスクは本 CLAUDE.md の該当セクションに追記して push
+
+### PR/マージのタイミング
+
+- **副院長が「PR 作って」「マージして」と明示指示した時のみ実行**
+- 勝手にマージしない（main を守る）
+- 関連する複数変更は同じブランチに積み上げ、**まとめて 1 PR** にする方が履歴が追いやすい
+- マージ方式は通常マージ（squash ではなく）— 個別コミットの履歴を残す
+
+### 2PC 引継ぎ
+
+**A PC → B PC への引継ぎ:**
+1. A PC: 作業終了時に `git push`、次回予定を CLAUDE.md に追記して push
+2. B PC: Claude Code 起動（フックが自動 fetch）、`git checkout <ブランチ名>` + `git pull`
+3. 同じコンテキストで作業再開
+
+**衝突予防（必須）:**
+- 同じ作業ブランチを 2 PC 同時編集しない（時間で分ける or ブランチを別にする）
+- セッション終了時の push を欠かさない
+- セッション開始時の pull を欠かさない
+
+### リポジトリ情報
+
+- **リモート:** `torukubota2023/bed-control-simulator`
+- **本番デプロイ:** Streamlit Cloud（main ブランチを参照、マージ後数分で再デプロイ）
+- **使用 PC:** torumac-mini / mac-mini（両方から同じブランチで作業可能）
+
 ## 🎓 学びの可視化ルール（2026-04-19 副院長指示、義務）
 
 **背景:** 副院長の指摘「3（原因切り分け）と 4（指示や設計を変える）が貴方の裏で動いていて、
