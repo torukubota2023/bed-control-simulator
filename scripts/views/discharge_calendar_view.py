@@ -274,7 +274,7 @@ def _calculate_previous_day_excess(
     return max(0, prev_count - WEEKDAY_SLOT)
 
 
-def _render_calendar_cell_html(
+def _compute_cell_data(
     cell_date: date,
     target_month: int,
     ward: str,
@@ -289,18 +289,8 @@ def _render_calendar_cell_html(
     current_occupancy_rate: Optional[float] = None,
     current_vacancy_count: Optional[int] = None,
     is_holiday: bool = False,
-) -> str:
-    """単一セル（日付）の HTML を返す.
-
-    Parameters
-    ----------
-    daily_counts : dict[date, int]
-        期間内の日別退院予定数（前日超過の繰り越し計算に使う）
-    current_occupancy_rate : float, optional
-        現在（=今日）の稼働率。今日のセルのみ動的枠調整に反映。
-    current_vacancy_count : int, optional
-        現在の空床数。今日のセルのみ動的枠調整に反映。
-    """
+) -> Dict[str, Any]:
+    """1 セル分の表示データを計算して dict で返す（純粋関数、テスト容易）."""
     from discharge_slot_config import (
         WEEKDAY_SLOT,
         HOLIDAY_SLOT,
@@ -312,140 +302,110 @@ def _render_calendar_cell_html(
     is_today = cell_date == today
     is_sunday_or_holiday = is_holiday_slot_day(cell_date, is_holiday)
 
-    # 退院予定カウント
     dc = _count_discharge_plans_for_cell(
         plans, ward_map, status_map, ward, cell_date
     )
     total_discharge = dc["scheduled"] + dc["confirmed"]
-
-    # 入院予定カウント
     sched_adm = _count_scheduled_admissions_for_cell(
         admission_details_df, cell_date, ward
     )
-
-    # 緊急入院見込み
-    dow = cell_date.weekday()
-    total_adm_mean = emergency_dow_mean.get(dow, 0.0)
-
-    # 前日超過の計算（日曜・祝日は飛ばして遡る、月初なら 0）
+    total_adm_mean = emergency_dow_mean.get(cell_date.weekday(), 0.0)
     prev_excess = _calculate_previous_day_excess(
         cell_date, daily_counts, jp_holidays
     )
-
-    # 動的枠調整は今日のセルのみ反映（未来日は基本枠ベース）
-    occ_for_calc = current_occupancy_rate if is_today else None
-    vac_for_calc = current_vacancy_count if is_today else None
-
+    occ = current_occupancy_rate if is_today else None
+    vac = current_vacancy_count if is_today else None
     slot = calculate_effective_slot(
         cell_date,
         previous_day_excess=prev_excess,
-        occupancy_rate=occ_for_calc,
-        vacancy_count=vac_for_calc,
+        occupancy_rate=occ,
+        vacancy_count=vac,
         is_holiday=is_holiday,
     )
-    remaining = slot - total_discharge
-    is_over = remaining < 0
-
-    # 色決定
-    if not is_current_month:
-        bg_color = "#F3F4F6"  # 月外は薄いグレー
-        text_color = "#9CA3AF"
-    elif is_over:
-        bg_color = "#FEE2E2"  # 超過は赤
-        text_color = "#991B1B"
-    elif is_sunday_or_holiday:
-        bg_color = "#FEF3C7"  # 日祝は黄色（推奨マーカー）
-        text_color = "#78350F"
-    elif total_discharge == 0 and sched_adm == 0:
-        bg_color = "#FFFFFF"  # 何もない日は白
-        text_color = "#1F2937"
-    else:
-        bg_color = "#ECFDF5"  # 予定あり通常は薄緑
-        text_color = "#065F46"
-
-    border = "3px solid #1E88E5" if is_today else "1px solid #E5E7EB"
-
-    # 曜日ラベル
-    dow_label = _DOW_JA[cell_date.weekday()]
-
-    # 退院内訳の表示
-    discharge_breakdown = ""
-    if total_discharge > 0:
-        parts = []
-        if dc["confirmed"] > 0:
-            parts.append(f'<span style="color:#065F46;font-weight:bold;">●{dc["confirmed"]}</span>')
-        if dc["scheduled"] > 0:
-            parts.append(f'<span style="color:#2563EB;">○{dc["scheduled"]}</span>')
-        discharge_breakdown = " ".join(parts)
-    else:
-        discharge_breakdown = '<span style="color:#9CA3AF;">—</span>'
-
-    # 突発退院マーカー
-    unplanned_mark = ""
-    if dc["unplanned"] > 0:
-        unplanned_mark = f'<span style="color:#DC2626;" title="突発退院">⚡{dc["unplanned"]}</span>'
-
-    # 入院予定表示（スケジュール済み + 緊急見込み）
-    adm_display = ""
-    if sched_adm > 0 or total_adm_mean > 0:
-        if sched_adm > 0:
-            adm_display += f'<span style="color:#7C3AED;">入{sched_adm}</span>'
-        if total_adm_mean > 0 and sched_adm == 0:
-            # 予約入院ゼロでも平均的な入院流入を表示
-            adm_display += f'<span style="color:#9CA3AF;">入～{total_adm_mean:.1f}</span>'
-
-    # 入退院差分（稼働率方向）
-    balance = sched_adm - total_discharge
-    balance_label = ""
-    if total_discharge > 0 or sched_adm > 0:
-        if balance > 0:
-            balance_label = f'<span style="color:#059669;">↑+{balance}</span>'
-        elif balance < 0:
-            balance_label = f'<span style="color:#DC2626;">↓{balance}</span>'
-
-    # 枠残り表示（動的調整 or 前日超過で枠が変わった場合は ✨ マーカー）
     base_slot = HOLIDAY_SLOT if is_sunday_or_holiday else WEEKDAY_SLOT
     slot_adjusted = slot != base_slot and not is_sunday_or_holiday
-    adjust_mark = '<span title="動的調整" style="color:#7C3AED;">✨</span>' if slot_adjusted else ""
-    if is_over:
-        slot_label = f'{adjust_mark}<span style="color:#991B1B;font-weight:bold;">超過{abs(remaining)}</span>'
+    return {
+        "is_current_month": is_current_month,
+        "is_today": is_today,
+        "is_sunday_or_holiday": is_sunday_or_holiday,
+        "is_holiday": is_holiday,
+        "dc": dc,
+        "total_discharge": total_discharge,
+        "sched_adm": sched_adm,
+        "total_adm_mean": total_adm_mean,
+        "prev_excess": prev_excess,
+        "slot": slot,
+        "slot_adjusted": slot_adjusted,
+        "remaining": slot - total_discharge,
+        "is_over": (slot - total_discharge) < 0,
+    }
+
+
+def _build_cell_button_label(
+    cell_date: date,
+    cell_data: Dict[str, Any],
+) -> str:
+    """st.button 用のラベル文字列を生成.
+
+    ボタンは HTML 不可のためテキスト + 絵文字で視認性を確保する。
+    3〜4 行構成で、改行は \\n。
+    """
+    dow = _DOW_JA[cell_date.weekday()]
+    if not cell_data["is_current_month"]:
+        return f"{cell_date.day}"
+
+    # 頭の絵文字: 超過 > 祝日 > 日曜 > 今日
+    prefix = ""
+    if cell_data["is_over"]:
+        prefix = "🚨"
+    elif cell_data["is_holiday"]:
+        prefix = "🎌"
+    elif cell_data["is_sunday_or_holiday"]:
+        prefix = "⭐"
+
+    dc = cell_data["dc"]
+    total_discharge = cell_data["total_discharge"]
+    if total_discharge == 0:
+        dc_str = "🏥退 —"
+    elif dc["confirmed"] > 0 and dc["scheduled"] > 0:
+        dc_str = f"🏥退 ●{dc['confirmed']} ○{dc['scheduled']}"
+    elif dc["confirmed"] > 0:
+        dc_str = f"🏥退 ●{dc['confirmed']}"
     else:
-        slot_label = f'{adjust_mark}<span style="color:#6B7280;">残{remaining}/{slot}</span>'
+        dc_str = f"🏥退 ○{dc['scheduled']}"
 
-    # 前日繰り越しマーカー
-    excess_mark = ""
-    if prev_excess > 0 and is_current_month and not is_sunday_or_holiday:
-        excess_mark = f'<span title="前日超過繰り越し" style="color:#DC2626;">↩-{prev_excess}</span>'
+    sched_adm = cell_data["sched_adm"]
+    mean_adm = cell_data["total_adm_mean"]
+    if sched_adm > 0:
+        adm_str = f"📥入 {sched_adm}"
+    elif mean_adm > 0:
+        adm_str = f"📥入 ~{mean_adm:.1f}"
+    else:
+        adm_str = "📥入 —"
 
-    # 日曜・祝日の推奨バッジ
-    recommend_badge = ""
-    if is_sunday_or_holiday and is_current_month and remaining > 0:
-        recommend_badge = '<div style="font-size:10px;color:#78350F;">⭐推奨枠</div>'
+    remaining = cell_data["remaining"]
+    slot = cell_data["slot"]
+    if remaining < 0:
+        slot_str = f"超過 {abs(remaining)}"
+    else:
+        slot_str = f"残 {remaining}/{slot}"
 
-    # セル HTML
-    html = (
-        f'<div style="'
-        f'background:{bg_color};'
-        f'color:{text_color};'
-        f'border:{border};'
-        f'border-radius:6px;'
-        f'padding:4px 6px;'
-        f'margin:1px;'
-        f'min-height:90px;'
-        f'font-size:11px;'
-        f'line-height:1.3;'
-        f'">'
-        f'<div style="display:flex;justify-content:space-between;align-items:baseline;">'
-        f'<span style="font-weight:{"bold" if is_today else "normal"};font-size:13px;">{cell_date.day}</span>'
-        f'<span style="color:#6B7280;font-size:9px;">{dow_label}</span>'
-        f'</div>'
-        f'<div style="margin-top:2px;">退: {discharge_breakdown} {unplanned_mark}</div>'
-        f'<div>{adm_display} {balance_label}</div>'
-        f'<div style="margin-top:2px;font-size:10px;">{slot_label} {excess_mark}</div>'
-        f'{recommend_badge}'
-        f'</div>'
-    )
-    return html
+    # 追加マーカー
+    extras = []
+    if cell_data["slot_adjusted"]:
+        extras.append("✨")
+    if cell_data["prev_excess"] > 0:
+        extras.append(f"↩{cell_data['prev_excess']}")
+    if dc["unplanned"] > 0:
+        extras.append(f"⚡{dc['unplanned']}")
+    extra_str = " ".join(extras)
+
+    # 行構成（3 行 + extras の 4 行目）
+    head = f"{prefix} {cell_date.day}({dow})".strip()
+    lines = [head, f"{dc_str}  {adm_str}", slot_str]
+    if extra_str:
+        lines.append(extra_str)
+    return "\n".join(lines)
 
 
 def _render_month_calendar(
@@ -461,15 +421,13 @@ def _render_month_calendar(
     jp_holidays: Optional[set] = None,
     current_occupancy_rate: Optional[float] = None,
     current_vacancy_count: Optional[int] = None,
+    session_key_prefix: str = "dcal",
 ) -> None:
-    """1 ヶ月分のカレンダーを streamlit に描画.
+    """1 ヶ月分のカレンダーを streamlit に描画（セルクリック対応）.
 
-    Parameters
-    ----------
-    current_occupancy_rate : float, optional
-        今日のセルのみに適用する動的枠調整用の稼働率。
-    current_vacancy_count : int, optional
-        同じく今日のセルに適用する空床数。
+    各日は ``st.button`` としてクリック可能。クリックすると
+    ``st.session_state[{session_key_prefix}_selected_{ward}]`` に ISO 日付文字列が保存され、
+    カレンダー下部の詳細パネルがその日の情報を表示する。
     """
     import streamlit as st
 
@@ -477,8 +435,6 @@ def _render_month_calendar(
         jp_holidays = set()
 
     weeks = _get_month_weeks(year, month)
-
-    # 前日超過の計算に必要な日別退院数（期間内の全日）
     grid_start = weeks[0][0] if weeks else date(year, month, 1)
     grid_end = weeks[-1][-1] if weeks else date(year, month, 1)
     daily_counts = _precompute_daily_discharge_counts(
@@ -488,24 +444,26 @@ def _render_month_calendar(
     # ヘッダー（曜日ラベル）
     header_cells = []
     for i, d in enumerate(_DOW_JA):
-        weekday_color = "#DC2626" if i == 6 else "#374151"  # 日曜のみ赤
+        weekday_color = "#DC2626" if i == 6 else "#374151"
         header_cells.append(
             f'<div style="text-align:center;font-weight:bold;padding:6px;'
             f'background:#F9FAFB;color:{weekday_color};border-radius:4px;">{d}</div>'
         )
     header_html = (
-        '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">'
+        '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">'
         + "".join(header_cells)
         + "</div>"
     )
     st.markdown(header_html, unsafe_allow_html=True)
 
-    # 各週を 7 列グリッドで描画
-    for week in weeks:
-        row_cells = []
-        for d in week:
+    sel_key = f"{session_key_prefix}_selected_{ward}"
+
+    # 各週を 7 列で描画
+    for week_idx, week in enumerate(weeks):
+        day_cols = st.columns(7)
+        for i, d in enumerate(week):
             is_holiday = d in jp_holidays
-            cell_html = _render_calendar_cell_html(
+            cell_data = _compute_cell_data(
                 cell_date=d,
                 target_month=month,
                 ward=ward,
@@ -521,13 +479,184 @@ def _render_month_calendar(
                 current_vacancy_count=current_vacancy_count,
                 is_holiday=is_holiday,
             )
-            row_cells.append(cell_html)
-        row_html = (
-            '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px;">'
-            + "".join(row_cells)
-            + "</div>"
+            label = _build_cell_button_label(d, cell_data)
+            btn_key = f"{session_key_prefix}_btn_{ward}_{year}_{month}_{d.isoformat()}"
+            btn_type = "primary" if cell_data["is_today"] else "secondary"
+            with day_cols[i]:
+                clicked = st.button(
+                    label,
+                    key=btn_key,
+                    use_container_width=True,
+                    type=btn_type,
+                    disabled=not cell_data["is_current_month"],
+                )
+                if clicked:
+                    st.session_state[sel_key] = d.isoformat()
+                    st.rerun()
+
+
+# -----------------------------------------------------------------------------
+# 詳細パネル（選択日の患者一覧・登録 UI）
+# -----------------------------------------------------------------------------
+
+
+def _display_name_for_uuid(uuid: str, names: Dict[str, Dict[str, str]]) -> str:
+    """UUID から表示名を生成（氏名があれば氏名、なければ ID 先頭8桁）."""
+    info = names.get(uuid) or {}
+    name = info.get("patient_name") or ""
+    if name:
+        return name
+    return f"ID {uuid}"
+
+
+def _render_day_detail_panel(
+    selected_date: date,
+    ward: str,
+    plans: Dict[str, Dict[str, Any]],
+    status_map: Dict[str, str],
+    ward_map: Dict[str, str],
+) -> None:
+    """選択された日の退院予定患者一覧と新規登録フォームを表示."""
+    import streamlit as st
+
+    try:
+        from discharge_plan_store import save_plan, clear_plan  # type: ignore
+        from patient_name_store import load_all_patient_info  # type: ignore
+    except ImportError:
+        from scripts.discharge_plan_store import save_plan, clear_plan  # type: ignore
+        from scripts.patient_name_store import load_all_patient_info  # type: ignore
+
+    names = load_all_patient_info()
+    day_iso = selected_date.isoformat()
+    dow = _DOW_JA[selected_date.weekday()]
+
+    st.markdown("---")
+    st.markdown(
+        f"### 📝 {selected_date.strftime('%Y-%m-%d')} ({dow}) の {ward} 退院予定"
+    )
+    st.caption("カレンダーの日をクリックすると、この欄が選択日に切り替わります。")
+
+    # その日の既存予定患者
+    plans_for_day = [
+        (uuid, plans[uuid])
+        for uuid in plans
+        if plans[uuid].get("scheduled_date") == day_iso
+        and ward_map.get(uuid) == ward
+    ]
+
+    if plans_for_day:
+        st.markdown(f"**登録済み: {len(plans_for_day)} 名**")
+        for uuid, plan in plans_for_day:
+            info = names.get(uuid) or {}
+            display_name = _display_name_for_uuid(uuid, names)
+            doctor = info.get("doctor_name") or "主治医不明"
+            cols = st.columns([3, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"**{display_name}** （Dr. {doctor}）")
+            with cols[1]:
+                current_conf = bool(plan.get("confirmed", False))
+                new_conf = st.checkbox(
+                    "決定",
+                    value=current_conf,
+                    key=f"dcal_conf_{ward}_{uuid}_{day_iso}",
+                )
+                if new_conf != current_conf:
+                    save_plan(
+                        uuid,
+                        scheduled_date=selected_date,
+                        confirmed=new_conf,
+                        unplanned=bool(plan.get("unplanned", False)),
+                    )
+                    st.rerun()
+            with cols[2]:
+                current_unp = bool(plan.get("unplanned", False))
+                new_unp = st.checkbox(
+                    "突発",
+                    value=current_unp,
+                    key=f"dcal_unp_{ward}_{uuid}_{day_iso}",
+                )
+                if new_unp != current_unp:
+                    save_plan(
+                        uuid,
+                        scheduled_date=selected_date,
+                        confirmed=bool(plan.get("confirmed", False)),
+                        unplanned=new_unp,
+                    )
+                    st.rerun()
+            with cols[3]:
+                if st.button(
+                    "🗑",
+                    key=f"dcal_del_{ward}_{uuid}_{day_iso}",
+                    help="この日の退院予定を削除",
+                ):
+                    clear_plan(uuid)
+                    st.rerun()
+    else:
+        st.caption("この日に退院予定の患者はいません。")
+
+    # 新規追加セクション
+    st.markdown("**この日に退院予定を追加:**")
+    adjusting_uuids: List[str] = []
+    for uuid, status in status_map.items():
+        if status == "new":
+            continue
+        if ward_map.get(uuid) != ward:
+            continue
+        existing = plans.get(uuid)
+        if existing and existing.get("scheduled_date"):
+            continue
+        adjusting_uuids.append(uuid)
+
+    if not adjusting_uuids:
+        st.caption(
+            "追加できる患者がいません（調整中かつ予定日未設定の患者がありません）。"
+            "患者ステータスは「🏥 カンファ資料」タブで更新できます。"
         )
-        st.markdown(row_html, unsafe_allow_html=True)
+        return
+
+    # 選択肢を名前で可読に
+    def _fmt(uuid: str) -> str:
+        info = names.get(uuid) or {}
+        display_name = _display_name_for_uuid(uuid, names)
+        status_label = status_map.get(uuid, "")
+        doctor = info.get("doctor_name") or ""
+        if doctor:
+            return f"{display_name}（Dr. {doctor}、{status_label}）"
+        return f"{display_name}（{status_label}）"
+
+    selected_uuid = st.selectbox(
+        "対象患者",
+        options=adjusting_uuids,
+        format_func=_fmt,
+        key=f"dcal_add_select_{ward}_{day_iso}",
+    )
+    cols = st.columns([1, 1, 2])
+    with cols[0]:
+        add_confirmed = st.checkbox(
+            "決定として登録",
+            key=f"dcal_add_conf_{ward}_{day_iso}",
+        )
+    with cols[1]:
+        add_unplanned = st.checkbox(
+            "突発退院",
+            key=f"dcal_add_unp_{ward}_{day_iso}",
+            help="主治医独断で決まった退院の場合にチェック",
+        )
+    with cols[2]:
+        if st.button(
+            f"📌 {day_iso} に登録",
+            key=f"dcal_add_submit_{ward}_{day_iso}",
+            type="primary",
+            use_container_width=True,
+        ):
+            save_plan(
+                selected_uuid,
+                scheduled_date=selected_date,
+                confirmed=add_confirmed,
+                unplanned=add_unplanned,
+            )
+            st.success(f"✅ 登録しました（{_display_name_for_uuid(selected_uuid, names)}）")
+            st.rerun()
 
 
 # -----------------------------------------------------------------------------
@@ -579,17 +708,16 @@ def _render_legend() -> None:
     import streamlit as st
 
     legend_html = (
-        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#6B7280;margin:8px 0;">'
-        '<span><span style="color:#065F46;font-weight:bold;">●</span> 退院決定</span>'
-        '<span><span style="color:#2563EB;">○</span> 退院予定</span>'
-        '<span><span style="color:#DC2626;">⚡</span> 突発退院</span>'
-        '<span><span style="color:#7C3AED;">入 N</span> 予定入院</span>'
-        '<span><span style="color:#059669;">↑+N</span> 入院過多（稼働率↑）</span>'
-        '<span><span style="color:#DC2626;">↓-N</span> 退院過多（稼働率↓）</span>'
-        '<span><span style="color:#7C3AED;">✨</span> 動的枠調整（稼働率連動）</span>'
-        '<span><span style="color:#DC2626;">↩-N</span> 前日超過の繰り越し</span>'
-        '<span style="background:#FEF3C7;padding:2px 6px;border-radius:3px;">日曜・祝日（推奨）</span>'
-        '<span style="background:#FEE2E2;padding:2px 6px;border-radius:3px;">枠超過</span>'
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#6B7280;margin:8px 0;padding:8px;background:#F9FAFB;border-radius:6px;">'
+        '<span><b>🏥退</b> = 退院予定数（●決定 / ○予定）</span>'
+        '<span><b>📥入</b> = 入院予定数（~n は曜日平均）</span>'
+        '<span><b>残 N/5</b> = 枠残り</span>'
+        '<span><b>⭐</b> 日曜推奨</span>'
+        '<span><b>🎌</b> 祝日</span>'
+        '<span><b>🚨</b> 枠超過</span>'
+        '<span><b>⚡N</b> 突発退院</span>'
+        '<span><b>↩N</b> 前日超過の繰り越し</span>'
+        '<span><b>✨</b> 動的枠調整（稼働率連動）</span>'
         "</div>"
     )
     st.markdown(legend_html, unsafe_allow_html=True)
@@ -798,6 +926,11 @@ def render_discharge_calendar_tab(
             ward_occ = (ward_occupancy_rates or {}).get(ward_label)
             ward_vac = (ward_vacancy_counts or {}).get(ward_label)
 
+            # 選択日の session_state 初期値は今日
+            sel_key = f"dcal_selected_{ward_label}"
+            if sel_key not in st.session_state:
+                st.session_state[sel_key] = today.isoformat()
+
             with month_tabs[0]:
                 _render_month_calendar(
                     year=today.year,
@@ -838,6 +971,22 @@ def render_discharge_calendar_tab(
                     f"日曜退院: {kpi_next['sunday_discharges']} 名 / "
                     f"突発: {kpi_next['unplanned_count']} 名"
                 )
+
+            # ---- 詳細パネル（選択日の患者一覧・登録 UI） ----
+            # 病棟タブ内・月タブ外に配置。当月/翌月どちらのカレンダーをクリックしても
+            # この同じパネルが選択日を追従して更新される。
+            sel_iso = st.session_state.get(sel_key, today.isoformat())
+            try:
+                sel_date = date.fromisoformat(sel_iso)
+            except ValueError:
+                sel_date = today
+            _render_day_detail_panel(
+                selected_date=sel_date,
+                ward=ward_label,
+                plans=plans,
+                status_map=status_map,
+                ward_map=ward_map,
+            )
 
     # ---- 画面下部: E2E 用 testid ----
     st.markdown(
