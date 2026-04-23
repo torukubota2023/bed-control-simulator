@@ -223,6 +223,52 @@ def _count_scheduled_admissions_for_cell(
     return int((dates == target_date).sum())
 
 
+def _estimate_discharges_by_dow(
+    admission_details_df: Optional[pd.DataFrame],
+    target_ward: str,
+) -> Dict[int, float]:
+    """病棟別・曜日別の退院平均数を過去実績から算出.
+
+    退院予定が未登録の日の「自然退院」を補完するために使う。
+    （予測時、副院長が登録していない日は過去の平均的な退院数で埋める）
+
+    Returns
+    -------
+    dict
+        ``{0-6: 平均退院数/日}``。月〜日の weekday 番号をキーに平均値。
+    """
+    if admission_details_df is None or len(admission_details_df) == 0:
+        return {i: 0.0 for i in range(7)}
+    required = {"event_type", "date", "ward"}
+    if not required.issubset(admission_details_df.columns):
+        return {i: 0.0 for i in range(7)}
+
+    mask = (
+        (admission_details_df["event_type"] == "discharge")
+        & (admission_details_df["ward"] == target_ward)
+    )
+    subset = admission_details_df[mask]
+    if len(subset) == 0:
+        return {i: 0.0 for i in range(7)}
+
+    try:
+        dts = pd.to_datetime(subset["date"])
+    except (ValueError, TypeError):
+        return {i: 0.0 for i in range(7)}
+
+    by_day = subset.assign(_date=dts.dt.date).groupby("_date").size()
+    all_days = pd.date_range(dts.min(), dts.max()).date
+    daily_series = pd.Series(index=all_days, dtype=float)
+    for d in all_days:
+        daily_series[d] = float(by_day.get(d, 0))
+
+    by_dow: Dict[int, float] = {}
+    for i in range(7):
+        same_dow = [daily_series[d] for d in all_days if d.weekday() == i]
+        by_dow[i] = round(sum(same_dow) / len(same_dow), 2) if same_dow else 0.0
+    return by_dow
+
+
 def _estimate_emergency_admissions_by_dow(
     admission_details_df: Optional[pd.DataFrame],
     target_ward: str,
@@ -748,6 +794,374 @@ def _render_day_detail_panel(
 
 
 # -----------------------------------------------------------------------------
+# 予測計算（予約入院 + 退院予定 + 緊急入院曜日平均 から日次稼働率を推計）
+# -----------------------------------------------------------------------------
+
+
+def _compute_occupancy_forecast(
+    ward: str,
+    start_date: date,
+    end_date: date,
+    initial_inpatients: int,
+    total_beds: int,
+    plans: Dict[str, Dict[str, Any]],
+    ward_map: Dict[str, str],
+    admission_details_df: Optional[pd.DataFrame],
+    emergency_dow_mean: Dict[int, float],
+    discharge_dow_mean: Optional[Dict[int, float]] = None,
+) -> List[Dict[str, Any]]:
+    """日次稼働率予測を漸化式で計算する.
+
+    各日: 翌日在院 = 当日在院 − 退院予定 + 予約入院 + 緊急入院見込み
+
+    Parameters
+    ----------
+    initial_inpatients : int
+        開始日朝の在院数。これを起点に漸化式で翌日以降を計算。
+    total_beds : int
+        病棟の病床数（稼働率 = 在院 / 病床）。
+    emergency_dow_mean : dict
+        ``{0-6: 1日あたり平均緊急入院数}``。予約入院と区別はできないが、
+        過去1年のデータからは全入院の曜日平均を使う。
+
+    Returns
+    -------
+    list of dict
+        各日 ``{"date", "inpatients", "occupancy", "scheduled_discharges",
+        "confirmed_discharges", "scheduled_admissions", "emergency_mean",
+        "net_change"}``。
+    """
+    results: List[Dict[str, Any]] = []
+    current_inpatients = float(initial_inpatients)
+    days = (end_date - start_date).days + 1
+
+    # 退院予定の日付 → (scheduled, confirmed) の事前集計
+    discharge_by_date: Dict[str, Dict[str, int]] = {}
+    for uuid, plan in plans.items():
+        if ward_map.get(uuid) != ward:
+            continue
+        sd_str = plan.get("scheduled_date")
+        if not sd_str:
+            continue
+        rec = discharge_by_date.setdefault(sd_str, {"scheduled": 0, "confirmed": 0})
+        if plan.get("confirmed"):
+            rec["confirmed"] += 1
+        else:
+            rec["scheduled"] += 1
+
+    # 予約入院の日付 → 件数 の事前集計（admission_details_df の未来日）
+    scheduled_adm_by_date: Dict[str, int] = {}
+    if admission_details_df is not None and len(admission_details_df) > 0:
+        required = {"event_type", "date", "ward"}
+        if required.issubset(admission_details_df.columns):
+            mask = (
+                (admission_details_df["event_type"] == "admission")
+                & (admission_details_df["ward"] == ward)
+            )
+            subset = admission_details_df[mask]
+            if len(subset) > 0:
+                try:
+                    dates = pd.to_datetime(subset["date"]).dt.date
+                    for d in dates:
+                        iso = d.isoformat()
+                        scheduled_adm_by_date[iso] = scheduled_adm_by_date.get(iso, 0) + 1
+                except (ValueError, TypeError):
+                    pass
+
+    for i in range(days):
+        d = start_date + timedelta(days=i)
+        iso = d.isoformat()
+        dow = d.weekday()
+
+        disc_rec = discharge_by_date.get(iso, {"scheduled": 0, "confirmed": 0})
+        scheduled_discharges = disc_rec["scheduled"]
+        confirmed_discharges = disc_rec["confirmed"]
+        registered_discharge = scheduled_discharges + confirmed_discharges
+        # 退院予定が未登録の日は過去の曜日平均で補完（自然退院の想定）
+        if registered_discharge > 0 or discharge_dow_mean is None:
+            total_discharge_for_calc = float(registered_discharge)
+        else:
+            total_discharge_for_calc = discharge_dow_mean.get(dow, 0.0)
+        total_discharge = registered_discharge  # 表示用は登録済みのみ
+
+        scheduled_admission = scheduled_adm_by_date.get(iso, 0)
+        emergency_mean = emergency_dow_mean.get(dow, 0.0)
+
+        # 未来日の入院は「予約入院 + 緊急見込み」（重複を避ける：予約があれば緊急は控えめに）
+        # ただし admission_details の曜日平均は全入院を含むため、別々に扱うと二重カウントになる
+        # シンプルに: 予約入院があればそちらを使う、なければ緊急曜日平均を使う
+        if scheduled_admission > 0:
+            total_admission = float(scheduled_admission)
+        else:
+            total_admission = emergency_mean
+
+        net_change = total_admission - total_discharge_for_calc
+        current_inpatients = max(0.0, current_inpatients + net_change)
+        occupancy = current_inpatients / total_beds if total_beds > 0 else 0.0
+
+        results.append({
+            "date": d,
+            "inpatients": round(current_inpatients, 1),
+            "occupancy": round(occupancy * 100, 1),
+            "scheduled_discharges": scheduled_discharges,
+            "confirmed_discharges": confirmed_discharges,
+            "total_discharge": total_discharge,
+            "scheduled_admissions": scheduled_admission,
+            "emergency_mean": round(emergency_mean, 1),
+            "total_admission": round(total_admission, 1),
+            "net_change": round(net_change, 1),
+        })
+    return results
+
+
+def _estimate_current_inpatients(
+    admission_details_df: Optional[pd.DataFrame],
+    target_ward: str,
+    reference_date: date,
+) -> int:
+    """基準日時点で入院中の患者数を admission/discharge の履歴から推定.
+
+    admission イベントがあり、reference_date までに discharge イベントが
+    ない UUID の数を返す（=入院中）。データが不十分な場合は 0 を返す。
+    """
+    if admission_details_df is None or len(admission_details_df) == 0:
+        return 0
+    required = {"event_type", "date", "ward", "id"}
+    if not required.issubset(admission_details_df.columns):
+        return 0
+
+    try:
+        df = admission_details_df.copy()
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+    except (ValueError, TypeError):
+        return 0
+
+    # 基準日までのイベントに限定
+    df = df[df["date"] <= reference_date]
+    if len(df) == 0:
+        return 0
+
+    adm = df[(df["event_type"] == "admission") & (df["ward"] == target_ward)]
+    disc = df[df["event_type"] == "discharge"]
+
+    adm_ids = set(str(x)[:8] for x in adm["id"] if len(str(x)) >= 8)
+    disc_ids = set(str(x)[:8] for x in disc["id"] if len(str(x)) >= 8)
+    return len(adm_ids - disc_ids)
+
+
+def _render_forecast_charts(
+    forecast: List[Dict[str, Any]],
+    today: date,
+    total_beds: int,
+    ward: str,
+    testid_suffix: str = "",
+) -> None:
+    """稼働率・在院数・入退院の予測グラフを Plotly で描画.
+
+    信頼幅つき:
+    - 近未来 2 週間以内: 実線 + ±2 名相当の帯
+    - 2〜4 週先: 点線 + ±5 名相当の帯
+    """
+    import streamlit as st
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError:
+        st.warning(
+            "Plotly が未インストールのため予測グラフは表示できません。"
+            "`pip install plotly` で有効化してください。"
+        )
+        return
+
+    if not forecast:
+        st.caption("予測データが生成できませんでした。")
+        return
+
+    # 信頼幅の区切り（今日から14日先まで「近未来」、それ以降「長期」）
+    near_cutoff = today + timedelta(days=14)
+
+    dates = [r["date"] for r in forecast]
+    inpatients = [r["inpatients"] for r in forecast]
+    occupancy = [r["occupancy"] for r in forecast]
+    total_disc = [r["total_discharge"] for r in forecast]
+    total_adm = [r["total_admission"] for r in forecast]
+
+    # 信頼幅（在院数ベース）
+    band_upper_inp = []
+    band_lower_inp = []
+    band_upper_occ = []
+    band_lower_occ = []
+    for r in forecast:
+        if r["date"] <= near_cutoff:
+            band_width = 2.0
+        else:
+            band_width = 5.0
+        band_upper_inp.append(r["inpatients"] + band_width)
+        band_lower_inp.append(max(0, r["inpatients"] - band_width))
+        if total_beds > 0:
+            band_upper_occ.append(round((r["inpatients"] + band_width) / total_beds * 100, 1))
+            band_lower_occ.append(round(max(0, r["inpatients"] - band_width) / total_beds * 100, 1))
+        else:
+            band_upper_occ.append(0.0)
+            band_lower_occ.append(0.0)
+
+    # 近未来と長期の境界で線を分割
+    near_dates = [d for d in dates if d <= near_cutoff]
+    near_inp = [inp for d, inp in zip(dates, inpatients) if d <= near_cutoff]
+    near_occ = [o for d, o in zip(dates, occupancy) if d <= near_cutoff]
+    long_dates = [d for d in dates if d > near_cutoff]
+    long_inp = [inp for d, inp in zip(dates, inpatients) if d > near_cutoff]
+    long_occ = [o for d, o in zip(dates, occupancy) if d > near_cutoff]
+
+    # 3 段のサブプロット（稼働率 / 在院数 / 入退院）
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        subplot_titles=(
+            f"📊 {ward} 稼働率予測（退院カレンダーの予定を反映）",
+            f"🛏 {ward} 在院患者数予測",
+            f"📈 {ward} 入退院数予測",
+        ),
+        vertical_spacing=0.08,
+        row_heights=[0.4, 0.3, 0.3],
+    )
+
+    # --- 稼働率（信頼帯 + 近未来実線 + 長期点線） ---
+    fig.add_trace(
+        go.Scatter(
+            x=dates, y=band_upper_occ, mode="lines",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+        ),
+        row=1, col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=dates, y=band_lower_occ, mode="lines",
+            line=dict(width=0), fill="tonexty",
+            fillcolor="rgba(37, 99, 235, 0.15)",
+            name="信頼幅（±2〜5名）", hoverinfo="skip",
+        ),
+        row=1, col=1,
+    )
+    if near_occ:
+        fig.add_trace(
+            go.Scatter(
+                x=near_dates, y=near_occ, mode="lines",
+                line=dict(color="#2563EB", width=3),
+                name="近未来 2 週間（実線）",
+            ),
+            row=1, col=1,
+        )
+    if long_occ:
+        fig.add_trace(
+            go.Scatter(
+                x=long_dates, y=long_occ, mode="lines",
+                line=dict(color="#2563EB", width=2, dash="dot"),
+                name="2 週先〜（点線、参考）",
+            ),
+            row=1, col=1,
+        )
+    # 目標レンジ（90-95%）
+    fig.add_hrect(
+        y0=90, y1=95, fillcolor="rgba(245, 158, 11, 0.08)",
+        line_width=0, row=1, col=1,
+    )
+    # 今日のマーカー
+    fig.add_vline(
+        x=today.isoformat(),
+        line_width=1, line_dash="dash", line_color="#DC2626",
+        row=1, col=1,
+    )
+
+    # --- 在院患者数 ---
+    fig.add_trace(
+        go.Scatter(
+            x=dates, y=band_upper_inp, mode="lines",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+        ),
+        row=2, col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=dates, y=band_lower_inp, mode="lines",
+            line=dict(width=0), fill="tonexty",
+            fillcolor="rgba(124, 58, 237, 0.15)",
+            showlegend=False, hoverinfo="skip",
+        ),
+        row=2, col=1,
+    )
+    if near_inp:
+        fig.add_trace(
+            go.Scatter(
+                x=near_dates, y=near_inp, mode="lines",
+                line=dict(color="#7C3AED", width=3),
+                showlegend=False,
+            ),
+            row=2, col=1,
+        )
+    if long_inp:
+        fig.add_trace(
+            go.Scatter(
+                x=long_dates, y=long_inp, mode="lines",
+                line=dict(color="#7C3AED", width=2, dash="dot"),
+                showlegend=False,
+            ),
+            row=2, col=1,
+        )
+    # 病床数ライン
+    fig.add_hline(
+        y=total_beds, line_width=1, line_dash="dash",
+        line_color="#DC2626",
+        annotation_text=f"病床数 {total_beds}",
+        annotation_position="top right",
+        row=2, col=1,
+    )
+
+    # --- 入退院数（棒グラフ） ---
+    fig.add_trace(
+        go.Bar(
+            x=dates, y=total_adm,
+            name="入院（予定＋緊急見込み）",
+            marker_color="#7C3AED",
+        ),
+        row=3, col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=dates, y=total_disc,
+            name="退院（決定＋予定）",
+            marker_color="#2563EB",
+        ),
+        row=3, col=1,
+    )
+
+    fig.update_layout(
+        height=700,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.10, x=0),
+        margin=dict(l=40, r=20, t=80, b=40),
+        barmode="group",
+    )
+    fig.update_yaxes(title_text="稼働率 (%)", range=[70, 100], row=1, col=1)
+    fig.update_yaxes(title_text="在院患者数（名）", row=2, col=1)
+    fig.update_yaxes(title_text="人数", row=3, col=1)
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"discharge_calendar_forecast_{ward}_{testid_suffix}",
+    )
+
+    st.caption(
+        f"📐 **予測の前提:** "
+        f"開始日の在院数を起点に、各日「在院 − 退院予定 + 入院（予約 or 曜日平均）」で漸化式的に計算。"
+        f" **信頼幅:** 近未来2週間 ±2名、2週以降 ±5名。"
+        f" **点線部分**は精度が落ちるため参考値として扱ってください。"
+        f" 緊急入院は過去1年の全入院の曜日平均で代用（予約入院がある日はそちらを優先）。"
+    )
+
+
+# -----------------------------------------------------------------------------
 # 月次 KPI と凡例
 # -----------------------------------------------------------------------------
 
@@ -1075,6 +1489,54 @@ def render_discharge_calendar_tab(
                 status_map=status_map,
                 ward_map=ward_map,
                 admission_details_df=admission_details_df,
+            )
+
+            # ---- 予測グラフ（稼働率・在院数・入退院） ----
+            # 退院カレンダーに登録した予定を反映した、向こう1ヶ月（翌月末まで）の予測。
+            # 副院長フィードバック (2026-04-24): 「稼働率への影響や入退院の数を
+            # 視覚的にすぐわかる工夫」に応える。
+            forecast_end = date(next_year, next_month, 28)  # 翌月末近くまで
+            # より確実な翌月末: timedelta で算出
+            if next_month == 12:
+                forecast_end = date(next_year + 1, 1, 1) - timedelta(days=1)
+            else:
+                forecast_end = date(next_year, next_month + 1, 1) - timedelta(days=1)
+
+            # 開始時在院数を admission_details から推定
+            initial_inp = _estimate_current_inpatients(
+                admission_details_df, ward_label, today
+            )
+            # 推定できない場合のフォールバック: 病床数 × 現在稼働率 or 40
+            if initial_inp == 0:
+                if ward_occ is not None:
+                    initial_inp = int(47 * ward_occ)
+                else:
+                    initial_inp = 40  # 保守的な値（稼働率85%相当）
+
+            # 病床数（5F/6F は 47 床ずつ、全体 94 床）
+            ward_beds = 47 if ward_label in ("5F", "6F") else 94
+
+            discharge_dow_mean = _estimate_discharges_by_dow(
+                admission_details_df, ward_label
+            )
+            forecast = _compute_occupancy_forecast(
+                ward=ward_label,
+                start_date=today,
+                end_date=forecast_end,
+                initial_inpatients=initial_inp,
+                total_beds=ward_beds,
+                plans=plans,
+                ward_map=ward_map,
+                admission_details_df=admission_details_df,
+                emergency_dow_mean=emergency_dow_mean,
+                discharge_dow_mean=discharge_dow_mean,
+            )
+            _render_forecast_charts(
+                forecast=forecast,
+                today=today,
+                total_beds=ward_beds,
+                ward=ward_label,
+                testid_suffix=ward_label,
             )
 
     # ---- 画面下部: E2E 用 testid ----
