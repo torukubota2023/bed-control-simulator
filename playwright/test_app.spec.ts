@@ -114,6 +114,28 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
         expect(count, `${id} が見つからない — UI 崩れの可能性`).toBeGreaterThanOrEqual(1);
       });
     }
+
+    // 退院カレンダー（v3.5j, 2026-04-23 新規）は退院調整セクション内でのみ描画される。
+    // 上記の requiredIds ループは「今日の運営 / What-if / 制度管理」を巡回するが、
+    // discharge-calendar は 🏥 退院調整 タブに切り替えないと hidden div が描画されない。
+    test('[data-testid="discharge-calendar"] が退院調整セクションで存在する', async ({ page }) => {
+      const sidebar = page.locator('[data-testid="stSidebar"]');
+      const dischargeLabel = sidebar.locator('label:has-text("🏥 退院調整")').first();
+      if ((await dischargeLabel.count()) === 0) {
+        test.skip(true, '退院調整セクションが見つからない（環境依存）');
+        return;
+      }
+      await dischargeLabel.click();
+      await waitForStreamlitLoad(page, 120000);
+
+      // 退院カレンダータブ（カンファ資料の右隣）を開く
+      const tabButton = page.locator('button[role="tab"]:has-text("退院カレンダー")').first();
+      await tabButton.click();
+      await page.waitForTimeout(2000);
+
+      const count = await page.locator('[data-testid="discharge-calendar"]').count();
+      expect(count, 'discharge-calendar testid が退院調整セクションに見つからない').toBeGreaterThanOrEqual(1);
+    });
   });
 
   // ---------------------------------------------------------------------------
