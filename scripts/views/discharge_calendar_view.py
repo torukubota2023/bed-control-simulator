@@ -221,6 +221,59 @@ def _get_month_weeks(year: int, month: int) -> List[List[date]]:
     return cal.monthdatescalendar(year, month)
 
 
+def _find_previous_business_day(
+    target_date: date,
+    jp_holidays: set,
+) -> date:
+    """指定日の「前営業日」を返す（日曜・祝日を飛ばす）.
+
+    平日/土曜は通常通り前日。前日が日曜・祝日なら、さらに 1 日ずつ遡る。
+    """
+    prev = target_date - timedelta(days=1)
+    while prev.weekday() == 6 or prev in jp_holidays:
+        prev = prev - timedelta(days=1)
+    return prev
+
+
+def _precompute_daily_discharge_counts(
+    plans: Dict[str, Dict[str, Any]],
+    ward_map: Dict[str, str],
+    status_map: Dict[str, str],
+    ward: str,
+    start_date: date,
+    end_date: date,
+) -> Dict[date, int]:
+    """期間内の各日の退院予定総数を事前計算.
+
+    前日超過の計算に使う。各日の (scheduled + confirmed) 合計を返す。
+    """
+    counts: Dict[date, int] = {}
+    days = (end_date - start_date).days + 1
+    for i in range(days):
+        d = start_date + timedelta(days=i)
+        dc = _count_discharge_plans_for_cell(
+            plans, ward_map, status_map, ward, d
+        )
+        counts[d] = dc["scheduled"] + dc["confirmed"]
+    return counts
+
+
+def _calculate_previous_day_excess(
+    target_date: date,
+    daily_counts: Dict[date, int],
+    jp_holidays: set,
+) -> int:
+    """前営業日の枠超過分を返す.
+
+    日曜・祝日は HOLIDAY_SLOT 固定で「繰り越しの起点にならない」仕様のため、
+    前営業日（平日 or 土曜）を遡り、その日の退院数から WEEKDAY_SLOT を引いた正の値を返す。
+    """
+    from discharge_slot_config import WEEKDAY_SLOT
+    prev = _find_previous_business_day(target_date, jp_holidays)
+    prev_count = daily_counts.get(prev, 0)
+    return max(0, prev_count - WEEKDAY_SLOT)
+
+
 def _render_calendar_cell_html(
     cell_date: date,
     target_month: int,
@@ -231,12 +284,27 @@ def _render_calendar_cell_html(
     admission_details_df: Optional[pd.DataFrame],
     emergency_dow_mean: Dict[int, float],
     today: date,
+    daily_counts: Dict[date, int],
+    jp_holidays: set,
+    current_occupancy_rate: Optional[float] = None,
+    current_vacancy_count: Optional[int] = None,
     is_holiday: bool = False,
 ) -> str:
-    """単一セル（日付）の HTML を返す."""
+    """単一セル（日付）の HTML を返す.
+
+    Parameters
+    ----------
+    daily_counts : dict[date, int]
+        期間内の日別退院予定数（前日超過の繰り越し計算に使う）
+    current_occupancy_rate : float, optional
+        現在（=今日）の稼働率。今日のセルのみ動的枠調整に反映。
+    current_vacancy_count : int, optional
+        現在の空床数。今日のセルのみ動的枠調整に反映。
+    """
     from discharge_slot_config import (
         WEEKDAY_SLOT,
         HOLIDAY_SLOT,
+        calculate_effective_slot,
         is_holiday_slot_day,
     )
 
@@ -255,14 +323,26 @@ def _render_calendar_cell_html(
         admission_details_df, cell_date, ward
     )
 
-    # 緊急入院見込み（曜日平均から予定入院を引いた残り）
+    # 緊急入院見込み
     dow = cell_date.weekday()
     total_adm_mean = emergency_dow_mean.get(dow, 0.0)
-    # 予定と緊急の区別データがない場合、total_adm_mean は「入院総見込み」
-    # カレンダーには「入院見込み」として表示
 
-    # 実効枠（前日超過は Ph.3 で実装、ここでは基本枠のみ）
-    slot = HOLIDAY_SLOT if is_sunday_or_holiday else WEEKDAY_SLOT
+    # 前日超過の計算（日曜・祝日は飛ばして遡る、月初なら 0）
+    prev_excess = _calculate_previous_day_excess(
+        cell_date, daily_counts, jp_holidays
+    )
+
+    # 動的枠調整は今日のセルのみ反映（未来日は基本枠ベース）
+    occ_for_calc = current_occupancy_rate if is_today else None
+    vac_for_calc = current_vacancy_count if is_today else None
+
+    slot = calculate_effective_slot(
+        cell_date,
+        previous_day_excess=prev_excess,
+        occupancy_rate=occ_for_calc,
+        vacancy_count=vac_for_calc,
+        is_holiday=is_holiday,
+    )
     remaining = slot - total_discharge
     is_over = remaining < 0
 
@@ -323,11 +403,19 @@ def _render_calendar_cell_html(
         elif balance < 0:
             balance_label = f'<span style="color:#DC2626;">↓{balance}</span>'
 
-    # 枠残り表示
+    # 枠残り表示（動的調整 or 前日超過で枠が変わった場合は ✨ マーカー）
+    base_slot = HOLIDAY_SLOT if is_sunday_or_holiday else WEEKDAY_SLOT
+    slot_adjusted = slot != base_slot and not is_sunday_or_holiday
+    adjust_mark = '<span title="動的調整" style="color:#7C3AED;">✨</span>' if slot_adjusted else ""
     if is_over:
-        slot_label = f'<span style="color:#991B1B;font-weight:bold;">超過{abs(remaining)}</span>'
+        slot_label = f'{adjust_mark}<span style="color:#991B1B;font-weight:bold;">超過{abs(remaining)}</span>'
     else:
-        slot_label = f'<span style="color:#6B7280;">残{remaining}/{slot}</span>'
+        slot_label = f'{adjust_mark}<span style="color:#6B7280;">残{remaining}/{slot}</span>'
+
+    # 前日繰り越しマーカー
+    excess_mark = ""
+    if prev_excess > 0 and is_current_month and not is_sunday_or_holiday:
+        excess_mark = f'<span title="前日超過繰り越し" style="color:#DC2626;">↩-{prev_excess}</span>'
 
     # 日曜・祝日の推奨バッジ
     recommend_badge = ""
@@ -353,7 +441,7 @@ def _render_calendar_cell_html(
         f'</div>'
         f'<div style="margin-top:2px;">退: {discharge_breakdown} {unplanned_mark}</div>'
         f'<div>{adm_display} {balance_label}</div>'
-        f'<div style="margin-top:2px;font-size:10px;">{slot_label}</div>'
+        f'<div style="margin-top:2px;font-size:10px;">{slot_label} {excess_mark}</div>'
         f'{recommend_badge}'
         f'</div>'
     )
@@ -371,14 +459,31 @@ def _render_month_calendar(
     emergency_dow_mean: Dict[int, float],
     today: date,
     jp_holidays: Optional[set] = None,
+    current_occupancy_rate: Optional[float] = None,
+    current_vacancy_count: Optional[int] = None,
 ) -> None:
-    """1 ヶ月分のカレンダーを streamlit に描画."""
+    """1 ヶ月分のカレンダーを streamlit に描画.
+
+    Parameters
+    ----------
+    current_occupancy_rate : float, optional
+        今日のセルのみに適用する動的枠調整用の稼働率。
+    current_vacancy_count : int, optional
+        同じく今日のセルに適用する空床数。
+    """
     import streamlit as st
 
     if jp_holidays is None:
         jp_holidays = set()
 
     weeks = _get_month_weeks(year, month)
+
+    # 前日超過の計算に必要な日別退院数（期間内の全日）
+    grid_start = weeks[0][0] if weeks else date(year, month, 1)
+    grid_end = weeks[-1][-1] if weeks else date(year, month, 1)
+    daily_counts = _precompute_daily_discharge_counts(
+        plans, ward_map, status_map, ward, grid_start, grid_end
+    )
 
     # ヘッダー（曜日ラベル）
     header_cells = []
@@ -410,6 +515,10 @@ def _render_month_calendar(
                 admission_details_df=admission_details_df,
                 emergency_dow_mean=emergency_dow_mean,
                 today=today,
+                daily_counts=daily_counts,
+                jp_holidays=jp_holidays,
+                current_occupancy_rate=current_occupancy_rate,
+                current_vacancy_count=current_vacancy_count,
                 is_holiday=is_holiday,
             )
             row_cells.append(cell_html)
@@ -477,11 +586,92 @@ def _render_legend() -> None:
         '<span><span style="color:#7C3AED;">入 N</span> 予定入院</span>'
         '<span><span style="color:#059669;">↑+N</span> 入院過多（稼働率↑）</span>'
         '<span><span style="color:#DC2626;">↓-N</span> 退院過多（稼働率↓）</span>'
+        '<span><span style="color:#7C3AED;">✨</span> 動的枠調整（稼働率連動）</span>'
+        '<span><span style="color:#DC2626;">↩-N</span> 前日超過の繰り越し</span>'
         '<span style="background:#FEF3C7;padding:2px 6px;border-radius:3px;">日曜・祝日（推奨）</span>'
         '<span style="background:#FEE2E2;padding:2px 6px;border-radius:3px;">枠超過</span>'
         "</div>"
     )
     st.markdown(legend_html, unsafe_allow_html=True)
+
+
+def _get_unplanned_by_doctor(
+    plans: Dict[str, Dict[str, Any]],
+    admission_details_df: Optional[pd.DataFrame],
+    target_ward: Optional[str] = None,
+) -> Dict[str, int]:
+    """突発退院マーカー付きの患者を主治医別に集計.
+
+    主治医別に「突発退院（ルール違反的な主治医独断退院）」の件数を出す。
+    副院長の運用改善要望: 主治医のうち誰が主に突発退院を発生させているかを
+    見える化することで、カンファ・運用ルール周知の対象を絞る。
+
+    Parameters
+    ----------
+    plans : dict
+        退院予定ストアの全データ
+    admission_details_df : pd.DataFrame, optional
+        入院詳細（UUID → 主治医の map 構築に使う）
+    target_ward : str, optional
+        病棟で絞る場合に指定。None なら全病棟集計。
+
+    Returns
+    -------
+    dict
+        ``{doctor_name: count}``、件数降順ソート済みの順序を保つには
+        外部で ``sorted(items)`` すること。
+    """
+    if admission_details_df is None or len(admission_details_df) == 0:
+        return {}
+    if "id" not in admission_details_df.columns:
+        return {}
+    if "attending_doctor" not in admission_details_df.columns:
+        return {}
+
+    df = admission_details_df
+    if "event_type" in df.columns:
+        df = df[df["event_type"] == "admission"]
+    if len(df) == 0:
+        return {}
+
+    uuid_to_doctor: Dict[str, str] = {}
+    uuid_to_ward: Dict[str, str] = {}
+    for _, row in df.iterrows():
+        pid = str(row["id"])[:8]
+        uuid_to_doctor[pid] = str(row.get("attending_doctor", "不明"))
+        if "ward" in df.columns:
+            uuid_to_ward[pid] = str(row.get("ward", ""))
+
+    by_doctor: Dict[str, int] = {}
+    for uuid, plan in plans.items():
+        if not plan.get("unplanned"):
+            continue
+        if target_ward is not None and uuid_to_ward.get(uuid) != target_ward:
+            continue
+        doctor = uuid_to_doctor.get(uuid, "不明")
+        by_doctor[doctor] = by_doctor.get(doctor, 0) + 1
+    return by_doctor
+
+
+def _render_unplanned_doctor_summary(
+    plans: Dict[str, Dict[str, Any]],
+    admission_details_df: Optional[pd.DataFrame],
+    target_ward: str,
+) -> None:
+    """主治医別の突発退院頻度を streamlit に描画."""
+    import streamlit as st
+
+    by_doctor = _get_unplanned_by_doctor(plans, admission_details_df, target_ward)
+    if not by_doctor:
+        return
+
+    sorted_items = sorted(by_doctor.items(), key=lambda kv: kv[1], reverse=True)
+    items = [f"**{d}**: {n} 名" for d, n in sorted_items]
+    st.caption(
+        f"⚡ 突発退院（主治医独断で決まった退院）の主治医別内訳: "
+        + " / ".join(items)
+        + "  ※ 運用ルール的には本来、退院日はカンファで調整する。"
+    )
 
 
 def _render_emergency_forecast_summary(
@@ -510,6 +700,8 @@ def render_discharge_calendar_tab(
     admission_details_df: Optional[pd.DataFrame] = None,
     today: Optional[date] = None,
     jp_holidays: Optional[set] = None,
+    ward_occupancy_rates: Optional[Dict[str, float]] = None,
+    ward_vacancy_counts: Optional[Dict[str, int]] = None,
 ) -> None:
     """🏥 退院調整 > 📅 退院カレンダー タブの本体.
 
@@ -517,11 +709,17 @@ def render_discharge_calendar_tab(
     ----------
     admission_details_df : pd.DataFrame, optional
         入院詳細データ（``st.session_state["admission_details"]`` 相当）。
-        UUID → 病棟 map の構築、予定入院数集計、緊急平均算出に使う。
+        UUID → 病棟 map の構築、予定入院数集計、緊急平均算出、
+        主治医別突発退院集計に使う。
     today : date, optional
         基準日（None なら ``date.today()``）。テスト用注入点。
     jp_holidays : set of date, optional
         日本の祝日セット。None なら空セット扱い。
+    ward_occupancy_rates : dict, optional
+        病棟別の現在稼働率（``{"5F": 0.92, "6F": 0.88}``）。
+        今日のセルのみ動的枠調整に反映。
+    ward_vacancy_counts : dict, optional
+        病棟別の現在空床数。同様に今日のセルのみ動的枠調整に反映。
     """
     import streamlit as st
 
@@ -596,6 +794,10 @@ def render_discharge_calendar_tab(
                 f"📆 {next_year}年{next_month}月（翌月）",
             ])
 
+            # 病棟別の稼働率・空床を取得（今日のセル用動的枠調整）
+            ward_occ = (ward_occupancy_rates or {}).get(ward_label)
+            ward_vac = (ward_vacancy_counts or {}).get(ward_label)
+
             with month_tabs[0]:
                 _render_month_calendar(
                     year=today.year,
@@ -608,8 +810,11 @@ def render_discharge_calendar_tab(
                     emergency_dow_mean=emergency_dow_mean,
                     today=today,
                     jp_holidays=jp_holidays,
+                    current_occupancy_rate=ward_occ,
+                    current_vacancy_count=ward_vac,
                 )
                 _render_legend()
+                _render_unplanned_doctor_summary(plans, admission_details_df, ward_label)
 
             with month_tabs[1]:
                 _render_month_calendar(
@@ -623,6 +828,8 @@ def render_discharge_calendar_tab(
                     emergency_dow_mean=emergency_dow_mean,
                     today=today,
                     jp_holidays=jp_holidays,
+                    current_occupancy_rate=None,  # 翌月は動的調整対象外
+                    current_vacancy_count=None,
                 )
                 _render_legend()
                 st.caption(
