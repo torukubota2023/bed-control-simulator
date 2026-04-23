@@ -129,6 +129,66 @@ def _count_adjusting_patients_for_ward(
     return count
 
 
+def _get_currently_admitted_uuids(
+    admission_details_df: Optional[pd.DataFrame],
+    target_ward: str,
+) -> List[str]:
+    """指定病棟で現在入院中の UUID 先頭 8 桁リストを返す.
+
+    「入院中」の定義: admission イベントはあるが対応する discharge イベントがない UUID。
+
+    副院長フィードバック (2026-04-23): 退院予定の登録は患者ステータスに
+    依存せず「入院中の患者なら誰でも」選べるようにする。カンファで
+    ステータスを先に更新しないと登録できない運用は実務的でない。
+    """
+    if admission_details_df is None or len(admission_details_df) == 0:
+        return []
+    required = {"event_type", "id", "ward"}
+    if not required.issubset(admission_details_df.columns):
+        return []
+
+    # 入院したが退院していない UUID を列挙
+    adm = admission_details_df[admission_details_df["event_type"] == "admission"]
+    disc = admission_details_df[admission_details_df["event_type"] == "discharge"]
+
+    adm_uuids_in_ward: set = set()
+    for _, row in adm.iterrows():
+        pid = str(row["id"])
+        if len(pid) < 8:
+            continue
+        if str(row.get("ward")) == target_ward:
+            adm_uuids_in_ward.add(pid[:8])
+
+    disc_uuids: set = set()
+    for _, row in disc.iterrows():
+        pid = str(row["id"])
+        if len(pid) >= 8:
+            disc_uuids.add(pid[:8])
+
+    return sorted(adm_uuids_in_ward - disc_uuids)
+
+
+def _get_eligible_uuids_for_new_plan(
+    ward_map: Dict[str, str],
+    target_ward: str,
+    plans: Dict[str, Dict[str, Any]],
+    admission_details_df: Optional[pd.DataFrame],
+) -> List[str]:
+    """その病棟で「入院中かつ予定日未設定」の UUID を返す.
+
+    退院予定の登録フォーム用。ステータスが "new" でも対象に含める
+    （副院長フィードバック 2026-04-23: ステータス更新を前提としない）。
+    """
+    admitted = _get_currently_admitted_uuids(admission_details_df, target_ward)
+    eligible: List[str] = []
+    for uuid in admitted:
+        plan = plans.get(uuid)
+        if plan and plan.get("scheduled_date"):
+            continue
+        eligible.append(uuid)
+    return eligible
+
+
 def _count_scheduled_admissions_for_cell(
     admission_details_df: Optional[pd.DataFrame],
     target_date: date,
@@ -509,12 +569,33 @@ def _display_name_for_uuid(uuid: str, names: Dict[str, Dict[str, str]]) -> str:
     return f"ID {uuid}"
 
 
+#: カンファステータスキー → 表示用ラベル（カンファ画面と統一）
+_STATUS_LABEL_MAP: Dict[str, str] = {
+    "new": "🆕 新規",
+    "medical": "🔵 医学的OK待ち",
+    "family": "🟢 家族希望待ち",
+    "facility": "🟡 施設待ち",
+    "insurance": "🟣 介護保険待ち",
+    "rehab": "🟠 リハ最適化中",
+    "undecided": "⚫ 方向性未決",
+    "before_confirmed": "連休前・確定",
+    "before_adjusting": "連休前・調整中",
+    "continuing": "連休継続",
+}
+
+
+def _status_key_to_label(status_key: str) -> str:
+    """status_key を絵文字付き日本語ラベルに変換（未知のキーはそのまま返す）."""
+    return _STATUS_LABEL_MAP.get(status_key, status_key)
+
+
 def _render_day_detail_panel(
     selected_date: date,
     ward: str,
     plans: Dict[str, Dict[str, Any]],
     status_map: Dict[str, str],
     ward_map: Dict[str, str],
+    admission_details_df: Optional[pd.DataFrame] = None,
 ) -> None:
     """選択された日の退院予定患者一覧と新規登録フォームを表示."""
     import streamlit as st
@@ -594,39 +675,46 @@ def _render_day_detail_panel(
     else:
         st.caption("この日に退院予定の患者はいません。")
 
-    # 新規追加セクション
+    # 新規追加セクション（入院中の患者から誰でも選べる）
     st.markdown("**この日に退院予定を追加:**")
-    adjusting_uuids: List[str] = []
-    for uuid, status in status_map.items():
-        if status == "new":
-            continue
-        if ward_map.get(uuid) != ward:
-            continue
-        existing = plans.get(uuid)
-        if existing and existing.get("scheduled_date"):
-            continue
-        adjusting_uuids.append(uuid)
+    eligible_uuids = _get_eligible_uuids_for_new_plan(
+        ward_map=ward_map,
+        target_ward=ward,
+        plans=plans,
+        admission_details_df=admission_details_df,
+    )
 
-    if not adjusting_uuids:
-        st.caption(
-            "追加できる患者がいません（調整中かつ予定日未設定の患者がありません）。"
-            "患者ステータスは「🏥 カンファ資料」タブで更新できます。"
-        )
+    if not eligible_uuids:
+        if admission_details_df is None or len(admission_details_df) == 0:
+            st.info(
+                "⚠️ 入院患者データがありません。サイドバーの「データソース」で"
+                "実績データを選択するか、シミュレーションを実行すると "
+                f"{ward} 病棟の入院中患者が一覧に出ます。"
+            )
+        else:
+            st.caption(
+                f"{ward} 病棟で入院中かつ退院予定未設定の患者がいません。"
+                "（全員に予定日が入っているか、退院イベントが既に記録されています）"
+            )
         return
 
-    # 選択肢を名前で可読に
+    # 選択肢: 氏名あれば氏名、なければ ID。ステータスと主治医を併記。
     def _fmt(uuid: str) -> str:
         info = names.get(uuid) or {}
         display_name = _display_name_for_uuid(uuid, names)
-        status_label = status_map.get(uuid, "")
+        status_label = status_map.get(uuid, "🆕 新規")
+        # ステータスキーから表示用ラベルに変換（カンファ画面と同じ絵文字）
+        status_display = _status_key_to_label(status_label)
         doctor = info.get("doctor_name") or ""
+        parts = [display_name]
         if doctor:
-            return f"{display_name}（Dr. {doctor}、{status_label}）"
-        return f"{display_name}（{status_label}）"
+            parts.append(f"Dr. {doctor}")
+        parts.append(status_display)
+        return "（".join([parts[0], " / ".join(parts[1:]) + "）"])
 
     selected_uuid = st.selectbox(
         "対象患者",
-        options=adjusting_uuids,
+        options=eligible_uuids,
         format_func=_fmt,
         key=f"dcal_add_select_{ward}_{day_iso}",
     )
@@ -986,6 +1074,7 @@ def render_discharge_calendar_tab(
                 plans=plans,
                 status_map=status_map,
                 ward_map=ward_map,
+                admission_details_df=admission_details_df,
             )
 
     # ---- 画面下部: E2E 用 testid ----
