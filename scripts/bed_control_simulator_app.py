@@ -404,6 +404,18 @@ except Exception as _cv_err:
     import traceback as _cv_tb
     _CONFERENCE_VIEW_ERROR = f"{_cv_err}\n{_cv_tb.format_exc()}"
 
+# 退院カレンダービュー（Ph.2, 2026-04-23 副院長指示）
+# 依存: discharge_plan_store / patient_status_store / discharge_slot_config
+# 失敗しても他セクションに影響させない。
+_DISCHARGE_CAL_VIEW_AVAILABLE = False
+_DISCHARGE_CAL_VIEW_ERROR = ""
+try:
+    from views.discharge_calendar_view import render_discharge_calendar_tab
+    _DISCHARGE_CAL_VIEW_AVAILABLE = True
+except Exception as _dc_err:
+    import traceback as _dc_tb
+    _DISCHARGE_CAL_VIEW_ERROR = f"{_dc_err}\n{_dc_tb.format_exc()}"
+
 # 過去実績分析ビュー（views と独立の try/except）
 # 依存: data/actual_admissions_2025fy.csv（無くても view 内でフォールバック）
 # 失敗しても他セクションに影響させない。
@@ -3185,8 +3197,9 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
         tab_names.append("\U0001f4a1 改善のヒント")
 elif _selected_section == "\U0001f3e5 退院調整":
     # Phase 1 情報階層リデザイン（2026-04-18）: 5 タブ統合
-    # カンファ資料 / 退院タイミング / 今週の需要予測 / 退院候補リスト / 予約可能枠
-    tab_names = ["\U0001f3e5 カンファ資料", "\U0001f468\u200d\u2695\ufe0f 退院タイミング", "\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 予約可能枠"]
+    # 2026-04-23: 「📅 退院カレンダー」を新規追加（副院長指示）、既存「📅 予約可能枠」を「📅 入院受入枠」に改名
+    # カンファ資料 / 退院カレンダー / 退院タイミング / 今週の需要予測 / 退院候補リスト / 入院受入枠
+    tab_names = ["\U0001f3e5 カンファ資料", "\U0001f4c5 退院カレンダー", "\U0001f468\u200d\u2695\ufe0f 退院タイミング", "\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 入院受入枠"]
 elif _selected_section == "\u2699\ufe0f データ・設定":
     # Phase 4 情報階層リデザイン（2026-04-18・最終）: 旧「📋 データ管理」に
     # 旧「📨 HOPE連携」セクションとサイドバー「🏃 短手3 パラメータ」を統合した 7 タブ構成
@@ -10663,7 +10676,7 @@ if "🏃 短手3設定" in _tab_idx:
 
 # ---------------------------------------------------------------------------
 # 🏥 退院調整セクション（Phase 1 情報階層リデザイン・2026-04-18）:
-# 旧「🗓 連休対策」由来の 3 タブ（今週の需要予測・退院候補リスト・予約可能枠）
+# 旧「🗓 連休対策」由来の 3 タブ（今週の需要予測・退院候補リスト・入院受入枠 [旧名: 予約可能枠]）
 # を「🏥 退院調整」セクションへ移設。共通データ準備ブロックはセクション名のみ
 # 差し替え、タブ名は原文を維持する。
 # ---------------------------------------------------------------------------
@@ -10756,12 +10769,16 @@ if (
                 today=_hs_today,
             )
 
-    # --- タブ 3: 予約可能枠 ---
-    if "\U0001f4c5 予約可能枠" in _tab_idx:
-        with tabs[_tab_idx["\U0001f4c5 予約可能枠"]]:
-            st.header("📅 予約可能枠")
+    # --- タブ: 入院受入枠（2026-04-23 改名、旧「予約可能枠」）---
+    # 旧タブ名は「📅 予約可能枠」で、退院の枠管理ではなく入院の受入枠を表すことが
+    # 分かりにくかったため、2026-04-23 に「📅 入院受入枠」に改名。
+    # 退院側は別タブ「📅 退院カレンダー」に分離（discharge_calendar_view）。
+    if "\U0001f4c5 入院受入枠" in _tab_idx:
+        with tabs[_tab_idx["\U0001f4c5 入院受入枠"]]:
+            st.header("📅 入院受入枠")
             st.caption(
-                "予約受付事務員向け：4週間先まで日別の需要・空床・可能枠を色分けしてカレンダーで表示します"
+                "予約受付事務員向け：外来から入院依頼があった時に 4 週間先までの受入可能枠を確認します。"
+                "退院側のカレンダーは「📅 退院カレンダー」タブを参照してください。"
             )
             # 既に上で計算済みの変数を流用
             _hs_details_df_tab3 = st.session_state.get("admission_details", pd.DataFrame())
@@ -10818,6 +10835,61 @@ elif (
     if _CONFERENCE_VIEW_ERROR:
         with st.expander("エラー詳細", expanded=False):
             st.code(_CONFERENCE_VIEW_ERROR)
+
+# ---------------------------------------------------------------------------
+# 🏥 退院調整セクション — 📅 退院カレンダー タブ（Ph.2, 2026-04-23 副院長指示）
+# ---------------------------------------------------------------------------
+# 月俯瞰カレンダーで退院予定を 3 層（調整中/予定/決定）で可視化し、
+# 入院予定を重ねて稼働率方向を示す。病棟別（5F/6F）× 当月/翌月のタブ構造。
+# 日曜枠は推奨マーカーとして視覚的に強調する。
+if (
+    _selected_section == "\U0001f3e5 退院調整"
+    and _DISCHARGE_CAL_VIEW_AVAILABLE
+    and "\U0001f4c5 退院カレンダー" in _tab_idx
+):
+    with tabs[_tab_idx["\U0001f4c5 退院カレンダー"]]:
+        try:
+            _dc_details_df = st.session_state.get("admission_details", pd.DataFrame())
+            # 祝日セット（holiday_calendar が使えれば利用、無ければ空セット）
+            _dc_jp_holidays = set()
+            try:
+                from holiday_calendar import is_holiday as _dc_is_holiday  # type: ignore
+                # 当月・翌月の範囲で祝日を列挙
+                _dc_today = date.today()
+                _dc_start = _dc_today.replace(day=1)
+                _dc_end = (_dc_start + timedelta(days=70)).replace(day=1) + timedelta(days=35)
+                for _dc_i in range((_dc_end - _dc_start).days):
+                    _dc_d = _dc_start + timedelta(days=_dc_i)
+                    if _dc_is_holiday(_dc_d):
+                        _dc_jp_holidays.add(_dc_d)
+            except Exception:
+                _dc_jp_holidays = set()
+            render_discharge_calendar_tab(
+                admission_details_df=_dc_details_df,
+                today=date.today(),
+                jp_holidays=_dc_jp_holidays,
+            )
+        except Exception as _dc_render_err:
+            st.error(
+                "退院カレンダーの描画中にエラーが発生しました。"
+                "discharge_plan_store / discharge_slot_config を確認してください。"
+            )
+            with st.expander("エラー詳細（開発用）", expanded=False):
+                import traceback as _dc_render_tb
+                st.code(f"{_dc_render_err}\n{_dc_render_tb.format_exc()}")
+elif (
+    _selected_section == "\U0001f3e5 退院調整"
+    and not _DISCHARGE_CAL_VIEW_AVAILABLE
+    and "\U0001f4c5 退院カレンダー" in _tab_idx
+):
+    with tabs[_tab_idx["\U0001f4c5 退院カレンダー"]]:
+        st.error(
+            "退院カレンダービューが読み込めませんでした。"
+            "views/discharge_calendar_view.py の依存モジュールを確認してください。"
+        )
+        if _DISCHARGE_CAL_VIEW_ERROR:
+            with st.expander("エラー詳細", expanded=False):
+                st.code(_DISCHARGE_CAL_VIEW_ERROR)
 
 # ---------------------------------------------------------------------------
 # フッター
