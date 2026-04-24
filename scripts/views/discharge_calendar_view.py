@@ -448,49 +448,65 @@ def _compute_cell_data(
 
 
 def _build_cell_progress_bar_html(cell_data: Dict[str, Any]) -> str:
-    """セルボタンの下に表示する「埋まり具合」プログレスバーの HTML.
+    """セルボタンの下に表示する「退院枠の状態」プログレスバー HTML.
 
-    副院長フィードバック (2026-04-24): 数値だけでは混雑度が視認しづらい。
-    バーの長さ + 色で一目で判別できるようにする。
+    副院長フィードバック:
+        - 2026-04-24: 数値だけでは混雑度が視認しづらい → 色付きバーを導入
+        - 2026-04-24 再: 予定ゼロの空き日が全部同じに見える → バーを常時表示し
+          枠サイズ（平日 5 / 日祝 2）を幅で示すよう再設計
 
-    色の閾値:
-        超過 (>100%)   → 🔴 赤（#DC2626）
-        満杯 (=100%)   → 🟠 オレンジ（#F59E0B）
-        半分以上 (≥40%) → 🟡 黄（#FCD34D）
-        使用中 (>0%)   → 🟢 緑（#10B981）
-        ゼロ           → バー非表示（空のセル）
-
-    月外セル・枠ゼロのセルもバー非表示。
+    描画仕様:
+        - バー幅は **基本枠に対して比例**（平日＝100%、日祝＝40%）
+          → 日曜・祝日は自動的にバー枠が短くなり、「枠が少ない日」が一目で分かる
+        - 予定ゼロでも薄いグレーのバー枠を表示（空き日も情報を持たせる）
+        - 予定が入るとバー内に色付きが伸びる:
+            * 緑 (#10B981): 40% 未満の使用（余裕）
+            * 黄 (#FCD34D): 40-99% の使用（ギリギリ）
+            * オレンジ (#F59E0B): ちょうど満杯（100%）
+            * 赤 (#DC2626): 枠超過
+        - 月外セル・枠ゼロのセルはバー非表示
     """
     if not cell_data.get("is_current_month", True):
         return ""
     slot = cell_data.get("slot", 0)
-    total_discharge = cell_data.get("total_discharge", 0)
-    if slot <= 0 or total_discharge <= 0:
-        # 予定なし or 枠ゼロは何も描画しない（視覚ノイズを減らす）
+    if slot <= 0:
         return ""
 
-    ratio = total_discharge / slot if slot > 0 else 0
+    total_discharge = cell_data.get("total_discharge", 0)
     is_over = cell_data.get("is_over", False)
 
-    if is_over:
-        color = "#DC2626"  # 赤
-        width = 100
-    elif ratio >= 1.0:
-        color = "#F59E0B"  # オレンジ（ちょうど満杯）
-        width = 100
-    elif ratio >= 0.4:
-        color = "#FCD34D"  # 黄（半分以上）
-        width = int(ratio * 100)
+    # コンテナ幅 = 枠サイズに比例（平日 5 → 100%、日祝 2 → 40%、動的調整 6 → 120% 相当）
+    # 基準は平日枠 5 = 100% とする
+    BASE_SLOT = 5
+    container_width_pct = min(100, int(slot / BASE_SLOT * 100))
+
+    # 内部バー（色付き、埋まり具合）
+    if total_discharge <= 0:
+        # 予定ゼロ → 空の枠だけ表示（薄いグレー枠、内部は透明）
+        inner_html = ""
     else:
-        color = "#10B981"  # 緑（余裕）
-        width = max(8, int(ratio * 100))  # 最低 8% で視認性確保
+        ratio = total_discharge / slot if slot > 0 else 0
+        if is_over:
+            color = "#DC2626"  # 赤: 超過
+            width_pct = 100
+        elif ratio >= 1.0:
+            color = "#F59E0B"  # オレンジ: 満杯
+            width_pct = 100
+        elif ratio >= 0.4:
+            color = "#FCD34D"  # 黄: ギリギリ
+            width_pct = int(ratio * 100)
+        else:
+            color = "#10B981"  # 緑: 余裕
+            width_pct = max(10, int(ratio * 100))
+        inner_html = (
+            f'<div style="height:100%;width:{width_pct}%;background:{color};'
+            f'border-radius:3px;"></div>'
+        )
 
     return (
-        f'<div style="height:6px;background:#F3F4F6;border-radius:3px;'
-        f'margin:-2px 0 6px 0;overflow:hidden;">'
-        f'<div style="height:100%;width:{width}%;background:{color};'
-        f'border-radius:3px;"></div>'
+        f'<div style="height:7px;background:#E5E7EB;border-radius:3px;'
+        f'margin:-2px 0 6px 0;overflow:hidden;width:{container_width_pct}%;">'
+        f'{inner_html}'
         f'</div>'
     )
 
@@ -1287,10 +1303,45 @@ def _render_legend() -> None:
         '<span><b>残 N/5</b> = 枠残り</span>'
         '<span><b>⭐</b> 日曜推奨</span>'
         '<span><b>🎌</b> 祝日</span>'
-        '<span style="color:#059669;"><b>🟢バー短め</b>=余裕</span>'
-        '<span style="color:#B45309;"><b>🟡</b>+バー半分=ギリギリ</span>'
-        '<span style="color:#DC2626;"><b>🔴</b>+バー満=満杯</span>'
-        '<span style="color:#B91C1C;"><b>🚨</b>+赤バー=枠超過</span>'
+        '</div>'
+        # バー凡例（視覚サンプル付き）
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#6B7280;margin:0 0 8px 0;padding:8px;background:#F9FAFB;border-radius:6px;align-items:center;">'
+        '<span style="font-weight:bold;color:#374151;">バーの見方：</span>'
+        # 空き平日
+        '<span style="display:inline-flex;align-items:center;gap:4px;">'
+        '<span style="display:inline-block;height:7px;width:60px;background:#E5E7EB;border-radius:3px;"></span>'
+        '空き（平日枠 5）'
+        '</span>'
+        # 空き日祝
+        '<span style="display:inline-flex;align-items:center;gap:4px;">'
+        '<span style="display:inline-block;height:7px;width:24px;background:#E5E7EB;border-radius:3px;"></span>'
+        '空き（日祝枠 2）'
+        '</span>'
+        # 余裕（緑）
+        '<span style="display:inline-flex;align-items:center;gap:4px;">'
+        '<span style="display:inline-block;height:7px;width:60px;background:#E5E7EB;border-radius:3px;overflow:hidden;">'
+        '<span style="display:block;height:100%;width:20%;background:#10B981;"></span></span>'
+        '🟢 余裕'
+        '</span>'
+        # ギリギリ（黄）
+        '<span style="display:inline-flex;align-items:center;gap:4px;">'
+        '<span style="display:inline-block;height:7px;width:60px;background:#E5E7EB;border-radius:3px;overflow:hidden;">'
+        '<span style="display:block;height:100%;width:60%;background:#FCD34D;"></span></span>'
+        '🟡 ギリギリ'
+        '</span>'
+        # 満杯（オレンジ）
+        '<span style="display:inline-flex;align-items:center;gap:4px;">'
+        '<span style="display:inline-block;height:7px;width:60px;background:#F59E0B;border-radius:3px;"></span>'
+        '🔴 満杯'
+        '</span>'
+        # 超過（赤）
+        '<span style="display:inline-flex;align-items:center;gap:4px;">'
+        '<span style="display:inline-block;height:7px;width:60px;background:#DC2626;border-radius:3px;"></span>'
+        '🚨 枠超過'
+        '</span>'
+        '</div>'
+        # その他のマーカー
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#6B7280;margin:0 0 8px 0;padding:8px;background:#F9FAFB;border-radius:6px;">'
         '<span><b>⚡N</b> 突発退院</span>'
         '<span><b>↩N</b> 前日超過の繰り越し</span>'
         '<span><b>✨</b> 動的枠調整（稼働率連動）</span>'
