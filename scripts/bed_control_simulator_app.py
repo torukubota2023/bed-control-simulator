@@ -9570,6 +9570,37 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                 f"下り {int(_pa_df['is_downstream_transfer'].sum())}）"
             )
 
+            # bridge 卒業通知バナー（副院長指示 2026-04-24）
+            # 手動シード YAML にエントリがある月のうち、過去 CSV で代替された月を検出。
+            # 優先順位は daily > summary > manual_seed のため、代替済みシードは既に
+            # 使われていないが、副院長が yaml を片付ける判断材料として表示する。
+            try:
+                from emergency_ratio import (
+                    load_manual_seeds_from_yaml as _er_load_seeds,
+                    get_superseded_seed_months as _er_superseded,
+                )
+                _pa_seeds = _er_load_seeds()
+                _pa_superseded = _er_superseded(_pa_seeds, _pa_df)
+                if _pa_superseded:
+                    _superseded_list = ", ".join(_pa_superseded)
+                    st.success(
+                        f"\U0001f393 **bridge 卒業判定**: "
+                        f"{_superseded_list} の手動シードは過去 CSV で代替されました。"
+                        f"`settings/manual_seed_emergency_ratio.yaml` の該当月エントリは"
+                        f"削除して問題ありません（既に優先順位上は使われていません）。"
+                    )
+                elif _pa_seeds:
+                    st.info(
+                        "手動シード YAML にエントリがありますが、過去 CSV で代替されて"
+                        "いる月はありません。現状のシードは引き続き rolling 計算に"
+                        "使用される可能性があります。"
+                    )
+            except Exception as _er_err:
+                # 卒業判定は補助機能なので、失敗しても本体機能は動かす
+                import traceback as _er_tb
+                with st.expander("bridge 卒業判定の読み込みエラー（補助機能）", expanded=False):
+                    st.code(f"{_er_err}\n{_er_tb.format_exc()}")
+
             try:
                 import plotly.graph_objects as go
                 _plotly_ok = True

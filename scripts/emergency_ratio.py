@@ -333,6 +333,74 @@ def load_manual_seeds_from_yaml(
     return out
 
 
+def is_seed_superseded_by_past_csv(
+    year_month: str,
+    past_admissions_df: Optional[pd.DataFrame],
+) -> bool:
+    """指定月の手動シードが過去 CSV で代替されているか判定する.
+
+    副院長指示 (2026-04-24): 過去 1 年入院データ CSV (`past_admissions_2025fy.csv`)
+    を事務から受領したため、その期間と重複する月の手動シードは
+    「bridge から卒業」済みとみなす（= 実データで rolling 計算が成立するので、
+    シードは優先順位的にも使われない）。
+
+    判定基準:
+        ``past_admissions_df`` の ``admission_date`` カラムに ``year_month``
+        (YYYY-MM) と一致する月のレコードが **1 件でもあれば** 卒業済み。
+
+    Args:
+        year_month: 判定対象の月（YYYY-MM 形式）
+        past_admissions_df: ``past_admissions_loader.load_past_admissions()``
+            の戻り値。None や空なら False（卒業未了）。
+
+    Returns:
+        True = 過去 CSV で代替されているためシード不要 / False = シードが必要 or 判定不可
+    """
+    if past_admissions_df is None:
+        return False
+    if len(past_admissions_df) == 0:
+        return False
+    if "admission_date" not in past_admissions_df.columns:
+        return False
+    # admission_date は date オブジェクトの想定（loader 側で変換済み）
+    for adm_d in past_admissions_df["admission_date"]:
+        if adm_d is None:
+            continue
+        try:
+            ym_str = f"{adm_d.year:04d}-{adm_d.month:02d}"
+        except AttributeError:
+            # 文字列や他の型が紛れ込んだ場合
+            continue
+        if ym_str == year_month:
+            return True
+    return False
+
+
+def get_superseded_seed_months(
+    seeds: Optional[Dict[str, Dict[str, Optional[float]]]],
+    past_admissions_df: Optional[pd.DataFrame],
+) -> List[str]:
+    """手動シード YAML の月のうち、過去 CSV で代替された月のリストを返す.
+
+    UI で「これらの月のシードは削除可能です」と副院長に通知するために使う。
+
+    Args:
+        seeds: ``load_manual_seeds_from_yaml()`` の戻り値。
+            ``{"2026-02": {"5F": ..., "6F": ...}, ...}`` 形式。
+        past_admissions_df: ``load_past_admissions()`` の戻り値。
+
+    Returns:
+        卒業済み月 (YYYY-MM) のリスト、昇順ソート。該当なしなら空リスト。
+    """
+    if not seeds:
+        return []
+    superseded: List[str] = []
+    for ym in seeds.keys():
+        if is_seed_superseded_by_past_csv(ym, past_admissions_df):
+            superseded.append(str(ym))
+    return sorted(superseded)
+
+
 def calculate_rolling_emergency_ratio(
     detail_df: pd.DataFrame,
     ward: Optional[str] = None,

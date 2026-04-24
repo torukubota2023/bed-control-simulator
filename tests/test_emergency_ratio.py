@@ -34,7 +34,9 @@ from scripts.emergency_ratio import (
     generate_emergency_alerts,
     get_cumulative_progress,
     get_monthly_history,
+    get_superseded_seed_months,
     get_ward_emergency_summary,
+    is_seed_superseded_by_past_csv,
     is_transitional_period,
     load_manual_seeds_from_yaml,
     project_month_end,
@@ -1298,3 +1300,82 @@ class TestManualSeedsRolling:
         assert seeds["2026-02"]["6F"] is None
         assert seeds["2026-03"]["5F"] == 24.0
         assert seeds["2026-03"]["6F"] == 30.1
+
+
+# ---------------------------------------------------------------------------
+# manual_seed bridge 卒業判定（副院長指示 2026-04-24）
+# ---------------------------------------------------------------------------
+
+
+class TestSeedSupersededByPastCsv:
+    """past_admissions_df で代替された月のシードは卒業と判定されること。"""
+
+    def _make_past_df(self, ym_list):
+        """指定月のダミー past_admissions_df を作る。"""
+        records = []
+        for ym in ym_list:
+            y, m = ym.split("-")
+            records.append({
+                "admission_date": date(int(y), int(m), 15),
+                "病棟": "5F",
+                "is_emergency_transport": True,
+            })
+        return pd.DataFrame(records)
+
+    def test_seed_superseded_when_past_csv_has_month(self):
+        past = self._make_past_df(["2026-02"])
+        assert is_seed_superseded_by_past_csv("2026-02", past) is True
+
+    def test_seed_not_superseded_when_past_csv_missing_month(self):
+        past = self._make_past_df(["2025-12"])
+        assert is_seed_superseded_by_past_csv("2026-02", past) is False
+
+    def test_seed_not_superseded_when_past_df_none(self):
+        assert is_seed_superseded_by_past_csv("2026-02", None) is False
+
+    def test_seed_not_superseded_when_past_df_empty(self):
+        assert is_seed_superseded_by_past_csv(
+            "2026-02", pd.DataFrame()
+        ) is False
+
+    def test_seed_not_superseded_when_column_missing(self):
+        # admission_date カラム無しの DataFrame
+        df = pd.DataFrame([{"病棟": "5F"}])
+        assert is_seed_superseded_by_past_csv("2026-02", df) is False
+
+    def test_seed_handles_none_dates_gracefully(self):
+        df = pd.DataFrame([
+            {"admission_date": None, "病棟": "5F"},
+            {"admission_date": date(2026, 2, 1), "病棟": "5F"},
+        ])
+        assert is_seed_superseded_by_past_csv("2026-02", df) is True
+
+    def test_get_superseded_seed_months_returns_matching(self):
+        past = self._make_past_df(["2026-02", "2026-03"])
+        seeds = {
+            "2026-02": {"5F": None, "6F": None},
+            "2026-03": {"5F": 22.5, "6F": 28.0},
+            "2025-12": {"5F": 20.0, "6F": 25.0},
+        }
+        result = get_superseded_seed_months(seeds, past)
+        assert result == ["2026-02", "2026-03"]  # 2025-12 は含まれない
+
+    def test_get_superseded_seed_months_empty_when_seeds_empty(self):
+        past = self._make_past_df(["2026-02"])
+        assert get_superseded_seed_months({}, past) == []
+        assert get_superseded_seed_months(None, past) == []
+
+    def test_get_superseded_seed_months_empty_when_past_empty(self):
+        seeds = {"2026-02": {"5F": None}}
+        assert get_superseded_seed_months(seeds, None) == []
+        assert get_superseded_seed_months(seeds, pd.DataFrame()) == []
+
+    def test_get_superseded_seed_months_is_sorted(self):
+        past = self._make_past_df(["2026-03", "2026-02", "2026-01"])
+        seeds = {
+            "2026-03": {"5F": None},
+            "2026-01": {"5F": None},
+            "2026-02": {"5F": None},
+        }
+        result = get_superseded_seed_months(seeds, past)
+        assert result == ["2026-01", "2026-02", "2026-03"]

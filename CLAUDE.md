@@ -27,10 +27,13 @@
 - 分母 = **全入院**（短手3 を除外しない）
 - 短手3 の識別は `is_short3_certain`（手術○×日数≤2、大腸ポリペク等確実）/ `is_short3_likely`（≤5日）で別途保持するが、救急比率計算とは完全分離
 
-**残課題:**
-- A: UI「過去1年 rolling 推移グラフ」追加
-- B: UI「イ/ロ/ハ過去遡及」タブ追加
-- D: `manual_seed_emergency_ratio.yaml` の bridge 卒業判定（過去CSVで重複する月のシードは廃止できる）
+**UI 実装状況（2026-04-24 追加実装済み、mac-mini セッション分）:**
+- ✅ A: UI「過去1年 rolling 推移グラフ」— `🛡️ 制度管理 > 📊 過去1年分析` タブに実装（`bed_control_simulator_app.py:9580-9674`、5F/6F/全体の折れ線 + 15%閾値 + rolling メトリクス + 月別表）
+- ✅ B: UI「イ/ロ/ハ過去遡及」— 同タブ内に実装（`:9677-9749`、病棟別スタック横棒 + 件数テーブル + 運用の含意解説）
+- ✅ D: `manual_seed_emergency_ratio.yaml` の bridge 卒業判定（2026-04-24 torumac-mini 実装）
+  - `emergency_ratio.is_seed_superseded_by_past_csv(ym, past_df)` / `get_superseded_seed_months(seeds, past_df)` を追加
+  - UI「過去1年分析」タブ上部に卒業通知バナーを表示（`🎓 bridge 卒業: 2026-02, 2026-03 のシードは過去 CSV で代替済み → 削除可`）
+  - 優先順位は `daily > summary(過去CSV) > manual_seed` のため、代替済みシードは既に無視される。UI は「yaml を片付けてください」という運用向け通知
 
 ## 📐 2026年度診療報酬改定 対応ステータス（地域包括医療病棟入院料1/2）
 
