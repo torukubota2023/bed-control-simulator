@@ -447,6 +447,54 @@ def _compute_cell_data(
     }
 
 
+def _build_cell_progress_bar_html(cell_data: Dict[str, Any]) -> str:
+    """セルボタンの下に表示する「埋まり具合」プログレスバーの HTML.
+
+    副院長フィードバック (2026-04-24): 数値だけでは混雑度が視認しづらい。
+    バーの長さ + 色で一目で判別できるようにする。
+
+    色の閾値:
+        超過 (>100%)   → 🔴 赤（#DC2626）
+        満杯 (=100%)   → 🟠 オレンジ（#F59E0B）
+        半分以上 (≥40%) → 🟡 黄（#FCD34D）
+        使用中 (>0%)   → 🟢 緑（#10B981）
+        ゼロ           → バー非表示（空のセル）
+
+    月外セル・枠ゼロのセルもバー非表示。
+    """
+    if not cell_data.get("is_current_month", True):
+        return ""
+    slot = cell_data.get("slot", 0)
+    total_discharge = cell_data.get("total_discharge", 0)
+    if slot <= 0 or total_discharge <= 0:
+        # 予定なし or 枠ゼロは何も描画しない（視覚ノイズを減らす）
+        return ""
+
+    ratio = total_discharge / slot if slot > 0 else 0
+    is_over = cell_data.get("is_over", False)
+
+    if is_over:
+        color = "#DC2626"  # 赤
+        width = 100
+    elif ratio >= 1.0:
+        color = "#F59E0B"  # オレンジ（ちょうど満杯）
+        width = 100
+    elif ratio >= 0.4:
+        color = "#FCD34D"  # 黄（半分以上）
+        width = int(ratio * 100)
+    else:
+        color = "#10B981"  # 緑（余裕）
+        width = max(8, int(ratio * 100))  # 最低 8% で視認性確保
+
+    return (
+        f'<div style="height:6px;background:#F3F4F6;border-radius:3px;'
+        f'margin:-2px 0 6px 0;overflow:hidden;">'
+        f'<div style="height:100%;width:{width}%;background:{color};'
+        f'border-radius:3px;"></div>'
+        f'</div>'
+    )
+
+
 def _build_cell_button_label(
     cell_date: date,
     cell_data: Dict[str, Any],
@@ -455,19 +503,38 @@ def _build_cell_button_label(
 
     ボタンは HTML 不可のためテキスト + 絵文字で視認性を確保する。
     3〜4 行構成で、改行は \\n。
+
+    Prefix 絵文字は「日付種別」+「混雑度」の複合表示（副院長フィードバック 2026-04-24）。
+    日曜/祝日の ⭐🎌 と、退院枠の埋まり具合 🟡🔴🚨 を併記することで、
+    数値を読まなくても一目で「空いてる日」「いっぱいの日」「超過日」が判別できる。
     """
     dow = _DOW_JA[cell_date.weekday()]
     if not cell_data["is_current_month"]:
         return f"{cell_date.day}"
 
-    # 頭の絵文字: 超過 > 祝日 > 日曜 > 今日
-    prefix = ""
-    if cell_data["is_over"]:
-        prefix = "🚨"
-    elif cell_data["is_holiday"]:
-        prefix = "🎌"
+    # 複合 prefix: 日付種別絵文字 + 混雑度絵文字
+    # 混雑度は「退院予定数が枠に対してどれだけ埋まっているか」で判定
+    prefixes: List[str] = []
+
+    # 日付種別（祝日 > 日曜）
+    if cell_data["is_holiday"]:
+        prefixes.append("🎌")
     elif cell_data["is_sunday_or_holiday"]:
-        prefix = "⭐"
+        prefixes.append("⭐")
+
+    # 混雑度（予定が入った日のみ、空っぽの日は prefix なしで静かに）
+    total_discharge = cell_data["total_discharge"]
+    slot = cell_data["slot"]
+    remaining = cell_data["remaining"]
+    if cell_data["is_over"]:
+        prefixes.append("🚨")  # 超過
+    elif total_discharge > 0 and remaining == 0:
+        prefixes.append("🔴")  # 満杯（枠ちょうど使い切り）
+    elif total_discharge > 0 and slot > 0 and remaining <= max(1, slot // 3):
+        prefixes.append("🟡")  # ギリギリ（残り 1/3 以下）
+    # それ以外（空 or 余裕）は prefix なし
+
+    prefix = " ".join(prefixes)
 
     dc = cell_data["dc"]
     total_discharge = cell_data["total_discharge"]
@@ -596,6 +663,10 @@ def _render_month_calendar(
                     type=btn_type,
                     disabled=not cell_data["is_current_month"],
                 )
+                # ボタン直下の埋まり具合プログレスバー（副院長 2026-04-24）
+                bar_html = _build_cell_progress_bar_html(cell_data)
+                if bar_html:
+                    st.markdown(bar_html, unsafe_allow_html=True)
                 if clicked:
                     st.session_state[sel_key] = d.isoformat()
                     st.rerun()
@@ -1216,7 +1287,10 @@ def _render_legend() -> None:
         '<span><b>残 N/5</b> = 枠残り</span>'
         '<span><b>⭐</b> 日曜推奨</span>'
         '<span><b>🎌</b> 祝日</span>'
-        '<span><b>🚨</b> 枠超過</span>'
+        '<span style="color:#059669;"><b>🟢バー短め</b>=余裕</span>'
+        '<span style="color:#B45309;"><b>🟡</b>+バー半分=ギリギリ</span>'
+        '<span style="color:#DC2626;"><b>🔴</b>+バー満=満杯</span>'
+        '<span style="color:#B91C1C;"><b>🚨</b>+赤バー=枠超過</span>'
         '<span><b>⚡N</b> 突発退院</span>'
         '<span><b>↩N</b> 前日超過の繰り越し</span>'
         '<span><b>✨</b> 動的枠調整（稼働率連動）</span>'
