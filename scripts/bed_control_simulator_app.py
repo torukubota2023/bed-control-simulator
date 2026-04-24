@@ -278,6 +278,49 @@ except Exception as _gr_err:
     _GUARDRAIL_ERROR = f"{_gr_err}\n{_gr_tb.format_exc()}"
     _EMERGENCY_RATIO_AVAILABLE = False
 
+# 過去入院データ（2025年度事務提供 CSV）ローダー
+# 日次入力が 3 ヶ月貯まるまで救急15% の rolling 計算を補完する。
+try:
+    from past_admissions_loader import (
+        load_past_admissions,
+        to_monthly_summary as past_to_monthly_summary,
+    )
+    _PAST_ADMISSIONS_AVAILABLE = True
+except Exception:
+    _PAST_ADMISSIONS_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# 月別サマリー統合 — 過去1年CSV + 既存 session_state.monthly_summary
+# ---------------------------------------------------------------------------
+# 救急15% rolling 計算の bootstrap 用途:
+#   1. 過去入院データ（事務提供 CSV）から monthly_summary を生成
+#   2. session_state.monthly_summary（手動入力）で上書き
+#   3. rolling 計算は daily_df → merged summary → manual_seed の優先順位で自動選択
+#
+# 日次データ（admission_details.csv）が 3 ヶ月分貯まれば自動的に日次優先になり、
+# 過去CSV は「古い月の監視」のみに縮退する（副院長指示 2026-04-24）。
+def _build_effective_monthly_summary() -> dict:
+    """過去CSV と session_state.monthly_summary を merge した辞書を返す。"""
+    merged: dict = {}
+    if _PAST_ADMISSIONS_AVAILABLE:
+        try:
+            past_df = st.session_state.get("past_admissions_df")
+            if past_df is not None and len(past_df) > 0:
+                merged = dict(past_to_monthly_summary(past_df))
+        except Exception:
+            merged = {}
+    # 手動入力サマリーで上書き（副院長が個別修正した値を優先）
+    manual_summary = st.session_state.get("monthly_summary", {})
+    if isinstance(manual_summary, dict):
+        for ym, ward_data in manual_summary.items():
+            if ym in merged and isinstance(ward_data, dict):
+                # 既存の過去CSV ベースに手動値を shallow merge
+                merged[ym] = {**merged[ym], **ward_data}
+            else:
+                merged[ym] = ward_data
+    return merged
+
 
 # ---------------------------------------------------------------------------
 # 救急搬送比率 — 経過措置期間ゲート付きラッパー
@@ -323,8 +366,15 @@ def _calc_emergency_ratio_with_gate(detail_df, ward, year_month, target_date,
         detail_df, ward=ward, year_month=year_month,
         exclude_short3=exclude_short3, target_date=target_date,
     )
+
+    # 過去入院データ（事務提供 CSV）を monthly_summary 形式に変換し、
+    # 既存 session_state.monthly_summary と merge（日次データが無い月を補完）。
+    # 日次データ > summary > manual_seed の優先順位は emergency_ratio 側で解決。
+    _eff_summary = _build_effective_monthly_summary()
+
     rolling = calculate_rolling_emergency_ratio(
         detail_df, ward=ward, target_date=target_date, window_months=3,
+        monthly_summary=_eff_summary,
     )
 
     # rolling の分子/分母/比率/ステータスで単月の値を上書き
@@ -403,6 +453,18 @@ try:
 except Exception as _cv_err:
     import traceback as _cv_tb
     _CONFERENCE_VIEW_ERROR = f"{_cv_err}\n{_cv_tb.format_exc()}"
+
+# 退院カレンダービュー（Ph.2, 2026-04-23 副院長指示）
+# 依存: discharge_plan_store / patient_status_store / discharge_slot_config
+# 失敗しても他セクションに影響させない。
+_DISCHARGE_CAL_VIEW_AVAILABLE = False
+_DISCHARGE_CAL_VIEW_ERROR = ""
+try:
+    from views.discharge_calendar_view import render_discharge_calendar_tab
+    _DISCHARGE_CAL_VIEW_AVAILABLE = True
+except Exception as _dc_err:
+    import traceback as _dc_tb
+    _DISCHARGE_CAL_VIEW_ERROR = f"{_dc_err}\n{_dc_tb.format_exc()}"
 
 # 過去実績分析ビュー（views と独立の try/except）
 # 依存: data/actual_admissions_2025fy.csv（無くても view 内でフォールバック）
@@ -1496,6 +1558,18 @@ if "admission_details" not in st.session_state:
         st.session_state.admission_details = load_details(_detail_csv_path)
     else:
         st.session_state.admission_details = pd.DataFrame()
+
+# 過去入院データ（事務提供の過去1年 CSV）— 救急15% rolling 計算の bootstrap 用
+# 日次入力が 3 ヶ月分貯まれば自動的に日次データが優先されるため、
+# これは「古い月の監視」専用。
+if "past_admissions_df" not in st.session_state:
+    if _PAST_ADMISSIONS_AVAILABLE:
+        try:
+            st.session_state.past_admissions_df = load_past_admissions()
+        except Exception:
+            st.session_state.past_admissions_df = pd.DataFrame()
+    else:
+        st.session_state.past_admissions_df = pd.DataFrame()
 
 # A/B/C群 自動計算用の状態（SQLiteから自動復元）
 if "abc_state" not in st.session_state:
@@ -3183,10 +3257,14 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
     tab_names = ["\U0001f6e1\ufe0f 制度・需要・C群"]
     if _DOCTOR_MASTER_AVAILABLE:
         tab_names.append("\U0001f4a1 改善のヒント")
+    # 2026-04-24: 過去1年実データの可視化タブ（事務提供CSV）
+    if _PAST_ADMISSIONS_AVAILABLE:
+        tab_names.append("\U0001f4ca 過去1年分析")
 elif _selected_section == "\U0001f3e5 退院調整":
     # Phase 1 情報階層リデザイン（2026-04-18）: 5 タブ統合
-    # カンファ資料 / 退院タイミング / 今週の需要予測 / 退院候補リスト / 予約可能枠
-    tab_names = ["\U0001f3e5 カンファ資料", "\U0001f468\u200d\u2695\ufe0f 退院タイミング", "\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 予約可能枠"]
+    # 2026-04-23: 「📅 退院カレンダー」を新規追加（副院長指示）、既存「📅 予約可能枠」を「📅 入院受入枠」に改名
+    # カンファ資料 / 退院カレンダー / 退院タイミング / 今週の需要予測 / 退院候補リスト / 入院受入枠
+    tab_names = ["\U0001f3e5 カンファ資料", "\U0001f4c5 退院カレンダー", "\U0001f468\u200d\u2695\ufe0f 退院タイミング", "\U0001f4ca 今週の需要予測", "\U0001f4cb 退院候補リスト", "\U0001f4c5 入院受入枠"]
 elif _selected_section == "\u2699\ufe0f データ・設定":
     # Phase 4 情報階層リデザイン（2026-04-18・最終）: 旧「📋 データ管理」に
     # 旧「📨 HOPE連携」セクションとサイドバー「🏃 短手3 パラメータ」を統合した 7 タブ構成
@@ -9179,6 +9257,543 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
             elif "_DOCTOR_INSIGHT_ERROR" in dir():
                 st.caption(f"（深掘りインサイトモジュールの読み込みに失敗しました: {_DOCTOR_INSIGHT_ERROR[:200]}）")
 
+        # =========================================================
+        # 📊 過去1年プロファイル分析（2026-04-24 追加）
+        # admission_details が空でも past_admissions_df があれば動作する。
+        # 運用開始後に日次データが積み重なれば、同じロジックで
+        # admission_details からも計算できる（data-source 非依存）。
+        # =========================================================
+        if _PAST_ADMISSIONS_AVAILABLE:
+            _pa_df_prof = st.session_state.get("past_admissions_df", pd.DataFrame())
+            if not _pa_df_prof.empty:
+                st.markdown("---")
+                _bc_section_title(
+                    "過去1年プロファイル分析（退院曜日・自主回転・週末空床リスク）",
+                    icon="📊",
+                )
+                st.caption(
+                    "事務提供の 2025 年度データ（1,823 件）から、医師ごとの退院行動を可視化。"
+                    "**他医師の中央値（同診療科 or 全体）との差** で提示し、順位付けは避けています。"
+                    "件数 < 20 件の医師は参考値扱い（グレー表示）。"
+                )
+
+                try:
+                    import plotly.graph_objects as go
+                    _plotly_dp = True
+                except ImportError:
+                    _plotly_dp = False
+
+                from doctor_discharge_profile import (
+                    build_doctor_summary,
+                    compute_self_driven_los,
+                    compute_weekday_profile,
+                    compute_weekend_vacancy_risk,
+                )
+                from doctor_specialty_map import DOCTOR_SPECIALTY_GROUP
+
+                # ---- ビュー切替 ----
+                _view_mode = st.radio(
+                    "表示モード",
+                    ["🌐 全体概観", "👤 個別医師プロファイル"],
+                    horizontal=True,
+                    key="doctor_profile_view_mode",
+                )
+
+                _weekday_prof = compute_weekday_profile(_pa_df_prof)
+                # 手術なし全体を対象（副院長指示 2026-04-24）+ 副院長分類を使用
+                _self_driven = compute_self_driven_los(
+                    _pa_df_prof,
+                    specialty_override_map=DOCTOR_SPECIALTY_GROUP,
+                    require_scheduled=False,
+                )
+                _weekend_risk = compute_weekend_vacancy_risk(_pa_df_prof)
+
+                if _view_mode == "🌐 全体概観":
+                    # --- 週末空床リスク寄与度（木+金退院率）ランキング ---
+                    st.markdown("#### 🔴 週末空床リスク寄与度（木+金退院率）")
+                    st.caption(
+                        "金曜＋木曜の退院が多いほど、土日に空床が発生しやすい。"
+                        "他医師の中央値と比較して、週末空床リスクへの寄与を可視化。"
+                    )
+                    if _plotly_dp and _weekend_risk:
+                        _risk_sorted = sorted(
+                            [(d, r) for d, r in _weekend_risk.items()],
+                            key=lambda kv: -kv[1]["thu_fri_pct"],
+                        )
+                        _doctors = [d for d, _ in _risk_sorted]
+                        _thu_fri = [r["thu_fri_pct"] for _, r in _risk_sorted]
+                        _colors = [
+                            "#9CA3AF" if r["is_small_sample"]
+                            else ("#DC2626" if r["delta_vs_peer"] >= 5
+                                  else "#F59E0B" if r["delta_vs_peer"] >= 0
+                                  else "#10B981")
+                            for _, r in _risk_sorted
+                        ]
+                        _peer_med = _risk_sorted[0][1]["peer_thu_fri_pct"] if _risk_sorted else 0
+                        _fig_risk = go.Figure()
+                        _fig_risk.add_trace(go.Bar(
+                            x=_thu_fri, y=_doctors, orientation="h",
+                            marker_color=_colors,
+                            text=[f"{v:.1f}%" for v in _thu_fri],
+                            textposition="outside",
+                            hovertemplate="%{y}<br>木+金: %{x:.1f}%<extra></extra>",
+                        ))
+                        _fig_risk.add_vline(
+                            x=_peer_med, line_width=2, line_dash="dash",
+                            line_color="#374151",
+                            annotation_text=f"他医師の中央値 {_peer_med:.1f}%",
+                            annotation_position="top",
+                        )
+                        _fig_risk.update_layout(
+                            height=max(300, 30 * len(_doctors)),
+                            xaxis_title="木+金曜退院率 (%)",
+                            margin=dict(l=60, r=80, t=30, b=40),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(_fig_risk, use_container_width=True)
+                        st.caption(
+                            "🔴 赤＝他医師の中央値より +5pt 以上（リスク寄与大）／"
+                            "🟠 オレンジ＝他医師の中央値より 0〜5pt 上／"
+                            "🟢 緑＝他医師の中央値より下（リスク抑制）／"
+                            "⚪ グレー＝件数 < 20（参考値）"
+                        )
+
+                    # --- 自主回転 中央在院日数 ---
+                    st.markdown("#### 🔄 医師別 中央在院日数（手術なし症例）")
+                    st.caption(
+                        "術後経過という外的要因を排除した「手術なし」症例で、"
+                        "医師の退院判断を比較。**診療科グループは副院長分類**（内科/外科/"
+                        "ペイン科/整形外科/脳神経外科/外来専任/訪問診療医）。"
+                        "**同グループの他医師の中央値** より **短ければ自主的に回転**、"
+                        "**長ければゆったり** という傾向が読める。"
+                    )
+                    if _plotly_dp and _self_driven:
+                        _sd_sorted = sorted(
+                            [(d, s) for d, s in _self_driven.items()],
+                            key=lambda kv: kv[1]["median_los"],
+                        )
+                        _sd_docs = [d for d, _ in _sd_sorted]
+                        _sd_self = [s["median_los"] for _, s in _sd_sorted]
+                        _sd_peer = [s["peer_median"] for _, s in _sd_sorted]
+                        _sd_ns = [s["self_driven_cases"] for _, s in _sd_sorted]
+                        _sd_small = [s["is_small_sample"] for _, s in _sd_sorted]
+                        _sd_colors = [
+                            "#9CA3AF" if sm else "#2563EB"
+                            for sm in _sd_small
+                        ]
+                        _fig_sd = go.Figure()
+                        _fig_sd.add_trace(go.Scatter(
+                            x=_sd_self, y=_sd_docs,
+                            mode="markers",
+                            marker=dict(size=14, color=_sd_colors),
+                            name="自身の中央在院日数",
+                            hovertemplate="%{y}<br>self %{x}日<br>件数 %{customdata}<extra></extra>",
+                            customdata=_sd_ns,
+                        ))
+                        _fig_sd.add_trace(go.Scatter(
+                            x=_sd_peer, y=_sd_docs,
+                            mode="markers",
+                            marker=dict(size=10, color="#DC2626", symbol="line-ns-open"),
+                            name="他医師の中央値",
+                            hovertemplate="%{y}<br>他医師 %{x}日<extra></extra>",
+                        ))
+                        _fig_sd.update_layout(
+                            height=max(300, 30 * len(_sd_docs)),
+                            xaxis_title="中央在院日数（日）",
+                            margin=dict(l=60, r=20, t=30, b=40),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                        )
+                        st.plotly_chart(_fig_sd, use_container_width=True)
+
+                    # --- 曜日偏り Gini ランキング ---
+                    with st.expander("📏 曜日偏り指数（Gini 係数）ランキング", expanded=False):
+                        if _weekday_prof:
+                            _gini_rows = []
+                            for doc, pf in sorted(
+                                _weekday_prof.items(),
+                                key=lambda kv: -kv[1]["gini"],
+                            ):
+                                _gini_rows.append({
+                                    "医師": doc + ("（参考値）" if pf["is_small_sample"] else ""),
+                                    "件数": pf["total"],
+                                    "Gini": pf["gini"],
+                                    "月": pf["pcts"][0],
+                                    "火": pf["pcts"][1],
+                                    "水": pf["pcts"][2],
+                                    "木": pf["pcts"][3],
+                                    "金": pf["pcts"][4],
+                                    "土": pf["pcts"][5],
+                                    "日": pf["pcts"][6],
+                                    "分類": {
+                                        "friday_heavy": "⚠️ 金曜集中",
+                                        "monday_heavy": "ℹ️ 月曜集中",
+                                        "uniform": "✅ 均等",
+                                        "normal": "—",
+                                    }.get(pf["flag"], "—"),
+                                })
+                            st.dataframe(
+                                pd.DataFrame(_gini_rows),
+                                use_container_width=True, hide_index=True,
+                            )
+                            st.caption(
+                                "Gini 係数: 0 = 完全均等 / 1 = 極端な偏り。"
+                                "7 曜日で 1 曜日集中だと 0.857 が理論最大。"
+                            )
+
+                else:  # 個別医師プロファイル
+                    _doc_list = sorted(_weekday_prof.keys())
+                    if not _doc_list:
+                        st.info("医師プロファイルを計算できるデータがありません。")
+                    else:
+                        _sel_doc = st.selectbox("医師コードを選択", _doc_list, key="profile_doctor_select")
+                        _summary = build_doctor_summary(
+                            _pa_df_prof, _sel_doc,
+                            specialty_override_map=DOCTOR_SPECIALTY_GROUP,
+                            require_scheduled=False,
+                        )
+
+                        # メインカード
+                        _wd = _summary["weekday"]
+                        _sd = _summary["self_driven"]
+                        _wr = _summary["weekend_risk"]
+
+                        _cols_prof = st.columns(4)
+                        _cols_prof[0].metric("退院件数", f"{_wd.get('total', 0)}件")
+                        _cols_prof[1].metric(
+                            "金曜退院率",
+                            f"{_wd.get('friday_pct', 0):.1f}%",
+                            delta=f"{_wd.get('friday_pct', 0) - 14.3:+.1f}pt（均等比）",
+                        )
+                        _cols_prof[2].metric(
+                            "木+金退院率",
+                            f"{_wr.get('thu_fri_pct', 0):.1f}%",
+                            delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（他医師との差）",
+                            delta_color="inverse",  # 高いほど悪い
+                        )
+                        _cols_prof[3].metric(
+                            "曜日偏りGini",
+                            f"{_wd.get('gini', 0):.3f}",
+                            help="0=完全均等, 1=極端な偏り",
+                        )
+
+                        # Insights バッジ
+                        _insights = _summary["insights"]
+                        if _insights:
+                            st.markdown("##### 📝 プロファイル要約")
+                            for ins in _insights:
+                                if ins.startswith("✅"):
+                                    _bc_alert(ins, severity="success")
+                                elif ins.startswith("⚠️"):
+                                    _bc_alert(ins, severity="warning")
+                                elif ins.startswith("📈"):
+                                    _bc_alert(ins, severity="info")
+                                else:
+                                    _bc_alert(ins, severity="neutral")
+
+                        # 曜日棒グラフ
+                        if _plotly_dp and _wd:
+                            _fig_wd = go.Figure(go.Bar(
+                                x=["月", "火", "水", "木", "金", "土", "日"],
+                                y=_wd["counts"],
+                                marker_color=[
+                                    "#2563EB" if i < 3 else
+                                    "#F59E0B" if i == 3 else
+                                    "#DC2626" if i == 4 else "#6B7280"
+                                    for i in range(7)
+                                ],
+                                text=[
+                                    f"{_wd['counts'][i]}<br>({_wd['pcts'][i]:.1f}%)"
+                                    for i in range(7)
+                                ],
+                                textposition="outside",
+                            ))
+                            _fig_wd.update_layout(
+                                title=f"{_sel_doc} の退院曜日分布",
+                                height=300,
+                                yaxis_title="退院件数",
+                                margin=dict(l=40, r=20, t=40, b=40),
+                                showlegend=False,
+                            )
+                            st.plotly_chart(_fig_wd, use_container_width=True)
+
+                        # 自主回転 LOS 詳細
+                        if _sd and not _sd.get("is_small_sample", True):
+                            _sd_col1, _sd_col2 = st.columns(2)
+                            _sd_col1.metric(
+                                "手術なし 件数",
+                                f"{_sd['self_driven_cases']}件",
+                                help=f"診療科グループ: {_sd.get('peer_group', '—')}",
+                            )
+                            _sd_col2.metric(
+                                f"中央在院日数（vs {_sd.get('peer_group', '他医師')}）",
+                                f"{_sd['median_los']}日",
+                                delta=f"{_sd['los_delta_vs_peer']:+.1f}日（他医師 {_sd['peer_median']}日）",
+                                delta_color="normal",  # 他医師より短い=正=良
+                            )
+
+                        if _wd.get("is_small_sample", False):
+                            _bc_alert(
+                                f"⚪ 退院件数が {_wd['total']} 件と少ないため、"
+                                f"参考値扱いとしてください（閾値: 20件）",
+                                severity="info",
+                            )
+
+# ---------------------------------------------------------------------------
+# タブ: 📊 過去1年分析（事務提供の2025年度実データ）
+# ---------------------------------------------------------------------------
+# 2026-04-24 実装:
+#   A) 救急15% rolling 3ヶ月推移（5F / 6F / 全体 × 月別 + 15%基準線）
+#   B) イ/ロ/ハ判定の過去遡及分布（全期間 + 病棟別）
+#
+# 副院長指示の制度ルール（厳守）:
+#   - 分子 = 自院救急 + 下り搬送（救急車=有の全件）
+#   - 分母 = 全入院（短手3 を除外しない）
+#   - 短手3 識別は統計用途のみで救急比率計算とは分離
+if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
+    with tabs[_tab_idx["\U0001f4ca 過去1年分析"]]:
+        st.header("\U0001f4ca 過去1年分析（2025年度事務提供データ）")
+        _pa_df = st.session_state.get("past_admissions_df", pd.DataFrame())
+        if _pa_df.empty:
+            st.warning(
+                "過去入院データを読み込めません。"
+                "`data/past_admissions_2025fy.csv` の存在を確認してください。"
+            )
+        else:
+            _pa_5f = int((_pa_df["病棟"] == "5F").sum())
+            _pa_6f = int((_pa_df["病棟"] == "6F").sum())
+            _pa_total = len(_pa_df)
+            st.caption(
+                f"期間: 2025-04-01〜2026-03-31 ｜ "
+                f"{_pa_total:,} 件 ｜ 5F: {_pa_5f:,} / 6F: {_pa_6f:,} ｜ "
+                f"救急搬送: {int(_pa_df['is_emergency_transport'].sum())} 件"
+                f"（自院 {int(_pa_df['is_self_emergency'].sum())} / "
+                f"下り {int(_pa_df['is_downstream_transfer'].sum())}）"
+            )
+
+            # bridge 卒業通知バナー（副院長指示 2026-04-24）
+            # 手動シード YAML にエントリがある月のうち、過去 CSV で代替された月を検出。
+            # 優先順位は daily > summary > manual_seed のため、代替済みシードは既に
+            # 使われていないが、副院長が yaml を片付ける判断材料として表示する。
+            try:
+                from emergency_ratio import (
+                    load_manual_seeds_from_yaml as _er_load_seeds,
+                    get_superseded_seed_months as _er_superseded,
+                )
+                _pa_seeds = _er_load_seeds()
+                _pa_superseded = _er_superseded(_pa_seeds, _pa_df)
+                if _pa_superseded:
+                    _superseded_list = ", ".join(_pa_superseded)
+                    st.success(
+                        f"\U0001f393 **bridge 卒業判定**: "
+                        f"{_superseded_list} の手動シードは過去 CSV で代替されました。"
+                        f"`settings/manual_seed_emergency_ratio.yaml` の該当月エントリは"
+                        f"削除して問題ありません（既に優先順位上は使われていません）。"
+                    )
+                elif _pa_seeds:
+                    st.info(
+                        "手動シード YAML にエントリがありますが、過去 CSV で代替されて"
+                        "いる月はありません。現状のシードは引き続き rolling 計算に"
+                        "使用される可能性があります。"
+                    )
+            except Exception as _er_err:
+                # 卒業判定は補助機能なので、失敗しても本体機能は動かす
+                import traceback as _er_tb
+                with st.expander("bridge 卒業判定の読み込みエラー（補助機能）", expanded=False):
+                    st.code(f"{_er_err}\n{_er_tb.format_exc()}")
+
+            try:
+                import plotly.graph_objects as go
+                _plotly_ok = True
+            except ImportError:
+                _plotly_ok = False
+                st.warning("Plotly 未インストールのためグラフ表示できません。")
+
+            # ===== A: 救急15% rolling 3ヶ月推移 =====
+            st.subheader("\U0001f691 救急搬送後割合 rolling 3ヶ月推移")
+            st.caption(
+                "**制度基準 15%** — 2026-06-01 以降の本則完全適用下では、"
+                "**両病棟で rolling 3ヶ月が常に 15% 以上** を維持する必要があります。"
+            )
+
+            from past_admissions_loader import to_monthly_summary as _pa_to_summary
+            _pa_summary = _pa_to_summary(_pa_df)
+
+            # rolling 3ヶ月の月別計算（2025-06 以降、3ヶ月分揃う月のみ）
+            _pa_months_sorted = sorted(_pa_summary.keys())
+            _rolling_rows = []
+            for i, ym in enumerate(_pa_months_sorted):
+                if i < 2:
+                    continue  # 3ヶ月分揃わない月はスキップ
+                window = _pa_months_sorted[i - 2 : i + 1]
+                row = {"month": ym}
+                for ward_key in ("5F", "6F", "all"):
+                    num = sum(_pa_summary[w][ward_key]["emergency"] for w in window)
+                    den = sum(_pa_summary[w][ward_key]["admissions"] for w in window)
+                    row[f"{ward_key}_pct"] = round(num / den * 100, 2) if den > 0 else 0.0
+                    row[f"{ward_key}_num"] = num
+                    row[f"{ward_key}_den"] = den
+                _rolling_rows.append(row)
+
+            if _rolling_rows and _plotly_ok:
+                _months = [r["month"] for r in _rolling_rows]
+                _fig_roll = go.Figure()
+                # 15% 閾値
+                _fig_roll.add_hline(
+                    y=15, line_width=2, line_dash="dash", line_color="#DC2626",
+                    annotation_text="制度基準 15%", annotation_position="top right",
+                )
+                _fig_roll.add_trace(go.Scatter(
+                    x=_months, y=[r["5F_pct"] for r in _rolling_rows],
+                    mode="lines+markers", name="5F", line=dict(color="#2563EB", width=3),
+                    hovertemplate="%{x}<br>5F: %{y:.1f}%<extra></extra>",
+                ))
+                _fig_roll.add_trace(go.Scatter(
+                    x=_months, y=[r["6F_pct"] for r in _rolling_rows],
+                    mode="lines+markers", name="6F", line=dict(color="#7C3AED", width=3),
+                    hovertemplate="%{x}<br>6F: %{y:.1f}%<extra></extra>",
+                ))
+                _fig_roll.add_trace(go.Scatter(
+                    x=_months, y=[r["all_pct"] for r in _rolling_rows],
+                    mode="lines+markers", name="全体",
+                    line=dict(color="#6B7280", width=2, dash="dot"),
+                    hovertemplate="%{x}<br>全体: %{y:.1f}%<extra></extra>",
+                ))
+                _fig_roll.update_layout(
+                    height=400,
+                    yaxis_title="救急搬送後割合 (%)",
+                    xaxis_title="月末時点（rolling 3ヶ月平均）",
+                    hovermode="x unified",
+                    margin=dict(l=40, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                )
+                st.plotly_chart(_fig_roll, use_container_width=True)
+
+                # rolling の直近値をメトリクス表示
+                _latest = _rolling_rows[-1]
+                _cols_r = st.columns(3)
+                for _col, _k, _lbl in [
+                    (_cols_r[0], "5F", "5F 直近 rolling"),
+                    (_cols_r[1], "6F", "6F 直近 rolling"),
+                    (_cols_r[2], "all", "全体 直近 rolling"),
+                ]:
+                    _v = _latest[f"{_k}_pct"]
+                    _stat = "🟢 クリア" if _v >= 15.0 else ("🟡 ギリギリ" if _v >= 13.0 else "🔴 未達")
+                    _col.metric(
+                        _lbl,
+                        f"{_v:.1f}%",
+                        help=f"分子 {_latest[f'{_k}_num']} / 分母 {_latest[f'{_k}_den']}",
+                    )
+                    _col.caption(_stat)
+
+                # 表形式でも見せる（折りたたみ）
+                with st.expander("月別 rolling 値の一覧（表）", expanded=False):
+                    _df_roll = pd.DataFrame(_rolling_rows).rename(columns={
+                        "month": "月末",
+                        "5F_pct": "5F (%)", "6F_pct": "6F (%)", "all_pct": "全体 (%)",
+                        "5F_num": "5F 分子", "5F_den": "5F 分母",
+                        "6F_num": "6F 分子", "6F_den": "6F 分母",
+                        "all_num": "全体 分子", "all_den": "全体 分母",
+                    })
+                    st.dataframe(
+                        _df_roll[["月末", "5F (%)", "6F (%)", "全体 (%)",
+                                  "5F 分子", "5F 分母", "6F 分子", "6F 分母",
+                                  "全体 分子", "全体 分母"]],
+                        use_container_width=True, hide_index=True,
+                    )
+            elif not _rolling_rows:
+                st.info("rolling 3ヶ月を計算できる月がありません（3ヶ月以上のデータが必要）。")
+
+            st.divider()
+
+            # ===== B: イ/ロ/ハ判定の過去遡及 =====
+            st.subheader("\U0001f4cb イ/ロ/ハ判定の過去遡及分布（2026改定 入院料1）")
+            st.caption(
+                "**判定ロジック:** 緊急入院×手術なし=**イ**(3,367点) / "
+                "緊急×手術 or 予定×手術なし=**ロ**(3,267点) / "
+                "予定×手術=**ハ**(3,117点)。病棟別に入院構成の差が見えます。"
+            )
+            from past_admissions_loader import tabulate_tier_distribution as _pa_tier
+            _tier = _pa_tier(_pa_df)
+
+            if _plotly_ok and _tier["total"] > 0:
+                # 病棟別 スタック横棒グラフ（割合ベース）
+                _wards = ["5F", "6F"]
+                _total_5f = _tier["by_ward"]["5F"]["total"]
+                _total_6f = _tier["by_ward"]["6F"]["total"]
+                _pct_i = [
+                    _tier["by_ward"]["5F"]["tier_i"] / _total_5f * 100 if _total_5f else 0,
+                    _tier["by_ward"]["6F"]["tier_i"] / _total_6f * 100 if _total_6f else 0,
+                ]
+                _pct_ro = [
+                    _tier["by_ward"]["5F"]["tier_ro"] / _total_5f * 100 if _total_5f else 0,
+                    _tier["by_ward"]["6F"]["tier_ro"] / _total_6f * 100 if _total_6f else 0,
+                ]
+                _pct_ha = [
+                    _tier["by_ward"]["5F"]["tier_ha"] / _total_5f * 100 if _total_5f else 0,
+                    _tier["by_ward"]["6F"]["tier_ha"] / _total_6f * 100 if _total_6f else 0,
+                ]
+                _fig_tier = go.Figure()
+                _fig_tier.add_trace(go.Bar(
+                    name="イ (3,367点)", y=_wards, x=_pct_i, orientation="h",
+                    marker_color="#10B981",
+                    text=[f"{v:.1f}%" for v in _pct_i], textposition="inside",
+                ))
+                _fig_tier.add_trace(go.Bar(
+                    name="ロ (3,267点)", y=_wards, x=_pct_ro, orientation="h",
+                    marker_color="#F59E0B",
+                    text=[f"{v:.1f}%" for v in _pct_ro], textposition="inside",
+                ))
+                _fig_tier.add_trace(go.Bar(
+                    name="ハ (3,117点)", y=_wards, x=_pct_ha, orientation="h",
+                    marker_color="#DC2626",
+                    text=[f"{v:.1f}%" for v in _pct_ha], textposition="inside",
+                ))
+                _fig_tier.update_layout(
+                    barmode="stack",
+                    height=250,
+                    xaxis_title="入院構成比 (%)",
+                    margin=dict(l=40, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                )
+                st.plotly_chart(_fig_tier, use_container_width=True)
+
+                # 件数テーブル
+                _cols_t = st.columns(3)
+                _cols_t[0].metric(
+                    "イ (緊急×無手術)", f"{_tier['tier_i']:,}件",
+                    help=f"全体 {_tier['tier_i']/_tier['total']*100:.1f}% / 5F {_tier['by_ward']['5F']['tier_i']} / 6F {_tier['by_ward']['6F']['tier_i']}",
+                )
+                _cols_t[1].metric(
+                    "ロ (緊急×手術 or 予定×無手術)", f"{_tier['tier_ro']:,}件",
+                    help=f"全体 {_tier['tier_ro']/_tier['total']*100:.1f}% / 5F {_tier['by_ward']['5F']['tier_ro']} / 6F {_tier['by_ward']['6F']['tier_ro']}",
+                )
+                _cols_t[2].metric(
+                    "ハ (予定×手術)", f"{_tier['tier_ha']:,}件",
+                    help=f"全体 {_tier['tier_ha']/_tier['total']*100:.1f}% / 5F {_tier['by_ward']['5F']['tier_ha']} / 6F {_tier['by_ward']['6F']['tier_ha']}",
+                )
+
+                st.caption(
+                    f"💡 **運用の含意:** 5F は手術系（ハ 26.7%）、"
+                    f"6F は内科緊急系（イ 61.9%）の構成。"
+                    f"2026改定で「ハ」は3,117点と最も低いため、"
+                    f"5F の手術予定入院比率は収入面で注視が必要。"
+                )
+
+            # 短手3 推定（参考情報、分母には入れる）
+            with st.expander("📎 短手3 推定（統計参考、救急比率の分母には常に含める）", expanded=False):
+                from past_admissions_loader import summarize_short3_estimate as _pa_s3
+                _s3 = _pa_s3(_pa_df)
+                _cs3 = st.columns(3)
+                _cs3[0].metric("手術あり全件", f"{_s3['total_surgeries']:,}")
+                _cs3[1].metric("短手3 確実（≤2日）", f"{_s3['short3_certain']:,}")
+                _cs3[2].metric("短手3 ほぼ確実（≤5日）", f"{_s3['short3_likely']:,}")
+                st.caption(
+                    "ヒューリスティック: 手術○ × 日数 ≤ 2 = 確実（大腸ポリペクトミー等）、"
+                    "≤ 5 = ほぼ確実（短期滞在手術）。"
+                    "**この識別は統計・収入分析用途のみ。"
+                    "救急15%の分母からは一切除外しません**（制度ルール）。"
+                )
+
 # ---------------------------------------------------------------------------
 # タブ: 💡 改善のヒント（インタラクティブ What-If シミュレーション付き）
 # ---------------------------------------------------------------------------
@@ -10663,7 +11278,7 @@ if "🏃 短手3設定" in _tab_idx:
 
 # ---------------------------------------------------------------------------
 # 🏥 退院調整セクション（Phase 1 情報階層リデザイン・2026-04-18）:
-# 旧「🗓 連休対策」由来の 3 タブ（今週の需要予測・退院候補リスト・予約可能枠）
+# 旧「🗓 連休対策」由来の 3 タブ（今週の需要予測・退院候補リスト・入院受入枠 [旧名: 予約可能枠]）
 # を「🏥 退院調整」セクションへ移設。共通データ準備ブロックはセクション名のみ
 # 差し替え、タブ名は原文を維持する。
 # ---------------------------------------------------------------------------
@@ -10756,12 +11371,16 @@ if (
                 today=_hs_today,
             )
 
-    # --- タブ 3: 予約可能枠 ---
-    if "\U0001f4c5 予約可能枠" in _tab_idx:
-        with tabs[_tab_idx["\U0001f4c5 予約可能枠"]]:
-            st.header("📅 予約可能枠")
+    # --- タブ: 入院受入枠（2026-04-23 改名、旧「予約可能枠」）---
+    # 旧タブ名は「📅 予約可能枠」で、退院の枠管理ではなく入院の受入枠を表すことが
+    # 分かりにくかったため、2026-04-23 に「📅 入院受入枠」に改名。
+    # 退院側は別タブ「📅 退院カレンダー」に分離（discharge_calendar_view）。
+    if "\U0001f4c5 入院受入枠" in _tab_idx:
+        with tabs[_tab_idx["\U0001f4c5 入院受入枠"]]:
+            st.header("📅 入院受入枠")
             st.caption(
-                "予約受付事務員向け：4週間先まで日別の需要・空床・可能枠を色分けしてカレンダーで表示します"
+                "予約受付事務員向け：外来から入院依頼があった時に 4 週間先までの受入可能枠を確認します。"
+                "退院側のカレンダーは「📅 退院カレンダー」タブを参照してください。"
             )
             # 既に上で計算済みの変数を流用
             _hs_details_df_tab3 = st.session_state.get("admission_details", pd.DataFrame())
@@ -10818,6 +11437,61 @@ elif (
     if _CONFERENCE_VIEW_ERROR:
         with st.expander("エラー詳細", expanded=False):
             st.code(_CONFERENCE_VIEW_ERROR)
+
+# ---------------------------------------------------------------------------
+# 🏥 退院調整セクション — 📅 退院カレンダー タブ（Ph.2, 2026-04-23 副院長指示）
+# ---------------------------------------------------------------------------
+# 月俯瞰カレンダーで退院予定を 3 層（調整中/予定/決定）で可視化し、
+# 入院予定を重ねて稼働率方向を示す。病棟別（5F/6F）× 当月/翌月のタブ構造。
+# 日曜枠は推奨マーカーとして視覚的に強調する。
+if (
+    _selected_section == "\U0001f3e5 退院調整"
+    and _DISCHARGE_CAL_VIEW_AVAILABLE
+    and "\U0001f4c5 退院カレンダー" in _tab_idx
+):
+    with tabs[_tab_idx["\U0001f4c5 退院カレンダー"]]:
+        try:
+            _dc_details_df = st.session_state.get("admission_details", pd.DataFrame())
+            # 祝日セット（holiday_calendar が使えれば利用、無ければ空セット）
+            _dc_jp_holidays = set()
+            try:
+                from holiday_calendar import is_holiday as _dc_is_holiday  # type: ignore
+                # 当月・翌月の範囲で祝日を列挙
+                _dc_today = date.today()
+                _dc_start = _dc_today.replace(day=1)
+                _dc_end = (_dc_start + timedelta(days=70)).replace(day=1) + timedelta(days=35)
+                for _dc_i in range((_dc_end - _dc_start).days):
+                    _dc_d = _dc_start + timedelta(days=_dc_i)
+                    if _dc_is_holiday(_dc_d):
+                        _dc_jp_holidays.add(_dc_d)
+            except Exception:
+                _dc_jp_holidays = set()
+            render_discharge_calendar_tab(
+                admission_details_df=_dc_details_df,
+                today=date.today(),
+                jp_holidays=_dc_jp_holidays,
+            )
+        except Exception as _dc_render_err:
+            st.error(
+                "退院カレンダーの描画中にエラーが発生しました。"
+                "discharge_plan_store / discharge_slot_config を確認してください。"
+            )
+            with st.expander("エラー詳細（開発用）", expanded=False):
+                import traceback as _dc_render_tb
+                st.code(f"{_dc_render_err}\n{_dc_render_tb.format_exc()}")
+elif (
+    _selected_section == "\U0001f3e5 退院調整"
+    and not _DISCHARGE_CAL_VIEW_AVAILABLE
+    and "\U0001f4c5 退院カレンダー" in _tab_idx
+):
+    with tabs[_tab_idx["\U0001f4c5 退院カレンダー"]]:
+        st.error(
+            "退院カレンダービューが読み込めませんでした。"
+            "views/discharge_calendar_view.py の依存モジュールを確認してください。"
+        )
+        if _DISCHARGE_CAL_VIEW_ERROR:
+            with st.expander("エラー詳細", expanded=False):
+                st.code(_DISCHARGE_CAL_VIEW_ERROR)
 
 # ---------------------------------------------------------------------------
 # フッター

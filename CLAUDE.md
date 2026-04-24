@@ -7,6 +7,34 @@
 
 （現在、事務確認待ちの新規課題はありません）
 
+## 📊 過去1年入院データ統合（2026-04-24 データ受領・実装）
+
+**データ受領日:** 2026-04-24（事務から `20260424.xlsx` 1823件）
+**保存先:** `data/past_admissions_2025fy.csv`（氏名なし、医師コード化、患者番号通番化）
+**期間:** 2025-04-01 〜 2026-03-31（12ヶ月）
+
+**含まれる列（依頼した最小より多い）:**
+- 必須: 病棟 / 救急車 / 入経路 / 入院日 / 退院日 / 日数
+- ボーナス: 緊急（予定外/予定）/ 退経路（9分類）/ 手術 / 診療科 / 医師
+
+**実装済み（A案=別テーブル共存）:**
+1. ✅ `scripts/past_admissions_loader.py` — ローダー＋派生列（救急搬送種別、短手3推定、イ/ロ/ハ判定）
+2. ✅ `scripts/bed_control_simulator_app.py` `_build_effective_monthly_summary()` — 既存 `calculate_rolling_emergency_ratio` に `monthly_summary` 経由で注入。日次データ > 過去CSV > 手動シード の優先順位で自動切替
+3. ✅ `tests/test_past_admissions_loader.py`（19 tests pass）
+
+**救急搬送後 15% 判定の制度ルール（副院長指示 2026-04-24）:**
+- 分子 = **自院救急 + 下り搬送**（救急車=有の全件、制度判定はこれで統一）
+- 分母 = **全入院**（短手3 を除外しない）
+- 短手3 の識別は `is_short3_certain`（手術○×日数≤2、大腸ポリペク等確実）/ `is_short3_likely`（≤5日）で別途保持するが、救急比率計算とは完全分離
+
+**UI 実装状況（2026-04-24 追加実装済み、mac-mini セッション分）:**
+- ✅ A: UI「過去1年 rolling 推移グラフ」— `🛡️ 制度管理 > 📊 過去1年分析` タブに実装（`bed_control_simulator_app.py:9580-9674`、5F/6F/全体の折れ線 + 15%閾値 + rolling メトリクス + 月別表）
+- ✅ B: UI「イ/ロ/ハ過去遡及」— 同タブ内に実装（`:9677-9749`、病棟別スタック横棒 + 件数テーブル + 運用の含意解説）
+- ✅ D: `manual_seed_emergency_ratio.yaml` の bridge 卒業判定（2026-04-24 torumac-mini 実装）
+  - `emergency_ratio.is_seed_superseded_by_past_csv(ym, past_df)` / `get_superseded_seed_months(seeds, past_df)` を追加
+  - UI「過去1年分析」タブ上部に卒業通知バナーを表示（`🎓 bridge 卒業: 2026-02, 2026-03 のシードは過去 CSV で代替済み → 削除可`）
+  - 優先順位は `daily > summary(過去CSV) > manual_seed` のため、代替済みシードは既に無視される。UI は「yaml を片付けてください」という運用向け通知
+
 ## 📐 2026年度診療報酬改定 対応ステータス（地域包括医療病棟入院料1/2）
 
 **記録日:** 2026-04-20（方針更新 2026-04-20）
@@ -48,20 +76,6 @@
 - [x] 2026 改定点数表（入院料1/2 × イ/ロ/ハ 6 区分）の定数化
 - [x] 過去/新規データの区別（`data_version` カラム：`legacy_binary` vs `detailed_v1`）
 - [ ] **手動シード入力機構**：`settings/manual_seed_emergency_ratio.yaml` + `settings_tab.py` UI + `emergency_ratio.py` 統合（2026-04-20 実装予定）
-
-## ⚙️ 環境設定 todo
-
-### torumac-mini のみ：git identity を GitHub noreply に揃える（2026-04-20 記録）
-
-torumac-mini 側で `git config --global user.name/email` が GitHub と紐付かないローカル値のまま。Claude Code セッション開始時にこの項目を見つけたら、副院長に以下を実行するよう促す（完了後はこの節を削除）：
-
-```bash
-git config --global user.name "久保田徹"
-git config --global user.email "132826774+torukubota2023@users.noreply.github.com"
-```
-
-**判別方法:** `hostname` が `torumac-mini` であれば対象。`mac-mini`（=別の Mac）なら設定済なのでスルー。
-**目的:** 両 Mac からの commit を GitHub 上で同一アカウント扱いにし、contribution グラフに正しく反映させる。
 
 ## 📐 制度ルール確定事項（2026-06-01 以降の地域包括医療病棟運用）
 
@@ -277,7 +291,7 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 ## ベッドコントロールシミュレーター（現行 v3.5）
 - **設計書:** [bed_control_evolution_design.md](docs/admin/bed_control_evolution_design.md)
 - **ビジョン:** 精神論を、数字に変える。
-- **現行バージョン:** v3.5i（2026-04-17時点、全 267 Python テスト + 7 Playwright E2E testid テスト通過）
+- **現行バージョン:** v3.5j（2026-04-23、退院カレンダー新設・入院受入枠改名、全 Python テスト + Playwright E2E testid テスト通過）
 - **注意:** 以下の機能はすべて**実装済み**。再実装・再検討の必要はない。
 
 ### 実装済み機能一覧（変更不要 — 参照用）
@@ -291,6 +305,33 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 | v3.5 | 結論カード（今日の一手）・KPI優先表示・views分離・他病棟協力表示 | `action_recommendation.py`, `views/` |
 | v3.5h | 院内LAN展開準備（Edge 90対応・ポータブルブラウザ方針） | `tools/browser_probe.html`, `deploy/` |
 | v3.5i | 2026-06-01 本則適用準備（救急 rolling 3ヶ月・LOS 階段関数・短手3 Day 5 アラート）・Playwright E2E Green 化（7 testid） | `emergency_ratio.py`, `bed_data_manager.py → get_short3_day5_patients()`, `playwright/test_app.spec.ts` |
+| v3.5j | 📅 退院カレンダー新設（月俯瞰 × 病棟別 × 当月/翌月、3 層カラー表示、枠超過警告、日曜推奨、動的枠調整インフラ）・既存「予約可能枠」を「入院受入枠」に改名 | `discharge_plan_store.py`, `discharge_slot_config.py`, `views/discharge_calendar_view.py` |
+
+### 📅 退院カレンダー（v3.5j, 2026-04-23 副院長判断）
+副院長の「不在のベッドコントローラーの代理」要望に応える機能。木曜カンファで
+「退院が 8 名重なって稼働率崩壊」のような偶発事を未然に防ぐため、退院を
+日付軸で平準化する。
+
+**場所:** 🏥 退院調整 セクション > 📅 退院カレンダー タブ（カンファ資料の右隣）
+
+**退院枠ルール（単一ソース: `scripts/discharge_slot_config.py`）:**
+- 月〜土: 1 病棟 5 名 / 日祝: 1 病棟 2 名（固定）
+- 超過は翌営業日 −1（連続累積なし、翌々日は 5 枠復帰）
+- 日曜・祝日は動的調整対象外（2 枠固定）
+- 稼働率 ≥ 95% or 空床 ≤ 3 で枠 +1（動的調整、呼び出し側からの稼働率注入は後続 PR）
+
+**データモデル:**
+- 患者 UUID をキーに `data/discharge_plans.json` に退院予定を永続化（.gitignore 済）
+- 「調整開始日」は既存の `patient_status_history.json` から自動抽出（"new" 以外への最初の遷移日）
+- 再入院は別 UUID（副院長判断：同一患者の再入院は独立した退院調整として扱う）
+
+**UI 要素:**
+- 3 層カラー表示（● 決定 / ○ 予定 / — 予定なし）
+- 日曜・祝日は黄色背景で「⭐推奨枠」バッジ
+- 入院予定を紫「入 N」で重ね表示、入退院差分「↑+N / ↓-N」で稼働率方向を示唆
+- 前日超過は「↩-N」で翌営業日への繰り越しを可視化
+- 動的枠調整は「✨」マーカー
+- 突発退院は「⚡」マーカー、下部に主治医別頻度を集計（運用改善向け）
 
 ### 設計上の重要ルール（コード修正時に参照）
 - C群は**院内運用ラベル**であり制度上の公式区分ではない。推計値はすべてproxy
@@ -422,6 +463,50 @@ git push origin <ブランチ名>
 - **リモート:** `torukubota2023/bed-control-simulator`
 - **本番デプロイ:** Streamlit Cloud（main ブランチを参照、マージ後数分で再デプロイ）
 - **使用 PC:** torumac-mini / mac-mini（両方から同じブランチで作業可能）
+
+### 別 PC で作業ブランチの Streamlit を起動して確認する手順（2026-04-24 副院長指示）
+
+⚠️ **山括弧 `<...>` はプレースホルダ表記。そのまま zsh に貼り付けると parse error になる。**
+必ず実際のディレクトリ名／ブランチ名に置換すること。下記は現在の作業ブランチ
+`claude/great-wozniak-e298a3` 用の**置換済みコマンド**。
+
+**A. worktree 経由（Claude Code セッション中の確認）:**
+
+```bash
+cd ~/ai-management/.claude/worktrees/great-wozniak-e298a3
+git pull
+~/ai-management/.venv/bin/streamlit run scripts/bed_control_simulator_app.py
+```
+
+**B. メインリポジトリ経由（Claude Code を使わず直接確認）:**
+
+```bash
+cd ~/ai-management
+git fetch origin
+git checkout claude/great-wozniak-e298a3
+git pull
+.venv/bin/streamlit run scripts/bed_control_simulator_app.py
+```
+
+**手順のポイント:**
+- worktree ディレクトリ名は `ls ~/ai-management/.claude/worktrees/` で確認可能（Claude Code が自動生成）
+- A の場合: `~/ai-management/.venv/bin/streamlit` は **absolute path 指定が必要**。worktree 側には venv がないため、メインリポジトリの venv を参照する
+- B の場合: メインリポジトリ直下なので `.venv/bin/streamlit` が相対パスで使える。ただし同一ブランチを worktree が既に使っている場合は `fatal: already used by worktree` エラーが出るので、worktree 側でのセッションを先に終了すること
+- 起動後は http://localhost:8501 をブラウザで開く
+- 終了は Ctrl+C
+
+### ⚠️ Claude Code の preview 利用と手動 Streamlit 起動の競合（2026-04-24 事故受け）
+
+**事故:** Claude が内部で `lsof -i :8501 -t | xargs -r kill -9` を実行した際、
+副院長が別ターミナルで動かしていた Streamlit も port 8501 を使っていたため
+巻き添えで強制終了した（ターミナルに `zsh: killed` が出た）。
+
+**予防ルール:**
+- **副院長が手動で Streamlit を立てている間は、Claude に「実画面確認して」と頼まない**
+  （Claude が preview_start を実行して競合する）
+- **Claude が preview を使う時は、まず `lsof -i :8501` で何が使っているか確認**し、
+  副院長のプロセスが見つかったらその旨報告して中止する運用とする
+- どちらかが port 8501 を使い終わったら、もう片方を起動する
 
 ## 🎓 学びの可視化ルール（2026-04-19 副院長指示、義務）
 

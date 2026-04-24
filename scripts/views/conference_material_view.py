@@ -3907,6 +3907,110 @@ def render_conference_material_view(
     # close tag は関数末尾（ファクトバー後）に書く
     st.markdown('<div class="conf-root">', unsafe_allow_html=True)
 
+    # --- 🚨 カンファ前 混雑警告（案 α, 2026-04-24 副院長指示）---
+    # 今後 7 日間で退院予定が枠超過・満杯・ギリギリの日 TOP 3 を自動抽出。
+    # 副院長がカンファ直前に「この日は混雑、追加注意」を見落とさないための装置。
+    try:
+        from crowding_alert import detect_crowding_risk_days, summarize_risks  # type: ignore
+        from discharge_plan_store import load_all_plans as _ca_load_plans  # type: ignore
+    except ImportError:
+        try:
+            from scripts.crowding_alert import detect_crowding_risk_days, summarize_risks  # type: ignore
+            from scripts.discharge_plan_store import load_all_plans as _ca_load_plans  # type: ignore
+        except ImportError:
+            detect_crowding_risk_days = None  # type: ignore
+            summarize_risks = None  # type: ignore
+            _ca_load_plans = None  # type: ignore
+
+    if detect_crowding_risk_days is not None and _ca_load_plans is not None:
+        try:
+            _ca_plans = _ca_load_plans()
+            # ward_map: admission_details_df から構築
+            _ca_adm_df = st.session_state.get("admission_details")
+            _ca_ward_map: Dict[str, str] = {}
+            if _ca_adm_df is not None and len(_ca_adm_df) > 0 and "id" in _ca_adm_df.columns and "ward" in _ca_adm_df.columns:
+                _ca_adm_sub = _ca_adm_df[_ca_adm_df.get("event_type", "") == "admission"] if "event_type" in _ca_adm_df.columns else _ca_adm_df
+                for _, row in _ca_adm_sub.iterrows():
+                    pid = str(row["id"])
+                    if len(pid) >= 8:
+                        _ca_ward_map[pid[:8]] = str(row["ward"])
+            # 祝日（holiday_calendar があれば使う、なければ空）
+            _ca_holidays: set = set()
+            try:
+                from holiday_calendar import is_holiday as _ca_is_holiday  # type: ignore
+                for _i in range(8):
+                    _dd = _today + timedelta(days=_i)
+                    if _ca_is_holiday(_dd):
+                        _ca_holidays.add(_dd)
+            except Exception:
+                pass
+
+            _ca_risks = detect_crowding_risk_days(
+                plans=_ca_plans,
+                ward_map=_ca_ward_map,
+                today=_today,
+                days_ahead=7,
+                jp_holidays=_ca_holidays,
+                max_results=3,
+            )
+            _ca_summary = summarize_risks(_ca_risks) if summarize_risks else {}
+
+            if _ca_risks:
+                # 最もリスク高い日の色で全体を色分け
+                _top_level = _ca_risks[0]["risk_level"]
+                if _top_level == "overflow":
+                    banner_bg = "#FEE2E2"
+                    banner_border = "#DC2626"
+                    banner_title = "🚨 カンファ前警告：退院超過リスク"
+                elif _top_level == "full":
+                    banner_bg = "#FEF3C7"
+                    banner_border = "#F59E0B"
+                    banner_title = "🔴 カンファ前警告：退院枠満杯"
+                else:
+                    banner_bg = "#FEFCE8"
+                    banner_border = "#EAB308"
+                    banner_title = "🟡 カンファ前警告：退院枠ギリギリ"
+
+                summary_line = (
+                    f"超過 {_ca_summary.get('overflow', 0)} 日 / "
+                    f"満杯 {_ca_summary.get('full', 0)} 日 / "
+                    f"ギリギリ {_ca_summary.get('tight', 0)} 日"
+                )
+
+                items_html = "".join([
+                    f'<li style="margin:4px 0;font-size:13px;color:#1F2937;">{r["message"]}</li>'
+                    for r in _ca_risks
+                ])
+
+                st.markdown(
+                    f'<div style="background:{banner_bg};border-left:4px solid {banner_border};'
+                    f'padding:12px 16px;border-radius:6px;margin:8px 0 16px 0;">'
+                    f'<div style="font-size:15px;font-weight:bold;color:{banner_border};margin-bottom:6px;">'
+                    f'{banner_title}</div>'
+                    f'<div style="font-size:12px;color:#6B7280;margin-bottom:8px;">'
+                    f'今後 7 日間の退院予定を分析（{summary_line}）— 下記 TOP 3 に注意</div>'
+                    f'<ul style="margin:0;padding-left:20px;">{items_html}</ul>'
+                    f'<div style="font-size:11px;color:#6B7280;margin-top:8px;font-style:italic;">'
+                    f'💡 詳細は「📅 退院カレンダー」タブで日をクリック、詳細パネルで患者を別日に移動できます</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            elif _ca_plans:
+                # 予定はあるがリスクなし
+                st.markdown(
+                    '<div style="background:#ECFDF5;border-left:4px solid #10B981;'
+                    'padding:10px 16px;border-radius:6px;margin:8px 0 16px 0;font-size:13px;color:#065F46;">'
+                    '✅ 今後 7 日間の退院予定は枠内に収まっています。カンファで追加計画を検討可能。'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            # 予定がゼロの場合はバナー自体を出さない（静か）
+        except Exception as _ca_err:
+            # 警告機能は補助なので、失敗しても本体を止めない
+            with st.expander("カンファ前警告の生成エラー（補助機能）", expanded=False):
+                import traceback as _ca_tb
+                st.code(f"{_ca_err}\n{_ca_tb.format_exc()}")
+
     # --- 上部コントロール: 病棟 / モード 切替 ---
     ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 3])
     with ctrl_col1:
