@@ -759,14 +759,28 @@ def _render_day_detail_panel(
     ]
 
     if plans_for_day:
-        st.markdown(f"**登録済み: {len(plans_for_day)} 名**")
+        # 動かせる / 動かせない の内訳
+        movable_count = sum(1 for _, p in plans_for_day if not p.get("movable_reason"))
+        fixed_count = len(plans_for_day) - movable_count
+        breakdown = f"（動かせる: {movable_count} 名 / 🔒 日付固定: {fixed_count} 名）"
+        st.markdown(f"**登録済み: {len(plans_for_day)} 名** {breakdown}")
+        try:
+            from discharge_plan_store import MOVABLE_REASON_LABELS as _list_mrl  # type: ignore
+        except ImportError:
+            from scripts.discharge_plan_store import MOVABLE_REASON_LABELS as _list_mrl  # type: ignore
         for uuid, plan in plans_for_day:
             info = names.get(uuid) or {}
             display_name = _display_name_for_uuid(uuid, names)
             doctor = info.get("doctor_name") or "主治医不明"
+            # 動かせない理由の表示
+            movable_key = plan.get("movable_reason")
+            if movable_key and movable_key in _list_mrl:
+                fix_tag = f"  🔒 {_list_mrl[movable_key]}"
+            else:
+                fix_tag = ""
             cols = st.columns([3, 1, 1, 1])
             with cols[0]:
-                st.markdown(f"**{display_name}** （Dr. {doctor}）")
+                st.markdown(f"**{display_name}** （Dr. {doctor}）{fix_tag}")
             with cols[1]:
                 current_conf = bool(plan.get("confirmed", False))
                 new_conf = st.checkbox(
@@ -780,6 +794,7 @@ def _render_day_detail_panel(
                         scheduled_date=selected_date,
                         confirmed=new_conf,
                         unplanned=bool(plan.get("unplanned", False)),
+                        movable_reason=plan.get("movable_reason"),
                     )
                     st.rerun()
             with cols[2]:
@@ -795,6 +810,7 @@ def _render_day_detail_panel(
                         scheduled_date=selected_date,
                         confirmed=bool(plan.get("confirmed", False)),
                         unplanned=new_unp,
+                        movable_reason=plan.get("movable_reason"),
                     )
                     st.rerun()
             with cols[3]:
@@ -864,20 +880,40 @@ def _render_day_detail_panel(
             help="主治医独断で決まった退院の場合にチェック",
         )
     with cols[2]:
-        if st.button(
-            f"📌 {day_iso} に登録",
-            key=f"dcal_add_submit_{ward}_{day_iso}",
-            type="primary",
-            use_container_width=True,
-        ):
-            save_plan(
-                selected_uuid,
-                scheduled_date=selected_date,
-                confirmed=add_confirmed,
-                unplanned=add_unplanned,
-            )
-            st.success(f"✅ 登録しました（{_display_name_for_uuid(selected_uuid, names)}）")
-            st.rerun()
+        # 動かせない理由（副院長指示 2026-04-24 案 β）
+        try:
+            from discharge_plan_store import MOVABLE_REASON_LABELS as _mrl  # type: ignore
+        except ImportError:
+            from scripts.discharge_plan_store import MOVABLE_REASON_LABELS as _mrl  # type: ignore
+        _movable_options = ["（動かせる・デフォルト）"] + [
+            f"{key}: {label}" for key, label in _mrl.items()
+        ]
+        add_movable_choice = st.selectbox(
+            "動かせない理由（任意）",
+            options=_movable_options,
+            key=f"dcal_add_movable_{ward}_{day_iso}",
+            help="日付固定の理由がある場合に選択。枠超過時の分散候補から除外されます",
+        )
+        # 選択から reason key を取り出す
+        if add_movable_choice.startswith("（動"):
+            add_movable_reason = None
+        else:
+            add_movable_reason = add_movable_choice.split(":", 1)[0].strip()
+    if st.button(
+        f"📌 {day_iso} に登録",
+        key=f"dcal_add_submit_{ward}_{day_iso}",
+        type="primary",
+        use_container_width=True,
+    ):
+        save_plan(
+            selected_uuid,
+            scheduled_date=selected_date,
+            confirmed=add_confirmed,
+            unplanned=add_unplanned,
+            movable_reason=add_movable_reason,
+        )
+        st.success(f"✅ 登録しました（{_display_name_for_uuid(selected_uuid, names)}）")
+        st.rerun()
 
 
 # -----------------------------------------------------------------------------

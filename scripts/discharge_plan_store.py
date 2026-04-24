@@ -20,6 +20,12 @@
             "scheduled_date": "2026-04-25",   # 退院予定日（ISO 文字列 or None）
             "confirmed": false,                # 退院決定フラグ
             "unplanned": false,                # 突発退院マーカー（主治医独断で決まった退院）
+            "movable_reason": null,            # 動かせない理由（null = 動かせる）
+                                                #   "family" = 家族迎え固定
+                                                #   "facility" = 施設受入日固定
+                                                #   "home_nursing" = 訪看開始日固定
+                                                #   "patient" = 患者都合
+                                                #   "other" = その他
             "updated_at": "2026-04-23T10:00:00"  # 最終更新タイムスタンプ
         },
         ...
@@ -58,6 +64,24 @@ from typing import Any, Dict, List, Optional
 
 # リポジトリ内の data/ ディレクトリ
 _STORAGE_PATH = Path(__file__).resolve().parent.parent / "data" / "discharge_plans.json"
+
+#: 動かせない理由のキー（副院長指示 2026-04-24 案 β）
+MOVABLE_REASON_KEYS: tuple = (
+    "family",        # 家族迎え固定（土日のみ等）
+    "facility",      # 施設受入日固定
+    "home_nursing",  # 訪看開始日固定
+    "patient",       # 患者都合
+    "other",         # その他
+)
+
+#: 動かせない理由のラベル（UI 表示用）
+MOVABLE_REASON_LABELS: Dict[str, str] = {
+    "family": "🏠 家族迎え固定",
+    "facility": "🏥 施設受入日固定",
+    "home_nursing": "👩‍⚕️ 訪看開始日固定",
+    "patient": "💼 患者都合",
+    "other": "📌 その他の固定理由",
+}
 
 
 def _get_storage_path() -> Path:
@@ -118,6 +142,10 @@ def _is_valid_plan(plan: Any) -> bool:
         return False
     if not isinstance(plan.get("unplanned", False), bool):
         return False
+    # movable_reason: None または MOVABLE_REASON_KEYS のいずれか
+    mr = plan.get("movable_reason")
+    if mr is not None and mr not in MOVABLE_REASON_KEYS:
+        return False
     return True
 
 
@@ -154,6 +182,7 @@ def load_all_plans() -> Dict[str, Dict[str, Any]]:
             "scheduled_date": value.get("scheduled_date"),
             "confirmed": bool(value.get("confirmed", False)),
             "unplanned": bool(value.get("unplanned", False)),
+            "movable_reason": value.get("movable_reason"),  # None または str
             "updated_at": value.get("updated_at", ""),
         }
     return cleaned
@@ -184,6 +213,7 @@ def save_plan(
     scheduled_date: Optional[date] = None,
     confirmed: bool = False,
     unplanned: bool = False,
+    movable_reason: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> None:
     """1 患者の退院予定を保存する.
@@ -199,13 +229,17 @@ def save_plan(
     unplanned : bool, default False
         突発退院マーカー。True なら「主治医独断で決まった退院」を意味し、
         枠超過判定や主治医別頻度集計に使う。
+    movable_reason : str, optional
+        動かせない理由（副院長指示 2026-04-24 案 β）。
+        ``MOVABLE_REASON_KEYS`` のいずれか、または None（動かせる）。
+        None 以外の場合、枠超過時の分散候補から除外される。
     now : datetime, optional
         現在時刻（テスト用注入）。
 
     Raises
     ------
     ValueError
-        ``patient_uuid_prefix`` が空の場合。
+        ``patient_uuid_prefix`` が空の場合、または ``movable_reason`` が不正な値の場合。
 
     Notes
     -----
@@ -214,12 +248,17 @@ def save_plan(
     """
     if not patient_uuid_prefix:
         raise ValueError("patient_uuid_prefix は空にできません")
+    if movable_reason is not None and movable_reason not in MOVABLE_REASON_KEYS:
+        raise ValueError(
+            f"movable_reason '{movable_reason}' は {MOVABLE_REASON_KEYS} に含まれません"
+        )
 
     current = now if now is not None else datetime.now()
     plan: Dict[str, Any] = {
         "scheduled_date": scheduled_date.isoformat() if scheduled_date else None,
         "confirmed": bool(confirmed),
         "unplanned": bool(unplanned),
+        "movable_reason": movable_reason,
         "updated_at": current.isoformat(timespec="seconds"),
     }
     all_plans = load_all_plans()
@@ -376,6 +415,8 @@ def get_coordination_start_date(patient_uuid_prefix: str) -> Optional[date]:
 
 
 __all__ = [
+    "MOVABLE_REASON_KEYS",
+    "MOVABLE_REASON_LABELS",
     "load_all_plans",
     "load_plan",
     "save_plan",

@@ -94,6 +94,57 @@ class TestSaveLoadPlan:
         assert result["confirmed"] is True
         assert result["unplanned"] is True
 
+    def test_save_with_movable_reason(self, temp_plan_storage: Path) -> None:
+        """movable_reason を指定して保存・ロードできる（副院長 2026-04-24 案 β）."""
+        dps.save_plan(
+            "pat00001",
+            scheduled_date=date(2026, 5, 1),
+            movable_reason="family",
+        )
+        result = dps.load_plan("pat00001")
+        assert result is not None
+        assert result["movable_reason"] == "family"
+
+    def test_save_without_movable_reason_defaults_to_none(
+        self, temp_plan_storage: Path,
+    ) -> None:
+        """movable_reason 未指定なら None（動かせる）として保存される."""
+        dps.save_plan("pat00001", scheduled_date=date(2026, 5, 1))
+        result = dps.load_plan("pat00001")
+        assert result is not None
+        assert result["movable_reason"] is None
+
+    def test_save_with_invalid_movable_reason_raises(
+        self, temp_plan_storage: Path,
+    ) -> None:
+        """MOVABLE_REASON_KEYS にない値は ValueError."""
+        with pytest.raises(ValueError):
+            dps.save_plan(
+                "pat00001",
+                scheduled_date=date(2026, 5, 1),
+                movable_reason="invalid_reason",
+            )
+
+    def test_all_movable_reason_keys_accepted(
+        self, temp_plan_storage: Path,
+    ) -> None:
+        """定義されている全キーが保存可能."""
+        for i, key in enumerate(dps.MOVABLE_REASON_KEYS):
+            uid = f"uid{i:04d}xx"
+            dps.save_plan(
+                uid,
+                scheduled_date=date(2026, 5, 1),
+                movable_reason=key,
+            )
+            result = dps.load_plan(uid)
+            assert result["movable_reason"] == key
+
+    def test_labels_cover_all_keys(self) -> None:
+        """MOVABLE_REASON_LABELS が全キーをカバーする."""
+        for key in dps.MOVABLE_REASON_KEYS:
+            assert key in dps.MOVABLE_REASON_LABELS
+            assert dps.MOVABLE_REASON_LABELS[key]  # 非空文字列
+
     def test_save_without_scheduled_date(self, temp_plan_storage: Path) -> None:
         """scheduled_date=None（調整中のみ）の保存が可能."""
         dps.save_plan("def67890", scheduled_date=None)
