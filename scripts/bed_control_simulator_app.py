@@ -9289,6 +9289,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                     compute_weekday_profile,
                     compute_weekend_vacancy_risk,
                 )
+                from doctor_specialty_map import DOCTOR_SPECIALTY_GROUP
 
                 # ---- ビュー切替 ----
                 _view_mode = st.radio(
@@ -9299,7 +9300,12 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                 )
 
                 _weekday_prof = compute_weekday_profile(_pa_df_prof)
-                _self_driven = compute_self_driven_los(_pa_df_prof)
+                # 手術なし全体を対象（副院長指示 2026-04-24）+ 副院長分類を使用
+                _self_driven = compute_self_driven_los(
+                    _pa_df_prof,
+                    specialty_override_map=DOCTOR_SPECIALTY_GROUP,
+                    require_scheduled=False,
+                )
                 _weekend_risk = compute_weekend_vacancy_risk(_pa_df_prof)
 
                 if _view_mode == "🌐 全体概観":
@@ -9353,11 +9359,13 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         )
 
                     # --- 自主回転 中央在院日数 ---
-                    st.markdown("#### 🔄 自分主導の短期退院傾向（予定入院×手術なし の中央在院日数）")
+                    st.markdown("#### 🔄 医師別 中央在院日数（手術なし症例）")
                     st.caption(
-                        "予定入院かつ手術なしは、コントローラー介入が少なく"
-                        "医師が退院日を主導しやすいケース。**同診療科の他医師の中央値** より "
-                        "**短ければ自主的に回転**、**長ければゆったり** という傾向が読める。"
+                        "術後経過という外的要因を排除した「手術なし」症例で、"
+                        "医師の退院判断を比較。**診療科グループは副院長分類**（内科/外科/"
+                        "ペイン科/整形外科/脳神経外科/外来専任/訪問診療医）。"
+                        "**同グループの他医師の中央値** より **短ければ自主的に回転**、"
+                        "**長ければゆったり** という傾向が読める。"
                     )
                     if _plotly_dp and _self_driven:
                         _sd_sorted = sorted(
@@ -9438,7 +9446,11 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         st.info("医師プロファイルを計算できるデータがありません。")
                     else:
                         _sel_doc = st.selectbox("医師コードを選択", _doc_list, key="profile_doctor_select")
-                        _summary = build_doctor_summary(_pa_df_prof, _sel_doc)
+                        _summary = build_doctor_summary(
+                            _pa_df_prof, _sel_doc,
+                            specialty_override_map=DOCTOR_SPECIALTY_GROUP,
+                            require_scheduled=False,
+                        )
 
                         # メインカード
                         _wd = _summary["weekday"]
@@ -9508,11 +9520,12 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         if _sd and not _sd.get("is_small_sample", True):
                             _sd_col1, _sd_col2 = st.columns(2)
                             _sd_col1.metric(
-                                "予定×手術なし 件数",
+                                "手術なし 件数",
                                 f"{_sd['self_driven_cases']}件",
+                                help=f"診療科グループ: {_sd.get('peer_group', '—')}",
                             )
                             _sd_col2.metric(
-                                "中央在院日数（他医師との比較）",
+                                f"中央在院日数（vs {_sd.get('peer_group', '他医師')}）",
                                 f"{_sd['median_los']}日",
                                 delta=f"{_sd['los_delta_vs_peer']:+.1f}日（他医師 {_sd['peer_median']}日）",
                                 delta_color="normal",  # 他医師より短い=正=良

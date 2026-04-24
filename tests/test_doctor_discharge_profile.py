@@ -137,19 +137,48 @@ class TestSelfDrivenLos:
     def test_empty(self):
         assert compute_self_driven_los(pd.DataFrame()) == {}
 
-    def test_only_scheduled_no_surgery_counted(self):
+    def test_default_is_no_surgery_all(self):
+        """デフォルトは手術なし全体（予定/予定外ともに含む）."""
         df = pd.DataFrame([
-            # 予定入院×手術なし (カウント対象)
             {"医師": "A", "日数": 5, "is_scheduled": True, "has_surgery": False, "診療科": "内科"},
             {"医師": "A", "日数": 7, "is_scheduled": True, "has_surgery": False, "診療科": "内科"},
-            # 緊急入院 (カウント外)
             {"医師": "A", "日数": 20, "is_scheduled": False, "has_surgery": False, "診療科": "内科"},
-            # 予定×手術あり (カウント外)
+            # 手術ありはいずれも除外
             {"医師": "A", "日数": 3, "is_scheduled": True, "has_surgery": True, "診療科": "内科"},
         ])
         result = compute_self_driven_los(df)
+        # 3 件が手術なし（5, 7, 20）、median 7
+        assert result["A"]["self_driven_cases"] == 3
+        assert result["A"]["median_los"] == 7.0
+
+    def test_require_scheduled_mode_backward_compat(self):
+        """require_scheduled=True の旧挙動（予定入院×手術なし のみ）."""
+        df = pd.DataFrame([
+            {"医師": "A", "日数": 5, "is_scheduled": True, "has_surgery": False, "診療科": "内科"},
+            {"医師": "A", "日数": 7, "is_scheduled": True, "has_surgery": False, "診療科": "内科"},
+            {"医師": "A", "日数": 20, "is_scheduled": False, "has_surgery": False, "診療科": "内科"},
+            {"医師": "A", "日数": 3, "is_scheduled": True, "has_surgery": True, "診療科": "内科"},
+        ])
+        result = compute_self_driven_los(df, require_scheduled=True)
         assert result["A"]["self_driven_cases"] == 2
-        assert result["A"]["median_los"] == 6.0  # (5+7)/2
+        assert result["A"]["median_los"] == 6.0
+
+    def test_specialty_override_map(self):
+        """override_map が指定されたら診療科列より優先される."""
+        df = pd.DataFrame([
+            {"医師": "X", "日数": 5, "is_scheduled": True, "has_surgery": False, "診療科": "循内科"},
+            {"医師": "X", "日数": 7, "is_scheduled": True, "has_surgery": False, "診療科": "循内科"},
+            {"医師": "Y", "日数": 3, "is_scheduled": True, "has_surgery": False, "診療科": "内科"},
+            {"医師": "Y", "日数": 5, "is_scheduled": True, "has_surgery": False, "診療科": "内科"},
+        ])
+        # override: X, Y ともに "内科" に統合
+        override = {"X": "内科", "Y": "内科"}
+        result = compute_self_driven_los(df, specialty_override_map=override)
+        # 全4件が同じ "内科" グループ → peer median = median(3,5,5,7) = 5.0
+        assert result["X"]["peer_group"] == "内科"
+        assert result["Y"]["peer_group"] == "内科"
+        assert result["X"]["peer_median"] == 5.0
+        assert result["Y"]["peer_median"] == 5.0
 
     def test_peer_median_by_specialty(self):
         df = pd.DataFrame([

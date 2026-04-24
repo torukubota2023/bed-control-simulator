@@ -147,30 +147,55 @@ def compute_self_driven_los(
     df: pd.DataFrame,
     doctor_col: str = "医師",
     los_col: str = "日数",
-    scheduled_col: str = "is_scheduled",
+    scheduled_col: Optional[str] = "is_scheduled",
     surgery_col: str = "has_surgery",
     specialty_col: Optional[str] = "診療科",
+    specialty_override_map: Optional[Dict[str, str]] = None,
+    require_scheduled: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
-    """予定入院×手術なし の median LOS を医師別に算出.
+    """手術なし の全入院 median LOS を医師別に算出.
 
-    **考え方:**
-    予定入院は副院長・コントローラー介入が少なく、医師が退院日を主導できる。
-    手術なしを選ぶことで、外的要因（術後経過）を排除。
-    median LOS が短いほど「自分主導で回転させている」傾向。
+    **考え方（2026-04-24 修正）:**
+    術後経過という外的要因を排除した「手術なし」症例で、
+    医師の退院判断（状態良好 → 退院、調整待ちで延長 等）を比較する。
+    予定/予定外の両方を含めることで、内科系医師にもサンプル数が確保できる。
+
+    **peer（他医師の中央値）の計算:**
+    ``specialty_override_map`` が指定されれば、医師コード → 診療科グループ
+    として使う（副院長の実務分類を尊重）。未指定なら ``specialty_col`` 列を
+    そのまま使う。「外来専任」「訪問診療医」のような peer 単独グループは
+    「全体中央値」をフォールバックとして使う。
+
+    Args:
+        df: DataFrame
+        doctor_col: 医師列名
+        los_col: 在院日数列名
+        scheduled_col: 予定入院フラグ列名（require_scheduled=True の時のみ使用）
+        surgery_col: 手術フラグ列名
+        specialty_col: 診療科列名（override_map 未指定時）
+        specialty_override_map: 医師コード → 診療科グループ（副院長分類）
+        require_scheduled: True なら 予定入院×手術なし（旧挙動）、
+                           False なら手術なし全体（新挙動・デフォルト）
 
     Returns:
         ``{医師コード: {self_driven_cases: int,
                        median_los: float,
                        peer_median: float (同診療科 or 全体),
                        los_delta_vs_peer: float (peer - self: 正=短い),
+                       peer_group: str (分類名),
                        is_small_sample: bool}}``
     """
-    required = {doctor_col, los_col, scheduled_col, surgery_col}
+    required = {doctor_col, los_col, surgery_col}
     if df.empty or not required.issubset(df.columns):
         return {}
+    if require_scheduled and scheduled_col not in df.columns:
+        return {}
 
-    # 予定入院 × 手術なし
-    work = df[df[scheduled_col] & ~df[surgery_col]].copy()
+    # フィルタリング
+    if require_scheduled:
+        work = df[df[scheduled_col] & ~df[surgery_col]].copy()
+    else:
+        work = df[~df[surgery_col]].copy()
     if work.empty:
         return {}
     work[los_col] = pd.to_numeric(work[los_col], errors="coerce")
@@ -178,11 +203,24 @@ def compute_self_driven_los(
     if work.empty:
         return {}
 
-    # 診療科別 peer median を事前計算
+    # 診療科グループを決定（override_map 優先）
+    if specialty_override_map:
+        work["_specialty_group"] = work[doctor_col].map(
+            lambda d: specialty_override_map.get(str(d), "未分類")
+        )
+        group_col = "_specialty_group"
+    elif specialty_col and specialty_col in work.columns:
+        group_col = specialty_col
+    else:
+        group_col = None
+
+    # 診療科グループ別 peer median を事前計算
     peer_median_by_spec: Dict[str, float] = {}
-    if specialty_col and specialty_col in work.columns:
-        for spec, sub in work.groupby(specialty_col):
-            peer_median_by_spec[str(spec)] = float(sub[los_col].median())
+    if group_col:
+        for spec, sub in work.groupby(group_col):
+            # サンプル 2 以上ないと peer として意味がない
+            if len(sub) >= 2:
+                peer_median_by_spec[str(spec)] = float(sub[los_col].median())
     overall_median = float(work[los_col].median())
 
     result: Dict[str, Dict[str, Any]] = {}
@@ -191,11 +229,17 @@ def compute_self_driven_los(
         if n == 0:
             continue
         doc_median = float(sub[los_col].median())
-        # peer は 同じ診療科の中央値（複数科を跨る医師は全体中央値）
-        if specialty_col and specialty_col in sub.columns:
-            specs = sub[specialty_col].dropna().unique()
-            if len(specs) == 1 and str(specs[0]) in peer_median_by_spec:
-                peer_med = peer_median_by_spec[str(specs[0])]
+        # peer は 同じ診療科グループの中央値（自身のみで peer 不成立なら全体）
+        peer_group = "全体"
+        if group_col and group_col in sub.columns:
+            specs = sub[group_col].dropna().unique()
+            if len(specs) == 1:
+                spec_key = str(specs[0])
+                if spec_key in peer_median_by_spec:
+                    peer_med = peer_median_by_spec[spec_key]
+                    peer_group = spec_key
+                else:
+                    peer_med = overall_median
             else:
                 peer_med = overall_median
         else:
@@ -205,6 +249,7 @@ def compute_self_driven_los(
             "median_los": round(doc_median, 1),
             "peer_median": round(peer_med, 1),
             "los_delta_vs_peer": round(peer_med - doc_median, 1),  # 正=peer より短い
+            "peer_group": peer_group,
             "is_small_sample": n < SMALL_SAMPLE_THRESHOLD,
         }
     return result
@@ -272,6 +317,8 @@ def build_doctor_summary(
     scheduled_col: str = "is_scheduled",
     surgery_col: str = "has_surgery",
     specialty_col: Optional[str] = "診療科",
+    specialty_override_map: Optional[Dict[str, str]] = None,
+    require_scheduled: bool = False,
 ) -> Dict[str, Any]:
     """1 医師分のプロファイル（本人向けビュー用）をまとめて返す.
 
@@ -286,7 +333,11 @@ def build_doctor_summary(
     """
     weekday = compute_weekday_profile(df, doctor_col, discharge_date_col).get(doctor, {})
     self_driven = compute_self_driven_los(
-        df, doctor_col, los_col, scheduled_col, surgery_col, specialty_col,
+        df, doctor_col=doctor_col, los_col=los_col,
+        scheduled_col=scheduled_col, surgery_col=surgery_col,
+        specialty_col=specialty_col,
+        specialty_override_map=specialty_override_map,
+        require_scheduled=require_scheduled,
     ).get(doctor, {})
     weekend_risk = compute_weekend_vacancy_risk(df, doctor_col, discharge_date_col).get(doctor, {})
 
@@ -308,15 +359,16 @@ def build_doctor_summary(
 
     if self_driven and not self_driven.get("is_small_sample", True):
         delta = self_driven.get("los_delta_vs_peer", 0.0)
+        _group = self_driven.get("peer_group", "全体")
         if delta >= 1.0:
             insights.append(
-                f"✅ 予定入院×手術なしの中央在院日数 {self_driven['median_los']}日 "
-                f"(他医師 {self_driven['peer_median']}日) — 自主的に回転させている"
+                f"✅ 手術なしの中央在院日数 {self_driven['median_los']}日 "
+                f"({_group}他医師 {self_driven['peer_median']}日) — 自主的に回転させている"
             )
         elif delta <= -1.5:
             insights.append(
-                f"📈 予定入院×手術なしの中央在院日数 {self_driven['median_los']}日 "
-                f"(他医師 {self_driven['peer_median']}日) — 他医師より長め"
+                f"📈 手術なしの中央在院日数 {self_driven['median_los']}日 "
+                f"({_group}他医師 {self_driven['peer_median']}日) — 他医師より長め"
             )
 
     if weekend_risk and not weekend_risk.get("is_small_sample", True):
