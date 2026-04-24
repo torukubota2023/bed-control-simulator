@@ -9257,6 +9257,274 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
             elif "_DOCTOR_INSIGHT_ERROR" in dir():
                 st.caption(f"（深掘りインサイトモジュールの読み込みに失敗しました: {_DOCTOR_INSIGHT_ERROR[:200]}）")
 
+        # =========================================================
+        # 📊 過去1年プロファイル分析（2026-04-24 追加）
+        # admission_details が空でも past_admissions_df があれば動作する。
+        # 運用開始後に日次データが積み重なれば、同じロジックで
+        # admission_details からも計算できる（data-source 非依存）。
+        # =========================================================
+        if _PAST_ADMISSIONS_AVAILABLE:
+            _pa_df_prof = st.session_state.get("past_admissions_df", pd.DataFrame())
+            if not _pa_df_prof.empty:
+                st.markdown("---")
+                _bc_section_title(
+                    "過去1年プロファイル分析（退院曜日・自主回転・週末空床リスク）",
+                    icon="📊",
+                )
+                st.caption(
+                    "事務提供の 2025 年度データ（1,823 件）から、医師ごとの退院行動を可視化。"
+                    "**peer（同診療科 or 全体）中央値との差** で提示し、順位付けは避けています。"
+                    "件数 < 20 件の医師は参考値扱い（グレー表示）。"
+                )
+
+                try:
+                    import plotly.graph_objects as go
+                    _plotly_dp = True
+                except ImportError:
+                    _plotly_dp = False
+
+                from doctor_discharge_profile import (
+                    build_doctor_summary,
+                    compute_self_driven_los,
+                    compute_weekday_profile,
+                    compute_weekend_vacancy_risk,
+                )
+
+                # ---- ビュー切替 ----
+                _view_mode = st.radio(
+                    "表示モード",
+                    ["🌐 全体概観", "👤 個別医師プロファイル"],
+                    horizontal=True,
+                    key="doctor_profile_view_mode",
+                )
+
+                _weekday_prof = compute_weekday_profile(_pa_df_prof)
+                _self_driven = compute_self_driven_los(_pa_df_prof)
+                _weekend_risk = compute_weekend_vacancy_risk(_pa_df_prof)
+
+                if _view_mode == "🌐 全体概観":
+                    # --- 週末空床リスク寄与度（木+金退院率）ランキング ---
+                    st.markdown("#### 🔴 週末空床リスク寄与度（木+金退院率）")
+                    st.caption(
+                        "金曜＋木曜の退院が多いほど、土日に空床が発生しやすい。"
+                        "peer 中央値と比較して、週末空床リスクへの寄与を可視化。"
+                    )
+                    if _plotly_dp and _weekend_risk:
+                        _risk_sorted = sorted(
+                            [(d, r) for d, r in _weekend_risk.items()],
+                            key=lambda kv: -kv[1]["thu_fri_pct"],
+                        )
+                        _doctors = [d for d, _ in _risk_sorted]
+                        _thu_fri = [r["thu_fri_pct"] for _, r in _risk_sorted]
+                        _colors = [
+                            "#9CA3AF" if r["is_small_sample"]
+                            else ("#DC2626" if r["delta_vs_peer"] >= 5
+                                  else "#F59E0B" if r["delta_vs_peer"] >= 0
+                                  else "#10B981")
+                            for _, r in _risk_sorted
+                        ]
+                        _peer_med = _risk_sorted[0][1]["peer_thu_fri_pct"] if _risk_sorted else 0
+                        _fig_risk = go.Figure()
+                        _fig_risk.add_trace(go.Bar(
+                            x=_thu_fri, y=_doctors, orientation="h",
+                            marker_color=_colors,
+                            text=[f"{v:.1f}%" for v in _thu_fri],
+                            textposition="outside",
+                            hovertemplate="%{y}<br>木+金: %{x:.1f}%<extra></extra>",
+                        ))
+                        _fig_risk.add_vline(
+                            x=_peer_med, line_width=2, line_dash="dash",
+                            line_color="#374151",
+                            annotation_text=f"peer 中央値 {_peer_med:.1f}%",
+                            annotation_position="top",
+                        )
+                        _fig_risk.update_layout(
+                            height=max(300, 30 * len(_doctors)),
+                            xaxis_title="木+金曜退院率 (%)",
+                            margin=dict(l=60, r=80, t=30, b=40),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(_fig_risk, use_container_width=True)
+                        st.caption(
+                            "🔴 赤＝peer より +5pt 以上（リスク寄与大）／"
+                            "🟠 オレンジ＝peer より 0〜5pt 上／"
+                            "🟢 緑＝peer より下（リスク抑制）／"
+                            "⚪ グレー＝件数 < 20（参考値）"
+                        )
+
+                    # --- 自主回転 median LOS ---
+                    st.markdown("#### 🔄 自分主導の短期退院傾向（予定入院×手術なし の median LOS）")
+                    st.caption(
+                        "予定入院かつ手術なしは、コントローラー介入が少なく"
+                        "医師が退院日を主導しやすいケース。peer (同診療科) より **短ければ自主的に回転**、"
+                        "**長ければ peer よりゆったり** という傾向が読める。"
+                    )
+                    if _plotly_dp and _self_driven:
+                        _sd_sorted = sorted(
+                            [(d, s) for d, s in _self_driven.items()],
+                            key=lambda kv: kv[1]["median_los"],
+                        )
+                        _sd_docs = [d for d, _ in _sd_sorted]
+                        _sd_self = [s["median_los"] for _, s in _sd_sorted]
+                        _sd_peer = [s["peer_median"] for _, s in _sd_sorted]
+                        _sd_ns = [s["self_driven_cases"] for _, s in _sd_sorted]
+                        _sd_small = [s["is_small_sample"] for _, s in _sd_sorted]
+                        _sd_colors = [
+                            "#9CA3AF" if sm else "#2563EB"
+                            for sm in _sd_small
+                        ]
+                        _fig_sd = go.Figure()
+                        _fig_sd.add_trace(go.Scatter(
+                            x=_sd_self, y=_sd_docs,
+                            mode="markers",
+                            marker=dict(size=14, color=_sd_colors),
+                            name="自身の median LOS",
+                            hovertemplate="%{y}<br>self %{x}日<br>件数 %{customdata}<extra></extra>",
+                            customdata=_sd_ns,
+                        ))
+                        _fig_sd.add_trace(go.Scatter(
+                            x=_sd_peer, y=_sd_docs,
+                            mode="markers",
+                            marker=dict(size=10, color="#DC2626", symbol="line-ns-open"),
+                            name="peer 中央値",
+                            hovertemplate="%{y}<br>peer %{x}日<extra></extra>",
+                        ))
+                        _fig_sd.update_layout(
+                            height=max(300, 30 * len(_sd_docs)),
+                            xaxis_title="median LOS (日)",
+                            margin=dict(l=60, r=20, t=30, b=40),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                        )
+                        st.plotly_chart(_fig_sd, use_container_width=True)
+
+                    # --- 曜日偏り Gini ランキング ---
+                    with st.expander("📏 曜日偏り指数（Gini 係数）ランキング", expanded=False):
+                        if _weekday_prof:
+                            _gini_rows = []
+                            for doc, pf in sorted(
+                                _weekday_prof.items(),
+                                key=lambda kv: -kv[1]["gini"],
+                            ):
+                                _gini_rows.append({
+                                    "医師": doc + ("（参考値）" if pf["is_small_sample"] else ""),
+                                    "件数": pf["total"],
+                                    "Gini": pf["gini"],
+                                    "月": pf["pcts"][0],
+                                    "火": pf["pcts"][1],
+                                    "水": pf["pcts"][2],
+                                    "木": pf["pcts"][3],
+                                    "金": pf["pcts"][4],
+                                    "土": pf["pcts"][5],
+                                    "日": pf["pcts"][6],
+                                    "分類": {
+                                        "friday_heavy": "⚠️ 金曜集中",
+                                        "monday_heavy": "ℹ️ 月曜集中",
+                                        "uniform": "✅ 均等",
+                                        "normal": "—",
+                                    }.get(pf["flag"], "—"),
+                                })
+                            st.dataframe(
+                                pd.DataFrame(_gini_rows),
+                                use_container_width=True, hide_index=True,
+                            )
+                            st.caption(
+                                "Gini 係数: 0 = 完全均等 / 1 = 極端な偏り。"
+                                "7 曜日で 1 曜日集中だと 0.857 が理論最大。"
+                            )
+
+                else:  # 個別医師プロファイル
+                    _doc_list = sorted(_weekday_prof.keys())
+                    if not _doc_list:
+                        st.info("医師プロファイルを計算できるデータがありません。")
+                    else:
+                        _sel_doc = st.selectbox("医師コードを選択", _doc_list, key="profile_doctor_select")
+                        _summary = build_doctor_summary(_pa_df_prof, _sel_doc)
+
+                        # メインカード
+                        _wd = _summary["weekday"]
+                        _sd = _summary["self_driven"]
+                        _wr = _summary["weekend_risk"]
+
+                        _cols_prof = st.columns(4)
+                        _cols_prof[0].metric("退院件数", f"{_wd.get('total', 0)}件")
+                        _cols_prof[1].metric(
+                            "金曜退院率",
+                            f"{_wd.get('friday_pct', 0):.1f}%",
+                            delta=f"{_wd.get('friday_pct', 0) - 14.3:+.1f}pt（均等比）",
+                        )
+                        _cols_prof[2].metric(
+                            "木+金退院率",
+                            f"{_wr.get('thu_fri_pct', 0):.1f}%",
+                            delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（peer比）",
+                            delta_color="inverse",  # 高いほど悪い
+                        )
+                        _cols_prof[3].metric(
+                            "曜日偏りGini",
+                            f"{_wd.get('gini', 0):.3f}",
+                            help="0=完全均等, 1=極端な偏り",
+                        )
+
+                        # Insights バッジ
+                        _insights = _summary["insights"]
+                        if _insights:
+                            st.markdown("##### 📝 プロファイル要約")
+                            for ins in _insights:
+                                if ins.startswith("✅"):
+                                    _bc_alert(ins, severity="success")
+                                elif ins.startswith("⚠️"):
+                                    _bc_alert(ins, severity="warning")
+                                elif ins.startswith("📈"):
+                                    _bc_alert(ins, severity="info")
+                                else:
+                                    _bc_alert(ins, severity="neutral")
+
+                        # 曜日棒グラフ
+                        if _plotly_dp and _wd:
+                            _fig_wd = go.Figure(go.Bar(
+                                x=["月", "火", "水", "木", "金", "土", "日"],
+                                y=_wd["counts"],
+                                marker_color=[
+                                    "#2563EB" if i < 3 else
+                                    "#F59E0B" if i == 3 else
+                                    "#DC2626" if i == 4 else "#6B7280"
+                                    for i in range(7)
+                                ],
+                                text=[
+                                    f"{_wd['counts'][i]}<br>({_wd['pcts'][i]:.1f}%)"
+                                    for i in range(7)
+                                ],
+                                textposition="outside",
+                            ))
+                            _fig_wd.update_layout(
+                                title=f"{_sel_doc} の退院曜日分布",
+                                height=300,
+                                yaxis_title="退院件数",
+                                margin=dict(l=40, r=20, t=40, b=40),
+                                showlegend=False,
+                            )
+                            st.plotly_chart(_fig_wd, use_container_width=True)
+
+                        # 自主回転 LOS 詳細
+                        if _sd and not _sd.get("is_small_sample", True):
+                            _sd_col1, _sd_col2 = st.columns(2)
+                            _sd_col1.metric(
+                                "予定×手術なし 件数",
+                                f"{_sd['self_driven_cases']}件",
+                            )
+                            _sd_col2.metric(
+                                "median LOS vs peer",
+                                f"{_sd['median_los']}日",
+                                delta=f"{_sd['los_delta_vs_peer']:+.1f}日（peer {_sd['peer_median']}日）",
+                                delta_color="normal",  # peer より短い=正=良
+                            )
+
+                        if _wd.get("is_small_sample", False):
+                            _bc_alert(
+                                f"⚪ 退院件数が {_wd['total']} 件と少ないため、"
+                                f"参考値扱いとしてください（閾値: 20件）",
+                                severity="info",
+                            )
+
 # ---------------------------------------------------------------------------
 # タブ: 📊 過去1年分析（事務提供の2025年度実データ）
 # ---------------------------------------------------------------------------
