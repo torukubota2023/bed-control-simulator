@@ -3257,6 +3257,9 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
     tab_names = ["\U0001f6e1\ufe0f 制度・需要・C群"]
     if _DOCTOR_MASTER_AVAILABLE:
         tab_names.append("\U0001f4a1 改善のヒント")
+    # 2026-04-24: 過去1年実データの可視化タブ（事務提供CSV）
+    if _PAST_ADMISSIONS_AVAILABLE:
+        tab_names.append("\U0001f4ca 過去1年分析")
 elif _selected_section == "\U0001f3e5 退院調整":
     # Phase 1 情報階層リデザイン（2026-04-18）: 5 タブ統合
     # 2026-04-23: 「📅 退院カレンダー」を新規追加（副院長指示）、既存「📅 予約可能枠」を「📅 入院受入枠」に改名
@@ -9253,6 +9256,231 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
 """)
             elif "_DOCTOR_INSIGHT_ERROR" in dir():
                 st.caption(f"（深掘りインサイトモジュールの読み込みに失敗しました: {_DOCTOR_INSIGHT_ERROR[:200]}）")
+
+# ---------------------------------------------------------------------------
+# タブ: 📊 過去1年分析（事務提供の2025年度実データ）
+# ---------------------------------------------------------------------------
+# 2026-04-24 実装:
+#   A) 救急15% rolling 3ヶ月推移（5F / 6F / 全体 × 月別 + 15%基準線）
+#   B) イ/ロ/ハ判定の過去遡及分布（全期間 + 病棟別）
+#
+# 副院長指示の制度ルール（厳守）:
+#   - 分子 = 自院救急 + 下り搬送（救急車=有の全件）
+#   - 分母 = 全入院（短手3 を除外しない）
+#   - 短手3 識別は統計用途のみで救急比率計算とは分離
+if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
+    with tabs[_tab_idx["\U0001f4ca 過去1年分析"]]:
+        st.header("\U0001f4ca 過去1年分析（2025年度事務提供データ）")
+        _pa_df = st.session_state.get("past_admissions_df", pd.DataFrame())
+        if _pa_df.empty:
+            st.warning(
+                "過去入院データを読み込めません。"
+                "`data/past_admissions_2025fy.csv` の存在を確認してください。"
+            )
+        else:
+            _pa_5f = int((_pa_df["病棟"] == "5F").sum())
+            _pa_6f = int((_pa_df["病棟"] == "6F").sum())
+            _pa_total = len(_pa_df)
+            st.caption(
+                f"期間: 2025-04-01〜2026-03-31 ｜ "
+                f"{_pa_total:,} 件 ｜ 5F: {_pa_5f:,} / 6F: {_pa_6f:,} ｜ "
+                f"救急搬送: {int(_pa_df['is_emergency_transport'].sum())} 件"
+                f"（自院 {int(_pa_df['is_self_emergency'].sum())} / "
+                f"下り {int(_pa_df['is_downstream_transfer'].sum())}）"
+            )
+
+            try:
+                import plotly.graph_objects as go
+                _plotly_ok = True
+            except ImportError:
+                _plotly_ok = False
+                st.warning("Plotly 未インストールのためグラフ表示できません。")
+
+            # ===== A: 救急15% rolling 3ヶ月推移 =====
+            st.subheader("\U0001f691 救急搬送後割合 rolling 3ヶ月推移")
+            st.caption(
+                "**制度基準 15%** — 2026-06-01 以降の本則完全適用下では、"
+                "**両病棟で rolling 3ヶ月が常に 15% 以上** を維持する必要があります。"
+            )
+
+            from past_admissions_loader import to_monthly_summary as _pa_to_summary
+            _pa_summary = _pa_to_summary(_pa_df)
+
+            # rolling 3ヶ月の月別計算（2025-06 以降、3ヶ月分揃う月のみ）
+            _pa_months_sorted = sorted(_pa_summary.keys())
+            _rolling_rows = []
+            for i, ym in enumerate(_pa_months_sorted):
+                if i < 2:
+                    continue  # 3ヶ月分揃わない月はスキップ
+                window = _pa_months_sorted[i - 2 : i + 1]
+                row = {"month": ym}
+                for ward_key in ("5F", "6F", "all"):
+                    num = sum(_pa_summary[w][ward_key]["emergency"] for w in window)
+                    den = sum(_pa_summary[w][ward_key]["admissions"] for w in window)
+                    row[f"{ward_key}_pct"] = round(num / den * 100, 2) if den > 0 else 0.0
+                    row[f"{ward_key}_num"] = num
+                    row[f"{ward_key}_den"] = den
+                _rolling_rows.append(row)
+
+            if _rolling_rows and _plotly_ok:
+                _months = [r["month"] for r in _rolling_rows]
+                _fig_roll = go.Figure()
+                # 15% 閾値
+                _fig_roll.add_hline(
+                    y=15, line_width=2, line_dash="dash", line_color="#DC2626",
+                    annotation_text="制度基準 15%", annotation_position="top right",
+                )
+                _fig_roll.add_trace(go.Scatter(
+                    x=_months, y=[r["5F_pct"] for r in _rolling_rows],
+                    mode="lines+markers", name="5F", line=dict(color="#2563EB", width=3),
+                    hovertemplate="%{x}<br>5F: %{y:.1f}%<extra></extra>",
+                ))
+                _fig_roll.add_trace(go.Scatter(
+                    x=_months, y=[r["6F_pct"] for r in _rolling_rows],
+                    mode="lines+markers", name="6F", line=dict(color="#7C3AED", width=3),
+                    hovertemplate="%{x}<br>6F: %{y:.1f}%<extra></extra>",
+                ))
+                _fig_roll.add_trace(go.Scatter(
+                    x=_months, y=[r["all_pct"] for r in _rolling_rows],
+                    mode="lines+markers", name="全体",
+                    line=dict(color="#6B7280", width=2, dash="dot"),
+                    hovertemplate="%{x}<br>全体: %{y:.1f}%<extra></extra>",
+                ))
+                _fig_roll.update_layout(
+                    height=400,
+                    yaxis_title="救急搬送後割合 (%)",
+                    xaxis_title="月末時点（rolling 3ヶ月平均）",
+                    hovermode="x unified",
+                    margin=dict(l=40, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                )
+                st.plotly_chart(_fig_roll, use_container_width=True)
+
+                # rolling の直近値をメトリクス表示
+                _latest = _rolling_rows[-1]
+                _cols_r = st.columns(3)
+                for _col, _k, _lbl in [
+                    (_cols_r[0], "5F", "5F 直近 rolling"),
+                    (_cols_r[1], "6F", "6F 直近 rolling"),
+                    (_cols_r[2], "all", "全体 直近 rolling"),
+                ]:
+                    _v = _latest[f"{_k}_pct"]
+                    _stat = "🟢 クリア" if _v >= 15.0 else ("🟡 ギリギリ" if _v >= 13.0 else "🔴 未達")
+                    _col.metric(
+                        _lbl,
+                        f"{_v:.1f}%",
+                        help=f"分子 {_latest[f'{_k}_num']} / 分母 {_latest[f'{_k}_den']}",
+                    )
+                    _col.caption(_stat)
+
+                # 表形式でも見せる（折りたたみ）
+                with st.expander("月別 rolling 値の一覧（表）", expanded=False):
+                    _df_roll = pd.DataFrame(_rolling_rows).rename(columns={
+                        "month": "月末",
+                        "5F_pct": "5F (%)", "6F_pct": "6F (%)", "all_pct": "全体 (%)",
+                        "5F_num": "5F 分子", "5F_den": "5F 分母",
+                        "6F_num": "6F 分子", "6F_den": "6F 分母",
+                        "all_num": "全体 分子", "all_den": "全体 分母",
+                    })
+                    st.dataframe(
+                        _df_roll[["月末", "5F (%)", "6F (%)", "全体 (%)",
+                                  "5F 分子", "5F 分母", "6F 分子", "6F 分母",
+                                  "全体 分子", "全体 分母"]],
+                        use_container_width=True, hide_index=True,
+                    )
+            elif not _rolling_rows:
+                st.info("rolling 3ヶ月を計算できる月がありません（3ヶ月以上のデータが必要）。")
+
+            st.divider()
+
+            # ===== B: イ/ロ/ハ判定の過去遡及 =====
+            st.subheader("\U0001f4cb イ/ロ/ハ判定の過去遡及分布（2026改定 入院料1）")
+            st.caption(
+                "**判定ロジック:** 緊急入院×手術なし=**イ**(3,367点) / "
+                "緊急×手術 or 予定×手術なし=**ロ**(3,267点) / "
+                "予定×手術=**ハ**(3,117点)。病棟別に入院構成の差が見えます。"
+            )
+            from past_admissions_loader import tabulate_tier_distribution as _pa_tier
+            _tier = _pa_tier(_pa_df)
+
+            if _plotly_ok and _tier["total"] > 0:
+                # 病棟別 スタック横棒グラフ（割合ベース）
+                _wards = ["5F", "6F"]
+                _total_5f = _tier["by_ward"]["5F"]["total"]
+                _total_6f = _tier["by_ward"]["6F"]["total"]
+                _pct_i = [
+                    _tier["by_ward"]["5F"]["tier_i"] / _total_5f * 100 if _total_5f else 0,
+                    _tier["by_ward"]["6F"]["tier_i"] / _total_6f * 100 if _total_6f else 0,
+                ]
+                _pct_ro = [
+                    _tier["by_ward"]["5F"]["tier_ro"] / _total_5f * 100 if _total_5f else 0,
+                    _tier["by_ward"]["6F"]["tier_ro"] / _total_6f * 100 if _total_6f else 0,
+                ]
+                _pct_ha = [
+                    _tier["by_ward"]["5F"]["tier_ha"] / _total_5f * 100 if _total_5f else 0,
+                    _tier["by_ward"]["6F"]["tier_ha"] / _total_6f * 100 if _total_6f else 0,
+                ]
+                _fig_tier = go.Figure()
+                _fig_tier.add_trace(go.Bar(
+                    name="イ (3,367点)", y=_wards, x=_pct_i, orientation="h",
+                    marker_color="#10B981",
+                    text=[f"{v:.1f}%" for v in _pct_i], textposition="inside",
+                ))
+                _fig_tier.add_trace(go.Bar(
+                    name="ロ (3,267点)", y=_wards, x=_pct_ro, orientation="h",
+                    marker_color="#F59E0B",
+                    text=[f"{v:.1f}%" for v in _pct_ro], textposition="inside",
+                ))
+                _fig_tier.add_trace(go.Bar(
+                    name="ハ (3,117点)", y=_wards, x=_pct_ha, orientation="h",
+                    marker_color="#DC2626",
+                    text=[f"{v:.1f}%" for v in _pct_ha], textposition="inside",
+                ))
+                _fig_tier.update_layout(
+                    barmode="stack",
+                    height=250,
+                    xaxis_title="入院構成比 (%)",
+                    margin=dict(l=40, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                )
+                st.plotly_chart(_fig_tier, use_container_width=True)
+
+                # 件数テーブル
+                _cols_t = st.columns(3)
+                _cols_t[0].metric(
+                    "イ (緊急×無手術)", f"{_tier['tier_i']:,}件",
+                    help=f"全体 {_tier['tier_i']/_tier['total']*100:.1f}% / 5F {_tier['by_ward']['5F']['tier_i']} / 6F {_tier['by_ward']['6F']['tier_i']}",
+                )
+                _cols_t[1].metric(
+                    "ロ (緊急×手術 or 予定×無手術)", f"{_tier['tier_ro']:,}件",
+                    help=f"全体 {_tier['tier_ro']/_tier['total']*100:.1f}% / 5F {_tier['by_ward']['5F']['tier_ro']} / 6F {_tier['by_ward']['6F']['tier_ro']}",
+                )
+                _cols_t[2].metric(
+                    "ハ (予定×手術)", f"{_tier['tier_ha']:,}件",
+                    help=f"全体 {_tier['tier_ha']/_tier['total']*100:.1f}% / 5F {_tier['by_ward']['5F']['tier_ha']} / 6F {_tier['by_ward']['6F']['tier_ha']}",
+                )
+
+                st.caption(
+                    f"💡 **運用の含意:** 5F は手術系（ハ 26.7%）、"
+                    f"6F は内科緊急系（イ 61.9%）の構成。"
+                    f"2026改定で「ハ」は3,117点と最も低いため、"
+                    f"5F の手術予定入院比率は収入面で注視が必要。"
+                )
+
+            # 短手3 推定（参考情報、分母には入れる）
+            with st.expander("📎 短手3 推定（統計参考、救急比率の分母には常に含める）", expanded=False):
+                from past_admissions_loader import summarize_short3_estimate as _pa_s3
+                _s3 = _pa_s3(_pa_df)
+                _cs3 = st.columns(3)
+                _cs3[0].metric("手術あり全件", f"{_s3['total_surgeries']:,}")
+                _cs3[1].metric("短手3 確実（≤2日）", f"{_s3['short3_certain']:,}")
+                _cs3[2].metric("短手3 ほぼ確実（≤5日）", f"{_s3['short3_likely']:,}")
+                st.caption(
+                    "ヒューリスティック: 手術○ × 日数 ≤ 2 = 確実（大腸ポリペクトミー等）、"
+                    "≤ 5 = ほぼ確実（短期滞在手術）。"
+                    "**この識別は統計・収入分析用途のみ。"
+                    "救急15%の分母からは一切除外しません**（制度ルール）。"
+                )
 
 # ---------------------------------------------------------------------------
 # タブ: 💡 改善のヒント（インタラクティブ What-If シミュレーション付き）
