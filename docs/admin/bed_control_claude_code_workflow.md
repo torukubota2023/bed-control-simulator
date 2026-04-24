@@ -6,6 +6,30 @@
 - 許可ダイアログで作業が止まる回数を減らす
 - Claude Code に触らせる場所と、人が管理する場所を分ける
 - 修正依頼を毎回同じ流れで出せるようにする
+- Codex が補助修正した場合も、Claude Code が後から追えるようにする
+
+## 0. Claude Code 中心運用と Codex 補助の見える化
+
+ベッドコントロール開発の主担当は Claude Code とし、Codex は以下のような補助に使う。
+
+- GitHub Actions / CI / E2E の赤原因調査
+- PR の状態確認、失敗ログの読み取り、再現性の修正
+- README / QA文書 / 運用フローの整合性更新
+- Claude Code が次に作業しやすいように、変更理由と確認結果を文書へ残す
+
+Codex が修正した場合は、必ず以下を残す。
+
+1. PR またはブランチ名
+2. 変更した主なファイル
+3. なぜ変更したか
+4. 実行した確認コマンド
+5. Claude Code が次に見るべき残タスク
+
+### Codex 補助履歴
+
+| 日付 | PR/ブランチ | 内容 | 確認 |
+|------|-------------|------|------|
+| 2026-04-25 | PR #17 / `codex/fix-main-ci-actions` | GitHub Actions 復旧、E2E CI を正準テストに整理、Node依存を明示、READMEと本フローを更新 | ruff critical check / smoke test / Playwright CI E2E / GitHub Actions green |
 
 ## 1. Claude に触らせる場所
 通常の実装・修正は、以下を優先して触らせる。
@@ -22,6 +46,8 @@
 ### テスト
 - [tests](/Users/torukubota/ai-management/tests)
 - とくに [tests/test_app_integration.py](/Users/torukubota/ai-management/tests/test_app_integration.py)
+- Playwright の通常CI対象: [playwright/test_app.spec.ts](/Users/torukubota/ai-management/playwright/test_app.spec.ts)
+- Playwright の手動監査対象: [playwright/test_audit.spec.ts](/Users/torukubota/ai-management/playwright/test_audit.spec.ts), [playwright/test_scenario_qa.spec.ts](/Users/torukubota/ai-management/playwright/test_scenario_qa.spec.ts)
 
 ### 普段更新する文書
 - [docs/admin/bed_control_app_quality_assurance.md](/Users/torukubota/ai-management/docs/admin/bed_control_app_quality_assurance.md)
@@ -79,6 +105,13 @@
 ### QAだけ回す
 ```text
 /qa scripts/bed_control_simulator_app.py
+```
+
+### Codex が入った後に Claude Code へ渡す
+```text
+Codex が GitHub Actions / CI / E2E まわりを補助修正しました。
+まず docs/admin/bed_control_claude_code_workflow.md の「Codex 補助履歴」と README の現在の開発ステータスを確認してください。
+そのうえで、通常の開発はこれまで通り scripts/ と tests/ を中心に進めてください。
 ```
 
 ## 5. 許可ダイアログが出た時の判断

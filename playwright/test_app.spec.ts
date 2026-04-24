@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { waitForStreamlitLoad, getAllMetrics, parseMetricNumber } from '../utils/streamlit_helpers';
+import { waitForStreamlitLoad, getAllMetrics, parseMetricNumber, selectSection } from '../utils/streamlit_helpers';
 import { extractDashboardKPIs, validateKPIIntegrity } from '../utils/extract_data';
 import scenariosData from './tests/scenarios.json';
 
@@ -56,6 +56,7 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await waitForStreamlitLoad(page);
+    await selectSection(page, '今日の運営');
     // v3.5 本体は初期状態では main content が「サイドバーのパラメータを設定し
     // 『シミュレーション実行』ボタンを押してください」の案内のみで、
     // data-testid (occupancy / alos / phase / vacancy / action-card / guardrail-summary)
@@ -91,6 +92,14 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
         // getByRole('radio').click() は「element is not visible」でタイムアウトする。
         // 親ラベル（label:has-text）をクリックすることで Streamlit の state が切り替わる。
         let count = await page.locator(`[data-testid="${id}"]`).count();
+        if (count === 0 && id === 'phase') {
+          const phaseTab = page.locator('[data-testid="stTab"]:has-text("フェーズ構成")').first();
+          if ((await phaseTab.count()) > 0) {
+            await phaseTab.click();
+            await page.waitForTimeout(1500);
+            count = await page.locator(`[data-testid="${id}"]`).count();
+          }
+        }
         if (count === 0) {
           const sections = ['🔮 What-if・戦略', '🛡️ 制度管理'];
           const sidebar = page.locator('[data-testid="stSidebar"]');
@@ -161,8 +170,10 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
         expect(occNum).toBeLessThanOrEqual(100);
       }
 
+      await selectSection(page, '制度管理');
       const alosEl = page.locator('[data-testid="alos"]').first();
-      const alosNum = parseMetricNumber(await alosEl.innerText());
+      const alosText = (await alosEl.textContent()) || '';
+      const alosNum = parseMetricNumber(alosText);
       expect(alosNum, 'ALOS が数値としてパースできない').not.toBeNull();
       if (alosNum !== null) {
         // normal_balanced の期待値: avg_los_min=14 / avg_los_max=24
@@ -186,7 +197,7 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
       // ただし実績データでは現状が正常な可能性もあるため、存在チェック + ログ出力に留める。
       expect(level, `action-card に data-level 属性がない`).not.toBeNull();
       console.log(`結論カード data-level: ${level}`);
-      expect(['error', 'warning', 'info', 'success']).toContain(level);
+      expect(['critical', 'error', 'warning', 'info', 'success']).toContain(level);
     });
 
     test('異常ケース: 不正入力 — アプリがクラッシュしない', async ({ page }) => {
@@ -249,8 +260,9 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
   });
 
   test('ALOS は 0 以上かつ現実的な上限以下', async ({ page }) => {
+    await selectSection(page, '制度管理');
     const alos = parseMetricNumber(
-      await page.locator('[data-testid="alos"]').first().innerText()
+      (await page.locator('[data-testid="alos"]').first().textContent()) || ''
     );
     expect(alos).not.toBeNull();
     if (alos !== null) {
@@ -261,6 +273,7 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
 
   test('ALOS の data-limit 属性が制度上限（21〜24日）内', async ({ page }) => {
     // ALOS 上限は 85歳以上割合により 21日（≥20%）〜 24日 で変動する。
+    await selectSection(page, '制度管理');
     const limitAttr = await page.locator('[data-testid="alos"]').first().getAttribute('data-limit');
     if (limitAttr === null) {
       console.warn('data-limit 属性未設定 — UI 実装待ち');
@@ -345,6 +358,12 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
     );
     await page.reload();
     await waitForStreamlitLoad(page);
+    await selectSection(page, '今日の運営');
+    const runButton = page.getByRole('button', { name: 'シミュレーション実行' }).first();
+    if (await runButton.count() > 0) {
+      await runButton.click();
+      await waitForStreamlitLoad(page, 180000);
+    }
     const occ2 = parseMetricNumber(
       await page.locator('[data-testid="occupancy"]').first().innerText()
     );

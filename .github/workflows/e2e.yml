@@ -40,7 +40,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install Node dependencies
         run: |
@@ -54,9 +53,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright E2E
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npm run test:e2e
+        run: npm run test:e2e:ci
 
       - name: Upload Playwright report
         if: always()

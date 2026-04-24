@@ -363,9 +363,8 @@ class TestAppTestIntegration:
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(app_path), default_timeout=30)
         at.run()
-        # 病棟 selectbox は唯一の selectbox（個別患者ステータスは popover + radio に移行済み）
-        assert len(at.selectbox) == 1
-        at.selectbox[0].set_value("6F").run()
+        ward_selectbox = next(sb for sb in at.selectbox if sb.key == "conf_ward_select")
+        ward_selectbox.set_value("6F").run()
         markdown_text = "\n".join(m.value for m in at.markdown)
         assert 'data-testid="conference-ward" style="display:none">6F<' in markdown_text
 
@@ -835,16 +834,12 @@ class TestStatusTagClickable:
     def test_no_status_update_selectbox_anymore(self, app_path: Path):
         """右側のステータス更新 selectbox が完全に撤去されている.
 
-        残っている selectbox は病棟切替の 1 個だけ（`conf_ward_select`）。
+        連休ハイライト等の selectbox は許容するが、旧ステータス更新 selectbox は許容しない。
         """
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(app_path), default_timeout=30)
         at.run()
-        # selectbox は病棟切替の 1 個のみ
-        assert len(at.selectbox) == 1, (
-            f"selectbox が 1 個（病棟切替のみ）ではなく {len(at.selectbox)} 個存在する"
-        )
-        assert at.selectbox[0].key == "conf_ward_select"
+        assert any(sb.key == "conf_ward_select" for sb in at.selectbox)
         # 旧ラベル「ステータス更新 - 」は画面に出ない
         all_sb_labels = [sb.label for sb in at.selectbox]
         for label in all_sb_labels:
