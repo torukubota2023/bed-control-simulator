@@ -475,6 +475,34 @@ git push origin <ブランチ名>
 - **本番デプロイ:** Streamlit Cloud（main ブランチを参照、マージ後数分で再デプロイ）
 - **使用 PC:** torumac-mini / mac-mini（両方から同じブランチで作業可能）
 
+### 別 PC で作業ブランチの Streamlit を起動して確認する手順（2026-04-24 副院長指示）
+
+作業ブランチに `git pull` してブラウザで動作確認したいとき、以下を実行：
+
+```bash
+cd ~/ai-management/.claude/worktrees/<worktree名>
+git pull
+~/ai-management/.venv/bin/streamlit run scripts/bed_control_simulator_app.py
+```
+
+**手順のポイント:**
+- `cd` 先は Claude Code が自動生成する **worktree ディレクトリ**（例: `~/ai-management/.claude/worktrees/great-wozniak-e298a3`）。`ls ~/ai-management/.claude/worktrees/` で確認
+- `git pull` で別 PC の最新コミットを取り込む（SessionStart フックが入っていればこれは自動化済み、手動でも OK）
+- `~/ai-management/.venv/bin/streamlit` は **absolute path 指定が必要**。worktree 側には venv がないため、メインリポジトリの venv を参照する
+- 起動後は http://localhost:8501 をブラウザで開く
+- 終了は Ctrl+C
+
+**worktree がない場合（= Claude Code を経由せず直接確認したい時）:**
+
+```bash
+cd ~/ai-management
+git fetch origin
+git checkout <ブランチ名>
+git pull
+.venv/bin/streamlit run scripts/bed_control_simulator_app.py
+```
+こちらはメインリポジトリ直下なので `.venv/bin/streamlit` が相対パスで使える。ただし同一ブランチを worktree が既に使っている場合は `fatal: already used by worktree` エラーが出るので、worktree 側でのセッションを先に終了すること。
+
 ## 🎓 学びの可視化ルール（2026-04-19 副院長指示、義務）
 
 **背景:** 副院長の指摘「3（原因切り分け）と 4（指示や設計を変える）が貴方の裏で動いていて、
