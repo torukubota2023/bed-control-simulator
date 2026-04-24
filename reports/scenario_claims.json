@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-20T23:11:40.872928+00:00",
-  "claim_count": 68,
+  "generated_at": "2026-04-24T04:59:19.272990+00:00",
+  "claim_count": 73,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
     "docs/admin/demo_scenario_v4.md",
@@ -90,9 +90,73 @@
       "unit": "%"
     },
     {
-      "id": "carnf-scenario-v4-L192-patient-rows-10",
+      "id": "carnf-scenario-v4-L177-occ-target-90",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 192,
+      "source_line": 177,
+      "scene": "② 予測稼働率（目標 90%）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "#### ② 予測稼働率（目標 90%）",
+      "metric": "occupancy_target_pct",
+      "expected_value": 90.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "carnf-scenario-v4-L189-occ-target-90",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 189,
+      "scene": "② 予測稼働率（目標 90%）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "**低稼働警告**: 目標 90% を大きく下回る日があれば、画面下部にバナーで注意喚起：",
+      "metric": "occupancy_target_pct",
+      "expected_value": 90.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "carnf-scenario-v4-L190-occ-target-90",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 190,
+      "scene": "② 予測稼働率（目標 90%）",
+      "context": {
+        "ward": null,
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "> ⚠️ 稼働率が目標 90% を大きく下回る見込み: 土曜 78%、日曜 72% —",
+      "metric": "occupancy_target_pct",
+      "expected_value": 90.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "carnf-scenario-v4-L205-occ-target-90-5f",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 205,
+      "scene": "発言例（司会）",
+      "context": {
+        "ward": "5F",
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "> 「予測稼働率が土曜 78%・日曜 72% と **目標 90% を大きく下回る見込み**。退院を金曜に集中させすぎると",
+      "metric": "occupancy_target_pct",
+      "expected_value": 90.0,
+      "tolerance": 0.5,
+      "unit": "%"
+    },
+    {
+      "id": "carnf-scenario-v4-L223-patient-rows-10",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 223,
       "scene": "見る場所：画面中央右側（Block C・ここが議論の中心）",
       "context": {
         "ward": null,
@@ -106,9 +170,9 @@
       "unit": "名"
     },
     {
-      "id": "carnf-scenario-v4-L204-status-cnt-7",
+      "id": "carnf-scenario-v4-L235-status-cnt-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 204,
+      "source_line": 235,
       "scene": "7 つのステータス（通常モード）",
       "context": {
         "ward": null,
@@ -122,9 +186,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L216-status-cnt-5",
+      "id": "carnf-scenario-v4-L247-status-cnt-5",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 216,
+      "source_line": 247,
       "scene": "5 つのステータス（連休対策モード、v4 分散退院型）",
       "context": {
         "ward": null,
@@ -138,9 +202,9 @@
       "unit": "種"
     },
     {
-      "id": "carnf-scenario-v4-L449-holiday-thresh-banner-21",
+      "id": "carnf-scenario-v4-L535-holiday-thresh-banner-21",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 449,
+      "source_line": 535,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -154,9 +218,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L450-holiday-thresh-banner-14",
+      "id": "carnf-scenario-v4-L536-holiday-thresh-banner-14",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 450,
+      "source_line": 536,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -170,9 +234,9 @@
       "unit": "日"
     },
     {
-      "id": "carnf-scenario-v4-L450-holiday-thresh-banner-7",
+      "id": "carnf-scenario-v4-L536-holiday-thresh-banner-7",
       "source_file": "docs/admin/carnf_scenario_v4.md",
-      "source_line": 450,
+      "source_line": 536,
       "scene": "切替の仕組み — 手動切替 + 推奨バナー",
       "context": {
         "ward": null,
@@ -184,6 +248,22 @@
       "expected_value": 7.0,
       "tolerance": 0.5,
       "unit": "日"
+    },
+    {
+      "id": "carnf-scenario-v4-L696-occ-pct-70-5f",
+      "source_file": "docs/admin/carnf_scenario_v4.md",
+      "source_line": 696,
+      "scene": "変更履歴",
+      "context": {
+        "ward": "5F",
+        "mode": "normal",
+        "data_source": "demo"
+      },
+      "claim_text": "数比較と「予測稼働率」の 2 段表示に変更。週末・連休の稼働率が 70% / 80% を下回る日には低稼働警告バナーを表示 |",
+      "metric": "occupancy_pct",
+      "expected_value": 70.0,
+      "tolerance": 1.5,
+      "unit": "%"
     },
     {
       "id": "demo-scenario-v4-L108-holiday-thresh-banner-7",

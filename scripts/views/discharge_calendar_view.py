@@ -882,7 +882,9 @@ def _compute_occupancy_forecast(
             total_discharge_for_calc = float(registered_discharge)
         else:
             total_discharge_for_calc = discharge_dow_mean.get(dow, 0.0)
-        total_discharge = registered_discharge  # 表示用は登録済みのみ
+        # 表示用も計算に使った値（登録済み + 曜日平均フォールバック）
+        # → 在院数の増減と退院バーの不一致を避ける。
+        total_discharge = round(total_discharge_for_calc, 1)
 
         scheduled_admission = scheduled_adm_by_date.get(iso, 0)
         emergency_mean = emergency_dow_mean.get(dow, 0.0)
@@ -921,12 +923,13 @@ def _estimate_current_inpatients(
 ) -> int:
     """基準日時点で入院中の患者数を admission/discharge の履歴から推定.
 
-    admission イベントがあり、reference_date までに discharge イベントが
-    ない UUID の数を返す（=入院中）。データが不十分な場合は 0 を返す。
+    当病棟の admission 件数 − discharge 件数（いずれも reference_date まで）
+    をネット残として返す。CSV 上は admission/discharge 各行が独立した UUID
+    を持つ（同一患者でも ID が異なる）ため、件数差分で推定する。
     """
     if admission_details_df is None or len(admission_details_df) == 0:
         return 0
-    required = {"event_type", "date", "ward", "id"}
+    required = {"event_type", "date", "ward"}
     if not required.issubset(admission_details_df.columns):
         return 0
 
@@ -936,17 +939,14 @@ def _estimate_current_inpatients(
     except (ValueError, TypeError):
         return 0
 
-    # 基準日までのイベントに限定
-    df = df[df["date"] <= reference_date]
+    # 基準日までのイベント × 当病棟に限定
+    df = df[(df["date"] <= reference_date) & (df["ward"] == target_ward)]
     if len(df) == 0:
         return 0
 
-    adm = df[(df["event_type"] == "admission") & (df["ward"] == target_ward)]
-    disc = df[df["event_type"] == "discharge"]
-
-    adm_ids = set(str(x)[:8] for x in adm["id"] if len(str(x)) >= 8)
-    disc_ids = set(str(x)[:8] for x in disc["id"] if len(str(x)) >= 8)
-    return len(adm_ids - disc_ids)
+    adm_count = int((df["event_type"] == "admission").sum())
+    disc_count = int((df["event_type"] == "discharge").sum())
+    return max(0, adm_count - disc_count)
 
 
 def _render_forecast_charts(
@@ -1502,19 +1502,19 @@ def render_discharge_calendar_tab(
             else:
                 forecast_end = date(next_year, next_month + 1, 1) - timedelta(days=1)
 
+            # 病床数（5F/6F は 47 床ずつ、全体 94 床）
+            ward_beds = 47 if ward_label in ("5F", "6F") else 94
+
             # 開始時在院数を admission_details から推定
             initial_inp = _estimate_current_inpatients(
                 admission_details_df, ward_label, today
             )
-            # 推定できない場合のフォールバック: 病床数 × 現在稼働率 or 40
-            if initial_inp == 0:
+            # 推定できない / 異常値のフォールバック: 病床数 × 現在稼働率 or 85%
+            if initial_inp == 0 or initial_inp > ward_beds * 1.05:
                 if ward_occ is not None:
-                    initial_inp = int(47 * ward_occ)
+                    initial_inp = int(ward_beds * ward_occ)
                 else:
-                    initial_inp = 40  # 保守的な値（稼働率85%相当）
-
-            # 病床数（5F/6F は 47 床ずつ、全体 94 床）
-            ward_beds = 47 if ward_label in ("5F", "6F") else 94
+                    initial_inp = int(ward_beds * 0.85)  # 保守的な値（稼働率85%相当）
 
             discharge_dow_mean = _estimate_discharges_by_dow(
                 admission_details_df, ward_label
