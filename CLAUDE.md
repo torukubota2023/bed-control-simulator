@@ -466,31 +466,47 @@ git push origin <ブランチ名>
 
 ### 別 PC で作業ブランチの Streamlit を起動して確認する手順（2026-04-24 副院長指示）
 
-作業ブランチに `git pull` してブラウザで動作確認したいとき、以下を実行：
+⚠️ **山括弧 `<...>` はプレースホルダ表記。そのまま zsh に貼り付けると parse error になる。**
+必ず実際のディレクトリ名／ブランチ名に置換すること。下記は現在の作業ブランチ
+`claude/great-wozniak-e298a3` 用の**置換済みコマンド**。
+
+**A. worktree 経由（Claude Code セッション中の確認）:**
 
 ```bash
-cd ~/ai-management/.claude/worktrees/<worktree名>
+cd ~/ai-management/.claude/worktrees/great-wozniak-e298a3
 git pull
 ~/ai-management/.venv/bin/streamlit run scripts/bed_control_simulator_app.py
 ```
 
-**手順のポイント:**
-- `cd` 先は Claude Code が自動生成する **worktree ディレクトリ**（例: `~/ai-management/.claude/worktrees/great-wozniak-e298a3`）。`ls ~/ai-management/.claude/worktrees/` で確認
-- `git pull` で別 PC の最新コミットを取り込む（SessionStart フックが入っていればこれは自動化済み、手動でも OK）
-- `~/ai-management/.venv/bin/streamlit` は **absolute path 指定が必要**。worktree 側には venv がないため、メインリポジトリの venv を参照する
-- 起動後は http://localhost:8501 をブラウザで開く
-- 終了は Ctrl+C
-
-**worktree がない場合（= Claude Code を経由せず直接確認したい時）:**
+**B. メインリポジトリ経由（Claude Code を使わず直接確認）:**
 
 ```bash
 cd ~/ai-management
 git fetch origin
-git checkout <ブランチ名>
+git checkout claude/great-wozniak-e298a3
 git pull
 .venv/bin/streamlit run scripts/bed_control_simulator_app.py
 ```
-こちらはメインリポジトリ直下なので `.venv/bin/streamlit` が相対パスで使える。ただし同一ブランチを worktree が既に使っている場合は `fatal: already used by worktree` エラーが出るので、worktree 側でのセッションを先に終了すること。
+
+**手順のポイント:**
+- worktree ディレクトリ名は `ls ~/ai-management/.claude/worktrees/` で確認可能（Claude Code が自動生成）
+- A の場合: `~/ai-management/.venv/bin/streamlit` は **absolute path 指定が必要**。worktree 側には venv がないため、メインリポジトリの venv を参照する
+- B の場合: メインリポジトリ直下なので `.venv/bin/streamlit` が相対パスで使える。ただし同一ブランチを worktree が既に使っている場合は `fatal: already used by worktree` エラーが出るので、worktree 側でのセッションを先に終了すること
+- 起動後は http://localhost:8501 をブラウザで開く
+- 終了は Ctrl+C
+
+### ⚠️ Claude Code の preview 利用と手動 Streamlit 起動の競合（2026-04-24 事故受け）
+
+**事故:** Claude が内部で `lsof -i :8501 -t | xargs -r kill -9` を実行した際、
+副院長が別ターミナルで動かしていた Streamlit も port 8501 を使っていたため
+巻き添えで強制終了した（ターミナルに `zsh: killed` が出た）。
+
+**予防ルール:**
+- **副院長が手動で Streamlit を立てている間は、Claude に「実画面確認して」と頼まない**
+  （Claude が preview_start を実行して競合する）
+- **Claude が preview を使う時は、まず `lsof -i :8501` で何が使っているか確認**し、
+  副院長のプロセスが見つかったらその旨報告して中止する運用とする
+- どちらかが port 8501 を使い終わったら、もう片方を起動する
 
 ## 🎓 学びの可視化ルール（2026-04-19 副院長指示、義務）
 
