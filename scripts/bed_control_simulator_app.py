@@ -278,6 +278,49 @@ except Exception as _gr_err:
     _GUARDRAIL_ERROR = f"{_gr_err}\n{_gr_tb.format_exc()}"
     _EMERGENCY_RATIO_AVAILABLE = False
 
+# 過去入院データ（2025年度事務提供 CSV）ローダー
+# 日次入力が 3 ヶ月貯まるまで救急15% の rolling 計算を補完する。
+try:
+    from past_admissions_loader import (
+        load_past_admissions,
+        to_monthly_summary as past_to_monthly_summary,
+    )
+    _PAST_ADMISSIONS_AVAILABLE = True
+except Exception:
+    _PAST_ADMISSIONS_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# 月別サマリー統合 — 過去1年CSV + 既存 session_state.monthly_summary
+# ---------------------------------------------------------------------------
+# 救急15% rolling 計算の bootstrap 用途:
+#   1. 過去入院データ（事務提供 CSV）から monthly_summary を生成
+#   2. session_state.monthly_summary（手動入力）で上書き
+#   3. rolling 計算は daily_df → merged summary → manual_seed の優先順位で自動選択
+#
+# 日次データ（admission_details.csv）が 3 ヶ月分貯まれば自動的に日次優先になり、
+# 過去CSV は「古い月の監視」のみに縮退する（副院長指示 2026-04-24）。
+def _build_effective_monthly_summary() -> dict:
+    """過去CSV と session_state.monthly_summary を merge した辞書を返す。"""
+    merged: dict = {}
+    if _PAST_ADMISSIONS_AVAILABLE:
+        try:
+            past_df = st.session_state.get("past_admissions_df")
+            if past_df is not None and len(past_df) > 0:
+                merged = dict(past_to_monthly_summary(past_df))
+        except Exception:
+            merged = {}
+    # 手動入力サマリーで上書き（副院長が個別修正した値を優先）
+    manual_summary = st.session_state.get("monthly_summary", {})
+    if isinstance(manual_summary, dict):
+        for ym, ward_data in manual_summary.items():
+            if ym in merged and isinstance(ward_data, dict):
+                # 既存の過去CSV ベースに手動値を shallow merge
+                merged[ym] = {**merged[ym], **ward_data}
+            else:
+                merged[ym] = ward_data
+    return merged
+
 
 # ---------------------------------------------------------------------------
 # 救急搬送比率 — 経過措置期間ゲート付きラッパー
@@ -323,8 +366,15 @@ def _calc_emergency_ratio_with_gate(detail_df, ward, year_month, target_date,
         detail_df, ward=ward, year_month=year_month,
         exclude_short3=exclude_short3, target_date=target_date,
     )
+
+    # 過去入院データ（事務提供 CSV）を monthly_summary 形式に変換し、
+    # 既存 session_state.monthly_summary と merge（日次データが無い月を補完）。
+    # 日次データ > summary > manual_seed の優先順位は emergency_ratio 側で解決。
+    _eff_summary = _build_effective_monthly_summary()
+
     rolling = calculate_rolling_emergency_ratio(
         detail_df, ward=ward, target_date=target_date, window_months=3,
+        monthly_summary=_eff_summary,
     )
 
     # rolling の分子/分母/比率/ステータスで単月の値を上書き
@@ -1508,6 +1558,18 @@ if "admission_details" not in st.session_state:
         st.session_state.admission_details = load_details(_detail_csv_path)
     else:
         st.session_state.admission_details = pd.DataFrame()
+
+# 過去入院データ（事務提供の過去1年 CSV）— 救急15% rolling 計算の bootstrap 用
+# 日次入力が 3 ヶ月分貯まれば自動的に日次データが優先されるため、
+# これは「古い月の監視」専用。
+if "past_admissions_df" not in st.session_state:
+    if _PAST_ADMISSIONS_AVAILABLE:
+        try:
+            st.session_state.past_admissions_df = load_past_admissions()
+        except Exception:
+            st.session_state.past_admissions_df = pd.DataFrame()
+    else:
+        st.session_state.past_admissions_df = pd.DataFrame()
 
 # A/B/C群 自動計算用の状態（SQLiteから自動復元）
 if "abc_state" not in st.session_state:
