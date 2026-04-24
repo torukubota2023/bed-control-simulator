@@ -18,6 +18,10 @@ from past_admissions_loader import (  # noqa: E402
     SHORT3_LIKELY_LOS_MAX,
     load_past_admissions,
     summarize_short3_estimate,
+    tabulate_discharge_routes,
+    tabulate_los_by_surgery,
+    tabulate_seasonality,
+    tabulate_short3_breakdown,
     tabulate_tier_distribution,
     to_monthly_summary,
 )
@@ -225,6 +229,131 @@ class TestTabulateTierDistribution:
         assert result["by_ward"]["6F"]["tier_i"] == 1
         assert result["by_ward"]["6F"]["tier_ro"] == 1
         assert result["by_ward"]["6F"]["tier_ha"] == 1
+
+
+# ---------------------------------------------------------------------------
+# tabulate_discharge_routes
+# ---------------------------------------------------------------------------
+
+class TestTabulateDischargeRoutes:
+    def test_empty(self):
+        result = tabulate_discharge_routes(pd.DataFrame())
+        assert result["overall"] == {}
+        assert result["by_ward"] == {"5F": {}, "6F": {}}
+
+    def test_counts(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_discharge_routes(df)
+        # 患者 1,2,3,4 が自宅、5 が居住系、6 が未記入（在院中）
+        assert result["overall"]["自宅"] == 4
+        assert result["overall"]["居住系"] == 1
+        # 5F: 自宅3件（患者1,2,3）
+        assert result["by_ward"]["5F"]["自宅"] == 3
+        # 6F: 自宅1件（患者4）+ 居住系1件（患者5）+ 未記入1件（患者6）
+        assert result["by_ward"]["6F"]["自宅"] == 1
+        assert result["by_ward"]["6F"]["居住系"] == 1
+
+    def test_percentages(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_discharge_routes(df)
+        # 退院済み5件中、自宅4件 = 80%
+        assert result["percentages"]["自宅"] == 80.0
+        assert result["percentages"]["居住系"] == 20.0
+        assert result["total_with_discharge"] == 5
+
+
+# ---------------------------------------------------------------------------
+# tabulate_seasonality
+# ---------------------------------------------------------------------------
+
+class TestTabulateSeasonality:
+    def test_empty(self):
+        result = tabulate_seasonality(pd.DataFrame())
+        assert result["by_month"] == {}
+
+    def test_monthly_counts(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_seasonality(df)
+        # 2025-04: 患者1,2,3 = 3件 / 2025-05: 患者4,5,6 = 3件
+        assert result["by_month"]["2025-04"] == 3
+        assert result["by_month"]["2025-05"] == 3
+
+    def test_weekday_structure(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_seasonality(df)
+        # 全曜日のキーが存在
+        assert set(result["by_weekday"].keys()) == {"月", "火", "水", "木", "金", "土", "日"}
+        # 合計は6件
+        assert sum(result["by_weekday"].values()) == 6
+
+    def test_emergency_by_weekday(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_seasonality(df)
+        # 救急搬送3件（患者1,2,6）
+        assert sum(result["emergency_by_weekday"].values()) == 3
+
+
+# ---------------------------------------------------------------------------
+# tabulate_short3_breakdown
+# ---------------------------------------------------------------------------
+
+class TestTabulateShort3Breakdown:
+    def test_empty(self):
+        result = tabulate_short3_breakdown(pd.DataFrame())
+        assert result["by_department_certain"] == {}
+        assert result["top_doctors_certain"] == []
+
+    def test_department_breakdown(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_short3_breakdown(df)
+        # 確実(≤2日): 患者3（外科）のみ
+        assert result["by_department_certain"]["外科"] == 1
+        # ほぼ確実(≤5日): 患者3(外科)、患者4(麻酔科) = 各1件
+        assert result["by_department_likely"]["外科"] == 1
+        assert result["by_department_likely"]["麻酔科"] == 1
+
+    def test_doctor_ranking(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_short3_breakdown(df)
+        # Top doctors certain: 患者3 (HIGT) のみ1件
+        assert result["top_doctors_certain"][0] == ("HIGT", 1)
+
+
+# ---------------------------------------------------------------------------
+# tabulate_los_by_surgery
+# ---------------------------------------------------------------------------
+
+class TestTabulateLOSBySurgery:
+    def test_empty(self):
+        result = tabulate_los_by_surgery(pd.DataFrame())
+        assert result["surgery_yes"]["count"] == 0
+
+    def test_overall_stats(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_los_by_surgery(df)
+        # 手術あり: 患者2(7日), 患者3(2日), 患者4(5日) → mean=4.67, median=5
+        assert result["surgery_yes"]["count"] == 3
+        assert result["surgery_yes"]["median"] == 5.0
+        # 手術なし: 患者1(10日), 患者5(16日) → median=13 (患者6は日数NaN)
+        assert result["surgery_no"]["count"] == 2
+        assert result["surgery_no"]["median"] == 13.0
+
+    def test_ward_separation(self, tmp_path):
+        csv = _make_sample_csv(tmp_path)
+        df = load_past_admissions(csv)
+        result = tabulate_los_by_surgery(df)
+        # 5F 手術あり: 患者2(7日), 患者3(2日) = 2件
+        assert result["by_ward"]["5F"]["surgery_yes"]["count"] == 2
+        # 6F 手術なし: 患者5(16日) のみ（患者6 は NaN）
+        assert result["by_ward"]["6F"]["surgery_no"]["count"] == 1
 
 
 # ---------------------------------------------------------------------------

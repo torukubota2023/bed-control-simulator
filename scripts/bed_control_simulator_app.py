@@ -9794,6 +9794,261 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     "救急15%の分母からは一切除外しません**（制度ルール）。"
                 )
 
+            st.divider()
+
+            # ===== C: 退経路別分析（2026-04-24 追加） =====
+            st.subheader("\U0001f3e0 退経路別分析（9分類・病棟別）")
+            st.caption(
+                "退経路は 2026改定「在宅復帰率」の分子を決める。"
+                "自宅・居住系・回復リ・地域包の4系を分子対象（病院機能により差あり）。"
+            )
+            from past_admissions_loader import tabulate_discharge_routes as _pa_routes
+            _routes = _pa_routes(_pa_df)
+            if _routes["total_with_discharge"] > 0:
+                _route_order = ["自宅", "居住系", "介護老", "回復リ", "地域包", "病院他", "その他", "終了", "未記入"]
+                _route_colors = {
+                    "自宅": "#10B981",    # 緑（望ましい）
+                    "居住系": "#34D399",   # 薄緑
+                    "介護老": "#FCD34D",   # 黄
+                    "回復リ": "#60A5FA",   # 青
+                    "地域包": "#A78BFA",   # 紫
+                    "病院他": "#F59E0B",   # 橙（転院）
+                    "その他": "#9CA3AF",   # 灰
+                    "終了": "#6B7280",    # 濃灰
+                    "未記入": "#E5E7EB",   # 薄灰
+                }
+                _wards = ["5F", "6F"]
+                if _plotly_ok:
+                    _fig_routes = go.Figure()
+                    for route in _route_order:
+                        if route not in _routes["overall"]:
+                            continue
+                        _vals = []
+                        for w in _wards:
+                            total_w = sum(_routes["by_ward"][w].values())
+                            cnt = _routes["by_ward"][w].get(route, 0)
+                            _vals.append(cnt / total_w * 100 if total_w > 0 else 0)
+                        _fig_routes.add_trace(go.Bar(
+                            name=f"{route}",
+                            y=_wards, x=_vals, orientation="h",
+                            marker_color=_route_colors.get(route, "#9CA3AF"),
+                            text=[f"{v:.1f}%" if v >= 3 else "" for v in _vals],
+                            textposition="inside",
+                            hovertemplate=f"%{{y}}<br>{route}: %{{x:.1f}}%<extra></extra>",
+                        ))
+                    _fig_routes.update_layout(
+                        barmode="stack",
+                        height=220,
+                        xaxis_title="退経路構成比 (%)",
+                        margin=dict(l=40, r=20, t=20, b=40),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                    )
+                    st.plotly_chart(_fig_routes, use_container_width=True)
+                # 在宅復帰率（自宅＋居住系）の指標
+                _home_rate_overall = (
+                    _routes["overall"].get("自宅", 0) + _routes["overall"].get("居住系", 0)
+                ) / _routes["total_with_discharge"] * 100
+                _home_5f = sum(_routes["by_ward"]["5F"].values())
+                _home_6f = sum(_routes["by_ward"]["6F"].values())
+                _home_5f_rate = (
+                    _routes["by_ward"]["5F"].get("自宅", 0) + _routes["by_ward"]["5F"].get("居住系", 0)
+                ) / _home_5f * 100 if _home_5f else 0
+                _home_6f_rate = (
+                    _routes["by_ward"]["6F"].get("自宅", 0) + _routes["by_ward"]["6F"].get("居住系", 0)
+                ) / _home_6f * 100 if _home_6f else 0
+                _cols_h = st.columns(3)
+                _cols_h[0].metric("全体 自宅+居住系", f"{_home_rate_overall:.1f}%")
+                _cols_h[1].metric("5F 自宅+居住系", f"{_home_5f_rate:.1f}%")
+                _cols_h[2].metric("6F 自宅+居住系", f"{_home_6f_rate:.1f}%")
+                st.caption(
+                    "💡 自宅+居住系の合計が **在宅復帰率** の主要分子。"
+                    "病院他（転院）が多い病棟は下り搬送の受け皿として機能。"
+                )
+
+            st.divider()
+
+            # ===== D: 入院の季節性・曜日性（2026-04-24 追加） =====
+            st.subheader("\U0001f4c5 入院の季節性・曜日性")
+            st.caption(
+                "月別・曜日別の入院パターンを可視化。"
+                "救急曜日集中のピークと予定入院の平準化ポテンシャルを特定する。"
+            )
+            from past_admissions_loader import tabulate_seasonality as _pa_season
+            _season = _pa_season(_pa_df)
+            if _season["by_month"] and _plotly_ok:
+                # 月別推移
+                _months_s = sorted(_season["by_month"].keys())
+                _vals_month = [_season["by_month"][m] for m in _months_s]
+                _fig_month = go.Figure()
+                _fig_month.add_trace(go.Bar(
+                    x=_months_s, y=_vals_month,
+                    marker_color="#374151",
+                    text=_vals_month, textposition="outside",
+                    hovertemplate="%{x}<br>%{y} 件<extra></extra>",
+                ))
+                _avg_month = sum(_vals_month) / len(_vals_month) if _vals_month else 0
+                _fig_month.add_hline(
+                    y=_avg_month, line_dash="dash", line_color="#DC2626",
+                    annotation_text=f"年間平均 {_avg_month:.0f}件",
+                    annotation_position="top right",
+                )
+                _fig_month.update_layout(
+                    height=280,
+                    yaxis_title="月間入院数 (件)",
+                    xaxis_title="月",
+                    margin=dict(l=40, r=20, t=20, b=40),
+                    showlegend=False,
+                )
+                st.plotly_chart(_fig_month, use_container_width=True)
+
+                # 曜日別（救急 vs 予定）
+                _wd_labels_s = ["月", "火", "水", "木", "金", "土", "日"]
+                _fig_wd = go.Figure()
+                _fig_wd.add_trace(go.Bar(
+                    name="救急搬送",
+                    x=_wd_labels_s,
+                    y=[_season["emergency_by_weekday"].get(w, 0) for w in _wd_labels_s],
+                    marker_color="#DC2626",
+                    hovertemplate="%{x}曜<br>救急: %{y}件<extra></extra>",
+                ))
+                _fig_wd.add_trace(go.Bar(
+                    name="予定入院",
+                    x=_wd_labels_s,
+                    y=[_season["scheduled_by_weekday"].get(w, 0) for w in _wd_labels_s],
+                    marker_color="#2563EB",
+                    hovertemplate="%{x}曜<br>予定: %{y}件<extra></extra>",
+                ))
+                _other_by_wd = [
+                    _season["by_weekday"].get(w, 0)
+                    - _season["emergency_by_weekday"].get(w, 0)
+                    - _season["scheduled_by_weekday"].get(w, 0)
+                    for w in _wd_labels_s
+                ]
+                _fig_wd.add_trace(go.Bar(
+                    name="その他（予定外非救急）",
+                    x=_wd_labels_s, y=_other_by_wd,
+                    marker_color="#9CA3AF",
+                    hovertemplate="%{x}曜<br>その他: %{y}件<extra></extra>",
+                ))
+                _fig_wd.update_layout(
+                    barmode="stack",
+                    height=280,
+                    yaxis_title="年間入院数 (件)",
+                    xaxis_title="曜日",
+                    margin=dict(l=40, r=20, t=20, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                )
+                st.plotly_chart(_fig_wd, use_container_width=True)
+                _peak_wd = max(_wd_labels_s, key=lambda w: _season["by_weekday"].get(w, 0))
+                _low_wd = min(_wd_labels_s, key=lambda w: _season["by_weekday"].get(w, 0))
+                st.caption(
+                    f"💡 **ピーク曜日:** {_peak_wd}（{_season['by_weekday'][_peak_wd]}件）／"
+                    f"**底曜日:** {_low_wd}（{_season['by_weekday'][_low_wd]}件）。"
+                    "曜日差が大きければ予定入院の平準化で稼働率安定化の余地あり。"
+                )
+
+            st.divider()
+
+            # ===== E: 短手3 内訳（診療科別・医師別）（2026-04-24 追加） =====
+            st.subheader("\U0001f50d 短手3 内訳（診療科別・医師別）")
+            st.caption(
+                "手術×日数ヒューリスティックの詳細分解。"
+                "短手3 の増減計画立案・収入影響分析に使用（救急15%計算には未使用）。"
+            )
+            from past_admissions_loader import tabulate_short3_breakdown as _pa_s3b
+            _s3b = _pa_s3b(_pa_df)
+            if _s3b["by_department_certain"] or _s3b["by_department_likely"]:
+                _cols_s3b = st.columns(2)
+                with _cols_s3b[0]:
+                    st.markdown("**診療科別 確実（≤2日）**")
+                    if _s3b["top_departments_certain"]:
+                        for dept, cnt in _s3b["top_departments_certain"]:
+                            st.text(f"  {dept}: {cnt} 件")
+                    else:
+                        st.caption("該当なし")
+                with _cols_s3b[1]:
+                    st.markdown("**医師別 確実（≤2日） Top 5**")
+                    if _s3b["top_doctors_certain"]:
+                        for doc, cnt in _s3b["top_doctors_certain"]:
+                            st.text(f"  {doc}: {cnt} 件")
+                    else:
+                        st.caption("該当なし")
+
+                with st.expander("📊 ほぼ確実（≤5日）の診療科別", expanded=False):
+                    if _s3b["by_department_likely"]:
+                        _df_likely = pd.DataFrame([
+                            {"診療科": k, "件数": v}
+                            for k, v in sorted(
+                                _s3b["by_department_likely"].items(),
+                                key=lambda x: x[1], reverse=True
+                            )
+                        ])
+                        st.dataframe(_df_likely, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # ===== F: 手術有無別 LOS 比較（2026-04-24 追加） =====
+            st.subheader("\u23f1\ufe0f 手術有無別 平均在院日数（LOS）比較")
+            st.caption(
+                "手術の有無で LOS がどう変わるかを病棟別・診療科別に可視化。"
+                "入院計画立案時の日数見積に使う。"
+            )
+            from past_admissions_loader import tabulate_los_by_surgery as _pa_los
+            _los = _pa_los(_pa_df)
+            if _los["surgery_yes"]["count"] > 0 or _los["surgery_no"]["count"] > 0:
+                _cols_los = st.columns(4)
+                _cols_los[0].metric(
+                    "全体 手術あり 中央値",
+                    f"{_los['surgery_yes']['median']:.1f} 日",
+                    help=f"n={_los['surgery_yes']['count']} / 平均 {_los['surgery_yes']['mean']:.1f}",
+                )
+                _cols_los[1].metric(
+                    "全体 手術なし 中央値",
+                    f"{_los['surgery_no']['median']:.1f} 日",
+                    help=f"n={_los['surgery_no']['count']} / 平均 {_los['surgery_no']['mean']:.1f}",
+                )
+                _diff = _los["surgery_no"]["median"] - _los["surgery_yes"]["median"]
+                _cols_los[2].metric(
+                    "差（手術なし − あり）",
+                    f"{_diff:+.1f} 日",
+                    help="通常は手術なしの方が長い（保存的治療 or 介護的）",
+                )
+                _cols_los[3].metric(
+                    "全体 手術あり P75",
+                    f"{_los['surgery_yes']['p75']:.1f} 日",
+                    help="上位25%の境界（長期化の目安）",
+                )
+
+                # 病棟別・診療科別テーブル
+                _rows_los = []
+                for w in ("5F", "6F"):
+                    _rows_los.append({
+                        "区分": f"{w} 病棟",
+                        "手術あり 中央値": f"{_los['by_ward'][w]['surgery_yes']['median']:.1f}",
+                        "手術あり n": _los['by_ward'][w]['surgery_yes']['count'],
+                        "手術なし 中央値": f"{_los['by_ward'][w]['surgery_no']['median']:.1f}",
+                        "手術なし n": _los['by_ward'][w]['surgery_no']['count'],
+                    })
+                for dept, stats in sorted(
+                    _los["by_department"].items(),
+                    key=lambda x: -(x[1]["surgery_yes"]["count"] + x[1]["surgery_no"]["count"]),
+                )[:8]:
+                    _rows_los.append({
+                        "区分": f"[{dept}]",
+                        "手術あり 中央値": f"{stats['surgery_yes']['median']:.1f}",
+                        "手術あり n": stats['surgery_yes']['count'],
+                        "手術なし 中央値": f"{stats['surgery_no']['median']:.1f}",
+                        "手術なし n": stats['surgery_no']['count'],
+                    })
+                st.dataframe(
+                    pd.DataFrame(_rows_los),
+                    use_container_width=True, hide_index=True,
+                )
+                st.caption(
+                    "💡 診療科は退院済み ≥5 件のみ表示（統計的意義確保）。"
+                    "中央値同士の差が診療科横断で顕著なら、ベッド計画の科別補正が有効。"
+                )
+
 # ---------------------------------------------------------------------------
 # タブ: 💡 改善のヒント（インタラクティブ What-If シミュレーション付き）
 # ---------------------------------------------------------------------------

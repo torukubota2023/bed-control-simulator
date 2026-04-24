@@ -107,6 +107,9 @@
 3. [x] **シミュレーター上の警告:** 短手3患者 Day 5 到達アラート — `get_short3_day5_patients()` 本実装 + UI 有効化（2026-04-17, `scripts/bed_data_manager.py:955`, `scripts/bed_control_simulator_app.py:2910-2929`）
 4. [x] **リグレッション確認:** `emergency_ratio.py` の `exclude_short3` コメント更新済。全 267 テスト + smoke test 通過確認済
 
+### 副院長向け運用チェックリスト（2026-04-24 作成）
+- [transition_end_2026-06-01_checklist.md](docs/admin/transition_end_2026-06-01_checklist.md) — 5月の段階的チェック / 6/1 当日〜1週間 / 恒常運用 / トラブルシューティング
+
 ### リサーチ出典
 - [GemMed 地域包括医療病棟 施設基準・要件詳細](https://gemmed.ghc-j.com/?p=59593)
 - [しろぼんねっとQ&A](https://shirobon.net/qabbs_detail.php?bbs_id=59150)
