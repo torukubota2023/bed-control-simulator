@@ -310,13 +310,13 @@ def build_doctor_summary(
         delta = self_driven.get("los_delta_vs_peer", 0.0)
         if delta >= 1.0:
             insights.append(
-                f"✅ 予定入院×手術なしの median LOS {self_driven['median_los']}日 "
-                f"(peer {self_driven['peer_median']}日) — 自主的に回転させている"
+                f"✅ 予定入院×手術なしの中央在院日数 {self_driven['median_los']}日 "
+                f"(他医師 {self_driven['peer_median']}日) — 自主的に回転させている"
             )
         elif delta <= -1.5:
             insights.append(
-                f"📈 予定入院×手術なしの median LOS {self_driven['median_los']}日 "
-                f"(peer {self_driven['peer_median']}日) — peer より長め"
+                f"📈 予定入院×手術なしの中央在院日数 {self_driven['median_los']}日 "
+                f"(他医師 {self_driven['peer_median']}日) — 他医師より長め"
             )
 
     if weekend_risk and not weekend_risk.get("is_small_sample", True):
@@ -324,12 +324,12 @@ def build_doctor_summary(
         if delta_w <= -5.0:
             insights.append(
                 f"✅ 木+金退院率 {weekend_risk['thu_fri_pct']:.0f}% "
-                f"(peer {weekend_risk['peer_thu_fri_pct']:.0f}%) — 週末空床リスクを抑えている"
+                f"(他医師 {weekend_risk['peer_thu_fri_pct']:.0f}%) — 週末空床リスクを抑えている"
             )
         elif delta_w >= 5.0:
             insights.append(
                 f"⚠️ 木+金退院率 {weekend_risk['thu_fri_pct']:.0f}% "
-                f"(peer {weekend_risk['peer_thu_fri_pct']:.0f}%) — 週末稼働率低下への寄与"
+                f"(他医師 {weekend_risk['peer_thu_fri_pct']:.0f}%) — 週末稼働率低下への寄与"
             )
 
     return {

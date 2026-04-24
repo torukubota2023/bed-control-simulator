@@ -9273,7 +9273,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                 )
                 st.caption(
                     "事務提供の 2025 年度データ（1,823 件）から、医師ごとの退院行動を可視化。"
-                    "**peer（同診療科 or 全体）中央値との差** で提示し、順位付けは避けています。"
+                    "**他医師の中央値（同診療科 or 全体）との差** で提示し、順位付けは避けています。"
                     "件数 < 20 件の医師は参考値扱い（グレー表示）。"
                 )
 
@@ -9307,7 +9307,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                     st.markdown("#### 🔴 週末空床リスク寄与度（木+金退院率）")
                     st.caption(
                         "金曜＋木曜の退院が多いほど、土日に空床が発生しやすい。"
-                        "peer 中央値と比較して、週末空床リスクへの寄与を可視化。"
+                        "他医師の中央値と比較して、週末空床リスクへの寄与を可視化。"
                     )
                     if _plotly_dp and _weekend_risk:
                         _risk_sorted = sorted(
@@ -9335,7 +9335,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         _fig_risk.add_vline(
                             x=_peer_med, line_width=2, line_dash="dash",
                             line_color="#374151",
-                            annotation_text=f"peer 中央値 {_peer_med:.1f}%",
+                            annotation_text=f"他医師の中央値 {_peer_med:.1f}%",
                             annotation_position="top",
                         )
                         _fig_risk.update_layout(
@@ -9346,18 +9346,18 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         )
                         st.plotly_chart(_fig_risk, use_container_width=True)
                         st.caption(
-                            "🔴 赤＝peer より +5pt 以上（リスク寄与大）／"
-                            "🟠 オレンジ＝peer より 0〜5pt 上／"
-                            "🟢 緑＝peer より下（リスク抑制）／"
+                            "🔴 赤＝他医師の中央値より +5pt 以上（リスク寄与大）／"
+                            "🟠 オレンジ＝他医師の中央値より 0〜5pt 上／"
+                            "🟢 緑＝他医師の中央値より下（リスク抑制）／"
                             "⚪ グレー＝件数 < 20（参考値）"
                         )
 
-                    # --- 自主回転 median LOS ---
-                    st.markdown("#### 🔄 自分主導の短期退院傾向（予定入院×手術なし の median LOS）")
+                    # --- 自主回転 中央在院日数 ---
+                    st.markdown("#### 🔄 自分主導の短期退院傾向（予定入院×手術なし の中央在院日数）")
                     st.caption(
                         "予定入院かつ手術なしは、コントローラー介入が少なく"
-                        "医師が退院日を主導しやすいケース。peer (同診療科) より **短ければ自主的に回転**、"
-                        "**長ければ peer よりゆったり** という傾向が読める。"
+                        "医師が退院日を主導しやすいケース。**同診療科の他医師の中央値** より "
+                        "**短ければ自主的に回転**、**長ければゆったり** という傾向が読める。"
                     )
                     if _plotly_dp and _self_driven:
                         _sd_sorted = sorted(
@@ -9378,7 +9378,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                             x=_sd_self, y=_sd_docs,
                             mode="markers",
                             marker=dict(size=14, color=_sd_colors),
-                            name="自身の median LOS",
+                            name="自身の中央在院日数",
                             hovertemplate="%{y}<br>self %{x}日<br>件数 %{customdata}<extra></extra>",
                             customdata=_sd_ns,
                         ))
@@ -9386,12 +9386,12 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                             x=_sd_peer, y=_sd_docs,
                             mode="markers",
                             marker=dict(size=10, color="#DC2626", symbol="line-ns-open"),
-                            name="peer 中央値",
-                            hovertemplate="%{y}<br>peer %{x}日<extra></extra>",
+                            name="他医師の中央値",
+                            hovertemplate="%{y}<br>他医師 %{x}日<extra></extra>",
                         ))
                         _fig_sd.update_layout(
                             height=max(300, 30 * len(_sd_docs)),
-                            xaxis_title="median LOS (日)",
+                            xaxis_title="中央在院日数（日）",
                             margin=dict(l=60, r=20, t=30, b=40),
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
                         )
@@ -9455,7 +9455,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         _cols_prof[2].metric(
                             "木+金退院率",
                             f"{_wr.get('thu_fri_pct', 0):.1f}%",
-                            delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（peer比）",
+                            delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（他医師との差）",
                             delta_color="inverse",  # 高いほど悪い
                         )
                         _cols_prof[3].metric(
@@ -9512,10 +9512,10 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                                 f"{_sd['self_driven_cases']}件",
                             )
                             _sd_col2.metric(
-                                "median LOS vs peer",
+                                "中央在院日数（他医師との比較）",
                                 f"{_sd['median_los']}日",
-                                delta=f"{_sd['los_delta_vs_peer']:+.1f}日（peer {_sd['peer_median']}日）",
-                                delta_color="normal",  # peer より短い=正=良
+                                delta=f"{_sd['los_delta_vs_peer']:+.1f}日（他医師 {_sd['peer_median']}日）",
+                                delta_color="normal",  # 他医師より短い=正=良
                             )
 
                         if _wd.get("is_small_sample", False):
