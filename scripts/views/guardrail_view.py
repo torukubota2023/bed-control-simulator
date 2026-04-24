@@ -71,7 +71,8 @@ def render_guardrail_summary(guardrail_status: dict) -> None:
             with col3:
                 delta = los_headroom['headroom_days']
                 can_extend = los_headroom['can_extend_c_group']
-                st.metric("\u4f59\u529b", f"{delta:.1f}\u65e5", delta=f"C\u7fa4\u5ef6\u9577{'\u53ef' if can_extend else '\u4e0d\u53ef'}")
+                extend_label = "\u53ef" if can_extend else "\u4e0d\u53ef"
+                st.metric("\u4f59\u529b", f"{delta:.1f}\u65e5", delta=f"C\u7fa4\u5ef6\u9577{extend_label}")
 
             if los_headroom.get("headroom_patient_days") is not None:
                 st.info(f"\U0001f4ca \u5ef6\u3079\u5165\u9662\u65e5\u6570\u63db\u7b97\u306e\u4f59\u529b: \u7d04 {los_headroom['headroom_patient_days']:.0f} \u65e5\u5206\uff08\u63a8\u8a08\uff09")

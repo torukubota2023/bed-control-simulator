@@ -7,3 +7,5 @@ matplotlib
 ruff
 jpholiday
 PyYAML
+python-docx
+openpyxl

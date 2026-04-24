@@ -3032,7 +3032,7 @@ if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
             _ac_daily_df_full = _active_raw_df_full if isinstance(_active_raw_df_full, pd.DataFrame) and len(_active_raw_df_full) > 0 else _ac_daily_df
             # 翌朝受入余力「全体」は常に病院全体データで計算する（病棟選択に汚染されない）
             # _daily_df はデータ管理タブ（後方）で初めて定義されるため、ここでは session_state から直接取得
-            _ac_overall_src = st.session_state.get("daily_data") if '_daily_df' not in dir() else _daily_df
+            _ac_overall_src = locals().get("_daily_df", st.session_state.get("daily_data"))
             _ac_overall_df = _ac_overall_src if isinstance(_ac_overall_src, pd.DataFrame) and len(_ac_overall_src) > 0 else _ac_daily_df
             _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
             if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:

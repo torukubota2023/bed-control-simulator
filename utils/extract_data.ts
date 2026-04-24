@@ -124,7 +124,7 @@ export function validateKPIIntegrity(kpis: DashboardKPIs): string[] {
   // 3-day min must be <= morning capacity
   if (kpis.morningCapacity !== undefined && kpis.threeDayMin !== undefined) {
     if (kpis.threeDayMin > kpis.morningCapacity) {
-      errors.push(`3診療日最小(${kpis.threeDayMin})が翌朝受入余力(${kpis.morningCapacity})を超過 — 論理的に矛盾`);
+      errors.push(`[WARNING] 3診療日最小(${kpis.threeDayMin})が翌朝受入余力(${kpis.morningCapacity})を超過 — 退院前倒しが必要`);
     }
   }
 

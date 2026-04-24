@@ -141,7 +141,7 @@ class TestInferMode:
 class TestExtractFromCarnfScenario:
     @pytest.fixture(scope="class")
     def claims(self):
-        path = ROOT / "docs" / "admin" / "carnf_scenario_v1.md"
+        path = ROOT / "docs" / "admin" / "carnf_scenario_v4.md"
         return extract_claims_from_file(path, relative_to=ROOT)
 
     def test_non_empty(self, claims):
@@ -149,11 +149,11 @@ class TestExtractFromCarnfScenario:
 
     def test_contains_occupancy(self, claims):
         occs = [c for c in claims if c.metric == "occupancy_pct"]
-        assert any(c.expected_value == 85.0 for c in occs)
+        assert any(c.expected_value == 86.0 for c in occs)
 
-    def test_contains_alos(self, claims):
-        alos = [c for c in claims if c.metric == "alos_days"]
-        assert any(abs(c.expected_value - 17.5) < 0.01 for c in alos)
+    def test_contains_alos_limit(self, claims):
+        alos_limit = [c for c in claims if c.metric == "alos_limit_days"]
+        assert any(abs(c.expected_value - 21.0) < 0.01 for c in alos_limit)
 
     def test_contains_holiday_threshold(self, claims):
         thresh = [c for c in claims if c.metric == "holiday_banner_threshold_days"]
@@ -178,21 +178,18 @@ class TestExtractFromCarnfScenario:
 class TestExtractFromPresentationScript:
     @pytest.fixture(scope="class")
     def claims(self):
-        path = ROOT / "docs" / "admin" / "presentation_script_bedcontrol.md"
+        path = ROOT / "docs" / "admin" / "presentation_script_bedcontrol_v4.md"
         return extract_claims_from_file(path, relative_to=ROOT)
 
-    def test_contains_revenue_per_1pct(self, claims):
-        """稼働率 1% ≒ 1,046 万円 の抽出."""
-        rev = [c for c in claims if c.metric == "revenue_per_1pct_manyen"]
-        assert len(rev) >= 1
-        # 1046 万円の主張が少なくとも 1 件
-        assert any(abs(c.expected_value - 1046.0) < 1.0 for c in rev)
+    def test_contains_occupancy_target(self, claims):
+        """稼働率目標 90% の抽出."""
+        occ_target = [c for c in claims if c.metric == "occupancy_target_pct"]
+        assert any(abs(c.expected_value - 90.0) < 0.01 for c in occ_target)
 
-    def test_contains_revenue_per_bed_day(self, claims):
-        """3万500円/床日 の抽出."""
-        rev = [c for c in claims if c.metric == "revenue_per_empty_bed_day_yen"]
-        assert len(rev) >= 1
-        assert any(abs(c.expected_value - 30500.0) < 1.0 for c in rev)
+    def test_contains_emergency_threshold(self, claims):
+        """救急搬送後患者割合 15% 閾値の抽出."""
+        emergency_threshold = [c for c in claims if c.metric == "emergency_threshold_pct"]
+        assert any(abs(c.expected_value - 15.0) < 0.01 for c in emergency_threshold)
 
 
 # ---------------------------------------------------------------------------

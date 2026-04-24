@@ -36,8 +36,6 @@ output/claude_allow_watcher/
 
 # Node
 node_modules/
-package-lock.json
-package.json
 
 # Cache
 pubmed-cache/

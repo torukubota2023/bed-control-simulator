@@ -1,8 +1,16 @@
-# 病棟稼働率シミュレーター v3.5
+# 病棟稼働率シミュレーター v3.5j
 
 **空床時間マネジメント** で病床経営を改善する Streamlit アプリ
 
 [![Tests](https://github.com/torukubota2023/bed-control-simulator/actions/workflows/test.yml/badge.svg)](https://github.com/torukubota2023/bed-control-simulator/actions/workflows/test.yml)
+[![E2E + Quality Assurance](https://github.com/torukubota2023/bed-control-simulator/actions/workflows/e2e.yml/badge.svg)](https://github.com/torukubota2023/bed-control-simulator/actions/workflows/e2e.yml)
+
+## 現在の開発ステータス
+
+- **主開発環境**: Claude Code
+- **Codex の役割**: GitHub Actions / CI / E2E / ドキュメント整合性の補助
+- **現行PR**: [PR #17: fix CI compatibility](https://github.com/torukubota2023/bed-control-simulator/pull/17)
+- **CI 方針**: 通常CIは Python tests + smoke test + 正準 Playwright E2E を必須化。重い監査E2Eは手動または週次運用で実行する。
 
 ## このアプリが解く課題
 
@@ -37,8 +45,8 @@
 | **施設基準チェック** | LOS余力・救急搬送割合を自動計算、制度逸脱リスクを信号表示 |
 | **需要波** | 前2週vs直近1週の入院トレンド比較、閑散/繁忙の自動判定 |
 | **C群コントロール** | 制度余力の中でC群による稼働率下支え効果を可視化 |
-| **救急搬送後患者割合** | 15%基準の単月管理、月末着地予測、未達アラート |
-| **サイドバーナビゲーション** | 17タブ→5セクション（ダッシュボード/意思決定支援/制度管理/データ管理/HOPE連携）に整理 |
+| **救急搬送後患者割合** | 15%基準の rolling 3ヶ月管理、病棟別判定、未達アラート |
+| **サイドバーナビゲーション** | 今日の運営 / What-if・戦略 / 制度管理 / 退院調整 / データ・設定 の5セクションに整理 |
 | **パスワード認証** | アプリ起動時にパスワード認証（session_state管理） |
 | **改善仮説の保存・比較** | What-Ifシナリオの名前付き保存、複数比較、ルールベースAI分析 |
 | **データエクスポート** | 病棟日次データ・入退院詳細（CSV）、シナリオデータ（JSON） |
@@ -51,7 +59,7 @@
 ## 起動方法
 
 ```bash
-# ローカル起動
+# ローカル起動（Python 3.11 推奨）
 pip install -r requirements.txt
 streamlit run scripts/bed_control_simulator_app.py
 
@@ -124,7 +132,11 @@ tests/
   test_c_group_candidates.py     # C群候補一覧・トレードオフのテスト（10件）
   test_app_integration.py        # アプリ統合テスト・状態遷移安全性（29件）
   test_deployment_assets.py      # 配布資材・views存在確認（19件）
-  （テスト総数は pytest 実行結果を参照 — 現在190件）
+  （テスト総数は pytest 実行結果を参照）
+playwright/
+  test_app.spec.ts             # CI必須の正準E2E
+  test_audit.spec.ts           # 手動/週次用の包括監査E2E
+  test_scenario_qa.spec.ts     # 台本と実画面の数値照合
 tools/
   browser_probe.html             # ブラウザ互換性チェック（Streamlit非依存・単体HTML）
 deploy/
@@ -142,6 +154,9 @@ requirements.txt                 # 本番依存関係
 requirements-edge90.txt          # Edge 90互換を目指す固定バージョン（検証前提）
 requirements-dev.txt             # 開発用依存関係（pytest, ruff）
 .github/workflows/test.yml      # CI（pytest + 2層ruff）
+.github/workflows/e2e.yml       # CI（smoke + Playwright正準E2E）
+package.json                    # Playwright E2E 用 Node 依存
+package-lock.json               # Node 依存の再現性固定
 ```
 
 ## 今後の拡張余地
