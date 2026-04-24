@@ -271,3 +271,235 @@ def tabulate_tier_distribution(df: pd.DataFrame) -> Dict[str, Any]:
         }
     overall["by_ward"] = by_ward
     return overall
+
+
+# ---------------------------------------------------------------------------
+# 拡張分析: 退経路別・季節性・短手3 内訳・手術有無別 LOS
+# ---------------------------------------------------------------------------
+
+def tabulate_discharge_routes(df: pd.DataFrame) -> Dict[str, Any]:
+    """退経路別の件数集計（病棟別）.
+
+    退経路は事務データの9分類（自宅/居住系/病院他/終了/介護老/回復リ/地域包/その他/空白）。
+    「終了」「空白」は在院中・データ欠損として扱う。
+
+    Returns:
+        dict: {
+            "overall": {"自宅": int, "居住系": int, ...},
+            "by_ward": {"5F": {...}, "6F": {...}},
+            "percentages": {"自宅": pct, ...},
+        }
+    """
+    if df.empty:
+        return {"overall": {}, "by_ward": {"5F": {}, "6F": {}}, "percentages": {}}
+
+    # 退経路の空白・NaN は「未記入」に置換
+    routes = df["退経路"].fillna("未記入").replace("", "未記入")
+
+    overall_counts: Dict[str, int] = routes.value_counts().to_dict()
+    total_with_discharge = int((routes != "未記入").sum())
+
+    by_ward: Dict[str, Dict[str, int]] = {}
+    for w in ("5F", "6F"):
+        mask = df["病棟"] == w
+        by_ward[w] = routes[mask].value_counts().to_dict()
+
+    percentages: Dict[str, float] = {}
+    if total_with_discharge > 0:
+        for route, cnt in overall_counts.items():
+            if route == "未記入":
+                continue
+            percentages[route] = round(cnt / total_with_discharge * 100, 2)
+
+    return {
+        "overall": {k: int(v) for k, v in overall_counts.items()},
+        "by_ward": {w: {k: int(v) for k, v in d.items()} for w, d in by_ward.items()},
+        "percentages": percentages,
+        "total_with_discharge": total_with_discharge,
+    }
+
+
+def tabulate_seasonality(df: pd.DataFrame) -> Dict[str, Any]:
+    """入院の月別・曜日別季節性集計.
+
+    Returns:
+        dict: {
+            "by_month": {"2025-04": int, ...},
+            "by_weekday": {"月": int, "火": int, ...},
+            "by_weekday_ward": {"5F": {...}, "6F": {...}},
+            "emergency_by_weekday": {"月": int, ...},
+            "scheduled_by_weekday": {"月": int, ...},
+        }
+    """
+    if df.empty:
+        return {
+            "by_month": {},
+            "by_weekday": {},
+            "by_weekday_ward": {"5F": {}, "6F": {}},
+            "emergency_by_weekday": {},
+            "scheduled_by_weekday": {},
+        }
+
+    work = df[df["admission_date"].notna()].copy()
+    if work.empty:
+        return {
+            "by_month": {},
+            "by_weekday": {},
+            "by_weekday_ward": {"5F": {}, "6F": {}},
+            "emergency_by_weekday": {},
+            "scheduled_by_weekday": {},
+        }
+
+    work["_dt"] = pd.to_datetime(work["admission_date"])
+    work["_ym"] = work["_dt"].dt.strftime("%Y-%m")
+    # weekday: 0=月 ... 6=日
+    _wd_labels = ["月", "火", "水", "木", "金", "土", "日"]
+    work["_wd"] = work["_dt"].dt.weekday.map(lambda i: _wd_labels[i])
+
+    by_month = work["_ym"].value_counts().sort_index().to_dict()
+    by_weekday = {w: int((work["_wd"] == w).sum()) for w in _wd_labels}
+
+    by_weekday_ward: Dict[str, Dict[str, int]] = {}
+    for ward in ("5F", "6F"):
+        mask = work["病棟"] == ward
+        by_weekday_ward[ward] = {
+            w: int(((work["_wd"] == w) & mask).sum()) for w in _wd_labels
+        }
+
+    emergency_mask = work["is_emergency_transport"]
+    emergency_by_weekday = {
+        w: int(((work["_wd"] == w) & emergency_mask).sum()) for w in _wd_labels
+    }
+    scheduled_by_weekday = {
+        w: int(((work["_wd"] == w) & work["is_scheduled"]).sum()) for w in _wd_labels
+    }
+
+    return {
+        "by_month": {k: int(v) for k, v in by_month.items()},
+        "by_weekday": by_weekday,
+        "by_weekday_ward": by_weekday_ward,
+        "emergency_by_weekday": emergency_by_weekday,
+        "scheduled_by_weekday": scheduled_by_weekday,
+    }
+
+
+def tabulate_short3_breakdown(df: pd.DataFrame) -> Dict[str, Any]:
+    """短手3 certain vs likely の診療科別・医師別内訳.
+
+    副院長指示 2026-04-24 のヒューリスティックに基づく統計分解。
+    救急比率の分母には使わない（制度準拠）。
+
+    Returns:
+        dict: {
+            "by_department_certain": {"内科": int, ...},
+            "by_department_likely": {"内科": int, ...},
+            "by_doctor_certain": {"TERUH": int, ...},
+            "by_doctor_likely": {"TERUH": int, ...},
+            "top_doctors_certain": [(doctor, count), ...],  # Top 5
+        }
+    """
+    empty_result = {
+        "by_department_certain": {},
+        "by_department_likely": {},
+        "by_doctor_certain": {},
+        "by_doctor_likely": {},
+        "top_doctors_certain": [],
+        "top_departments_certain": [],
+    }
+    if df.empty:
+        return empty_result
+
+    certain = df[df["is_short3_certain"]]
+    likely = df[df["is_short3_likely"]]
+
+    by_dept_certain = certain["診療科"].value_counts().to_dict() if not certain.empty else {}
+    by_dept_likely = likely["診療科"].value_counts().to_dict() if not likely.empty else {}
+
+    # 医師コードで集計（氏名はコード化済）
+    by_doc_certain = certain["医師"].value_counts().to_dict() if not certain.empty else {}
+    by_doc_likely = likely["医師"].value_counts().to_dict() if not likely.empty else {}
+
+    top_doctors_certain = sorted(
+        by_doc_certain.items(), key=lambda x: x[1], reverse=True
+    )[:5]
+    top_departments_certain = sorted(
+        by_dept_certain.items(), key=lambda x: x[1], reverse=True
+    )[:5]
+
+    return {
+        "by_department_certain": {k: int(v) for k, v in by_dept_certain.items()},
+        "by_department_likely": {k: int(v) for k, v in by_dept_likely.items()},
+        "by_doctor_certain": {k: int(v) for k, v in by_doc_certain.items()},
+        "by_doctor_likely": {k: int(v) for k, v in by_doc_likely.items()},
+        "top_doctors_certain": [(str(k), int(v)) for k, v in top_doctors_certain],
+        "top_departments_certain": [(str(k), int(v)) for k, v in top_departments_certain],
+    }
+
+
+def tabulate_los_by_surgery(df: pd.DataFrame) -> Dict[str, Any]:
+    """手術有無別 LOS 比較（病棟別・診療科別）.
+
+    退院済み（日数 > 0）レコードのみ対象。
+
+    Returns:
+        dict: {
+            "surgery_yes": {"mean": float, "median": float, "count": int},
+            "surgery_no": {"mean": float, "median": float, "count": int},
+            "by_ward": {"5F": {"surgery_yes": {...}, "surgery_no": {...}}, "6F": {...}},
+            "by_department": {"内科": {"surgery_yes": {...}, "surgery_no": {...}}, ...},
+        }
+    """
+    def _stats(series: pd.Series) -> Dict[str, float]:
+        if series.empty:
+            return {"mean": 0.0, "median": 0.0, "count": 0, "p75": 0.0}
+        return {
+            "mean": round(float(series.mean()), 1),
+            "median": round(float(series.median()), 1),
+            "p75": round(float(series.quantile(0.75)), 1),
+            "count": int(len(series)),
+        }
+
+    empty = {"mean": 0.0, "median": 0.0, "p75": 0.0, "count": 0}
+
+    if df.empty:
+        return {
+            "surgery_yes": empty,
+            "surgery_no": empty,
+            "by_ward": {"5F": {"surgery_yes": empty, "surgery_no": empty},
+                        "6F": {"surgery_yes": empty, "surgery_no": empty}},
+            "by_department": {},
+        }
+
+    los = pd.to_numeric(df["日数"], errors="coerce")
+    valid = df[los.notna() & (los > 0)].copy()
+    valid["_los"] = los[los.notna() & (los > 0)]
+
+    surgery_mask = valid["has_surgery"]
+
+    overall_yes = _stats(valid[surgery_mask]["_los"])
+    overall_no = _stats(valid[~surgery_mask]["_los"])
+
+    by_ward: Dict[str, Dict[str, Dict[str, float]]] = {}
+    for w in ("5F", "6F"):
+        ward_df = valid[valid["病棟"] == w]
+        by_ward[w] = {
+            "surgery_yes": _stats(ward_df[ward_df["has_surgery"]]["_los"]),
+            "surgery_no": _stats(ward_df[~ward_df["has_surgery"]]["_los"]),
+        }
+
+    by_department: Dict[str, Dict[str, Dict[str, float]]] = {}
+    for dept in valid["診療科"].dropna().unique():
+        dept_df = valid[valid["診療科"] == dept]
+        if len(dept_df) < 5:
+            continue  # 件数が少ない診療科は除外（統計的意味が薄い）
+        by_department[str(dept)] = {
+            "surgery_yes": _stats(dept_df[dept_df["has_surgery"]]["_los"]),
+            "surgery_no": _stats(dept_df[~dept_df["has_surgery"]]["_los"]),
+        }
+
+    return {
+        "surgery_yes": overall_yes,
+        "surgery_no": overall_no,
+        "by_ward": by_ward,
+        "by_department": by_department,
+    }
