@@ -223,6 +223,54 @@ def _count_scheduled_admissions_for_cell(
     return int((dates == target_date).sum())
 
 
+def _estimate_discharges_dow_stats(
+    admission_details_df: Optional[pd.DataFrame],
+    target_ward: str,
+) -> Dict[int, Dict[str, float]]:
+    """病棟別・曜日別の退院数の平均と標準偏差を算出（適応的信頼幅用）.
+
+    2026-04-24 拡張: 固定 ±2/±5 の信頼幅を、曜日別の変動係数に基づく
+    適応的な幅に置き換えるため、mean + std を同時に返す。
+
+    Returns
+    -------
+    dict
+        ``{0-6: {"mean": float, "std": float, "n": int}}``
+    """
+    empty = {i: {"mean": 0.0, "std": 0.0, "n": 0} for i in range(7)}
+    if admission_details_df is None or len(admission_details_df) == 0:
+        return empty
+    required = {"event_type", "date", "ward"}
+    if not required.issubset(admission_details_df.columns):
+        return empty
+
+    mask = (
+        (admission_details_df["event_type"] == "discharge")
+        & (admission_details_df["ward"] == target_ward)
+    )
+    subset = admission_details_df[mask]
+    if len(subset) == 0:
+        return empty
+
+    try:
+        dts = pd.to_datetime(subset["date"])
+    except (ValueError, TypeError):
+        return empty
+
+    by_day = subset.assign(_date=dts.dt.date).groupby("_date").size()
+    all_days = pd.date_range(dts.min(), dts.max()).date
+    daily_series = pd.Series(index=all_days, dtype=float)
+    for d in all_days:
+        daily_series[d] = float(by_day.get(d, 0))
+
+    try:
+        from forecast_log_store import estimate_dow_stats  # lazy import
+    except ImportError:
+        return empty
+    daily_dict = {d: daily_series[d] for d in all_days}
+    return estimate_dow_stats(daily_dict)
+
+
 def _estimate_discharges_by_dow(
     admission_details_df: Optional[pd.DataFrame],
     target_ward: str,
@@ -1078,12 +1126,22 @@ def _render_forecast_charts(
     total_beds: int,
     ward: str,
     testid_suffix: str = "",
+    dow_stats: Optional[Dict[int, Dict[str, float]]] = None,
 ) -> None:
     """稼働率・在院数・入退院の予測グラフを Plotly で描画.
 
-    信頼幅つき:
-    - 近未来 2 週間以内: 実線 + ±2 名相当の帯
-    - 2〜4 週先: 点線 + ±5 名相当の帯
+    信頼幅つき (2026-04-24 以降、dow_stats 提供時は適応的):
+    - dow_stats ありの場合: 各日の曜日別 std をランダムウォーク的に累積
+      (band = ±sqrt(Σ std_i^2)) で水平線を算出
+    - dow_stats なしの場合（後方互換）:
+      - 近未来 2 週間以内: 実線 + ±2 名相当の帯
+      - 2〜4 週先: 点線 + ±5 名相当の帯
+
+    Parameters
+    ----------
+    dow_stats : dict, optional
+        退院数の曜日別 {dow: {"mean", "std", "n"}}。
+        提供されると信頼幅が動的に計算される。
     """
     import streamlit as st
     try:
@@ -1110,12 +1168,26 @@ def _render_forecast_charts(
     total_adm = [r["total_admission"] for r in forecast]
 
     # 信頼幅（在院数ベース）
+    # dow_stats 提供時: 各日の曜日別 std をランダムウォーク的に累積
+    #   band_width(day=i) = z * sqrt(Σ_{j<=i} std(dow_j)^2)
+    #   z=1 で約 68% 信頼区間に相当。最小 1.5 名の下限を設ける
+    #   （std=0 の病棟で帯が消えないよう視認性確保）
     band_upper_inp = []
     band_lower_inp = []
     band_upper_occ = []
     band_lower_occ = []
+    use_adaptive = dow_stats is not None
+    z_score = 1.0  # ~68% CI
+    min_band = 1.5  # 帯の視認性のための最小幅
+    accumulated_var = 0.0  # std^2 の累積
+    import math
     for r in forecast:
-        if r["date"] <= near_cutoff:
+        if use_adaptive:
+            dow = r["date"].weekday() if isinstance(r["date"], date) else 0
+            std = float(dow_stats.get(dow, {}).get("std", 0.0))
+            accumulated_var += std * std
+            band_width = max(min_band, z_score * math.sqrt(accumulated_var))
+        elif r["date"] <= near_cutoff:
             band_width = 2.0
         else:
             band_width = 5.0
@@ -1275,13 +1347,120 @@ def _render_forecast_charts(
         key=f"discharge_calendar_forecast_{ward}_{testid_suffix}",
     )
 
-    st.caption(
-        f"📐 **予測の前提:** "
-        f"開始日の在院数を起点に、各日「在院 − 退院予定 + 入院（予約 or 曜日平均）」で漸化式的に計算。"
-        f" **信頼幅:** 近未来2週間 ±2名、2週以降 ±5名。"
-        f" **点線部分**は精度が落ちるため参考値として扱ってください。"
-        f" 緊急入院は過去1年の全入院の曜日平均で代用（予約入院がある日はそちらを優先）。"
-    )
+    if use_adaptive:
+        st.caption(
+            f"📐 **予測の前提:** "
+            f"開始日の在院数を起点に、各日「在院 − 退院予定 + 入院（予約 or 曜日平均）」で漸化式的に計算。"
+            f" **信頼幅（適応的）:** 退院数の曜日別標準偏差をランダムウォーク的に累積し、"
+            f"±1σ（約 68% 信頼区間）で表示。最小 ±{min_band} 名で下限を設定。"
+            f" **点線部分**は精度が落ちるため参考値として扱ってください。"
+            f" 緊急入院は過去1年の全入院の曜日平均で代用（予約入院がある日はそちらを優先）。"
+        )
+    else:
+        st.caption(
+            f"📐 **予測の前提:** "
+            f"開始日の在院数を起点に、各日「在院 − 退院予定 + 入院（予約 or 曜日平均）」で漸化式的に計算。"
+            f" **信頼幅:** 近未来2週間 ±2名、2週以降 ±5名（固定）。"
+            f" **点線部分**は精度が落ちるため参考値として扱ってください。"
+            f" 緊急入院は過去1年の全入院の曜日平均で代用（予約入院がある日はそちらを優先）。"
+        )
+
+    # 2026-04-24 追加: 予測 snapshot を保存（後日の backtesting 用）
+    # 同日複数回呼ばれても最新で上書きする。失敗しても本体機能は止めない。
+    try:
+        from forecast_log_store import save_forecast_snapshot
+        save_forecast_snapshot(
+            ward=ward, forecast=forecast, total_beds=total_beds,
+        )
+    except Exception:
+        pass
+
+
+def _render_backtesting_section(
+    admission_details_df: Optional[pd.DataFrame],
+    ward: str,
+    today: date,
+) -> None:
+    """予測 snapshot vs 実績の backtesting 結果を描画.
+
+    過去に保存した forecast snapshot を読み込み、実際の在院数と突合して
+    MAPE・bias・hit rate を可視化する。
+
+    蓄積が少ない段階では「データ蓄積中」と表示し、UI を崩さない。
+    """
+    import streamlit as st
+
+    with st.expander("🎯 予測 vs 実績 Backtesting（精度検証）", expanded=False):
+        try:
+            from forecast_log_store import (
+                build_actual_inpatients_map,
+                compare_with_actuals,
+                load_all_snapshots,
+            )
+        except ImportError:
+            st.caption("forecast_log_store が読み込めませんでした。")
+            return
+
+        snapshots = load_all_snapshots(ward=ward)
+        if not snapshots:
+            st.info(
+                "まだ予測 snapshot が保存されていません。"
+                "カレンダーを毎日開くたびに予測が蓄積され、数週間後から精度評価が始まります。"
+            )
+            return
+
+        # 実績 map を構築（過去 60 日を対象）
+        start = today - timedelta(days=60)
+        actuals = build_actual_inpatients_map(
+            admission_details_df, start, today,
+        )
+        if not actuals:
+            st.caption(
+                f"保存済み snapshot: {len(snapshots)} 件。"
+                "ただし admission_details に実績データがないため精度評価はスキップ。"
+            )
+            return
+
+        result = compare_with_actuals(
+            snapshots, actuals,
+            min_horizon_days=1, max_horizon_days=14,
+        )
+        ward_stat = result["by_ward"].get(ward)
+        if not ward_stat:
+            st.caption(
+                f"保存済み snapshot: {len(snapshots)} 件。"
+                "まだ実績と突合できる予測日がありません（実績が揃うまでお待ちください）。"
+            )
+            return
+
+        st.caption(
+            f"評価対象: 過去 snapshot の翌日〜14 日先予測 × 実績在院数、"
+            f"合計 **{ward_stat['n']} 比較**"
+        )
+        cols = st.columns(4)
+        cols[0].metric("MAPE（平均絶対パーセント誤差）", f"{ward_stat['mape']:.1f}%",
+                       help="0% = 完全一致。一般に ≤10% は良好")
+        cols[1].metric("バイアス（平均誤差）", f"{ward_stat['bias']:+.1f} 名",
+                       help="+ = 過大予測、− = 過小予測")
+        cols[2].metric("MAE（平均絶対誤差）", f"{ward_stat['mae']:.1f} 名")
+        cols[3].metric("的中率（±2 名以内）", f"{ward_stat['hit_rate_2']:.1f}%",
+                       help="絶対誤差が 2 名以下の予測の割合")
+
+        # horizon 別の劣化傾向
+        if ward_stat["by_horizon"]:
+            rows = []
+            for h, s in sorted(ward_stat["by_horizon"].items()):
+                rows.append({
+                    "先読み日数": f"{h} 日先",
+                    "件数": s["n"],
+                    "MAE (名)": f"{s['mae']:.1f}",
+                    "バイアス (名)": f"{s['bias']:+.1f}",
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.caption(
+                "💡 先読み日数が長くなるほど MAE が増えるのが普通。"
+                "増え方が急な場合は曜日別 std の見直し or 緊急入院モデルの改善余地。"
+            )
 
 
 # -----------------------------------------------------------------------------
@@ -1680,6 +1859,10 @@ def render_discharge_calendar_tab(
             discharge_dow_mean = _estimate_discharges_by_dow(
                 admission_details_df, ward_label
             )
+            # 適応的信頼幅用の曜日別統計（mean + std）
+            discharge_dow_stats = _estimate_discharges_dow_stats(
+                admission_details_df, ward_label
+            )
             forecast = _compute_occupancy_forecast(
                 ward=ward_label,
                 start_date=today,
@@ -1698,6 +1881,14 @@ def render_discharge_calendar_tab(
                 total_beds=ward_beds,
                 ward=ward_label,
                 testid_suffix=ward_label,
+                dow_stats=discharge_dow_stats,
+            )
+
+            # ---- 予測精度 backtesting（2026-04-24 追加） ----
+            _render_backtesting_section(
+                admission_details_df=admission_details_df,
+                ward=ward_label,
+                today=today,
             )
 
     # ---- 画面下部: E2E 用 testid ----

@@ -67,6 +67,9 @@ data/demo_from_actual_*/
 #   - notes 列は全て空
 #   - Streamlit Cloud 側で「📉 過去実績分析」タブと施設基準レポートが動作するために必要
 
+# 予測 snapshot（backtesting 用、実運用で蓄積される日次データ）
+data/forecast_snapshots/
+
 # Playwright
 playwright/screenshots/*.png
 playwright-report/
