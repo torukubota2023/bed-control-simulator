@@ -9,11 +9,16 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from nursing_necessity_strategy import (  # noqa: E402
+    DEFAULT_6F_STRATEGY_PACKAGE,
     TARGET_NURSING_NECESSITY_I_PCT,
+    build_6f_strategy_cards,
     build_nursing_necessity_actions,
     calculate_emergency_response_coefficient,
     estimate_intervention_gain_pct,
+    simulate_strategy_package,
+    summarize_actual_necessity_gaps,
     summarize_nursing_necessity,
+    summarize_ward_case_mix,
 )
 
 
@@ -103,3 +108,109 @@ def test_actions_are_gap_sensitive_and_non_blaming():
     )
     assert "悪い" not in all_text
     assert "不必要な処置" not in all_text
+
+
+def test_actual_necessity_gap_summary_translates_gap_to_patient_days():
+    rows = []
+    specs = [
+        ("2025-12-01", 190, 170),
+        ("2026-01-01", 100, 80),
+        ("2026-02-01", 100, 80),
+        ("2026-03-01", 100, 80),
+    ]
+    for date_str, i_pass, ii_pass in specs:
+        rows.append({
+            "date": date_str,
+            "ward": "6F",
+            "I_total": 1000,
+            "I_pass1": i_pass,
+            "II_total": 1000,
+            "II_pass1": ii_pass,
+        })
+    df = pd.DataFrame(rows)
+
+    summary = summarize_actual_necessity_gaps(
+        df,
+        ward="6F",
+        emergency_coefficient_pct=1.5,
+        recent_months=3,
+    )
+    by_scope_type = {(row["scope"], row["necessity_type"]): row for row in summary}
+
+    recent_i = by_scope_type[("直近3ヶ月", "I")]
+    assert recent_i["rate_pct"] == pytest.approx(10.0)
+    assert recent_i["index_pct"] == pytest.approx(11.5)
+    assert recent_i["gap_pct"] == pytest.approx(7.5)
+    assert recent_i["required_days_per_month"] == pytest.approx(75.0)
+
+    recent_ii = by_scope_type[("直近3ヶ月", "II")]
+    assert recent_ii["rate_pct"] == pytest.approx(8.0)
+    assert recent_ii["gap_pct"] == pytest.approx(8.5)
+    assert recent_ii["required_days_per_month"] == pytest.approx(85.0)
+
+
+def test_ward_case_mix_uses_doctor_map_and_department_fallback():
+    df = pd.DataFrame([
+        {
+            "病棟": "6F", "医師": "TERUH", "診療科": "内科", "日数": 7,
+            "手術": "×", "救急車": "有り", "緊急": "予定外",
+        },
+        {
+            "病棟": "6F", "医師": "KJJ", "診療科": "麻酔科", "日数": 23,
+            "手術": "○", "救急車": "無し", "緊急": "予定入院",
+        },
+        {
+            "病棟": "6F", "医師": "UNKNOWN", "診療科": "循内科", "日数": 9,
+            "手術": "×", "救急車": "無し", "緊急": "予定外",
+        },
+        {
+            "病棟": "5F", "医師": "OKUK", "診療科": "整形外科", "日数": 12,
+            "手術": "○", "救急車": "無し", "緊急": "予定外",
+        },
+    ])
+
+    mix = summarize_ward_case_mix(
+        df,
+        ward="6F",
+        specialty_map={"TERUH": "内科", "KJJ": "ペイン科"},
+    )
+
+    assert mix["n"] == 3
+    assert mix["internal_pct"] == pytest.approx(66.7, abs=0.1)
+    assert mix["pain_pct"] == pytest.approx(33.3, abs=0.1)
+    assert mix["no_surgery_pct"] == pytest.approx(66.7, abs=0.1)
+    assert mix["scheduled_pct"] == pytest.approx(33.3, abs=0.1)
+    assert mix["ambulance_pct"] == pytest.approx(33.3, abs=0.1)
+    assert mix["median_los"] == pytest.approx(9.0)
+
+
+def test_strategy_package_simulation_shows_remaining_gap():
+    total_days = sum(DEFAULT_6F_STRATEGY_PACKAGE.values())
+    result = simulate_strategy_package(
+        base_rate_pct=13.13,
+        emergency_coefficient_pct=1.48,
+        target_pct=18.0,
+        denominator_days_per_month=1200,
+        added_eligible_days_per_month=total_days,
+    )
+
+    assert total_days == 40
+    assert result["before_index_pct"] == pytest.approx(14.61)
+    assert result["gain_pct"] == pytest.approx(3.33, abs=0.01)
+    assert result["after_index_pct"] == pytest.approx(17.94, abs=0.01)
+    assert result["remaining_gap_pct"] == pytest.approx(0.06, abs=0.01)
+    assert result["meets_target"] is False
+
+
+def test_6f_strategy_cards_include_ethics_behavior_and_ui_lenses():
+    cards = build_6f_strategy_cards({
+        "internal_pct": 72.7,
+        "pain_pct": 13.4,
+        "no_surgery_pct": 84.6,
+    })
+    lenses = {card["lens"] for card in cards}
+    combined = " ".join(card["action"] + card["metric"] for card in cards)
+
+    assert {"医療倫理", "医学的エビデンス", "行動人間学", "UI/視覚効果"} <= lenses
+    assert "虚偽記載" in combined
+    assert "チェックリスト" in combined

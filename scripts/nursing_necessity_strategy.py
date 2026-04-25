@@ -55,6 +55,18 @@ C_ITEM_DAYS: Dict[str, int] = {
     "C23": 5,  # PEG, PTCD, CART, 消化管ステントなど
 }
 
+NECESSITY_TARGET_PCT: Dict[str, float] = {
+    "I": TARGET_NURSING_NECESSITY_I_PCT,
+    "II": TARGET_NURSING_NECESSITY_II_PCT,
+}
+
+DEFAULT_6F_STRATEGY_PACKAGE: Dict[str, int] = {
+    "record_recovery_days": 8,
+    "internal_medicine_a2_days": 14,
+    "pain_a6_days": 6,
+    "c_item_days": 12,
+}
+
 
 # ---------------------------------------------------------------------------
 # 内部ヘルパー
@@ -285,3 +297,250 @@ def build_nursing_necessity_actions(summary_rows: List[Mapping[str, Any]]) -> Li
             "next_actions": next_actions,
         })
     return actions
+
+
+# ---------------------------------------------------------------------------
+# 6F 実データ戦略ボード
+# ---------------------------------------------------------------------------
+
+def summarize_actual_necessity_gaps(
+    nursing_df: pd.DataFrame,
+    ward: str = "6F",
+    emergency_coefficient_pct: float = 0.0,
+    recent_months: int = 3,
+) -> List[Dict[str, Any]]:
+    """看護必要度実績 CSV から、通年/直近の不足該当日数を計算する.
+
+    ``nursing_necessity_loader`` の DataFrame を直接受け、必要度 I/II の
+    実績割合、救急患者応需係数加算後の割合指数、月あたり必要該当日数を返す。
+    """
+    if nursing_df is None or nursing_df.empty:
+        return []
+    if "ward" not in nursing_df.columns:
+        return []
+
+    work = nursing_df[nursing_df["ward"].astype(str) == ward].copy()
+    if work.empty:
+        return []
+    if "ym" not in work.columns and "date" in work.columns:
+        work["date"] = pd.to_datetime(work["date"], errors="coerce")
+        work["ym"] = work["date"].dt.to_period("M").astype(str)
+
+    months = sorted(work["ym"].dropna().unique()) if "ym" in work.columns else []
+    recent = months[-max(_as_int(recent_months, 3), 1):] if months else []
+
+    scopes = [
+        ("12ヶ月平均", work, max(len(months), 1), months),
+    ]
+    if recent:
+        scopes.append((
+            f"直近{len(recent)}ヶ月",
+            work[work["ym"].isin(recent)],
+            len(recent),
+            recent,
+        ))
+
+    rows: List[Dict[str, Any]] = []
+    for scope_label, scope_df, period_months, scope_months in scopes:
+        for typ in ("I", "II"):
+            total_col = f"{typ}_total"
+            pass_col = f"{typ}_pass1"
+            if total_col not in scope_df.columns or pass_col not in scope_df.columns:
+                continue
+            denominator_days = int(pd.to_numeric(scope_df[total_col], errors="coerce").fillna(0).sum())
+            pass_days = int(pd.to_numeric(scope_df[pass_col], errors="coerce").fillna(0).sum())
+            if denominator_days <= 0:
+                continue
+            rate_pct = pass_days / denominator_days * 100
+            target_pct = NECESSITY_TARGET_PCT[typ]
+            index_pct = rate_pct + emergency_coefficient_pct
+            gap_pct = max(0.0, target_pct - index_pct)
+            required_days_total = gap_pct / 100 * denominator_days
+            required_days_per_month = required_days_total / max(period_months, 1)
+            denominator_days_per_month = denominator_days / max(period_months, 1)
+
+            rows.append({
+                "ward": ward,
+                "scope": scope_label,
+                "months": list(scope_months),
+                "period_months": period_months,
+                "necessity_type": typ,
+                "target_pct": round(target_pct, 2),
+                "rate_pct": round(rate_pct, 2),
+                "emergency_coeff_pct": round(emergency_coefficient_pct, 2),
+                "index_pct": round(index_pct, 2),
+                "gap_pct": round(gap_pct, 2),
+                "denominator_days": denominator_days,
+                "denominator_days_per_month": round(denominator_days_per_month, 1),
+                "pass_days": pass_days,
+                "required_days_total": round(required_days_total, 1),
+                "required_days_per_month": round(required_days_per_month, 1),
+                "status": _classify_gap(gap_pct),
+            })
+    return rows
+
+
+def summarize_ward_case_mix(
+    past_df: pd.DataFrame,
+    ward: str = "6F",
+    specialty_map: Optional[Mapping[str, str]] = None,
+) -> Dict[str, Any]:
+    """過去入院 CSV から 6F の患者ミックスを要約する."""
+    if past_df is None or past_df.empty:
+        return {
+            "ward": ward,
+            "n": 0,
+            "internal_pct": 0.0,
+            "pain_pct": 0.0,
+            "no_surgery_pct": 0.0,
+            "scheduled_pct": 0.0,
+            "ambulance_pct": 0.0,
+            "median_los": 0.0,
+            "specialty_rows": [],
+        }
+
+    work = past_df.copy()
+    ward_col = "病棟" if "病棟" in work.columns else "ward"
+    if ward_col not in work.columns:
+        return summarize_ward_case_mix(pd.DataFrame(), ward, specialty_map)
+    work = work[work[ward_col].astype(str) == ward].copy()
+    if work.empty:
+        return summarize_ward_case_mix(pd.DataFrame(), ward, specialty_map)
+
+    doctor_col = "医師" if "医師" in work.columns else "attending_doctor"
+    dept_col = "診療科" if "診療科" in work.columns else None
+    los_col = "日数" if "日数" in work.columns else "los_days"
+    surgery_col = "手術" if "手術" in work.columns else "has_surgery"
+    emergency_col = "救急車" if "救急車" in work.columns else "is_emergency_transport"
+    scheduled_col = "緊急" if "緊急" in work.columns else "is_scheduled"
+
+    if specialty_map and doctor_col in work.columns:
+        def _map_group(row: pd.Series) -> str:
+            doctor = str(row.get(doctor_col, ""))
+            mapped = specialty_map.get(doctor)
+            if mapped:
+                return mapped
+            if dept_col:
+                return str(row.get(dept_col, "未分類"))
+            return "未分類"
+
+        work["_group"] = work.apply(_map_group, axis=1)
+    elif dept_col:
+        work["_group"] = work[dept_col].astype(str)
+    else:
+        work["_group"] = "未分類"
+
+    los = pd.to_numeric(work[los_col], errors="coerce") if los_col in work.columns else pd.Series(dtype=float)
+    n = int(len(work))
+    internal_count = int(work["_group"].isin(["内科", "循内科"]).sum())
+    pain_count = int((work["_group"] == "ペイン科").sum())
+
+    if surgery_col in work.columns:
+        if work[surgery_col].dtype == bool:
+            surgery_count = int(work[surgery_col].fillna(False).sum())
+        else:
+            surgery_count = int((work[surgery_col].astype(str) == "○").sum())
+    else:
+        surgery_count = 0
+
+    if emergency_col in work.columns:
+        if work[emergency_col].dtype == bool:
+            ambulance_count = int(work[emergency_col].fillna(False).sum())
+        else:
+            ambulance_count = int(work[emergency_col].astype(str).isin(["有り", "あり", "有"]).sum())
+    else:
+        ambulance_count = 0
+
+    if scheduled_col in work.columns:
+        if work[scheduled_col].dtype == bool:
+            scheduled_count = int(work[scheduled_col].fillna(False).sum())
+        else:
+            scheduled_count = int((work[scheduled_col].astype(str) == "予定入院").sum())
+    else:
+        scheduled_count = 0
+
+    specialty_rows: List[Dict[str, Any]] = []
+    for group, sub in work.groupby("_group"):
+        sub_los = pd.to_numeric(sub[los_col], errors="coerce") if los_col in sub.columns else pd.Series(dtype=float)
+        specialty_rows.append({
+            "group": str(group),
+            "n": int(len(sub)),
+            "pct": round(len(sub) / n * 100, 1) if n else 0.0,
+            "median_los": round(float(sub_los.median()), 1) if len(sub_los.dropna()) else 0.0,
+        })
+    specialty_rows.sort(key=lambda r: r["n"], reverse=True)
+
+    return {
+        "ward": ward,
+        "n": n,
+        "internal_pct": round(internal_count / n * 100, 1) if n else 0.0,
+        "pain_pct": round(pain_count / n * 100, 1) if n else 0.0,
+        "no_surgery_pct": round((n - surgery_count) / n * 100, 1) if n else 0.0,
+        "scheduled_pct": round(scheduled_count / n * 100, 1) if n else 0.0,
+        "ambulance_pct": round(ambulance_count / n * 100, 1) if n else 0.0,
+        "median_los": round(float(los.median()), 1) if len(los.dropna()) else 0.0,
+        "specialty_rows": specialty_rows,
+    }
+
+
+def simulate_strategy_package(
+    base_rate_pct: float,
+    emergency_coefficient_pct: float,
+    target_pct: float,
+    denominator_days_per_month: float,
+    added_eligible_days_per_month: float,
+) -> Dict[str, Any]:
+    """追加該当日数が割合指数を何pt改善するかを試算する."""
+    denominator = max(_as_float(denominator_days_per_month), 1.0)
+    gain_pct = _as_float(added_eligible_days_per_month) / denominator * 100
+    before_index = _as_float(base_rate_pct) + _as_float(emergency_coefficient_pct)
+    after_index = before_index + gain_pct
+    target = _as_float(target_pct)
+    remaining_gap = max(0.0, target - after_index)
+    surplus = after_index - target
+    return {
+        "gain_pct": round(gain_pct, 2),
+        "before_index_pct": round(before_index, 2),
+        "after_index_pct": round(after_index, 2),
+        "remaining_gap_pct": round(remaining_gap, 2),
+        "surplus_pct": round(surplus, 2),
+        "meets_target": after_index >= target,
+    }
+
+
+def build_6f_strategy_cards(case_mix: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """6F の内科・ペイン科特性に合わせた行動カードを返す."""
+    internal_pct = _as_float(case_mix.get("internal_pct", 0.0))
+    pain_pct = _as_float(case_mix.get("pain_pct", 0.0))
+    no_surgery_pct = _as_float(case_mix.get("no_surgery_pct", 0.0))
+
+    return [
+        {
+            "lens": "医療倫理",
+            "owner": "全職種",
+            "signal": "点数目的の処置は不可",
+            "action": "適応のある治療・ケアの記録漏れだけを回収する。迷う症例は医師・看護師・医事で同日確認。",
+            "metric": "虚偽記載 0、適応外処置 0",
+        },
+        {
+            "lens": "医学的エビデンス",
+            "owner": "内科・ペイン科医師",
+            "signal": f"6Fは内科系 {internal_pct:.1f}%、ペイン科 {pain_pct:.1f}%、手術なし {no_surgery_pct:.1f}%",
+            "action": "内科は酸素+注射3種/A4+A3/輸血/ドレナージ/C項目を、ペイン科は適応が明確なA6処置のみを確認。",
+            "metric": "A2以上 or C1以上の該当日数",
+        },
+        {
+            "lens": "行動人間学",
+            "owner": "医師・看護師ペア",
+            "signal": "入院時と朝の判断が、その日の評価を決める",
+            "action": "入院時30秒自問、朝ラウンド即答、木曜ハドルの3つに固定。チェックリストで記憶に頼らない。",
+            "metric": "同日回答率、翌日持ち越し件数",
+        },
+        {
+            "lens": "UI/視覚効果",
+            "owner": "管理者",
+            "signal": "不足ptより「月に何日足りないか」の方が行動に移りやすい",
+            "action": "赤/黄/緑、進捗バー、残不足日数、職種別の今日の一手を同じ画面に表示する。",
+            "metric": "残不足患者日/月",
+        },
+    ]

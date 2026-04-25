@@ -205,13 +205,18 @@ except Exception as _di_err:
 # ---------------------------------------------------------------------------
 try:
     from nursing_necessity_strategy import (
+        DEFAULT_6F_STRATEGY_PACKAGE as _nn_default_6f_package,
         DEFAULT_BASE_NEED_PCT_BY_WARD as _nn_default_base_need,
         DEFAULT_WARD_BEDS as _nn_default_ward_beds,
         TARGET_NURSING_NECESSITY_I_PCT as _nn_target_i,
         TARGET_NURSING_NECESSITY_II_PCT as _nn_target_ii,
+        build_6f_strategy_cards as _nn_build_6f_strategy_cards,
         build_nursing_necessity_actions as _nn_build_actions,
         estimate_intervention_gain_pct as _nn_estimate_gain,
+        simulate_strategy_package as _nn_simulate_strategy_package,
+        summarize_actual_necessity_gaps as _nn_actual_gaps,
         summarize_nursing_necessity as _nn_summarize,
+        summarize_ward_case_mix as _nn_ward_case_mix,
     )
     _NURSING_NECESSITY_STRATEGY_AVAILABLE = True
 except Exception as _nn_strategy_err:
@@ -10474,6 +10479,224 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                             delta=f"実績{_rate * 100:.2f}% + 応需{_nn_coef * 100:.2f}% ／ 新基準{new_th:.0%} 比 {_gap * 100:+.2f}pt",
                         )
 
+                # ===== 6F 基準達成ストラテジーボード =====
+                # 6F（内科・ペイン科）の未達を、職種が行動に移せる単位
+                # 「月あたり不足患者日」に変換して表示する。
+                if _NURSING_NECESSITY_STRATEGY_AVAILABLE:
+                    st.markdown("### 🧭 6F 基準達成ストラテジーボード")
+                    try:
+                        from doctor_specialty_map import DOCTOR_SPECIALTY_GROUP as _nn_doc_group
+                    except Exception:
+                        _nn_doc_group = {}
+
+                    _nn_gap_rows = _nn_actual_gaps(
+                        _nn_df,
+                        ward="6F",
+                        emergency_coefficient_pct=_nn_coef * 100,
+                    )
+                    _nn_case_mix = _nn_ward_case_mix(
+                        _nn_pa_df,
+                        ward="6F",
+                        specialty_map=_nn_doc_group,
+                    )
+
+                    if _nn_gap_rows:
+                        _nn_gap_df = pd.DataFrame(_nn_gap_rows)
+                        _nn_recent_rows = _nn_gap_df[_nn_gap_df["scope"].astype(str).str.startswith("直近")]
+                        _nn_alert_pool = _nn_recent_rows if not _nn_recent_rows.empty else _nn_gap_df
+                        _nn_worst = _nn_alert_pool.sort_values(
+                            ["gap_pct", "required_days_per_month"],
+                            ascending=False,
+                        ).iloc[0]
+                        _bc_alert(
+                            f"**6Fの主問題**: {_nn_worst['scope']} 必要度{_nn_worst['necessity_type']} は、"
+                            f"応需係数込みでも **{_nn_worst['index_pct']:.2f}%**。"
+                            f"新基準 {_nn_worst['target_pct']:.0f}% まで **{_nn_worst['gap_pct']:.2f}pt**、"
+                            f"月あたり **約{_nn_worst['required_days_per_month']:.1f}患者日** の不足です。"
+                            "<br>不必要な処置を増やすのではなく、医学的に必要な治療・ケアの実施と記録を同日にそろえるためのボードです。",
+                            severity="warning",
+                        )
+
+                        _nn_gap_display = _nn_gap_df[[
+                            "scope",
+                            "necessity_type",
+                            "rate_pct",
+                            "emergency_coeff_pct",
+                            "index_pct",
+                            "target_pct",
+                            "gap_pct",
+                            "required_days_per_month",
+                            "status",
+                        ]].rename(columns={
+                            "scope": "評価窓",
+                            "necessity_type": "区分",
+                            "rate_pct": "実績(%)",
+                            "emergency_coeff_pct": "応需係数(%)",
+                            "index_pct": "割合指数(%)",
+                            "target_pct": "新基準(%)",
+                            "gap_pct": "不足(pt)",
+                            "required_days_per_month": "必要該当日/月",
+                            "status": "対応レベル",
+                        })
+                        st.dataframe(_nn_gap_display, use_container_width=True, hide_index=True)
+
+                        _nn_mix_cols = st.columns(6)
+                        with _nn_mix_cols[0]:
+                            st.metric("6F入院", f"{_nn_case_mix.get('n', 0)}件")
+                        with _nn_mix_cols[1]:
+                            st.metric("内科系", f"{_nn_case_mix.get('internal_pct', 0):.1f}%")
+                        with _nn_mix_cols[2]:
+                            st.metric("ペイン科", f"{_nn_case_mix.get('pain_pct', 0):.1f}%")
+                        with _nn_mix_cols[3]:
+                            st.metric("手術なし", f"{_nn_case_mix.get('no_surgery_pct', 0):.1f}%")
+                        with _nn_mix_cols[4]:
+                            st.metric("予定入院", f"{_nn_case_mix.get('scheduled_pct', 0):.1f}%")
+                        with _nn_mix_cols[5]:
+                            st.metric("救急車", f"{_nn_case_mix.get('ambulance_pct', 0):.1f}%")
+
+                        if _nn_case_mix.get("specialty_rows"):
+                            with st.expander("6F 診療科ミックス（医師マスター補正後）", expanded=False):
+                                st.dataframe(
+                                    pd.DataFrame(_nn_case_mix["specialty_rows"]).rename(columns={
+                                        "group": "診療科グループ",
+                                        "n": "件数",
+                                        "pct": "割合(%)",
+                                        "median_los": "中央在院日数",
+                                    }),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+
+                        st.markdown("**施策パッケージ試算: 追加の該当患者日が割合指数を何pt押し上げるか**")
+                        _nn_option_labels = [
+                            f"{row['scope']} / 必要度{row['necessity_type']}"
+                            for row in _nn_gap_rows
+                        ]
+                        _nn_default_target_idx = 0
+                        for _idx, _row in enumerate(_nn_gap_rows):
+                            if str(_row["scope"]).startswith("直近") and _row["necessity_type"] == "II":
+                                _nn_default_target_idx = _idx
+                                break
+                        _nn_selected_label = st.selectbox(
+                            "試算対象",
+                            _nn_option_labels,
+                            index=_nn_default_target_idx,
+                            key="nn_6f_strategy_target",
+                        )
+                        _nn_selected_row = _nn_gap_rows[_nn_option_labels.index(_nn_selected_label)]
+
+                        _nn_slider_cols = st.columns(4)
+                        with _nn_slider_cols[0]:
+                            _nn_record_days = st.slider(
+                                "記録・算定漏れ回収",
+                                0, 60,
+                                int(_nn_default_6f_package["record_recovery_days"]),
+                                1,
+                                help="実施済みで医学的根拠がある治療・ケアの記録を同日中にそろえる患者日数/月。",
+                                key="nn_6f_record_days",
+                            )
+                        with _nn_slider_cols[1]:
+                            _nn_internal_days = st.slider(
+                                "内科A項目該当",
+                                0, 80,
+                                int(_nn_default_6f_package["internal_medicine_a2_days"]),
+                                1,
+                                help="酸素、注射3種、A4+A3、輸血など、適応のある内科治療の該当患者日数/月。",
+                                key="nn_6f_internal_days",
+                            )
+                        with _nn_slider_cols[2]:
+                            _nn_pain_days = st.slider(
+                                "ペイン科A6適応",
+                                0, 50,
+                                int(_nn_default_6f_package["pain_a6_days"]),
+                                1,
+                                help="医学的適応が明確な処置・疼痛管理を正しく評価できる患者日数/月。",
+                                key="nn_6f_pain_days",
+                            )
+                        with _nn_slider_cols[3]:
+                            _nn_c_days = st.slider(
+                                "C項目該当",
+                                0, 80,
+                                int(_nn_default_6f_package["c_item_days"]),
+                                1,
+                                help="内視鏡、気管支鏡、ドレナージ、PEG関連など、実施済みC項目の患者日数/月。",
+                                key="nn_6f_c_days",
+                            )
+
+                        _nn_added_days = _nn_record_days + _nn_internal_days + _nn_pain_days + _nn_c_days
+                        _nn_sim = _nn_simulate_strategy_package(
+                            base_rate_pct=_nn_selected_row["rate_pct"],
+                            emergency_coefficient_pct=_nn_selected_row["emergency_coeff_pct"],
+                            target_pct=_nn_selected_row["target_pct"],
+                            denominator_days_per_month=_nn_selected_row["denominator_days_per_month"],
+                            added_eligible_days_per_month=_nn_added_days,
+                        )
+                        _nn_result_cols = st.columns(4)
+                        with _nn_result_cols[0]:
+                            st.metric("現在の割合指数", f"{_nn_sim['before_index_pct']:.2f}%")
+                        with _nn_result_cols[1]:
+                            st.metric("施策による上乗せ", f"+{_nn_sim['gain_pct']:.2f}pt")
+                        with _nn_result_cols[2]:
+                            st.metric("試算後の割合指数", f"{_nn_sim['after_index_pct']:.2f}%")
+                        with _nn_result_cols[3]:
+                            st.metric("残不足", f"{_nn_sim['remaining_gap_pct']:.2f}pt")
+
+                        _nn_progress = min(
+                            max(_nn_sim["after_index_pct"] / max(_nn_selected_row["target_pct"], 0.1), 0.0),
+                            1.0,
+                        )
+                        st.progress(_nn_progress)
+                        if _nn_sim["meets_target"]:
+                            st.success(
+                                f"この組み合わせなら、試算上は新基準を {_nn_sim['surplus_pct']:.2f}pt 上回ります。"
+                            )
+                        else:
+                            _nn_remaining_days = (
+                                _nn_sim["remaining_gap_pct"] / 100
+                                * _nn_selected_row["denominator_days_per_month"]
+                            )
+                            st.warning(
+                                f"まだ月あたり約{_nn_remaining_days:.1f}患者日が不足します。"
+                                "医師の同日回答、看護記録の同日確定、C項目候補の確認を増やす余地があります。"
+                            )
+
+                        st.markdown("**4つの観点からの運用原則**")
+                        _nn_cards = _nn_build_6f_strategy_cards(_nn_case_mix)
+                        for _start in range(0, len(_nn_cards), 2):
+                            _nn_card_cols = st.columns(2)
+                            for _card, _col in zip(_nn_cards[_start:_start + 2], _nn_card_cols):
+                                with _col:
+                                    with st.container(border=True):
+                                        st.markdown(f"**{_card['lens']}** — {_card['owner']}")
+                                        st.caption(_card["signal"])
+                                        st.write(_card["action"])
+                                        st.caption(f"見る指標: {_card['metric']}")
+
+                        st.markdown("**職種別 今日の一手**")
+                        _nn_role_cols = st.columns(3)
+                        with _nn_role_cols[0]:
+                            with st.container(border=True):
+                                st.markdown("**医師**")
+                                st.write("入院時に30秒だけ、A項目・C項目・救急搬送該当を確認。朝の看護師からの確認には同日回答。")
+                        with _nn_role_cols[1]:
+                            with st.container(border=True):
+                                st.markdown("**看護師**")
+                                st.write("A項目の根拠、酸素・注射・処置の開始終了時刻、B項目初日3点をその日のうちに医師へ確認。")
+                        with _nn_role_cols[2]:
+                            with st.container(border=True):
+                                st.markdown("**管理者**")
+                                st.write("木曜に6Fハドルを固定し、未達ptではなく残不足患者日/月で進捗を共有。責めずに仕組みを直す。")
+
+                        st.caption(
+                            "倫理ガードレール: 基準達成のための不必要な処置、虚偽記載、病棟都合の患者選別は対象外。"
+                            "この画面は、適応のある医療と記録の同期を支援するためのものです。"
+                        )
+                elif "_NURSING_NECESSITY_STRATEGY_ERROR" in dir():
+                    st.info(
+                        "6Fストラテジーボードは現在読み込めません。"
+                        f"詳細: {_NURSING_NECESSITY_STRATEGY_ERROR[:200]}"
+                    )
+
                 # ===== 必要度Ⅰ 月次折れ線グラフ =====
                 st.markdown("**必要度Ⅰ 月次推移（5F / 6F、応需係数加算後）**")
                 _fig_i = go.Figure()
@@ -10593,8 +10816,9 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     "⚠️/🔴 が並ぶ月は実態として基準未達。"
                     "特に直近 (2026-1〜3) で 6F が新基準未達状態が続いているため、"
                     "6/1 移行時のリスクが高い。"
-                    "改善策: ①救急受入を増やして応需係数を上げる ②重症患者比率を上げる "
-                    "③短手3比率を見直す。"
+                    "改善策: ①救急受入体制を現実に強めて応需係数を上げる "
+                    "②適応のあるA/C項目を同日評価する "
+                    "③短手3や長期在院が分母へ与える影響を別画面で監視する。"
                 )
             except Exception as _nn_err:
                 st.warning(f"⚠️ 看護必要度トレンドの描画でエラー: {_nn_err}")

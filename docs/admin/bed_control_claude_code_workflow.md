@@ -31,6 +31,7 @@ Codex が修正した場合は、必ず以下を残す。
 |------|-------------|------|------|
 | 2026-04-25 | PR #17 / `codex/fix-main-ci-actions` | GitHub Actions 復旧、E2E CI を正準テストに整理、Node依存を明示、READMEと本フローを更新 | ruff critical check / smoke test / Playwright CI E2E / GitHub Actions green |
 | 2026-04-25 | `codex/nursing-necessity-strategy` | 2026看護必要度の割合指数（該当患者割合 + 救急患者応需係数）をアプリ内で病棟別試算。`nursing_necessity_strategy.py` とテストを追加し、医師別分析タブへ不足pt・必要該当日数・A/C項目パッケージ試算を表示 | pytest targeted / ruff critical check / smoke test |
+| 2026-04-26 | `codex/6f-nursing-necessity-strategy` | 過去1年分析の看護必要度トレンドに、6F（内科・ペイン科）実データ版ストラテジーボードを追加。12ヶ月平均/直近3ヶ月の不足を患者日数に換算し、倫理・医学・行動・UIの4観点と職種別アクションを表示 | py_compile / nursing necessity targeted pytest |
 
 ## 1. Claude に触らせる場所
 通常の実装・修正は、以下を優先して触らせる。
