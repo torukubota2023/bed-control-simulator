@@ -1231,15 +1231,46 @@ st.sidebar.markdown("---")
 
 # ---------------------------------------------------------------------------
 # 看護必要度ミニレクチャー — サイドバー常時アクセス（全セクションから参照可）
-# 副院長要望 2026-04-25: トップページ左サイドにすぐ参照できる位置に配置
+# 副院長要望 2026-04-25 (改): サイドバー狭幅で縦長になる問題を解決するため、
+# サイドバーは「クイックリファレンス」のみ。詳細はモーダルダイアログ (st.dialog)
+# で広い表示領域で読めるようにする。
 # ---------------------------------------------------------------------------
 if _NN_LECTURE_MD:
-    with st.sidebar.expander("📚 看護必要度ミニレクチャー", expanded=False):
-        st.caption(
-            "医師の 5 つの行動変容を中心とした実践型レクチャー。"
-            "詳細データは「📈 過去1年分析 > 📊 看護必要度トレンド」参照。"
-        )
+    # ダイアログ関数定義（クリック時に広いモーダルで全文表示）
+    @st.dialog("📚 看護必要度ミニレクチャー — 医師の行動変容で達成する", width="large")
+    def _show_nn_lecture_dialog():
         st.markdown(_NN_LECTURE_MD)
+        if _nn_render_references is not None:
+            import os as _nn_dlg_os
+            _nn_dlg_root = _nn_dlg_os.path.normpath(
+                _nn_dlg_os.path.join(_nn_dlg_os.path.dirname(_nn_dlg_os.path.abspath(__file__)), "..")
+            )
+            st.markdown("---")
+            _nn_render_references(st, _nn_dlg_root)
+
+    # サイドバー: 最小限のクイックリファレンス
+    with st.sidebar.expander("📚 看護必要度クイックリファレンス", expanded=False):
+        st.markdown(
+            "**医師の 5 つの行動変容**\n\n"
+            "1. 入院時 30 秒の自問\n"
+            "（A6 / C 該当処置の必要性）\n"
+            "2. 早期切替を急がない\n"
+            "（DOAC・モルヒネ）\n"
+            "3. オーダーに継続日数を明記\n"
+            "4. 看護師の確認に即日応答\n"
+            "5. 退院前 1 分の振り返り\n\n"
+            "**🚨 該当パターン**\n"
+            "- A6 3点処置で単独該当\n"
+            "- C項目 1点で該当（新基準）\n"
+            "- ドレナージ・輸血で 2 点単独\n"
+            "- A1+A3、A4+A3 ペアで 2 点"
+        )
+        if st.button(
+            "📖 詳細レクチャーを開く",
+            key="open_nn_lecture_dialog_btn",
+            use_container_width=True,
+        ):
+            _show_nn_lecture_dialog()
     st.sidebar.markdown("---")
 
 # ---------------------------------------------------------------------------
