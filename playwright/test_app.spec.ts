@@ -152,12 +152,19 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
   // 正常 / 境界 / 異常 の 3 ケースを代表検証。
   // ---------------------------------------------------------------------------
   test.describe('シナリオテスト', () => {
-    test('正常ケース: 入院150 / ALOS 16 — 期待範囲内', async ({ page }) => {
-      // scenarios.json の "normal_balanced" に対応。
-      // 稼働率は 0〜1.0（比率表記）または 0〜100（% 表記）の両対応。
-      const normalScenario = (scenariosData as any).scenarios?.find(
-        (s: any) => s.id === 'normal_balanced'
-      );
+    test('正常ケース: 現行画面のデフォルト指標が妥当な範囲', async ({ page }) => {
+      // 注: scenarios.json の "normal_balanced" を UI に投入する形ではなく、
+      // 現行 main 画面の **デフォルト表示値が妥当な範囲か** を確認する形に変更
+      // （副院長判断 2026-04-25）。
+      //
+      // 理由: シナリオ駆動の前提（サイドバー params をスライダーで投入 →
+      // シミュレーション実行）が、実データ運用中心の現運用と合わなくなったため。
+      // scenarios.json は仕様メタデータとして保持し、ここでは指標の **自明な妥当性**
+      // （0 < 値 < 上限）のみ検証する。
+      //
+      // シナリオ値の UI 投入が必要になったら、別 test ケースとして
+      // page.locator('input[role="slider"]')... で入力 → 実行ボタンクリック →
+      // 再描画待機の手順を組む。
 
       const occEl = page.locator('[data-testid="occupancy"]').first();
       const occText = await occEl.innerText();
@@ -165,8 +172,8 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
       expect(occNum, `稼働率が数値としてパースできない: ${occText}`).not.toBeNull();
 
       if (occNum !== null) {
+        // 稼働率: 0〜1.0 表記 or 0〜100 表記 の両対応で妥当範囲を確認
         expect(occNum).toBeGreaterThan(0);
-        // 0〜1.0 表記 or 0〜100 表記 の両対応
         expect(occNum).toBeLessThanOrEqual(100);
       }
 
@@ -176,12 +183,11 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
       const alosNum = parseMetricNumber(alosText);
       expect(alosNum, 'ALOS が数値としてパースできない').not.toBeNull();
       if (alosNum !== null) {
-        // normal_balanced の期待値: avg_los_min=14 / avg_los_max=24
-        const minExp = normalScenario?.expectations?.avg_los_min ?? 1;
-        const maxExp = normalScenario?.expectations?.avg_los_max ?? 30;
+        // ALOS: 自明な範囲のみ検証（0 < ALOS < 100 日）
+        // 実データ表示は数十日になることもあるため、シナリオ期待値（14-24）は使わない。
         expect(alosNum).toBeGreaterThan(0);
-        expect(alosNum).toBeLessThan(Math.max(maxExp + 10, 30));
-        console.log(`正常ケース: 稼働率=${occNum}, ALOS=${alosNum}日 (期待 ${minExp}〜${maxExp})`);
+        expect(alosNum).toBeLessThan(100);
+        console.log(`正常ケース: 稼働率=${occNum}, ALOS=${alosNum}日（現行 main 画面のデフォルト値）`);
       }
     });
 

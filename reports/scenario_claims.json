@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-25T02:46:58.710690+00:00",
+  "generated_at": "2026-04-25T03:43:38.140788+00:00",
   "claim_count": 73,
   "source_files": [
     "docs/admin/carnf_scenario_v4.md",
@@ -147,7 +147,7 @@
         "mode": "normal",
         "data_source": "demo"
       },
-      "claim_text": "> 「予測稼働率が土曜 78%・日曜 72% と **目標 90% を大きく下回る見込み**。退院を金曜に集中させすぎると",
+      "claim_text": "> 「予測稼働率が土曜 78%・日曜 72% と **目標 90% を大きく下回る見込み**。金+土退院が集中していると週",
       "metric": "occupancy_target_pct",
       "expected_value": 90.0,
       "tolerance": 0.5,
