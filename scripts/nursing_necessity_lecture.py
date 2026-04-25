@@ -48,9 +48,49 @@ LECTURE_MARKDOWN: str = """
 内視鏡治療 1 件で **4 日間カウント**、内科でも C 項目で十分稼げる構造。
 当院消化器内科の積極活用が 6F 達成のカギ。
 
+##### A4 + A3 ペア（合計 2 点）— **昇圧剤なし重症感染症**で威力
+
+敗血症ショック患者は通常 A6⑦ 昇圧剤（3 点）でカバーされるため、**真の活用ニッチは「昇圧剤を必要としない重症感染症」**。
+β-ラクタム持続点滴（シリンジポンプ管理）+ 多剤併用で **A4 (1 点) + A3 (1 点) = 2 点 → 該当患者** にできる:
+
+| こんな患者を見たら | 検討すべき方法 | 該当 (合計 2 点) | エビデンス強度 |
+|---|---|---|---|
+| 重症肺炎（CURB-65 高、低酸素血症、ICU 候補だが ショックなし） | β-ラクタム持続点滴 + シリンジポンプ | A4+A3 = 2 点 | **中**: BLING-III 陰性、メタ解析有意（PMID 38864155）|
+| 発熱性好中球減少症 (FN) | 同上 | 同上 | 中 + 免疫不全で trough 重要 |
+| 複雑性腹腔内感染 (cIAI) | 同上 | 同上 | 中 |
+| 重症腎盂腎炎（ESBL 産生菌など高 MIC） | 同上 | 同上 | 中 + 高 MIC で %T>MIC 重要 |
+| Augmented renal clearance（若年外傷、熱傷、CrCl > 130） | 同上 | 同上 | 中 + trough 低下リスク |
+
+**具体的な投与方法（当院使用 β-ラクタム）**:
+
+```
+■ ピペラシリン/タゾバクタム (PIPC/TAZ) — 安定性良好、推奨
+  負荷投与: PIPC/TAZ 4.5g IV 30 分かけて
+  持続投与: PIPC/TAZ 13.5-18g/24h（ショット後すぐに開始）
+  シリンジ・バッグ交換: Q24h（室温安定）
+  TDM: トラフ 値を 16 mg/L 以上目標（高 MIC 菌では 64-100 mg/L 目標）
+
+■ メロペネム (MEPM) — 安定性に注意
+  負荷投与: MEPM 1g IV 30 分かけて
+  持続投与: MEPM 3g/24h（= 125 mg/h）
+  シリンジ交換: Q6-8h（室温で不安定、頻繁交換が安全）
+  TDM: トラフ 2-8 mg/L、MIC が高い場合は 16-32 mg/L 目標
+
+■ イミペネム/シラスタチン (IPM/CS) — 持続点滴 非推奨
+  安定性が悪く、痙攣リスクの観点から 通常の間欠投与（500mg-1g Q6-8h）を継続
+```
+
+**実施時のチェックリスト**:
+- [ ] **適応の医学的妥当性**: 高 MIC、免疫不全、augmented renal clearance のいずれか
+- [ ] **TDM 体制確認**: 当院検査部に依頼可能か（trough 測定）
+- [ ] **看護師との運用合意**: シリンジ交換タイミング（MEPM は Q6-8h）
+- [ ] **薬剤師レビュー**: 投与方法と他剤との相互作用、配合変化
+- [ ] **24-48 時間で再評価**: 培養結果に基づく de-escalation 検討
+
 **全体ポイント**: 適応の正当性が前提。点数稼ぎではなく、
 **今までも適応があったがオーダーを迷っていた症例の閾値を下げる**運用。
 エビデンス弱いもの（PHN リドカイン等）は症例選択を慎重に。
+β-ラクタム持続点滴は **「軽症で標準間欠投与で十分」な患者には実施しない**。
 
 ---
 
@@ -188,7 +228,8 @@ LECTURE_MARKDOWN: str = """
 |---|---|---|
 | [38439202](https://pubmed.ncbi.nlm.nih.gov/38439202/) | Pandanaboyana et al. "Opioid analgesia and severity of acute pancreatitis" UEG Journal 2024（118 施設、27 国、1768 例）| 強：入院当日開始安全、6 日以上で重症化リスク |
 | [39210723](https://pubmed.ncbi.nlm.nih.gov/39210723/) | Van Gelder et al. "2024 ESC Guidelines for AF" European Heart Journal 2024 | 強：血行動態不安定で IV アミオダロン推奨 |
-| [34599691](https://pubmed.ncbi.nlm.nih.gov/34599691/) | Evans et al. "Surviving Sepsis Campaign 2021" Intensive Care Medicine 2021 | 強：NE 第一選択、心機能低下時は ± dobutamine |
+| [34599691](https://pubmed.ncbi.nlm.nih.gov/34599691/) | Evans et al. "Surviving Sepsis Campaign 2021" Intensive Care Medicine 2021 | 強：NE 第一選択、心機能低下時は ± dobutamine。**β-ラクタム持続/延長点滴は弱い推奨** |
+| [38864155](https://pubmed.ncbi.nlm.nih.gov/38864155/) | Dulhunty et al. "BLING-III RCT: Continuous vs Intermittent β-Lactam Infusions" JAMA 2024（7,000+ 例 ICU、PIPC/TAZ・MEPM）| **中：90日死亡 24.9% vs 26.8% (OR 0.91、p=NS)、メタ解析では RR 0.86 (NNT 26) で有意。重症例で合理的** |
 | [16013891](https://pubmed.ncbi.nlm.nih.gov/16013891/) | Hempenstall et al. "Analgesic therapy in PHN: quantitative SR" PLoS Med 2005 | **弱：IV リドカイン PHN 効果なしと結論** |
 | [36288104](https://pubmed.ncbi.nlm.nih.gov/36288104/) | Lee et al. "IV Lidocaine in Chronic Neuropathic Pain: SR" Clin J Pain 2022 | **弱：エビデンス不十分、推奨できず** |
 | 日循 2025 GL | 「肺血栓塞栓症・深部静脈血栓症および肺高血圧症に関するガイドライン 2025年改訂版」（[ローカル PDF](docs/admin/references/pdf/jcs2025_pte_dvt_guideline.pdf)） | 強：DOAC 第一選択、UFH は高リスク PE / CrCl<30 で推奨 |
