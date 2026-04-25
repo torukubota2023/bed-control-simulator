@@ -66,7 +66,7 @@
 ## ベッドコントロールシミュレーター（現行 v3.5）
 - **設計書:** [bed_control_evolution_design.md](docs/admin/bed_control_evolution_design.md)
 - **ビジョン:** 精神論を、数字に変える。
-- **現行バージョン:** v3.5k（2026-04-25時点、2026看護必要度ギャップ管理を医師別分析タブに追加）
+- **現行バージョン:** v3.5i（2026-04-17時点、全 267 Python テスト + 7 Playwright E2E testid テスト通過）
 - **注意:** 以下の機能はすべて**実装済み**。再実装・再検討の必要はない。
 
 ### 実装済み機能一覧（変更不要 — 参照用）
@@ -80,7 +80,6 @@
 | v3.5 | 結論カード（今日の一手）・KPI優先表示・views分離・他病棟協力表示 | `action_recommendation.py`, `views/` |
 | v3.5h | 院内LAN展開準備（Edge 90対応・ポータブルブラウザ方針） | `tools/browser_probe.html`, `deploy/` |
 | v3.5i | 2026-06-01 本則適用準備（救急 rolling 3ヶ月・LOS 階段関数・短手3 Day 5 アラート）・Playwright E2E Green 化（7 testid） | `emergency_ratio.py`, `bed_data_manager.py → get_short3_day5_patients()`, `playwright/test_app.spec.ts` |
-| v3.5k | 2026看護必要度ギャップ管理（割合指数 = 該当患者割合 + 救急患者応需係数）・不足pt/月間必要該当日数・A/C項目パッケージ試算 | `nursing_necessity_strategy.py`, `tests/test_nursing_necessity_strategy.py`, `bed_control_simulator_app.py` |
 
 ### 設計上の重要ルール（コード修正時に参照）
 - C群は**院内運用ラベル**であり制度上の公式区分ではない。推計値はすべてproxy
