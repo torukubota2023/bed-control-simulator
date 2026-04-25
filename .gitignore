@@ -21,6 +21,7 @@ output/*.png
 .claude/settings.local.json
 .claude/projects/
 .claude/worktrees/
+.claude/*.lock
 
 # Codex IDE (ローカル設定)
 .codex/
