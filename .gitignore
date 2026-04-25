@@ -9,6 +9,11 @@ __pycache__/
 # Word temporary files
 ~$*
 
+# 看護必要度 XLSM（事務提供の元ファイル、潜在的個人情報・大容量のため Git 追跡禁止）
+# 集計済 CSV は data/nursing_necessity_*.csv として追跡対象
+*.xlsm
+看護必要度*/
+
 # Output (generated files)
 output/*.csv
 output/*.png

@@ -289,6 +289,26 @@ try:
 except Exception:
     _PAST_ADMISSIONS_AVAILABLE = False
 
+# 看護必要度モジュール（Stage A, 2026-04-25 追加）
+try:
+    from nursing_necessity_loader import (
+        load_nursing_necessity,
+        calculate_monthly_summary as nn_calculate_monthly_summary,
+        calculate_yearly_average as nn_calculate_yearly_average,
+    )
+    from nursing_necessity_thresholds import (
+        THRESHOLD_I_LEGACY,
+        THRESHOLD_I_NEW,
+        THRESHOLD_II_LEGACY,
+        THRESHOLD_II_NEW,
+        EMERGENCY_RESPONSE_COEFFICIENT_CAP,
+        calculate_emergency_response_coefficient as nn_calc_response_coef,
+        get_threshold as nn_get_threshold,
+    )
+    _NURSING_NECESSITY_AVAILABLE = True
+except Exception:
+    _NURSING_NECESSITY_AVAILABLE = False
+
 
 # ---------------------------------------------------------------------------
 # 月別サマリー統合 — 過去1年CSV + 既存 session_state.monthly_summary
@@ -1576,6 +1596,17 @@ if "past_admissions_df" not in st.session_state:
             st.session_state.past_admissions_df = pd.DataFrame()
     else:
         st.session_state.past_admissions_df = pd.DataFrame()
+
+# 看護必要度データ（事務提供 XLSM 由来 CSV、2026-04-25 追加）
+# 個人情報なし（「データ（全体）」シートの集計値のみ取り込み）
+if "nursing_necessity_df" not in st.session_state:
+    if _NURSING_NECESSITY_AVAILABLE:
+        try:
+            st.session_state.nursing_necessity_df = load_nursing_necessity()
+        except Exception:
+            st.session_state.nursing_necessity_df = pd.DataFrame()
+    else:
+        st.session_state.nursing_necessity_df = pd.DataFrame()
 
 # A/B/C群 自動計算用の状態（SQLiteから自動復元）
 if "abc_state" not in st.session_state:
@@ -10075,6 +10106,208 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     "💡 診療科は退院済み ≥5 件のみ表示（統計的意義確保）。"
                     "中央値同士の差が診療科横断で顕著なら、ベッド計画の科別補正が有効。"
                 )
+
+        # ===== G: 看護必要度トレンド（Stage A, 2026-04-25 追加） =====
+        # 地域包括医療病棟の看護必要度Ⅰ/Ⅱ 該当患者割合を 12 ヶ月時系列で可視化。
+        # 2026-06-01 から新基準（Ⅰ16%→19%, Ⅱ14%→18%）が適用されるため、
+        # 旧/新両基準を並列表示して、移行までのギャップを副院長に明示する。
+        _nn_df = st.session_state.get("nursing_necessity_df", pd.DataFrame())
+        if _NURSING_NECESSITY_AVAILABLE and not _nn_df.empty:
+            st.divider()
+            _bc_section_title(
+                "看護必要度トレンド（地域包括医療病棟基準）",
+                icon="📊",
+            )
+            st.caption(
+                "事務提供の **1,095 行**（12 ヶ月 × 3 病棟 × 365 日）から、地域包括医療病棟基準の達成状況を可視化。"
+                f"**経過措置終了まで残 {days_until_transitional_end()} 日**: "
+                f"2026-06-01 から新基準（Ⅰ {THRESHOLD_I_NEW:.0%}, Ⅱ {THRESHOLD_II_NEW:.0%}）が適用されます。"
+            )
+
+            try:
+                import plotly.graph_objects as go
+
+                _nn_monthly = nn_calculate_monthly_summary(_nn_df)
+                _nn_yearly = nn_calculate_yearly_average(_nn_df)
+
+                # ===== 救急患者応需係数の計算（過去 1 年実データから）=====
+                # 令和8改定で新設。年間救急搬送 ÷ 病床数 × 0.005（上限 10%）を
+                # 看護必要度該当患者割合に加算して新基準と比較する。
+                _nn_pa_df = st.session_state.get("past_admissions_df", pd.DataFrame())
+                _nn_emergency_count = 0
+                if isinstance(_nn_pa_df, pd.DataFrame) and not _nn_pa_df.empty and "is_emergency_transport" in _nn_pa_df.columns:
+                    _nn_emergency_count = int(_nn_pa_df["is_emergency_transport"].sum())
+                _nn_bed_count = 94  # 5F 47 + 6F 47
+                if _nn_emergency_count > 0:
+                    _nn_coef_dict = nn_calc_response_coef(
+                        annual_emergency_count=_nn_emergency_count,
+                        bed_count=_nn_bed_count,
+                    )
+                    _nn_coef = _nn_coef_dict["coefficient"]
+                else:
+                    _nn_coef = 0.0
+                    _nn_coef_dict = {"per_bed_count": 0, "coefficient_raw": 0, "capped": False}
+
+                # 救急応需係数のサマリーカード
+                _bc_alert(
+                    f"**🚑 救急患者応需係数（令和8改定で新設）**: "
+                    f"年間救急搬送 {_nn_emergency_count} 件 ÷ {_nn_bed_count} 床 × 0.005 "
+                    f"= **{_nn_coef * 100:.2f}%**（上限 {EMERGENCY_RESPONSE_COEFFICIENT_CAP:.0%}）"
+                    f"<br>この値が **新基準 19% / 18% に対して該当患者割合に加算**されます（旧基準には不適用）。",
+                    severity="info",
+                )
+
+                # ===== 12ヶ月平均カード（4 枚: 5F-Ⅰ, 5F-Ⅱ, 6F-Ⅰ, 6F-Ⅱ）=====
+                st.markdown("**12 ヶ月通算平均 vs 新基準（応需係数加算後）**")
+                _nn_cols = st.columns(4)
+                _nn_card_specs = [
+                    ("5F", "I", THRESHOLD_I_NEW, "5F 必要度Ⅰ", _nn_cols[0]),
+                    ("5F", "II", THRESHOLD_II_NEW, "5F 必要度Ⅱ", _nn_cols[1]),
+                    ("6F", "I", THRESHOLD_I_NEW, "6F 必要度Ⅰ", _nn_cols[2]),
+                    ("6F", "II", THRESHOLD_II_NEW, "6F 必要度Ⅱ", _nn_cols[3]),
+                ]
+                for ward, typ, new_th, label, col in _nn_card_specs:
+                    _row = _nn_yearly[_nn_yearly["ward"] == ward]
+                    if _row.empty:
+                        continue
+                    _rate = _row[f"{typ}_rate1_avg"].iloc[0]
+                    _adjusted = _rate + _nn_coef
+                    _gap = _adjusted - new_th
+                    _sev = "success" if _gap >= 0 else ("warning" if _gap >= -0.02 else "danger")
+                    with col:
+                        _bc_kpi_card(
+                            label,
+                            f"{_adjusted * 100:.2f}",
+                            "%",
+                            severity=_sev,
+                            size="md",
+                            delta=f"実績{_rate * 100:.2f}% + 応需{_nn_coef * 100:.2f}% ／ 新基準{new_th:.0%} 比 {_gap * 100:+.2f}pt",
+                        )
+
+                # ===== 必要度Ⅰ 月次折れ線グラフ =====
+                st.markdown("**必要度Ⅰ 月次推移（5F / 6F、応需係数加算後）**")
+                _fig_i = go.Figure()
+                for ward, color in [("5F", _DT_WARD_5F), ("6F", _DT_WARD_6F)]:
+                    sub = _nn_monthly[_nn_monthly["ward"] == ward].sort_values("ym")
+                    # 実線 = 加算後（実態判定）、点線 = 実績
+                    adjusted_y = (sub["I_rate1"] + _nn_coef) * 100
+                    _fig_i.add_trace(go.Scatter(
+                        x=sub["ym"], y=adjusted_y,
+                        mode="lines+markers", name=f"{ward}（加算後）",
+                        line=dict(color=color, width=2.5),
+                    ))
+                    _fig_i.add_trace(go.Scatter(
+                        x=sub["ym"], y=sub["I_rate1"] * 100,
+                        mode="lines", name=f"{ward}（実績）",
+                        line=dict(color=color, width=1, dash="dot"),
+                        opacity=0.5,
+                    ))
+                # 旧基準・新基準のしきい値ライン
+                _fig_i.add_hline(
+                    y=THRESHOLD_I_LEGACY * 100, line_dash="dot",
+                    line_color=_DT_TEXT_MUTED,
+                    annotation_text=f"旧基準 {THRESHOLD_I_LEGACY:.0%}",
+                    annotation_position="bottom right",
+                )
+                _fig_i.add_hline(
+                    y=THRESHOLD_I_NEW * 100, line_dash="dash",
+                    line_color=_DT_DANGER,
+                    annotation_text=f"新基準 {THRESHOLD_I_NEW:.0%}（2026-06-01〜）",
+                    annotation_position="top right",
+                )
+                _fig_i.update_layout(
+                    height=320, margin=dict(l=10, r=10, t=10, b=10),
+                    yaxis=dict(title="該当患者割合 (%)", range=[0, 30]),
+                    xaxis=dict(title="月"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                    plot_bgcolor="white",
+                )
+                st.plotly_chart(_fig_i, use_container_width=True)
+
+                # ===== 必要度Ⅱ 月次折れ線グラフ =====
+                st.markdown("**必要度Ⅱ 月次推移（5F / 6F、応需係数加算後）**")
+                _fig_ii = go.Figure()
+                for ward, color in [("5F", _DT_WARD_5F), ("6F", _DT_WARD_6F)]:
+                    sub = _nn_monthly[_nn_monthly["ward"] == ward].sort_values("ym")
+                    adjusted_y_ii = (sub["II_rate1"] + _nn_coef) * 100
+                    _fig_ii.add_trace(go.Scatter(
+                        x=sub["ym"], y=adjusted_y_ii,
+                        mode="lines+markers", name=f"{ward}（加算後）",
+                        line=dict(color=color, width=2.5),
+                    ))
+                    _fig_ii.add_trace(go.Scatter(
+                        x=sub["ym"], y=sub["II_rate1"] * 100,
+                        mode="lines", name=f"{ward}（実績）",
+                        line=dict(color=color, width=1, dash="dot"),
+                        opacity=0.5,
+                    ))
+                _fig_ii.add_hline(
+                    y=THRESHOLD_II_LEGACY * 100, line_dash="dot",
+                    line_color=_DT_TEXT_MUTED,
+                    annotation_text=f"旧基準 {THRESHOLD_II_LEGACY:.0%}",
+                    annotation_position="bottom right",
+                )
+                _fig_ii.add_hline(
+                    y=THRESHOLD_II_NEW * 100, line_dash="dash",
+                    line_color=_DT_DANGER,
+                    annotation_text=f"新基準 {THRESHOLD_II_NEW:.0%}（2026-06-01〜）",
+                    annotation_position="top right",
+                )
+                _fig_ii.update_layout(
+                    height=320, margin=dict(l=10, r=10, t=10, b=10),
+                    yaxis=dict(title="該当患者割合 (%)", range=[0, 30]),
+                    xaxis=dict(title="月"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                    plot_bgcolor="white",
+                )
+                st.plotly_chart(_fig_ii, use_container_width=True)
+
+                # ===== 月別達成マトリクス =====
+                with st.expander("📋 月別達成マトリクス（応需係数加算後で新基準判定）", expanded=False):
+                    st.caption(
+                        f"応需係数 +{_nn_coef * 100:.2f}% を加算して判定。"
+                        "✅=加算後で新基準達成 / ⚠️=加算後でも旧基準のみ達成（新未達）/ 🔴=加算後でも両基準未達"
+                    )
+                    _matrix_rows = []
+                    for ym in sorted(_nn_monthly["ym"].unique()):
+                        _row = {"月": ym}
+                        for ward in ["5F", "6F"]:
+                            for typ in ["I", "II"]:
+                                _r = _nn_monthly[
+                                    (_nn_monthly["ym"] == ym) & (_nn_monthly["ward"] == ward)
+                                ]
+                                if _r.empty:
+                                    _row[f"{ward}-{typ}"] = "-"
+                                    continue
+                                _rate = _r[f"{typ}_rate1"].iloc[0]
+                                _adjusted = _rate + _nn_coef
+                                _new_th = THRESHOLD_I_NEW if typ == "I" else THRESHOLD_II_NEW
+                                _legacy_th = THRESHOLD_I_LEGACY if typ == "I" else THRESHOLD_II_LEGACY
+                                _meets_new_adj = _adjusted >= _new_th
+                                _meets_legacy_adj = _adjusted >= _legacy_th
+                                if _meets_new_adj:
+                                    icon = "✅"
+                                elif _meets_legacy_adj:
+                                    icon = "⚠️"
+                                else:
+                                    icon = "🔴"
+                                _row[f"{ward}-{typ}"] = f"{icon} {_adjusted * 100:.2f}%"
+                        _matrix_rows.append(_row)
+                    st.dataframe(
+                        pd.DataFrame(_matrix_rows),
+                        use_container_width=True, hide_index=True,
+                    )
+
+                st.caption(
+                    f"💡 **読み方**: 応需係数 +{_nn_coef * 100:.2f}% を加算しても "
+                    "⚠️/🔴 が並ぶ月は実態として基準未達。"
+                    "特に直近 (2026-1〜3) で 6F が新基準未達状態が続いているため、"
+                    "6/1 移行時のリスクが高い。"
+                    "改善策: ①救急受入を増やして応需係数を上げる ②重症患者比率を上げる "
+                    "③短手3比率を見直す。"
+                )
+            except Exception as _nn_err:
+                st.warning(f"⚠️ 看護必要度トレンドの描画でエラー: {_nn_err}")
 
 # ---------------------------------------------------------------------------
 # タブ: 💡 改善のヒント（インタラクティブ What-If シミュレーション付き）
