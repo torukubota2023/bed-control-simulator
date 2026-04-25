@@ -211,29 +211,33 @@ class TestWeekendVacancyRisk:
         assert compute_weekend_vacancy_risk(pd.DataFrame()) == {}
 
     def test_high_risk_doctor(self):
-        # 20 件中、木(4-09) 5件 + 金(4-10) 5件 = 10件 → 50%
+        # 20 件中、金(4-10) 5件 + 土(4-11) 5件 = 10件 → 50%
         df_rows = []
         for _ in range(5):
-            df_rows.append({"医師": "HIGH", "discharge_date": "2026-04-09"})  # 木
-        for _ in range(5):
             df_rows.append({"医師": "HIGH", "discharge_date": "2026-04-10"})  # 金
+        for _ in range(5):
+            df_rows.append({"医師": "HIGH", "discharge_date": "2026-04-11"})  # 土
         for _ in range(10):
             df_rows.append({"医師": "HIGH", "discharge_date": "2026-04-06"})  # 月
-        # 別医師で peer を作る (計20件、木+金 = 4件 = 20%)
-        for _ in range(2):
-            df_rows.append({"医師": "LOW", "discharge_date": "2026-04-09"})
+        # 別医師で peer を作る (計20件、金+土 = 4件 = 20%)
         for _ in range(2):
             df_rows.append({"医師": "LOW", "discharge_date": "2026-04-10"})
+        for _ in range(2):
+            df_rows.append({"医師": "LOW", "discharge_date": "2026-04-11"})
         for _ in range(16):
             df_rows.append({"医師": "LOW", "discharge_date": "2026-04-06"})
         df = _make_df(df_rows)
         result = compute_weekend_vacancy_risk(df)
-        assert result["HIGH"]["thu_fri_pct"] == 50.0
-        assert result["LOW"]["thu_fri_pct"] == 20.0
+        assert result["HIGH"]["fri_sat_pct"] == 50.0
+        assert result["LOW"]["fri_sat_pct"] == 20.0
         # peer median は有効サンプル全員 (HIGH=50, LOW=20) の中央値 = 35.0
-        assert result["HIGH"]["peer_thu_fri_pct"] == 35.0
+        assert result["HIGH"]["peer_fri_sat_pct"] == 35.0
         # HIGH の delta = 50 - 35 = +15 (peer より高い = リスク寄与大)
         assert result["HIGH"]["delta_vs_peer"] == 15.0
+        # キー名がリネーム済であることを確認
+        assert "saturday_pct" in result["HIGH"]
+        assert "thursday_pct" not in result["HIGH"]
+        assert "thu_fri_pct" not in result["HIGH"]
 
 
 # ---------------------------------------------------------------------------

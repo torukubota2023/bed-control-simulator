@@ -9296,7 +9296,9 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                 st.caption(
                     "📍 **データ出典**: 事務提供の 2025 年度実データ（1,823 件、実医師コード UEMH/TAM 等）。"
                     "上半分のデモデータ（A医師〜J医師）とは出典が異なります。"
-                    "**他医師の中央値（同診療科 or 全体）との差** で提示し、順位付けは避けています。"
+                    "**中央値との差** で提示し、順位付けは避けています "
+                    "（中央在院日数 = 同診療科の他医師 / 金+土退院率 = 全医師。"
+                    "金+土退院率は 1 名のみの診療科が複数あるため leave-one-out せず本人を含む全医師中央値）。"
                     "件数 < 20 件の医師は参考値扱い（グレー表示）。"
                 )
 
@@ -9332,19 +9334,21 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                 _weekend_risk = compute_weekend_vacancy_risk(_pa_df_prof)
 
                 if _view_mode == "🌐 全体概観":
-                    # --- 週末空床リスク寄与度（木+金退院率）ランキング ---
-                    st.markdown("#### 🔴 週末空床リスク寄与度（木+金退院率）")
+                    # --- 週末空床リスク寄与度（金+土退院率）ランキング ---
+                    st.markdown("#### 🔴 週末空床リスク寄与度（金+土退院率）")
                     st.caption(
-                        "金曜＋木曜の退院が多いほど、土日に空床が発生しやすい。"
-                        "他医師の中央値と比較して、週末空床リスクへの寄与を可視化。"
+                        "金曜＋土曜の退院が多いほど、土日に空床が発生しやすい "
+                        "（当院は土曜入院 2.2件/日・日曜入院 0.3件/日でほぼ補充されない）。"
+                        "全医師の中央値より高い医師は、対象患者の "
+                        "**月曜以降への退院振替** を検討（日曜・祝日は 1 病棟 2 人/日 まで補助枠として活用可）。"
                     )
                     if _plotly_dp and _weekend_risk:
                         _risk_sorted = sorted(
                             [(d, r) for d, r in _weekend_risk.items()],
-                            key=lambda kv: -kv[1]["thu_fri_pct"],
+                            key=lambda kv: -kv[1]["fri_sat_pct"],
                         )
                         _doctors = [d for d, _ in _risk_sorted]
-                        _thu_fri = [r["thu_fri_pct"] for _, r in _risk_sorted]
+                        _fri_sat = [r["fri_sat_pct"] for _, r in _risk_sorted]
                         _colors = [
                             "#9CA3AF" if r["is_small_sample"]
                             else ("#DC2626" if r["delta_vs_peer"] >= 5
@@ -9352,32 +9356,32 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                                   else "#10B981")
                             for _, r in _risk_sorted
                         ]
-                        _peer_med = _risk_sorted[0][1]["peer_thu_fri_pct"] if _risk_sorted else 0
+                        _peer_med = _risk_sorted[0][1]["peer_fri_sat_pct"] if _risk_sorted else 0
                         _fig_risk = go.Figure()
                         _fig_risk.add_trace(go.Bar(
-                            x=_thu_fri, y=_doctors, orientation="h",
+                            x=_fri_sat, y=_doctors, orientation="h",
                             marker_color=_colors,
-                            text=[f"{v:.1f}%" for v in _thu_fri],
+                            text=[f"{v:.1f}%" for v in _fri_sat],
                             textposition="outside",
-                            hovertemplate="%{y}<br>木+金: %{x:.1f}%<extra></extra>",
+                            hovertemplate="%{y}<br>金+土: %{x:.1f}%<extra></extra>",
                         ))
                         _fig_risk.add_vline(
                             x=_peer_med, line_width=2, line_dash="dash",
                             line_color="#374151",
-                            annotation_text=f"他医師の中央値 {_peer_med:.1f}%",
+                            annotation_text=f"全医師の中央値 {_peer_med:.1f}%",
                             annotation_position="top",
                         )
                         _fig_risk.update_layout(
                             height=max(300, 30 * len(_doctors)),
-                            xaxis_title="木+金曜退院率 (%)",
+                            xaxis_title="金+土曜退院率 (%)",
                             margin=dict(l=60, r=80, t=30, b=40),
                             showlegend=False,
                         )
                         st.plotly_chart(_fig_risk, use_container_width=True)
                         st.caption(
-                            "🔴 赤＝他医師の中央値より +5pt 以上（リスク寄与大）／"
-                            "🟠 オレンジ＝他医師の中央値より 0〜5pt 上／"
-                            "🟢 緑＝他医師の中央値より下（リスク抑制）／"
+                            "🔴 赤＝全医師の中央値より +5pt 以上（リスク寄与大、振替推奨）／"
+                            "🟠 オレンジ＝全医師の中央値より 0〜5pt 上／"
+                            "🟢 緑＝全医師の中央値より下（リスク抑制）／"
                             "⚪ グレー＝件数 < 20（参考値）"
                         )
 
@@ -9488,9 +9492,9 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                             delta=f"{_wd.get('friday_pct', 0) - 14.3:+.1f}pt（均等比）",
                         )
                         _cols_prof[2].metric(
-                            "木+金退院率",
-                            f"{_wr.get('thu_fri_pct', 0):.1f}%",
-                            delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（他医師との差）",
+                            "金+土退院率",
+                            f"{_wr.get('fri_sat_pct', 0):.1f}%",
+                            delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（全医師中央値との差）",
                             delta_color="inverse",  # 高いほど悪い
                         )
                         _cols_prof[3].metric(
@@ -10122,7 +10126,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     </div>
                     """, unsafe_allow_html=True)
 
-                    st.caption("具体策: ① 金曜退院の分散 ② 医師別退院曜日調整 ③ 在院日数の最適化")
+                    st.caption("具体策: ① 金+土退院の月曜以降への振替 ② 医師別退院曜日調整 ③ 在院日数の最適化")
 
                     # --- What-If シミュレーション ---
                     st.markdown("##### 🔧 What-If シミュレーション")
@@ -10226,7 +10230,8 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                     )
 
         # =====================================================================
-        # Hint 2: 金曜退院の集中
+        # Hint 2: 金+土退院の集中（2026-04-25 副院長判断で「金曜→火〜木前倒し」から
+        # 「金+土→月曜以降後ろ倒し」に思想転換）
         # =====================================================================
         if isinstance(_detail_df, pd.DataFrame) and len(_detail_df) > 0:
             _wd_dist = get_discharge_weekday_distribution(_detail_df)
@@ -10234,64 +10239,80 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                 _total_dis_h = sum(_wd_dist.values())
                 if _total_dis_h > 0:
                     _fri_count = _wd_dist.get(4, 0)
-                    _fri_pct_h = _fri_count / _total_dis_h * 100
-                    if _fri_pct_h > 25:
+                    _sat_count = _wd_dist.get(5, 0)
+                    _fri_sat_count = _fri_count + _sat_count
+                    _fri_sat_pct_h = _fri_sat_count / _total_dis_h * 100
+                    # 金+土退院率が peer 中央値（実データ 33.8%）相当を超えたら検出
+                    if _fri_sat_pct_h > 30:
                         _hints_found = True
-                        _expected_even = _total_dis_h / 5
-                        _excess_fri = _fri_count - _expected_even
 
-                        with st.expander("⚠️ 金曜退院の集中", expanded=True):
+                        with st.expander("⚠️ 金+土退院の集中", expanded=True):
                             # --- 検出アラート ---
                             st.markdown(f"""
                             <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
-                                <strong style="color: #1E293B;">⚠️ 金曜退院の集中検出</strong> —
-                                <span style="color: #64748B;">{_fri_count}件（<strong>{_fri_pct_h:.0f}%</strong>）→ 土日稼働率低下の要因</span>
+                                <strong style="color: #1E293B;">⚠️ 金+土退院の集中検出</strong> —
+                                <span style="color: #64748B;">金 {_fri_count} 件 + 土 {_sat_count} 件 = {_fri_sat_count} 件（<strong>{_fri_sat_pct_h:.0f}%</strong>）→ 土日稼働率低下の要因</span>
                             </div>
                             """, unsafe_allow_html=True)
 
-                            # --- 医師別の金曜集中テーブル ---
-                            st.markdown("##### 📋 医師別 金曜退院率")
+                            # --- 医師別の金+土集中テーブル ---
+                            st.markdown("##### 📋 医師別 金+土退院率")
                             _dis_df_h2 = _detail_df[_detail_df["event_type"] == "discharge"]
                             _doc_names_h2 = sorted(_dis_df_h2["attending_doctor"].unique())
-                            _fri_table_rows = []
+                            _fri_sat_table_rows = []
                             for _dn in _doc_names_h2:
                                 _doc_wd = get_discharge_weekday_distribution(_detail_df, _dn)
                                 if _doc_wd and sum(_doc_wd.values()) > 0:
                                     _d_total = sum(_doc_wd.values())
                                     _d_fri = _doc_wd.get(4, 0)
-                                    _d_fri_pct = _d_fri / _d_total * 100
-                                    _fri_table_rows.append({
+                                    _d_sat = _doc_wd.get(5, 0)
+                                    _d_fri_sat = _d_fri + _d_sat
+                                    _d_fri_sat_pct = _d_fri_sat / _d_total * 100
+                                    _fri_sat_table_rows.append({
                                         "医師名": _dn,
                                         "総退院数": _d_total,
-                                        "金曜退院数": _d_fri,
-                                        "金曜率(%)": round(_d_fri_pct, 1),
-                                        "集中": "⚠️" if _d_fri_pct > 30 else "",
+                                        "金曜": _d_fri,
+                                        "土曜": _d_sat,
+                                        "金+土率(%)": round(_d_fri_sat_pct, 1),
+                                        "集中": "⚠️" if _d_fri_sat_pct > 40 else "",
                                     })
-                            if _fri_table_rows:
-                                _fri_table_df = pd.DataFrame(_fri_table_rows).sort_values("金曜率(%)", ascending=False)
-                                st.dataframe(_fri_table_df, use_container_width=True, hide_index=True)
+                            if _fri_sat_table_rows:
+                                _fri_sat_table_df = pd.DataFrame(_fri_sat_table_rows).sort_values("金+土率(%)", ascending=False)
+                                st.dataframe(_fri_sat_table_df, use_container_width=True, hide_index=True)
 
                             # --- What-If シミュレーション ---
                             st.markdown("##### 🔧 What-If シミュレーション")
+                            st.caption(
+                                "💡 **退院日を月曜以降に振り替える** ことで、土日空床を抑制します。"
+                                "金曜退院 1 件 → 月曜以降に振替で **土日 2 日分**、"
+                                "土曜退院 1 件 → 月曜以降に振替で **日曜 1 日分** の空床を防止。"
+                                "なお **日曜・祝日も 1 病棟あたり 2 人/日 まで** は退院可能（補助枠として活用）。"
+                            )
                             _hint2_move_pct = st.slider(
-                                "金曜退院のうち火〜木へ移動する割合（%）",
+                                "金+土退院のうち月曜以降に振り替える割合（%）",
                                 min_value=0, max_value=100, step=10, value=50,
                                 key="_hint_fri_slider",
                             )
-                            _hint2_moved = int(_excess_fri * _hint2_move_pct / 100)
-                            _hint2_weekend_saved = _hint2_moved * 2 * _UNIT_PRICE_PER_DAY
+                            _hint2_fri_moved = int(_fri_count * _hint2_move_pct / 100)
+                            _hint2_sat_moved = int(_sat_count * _hint2_move_pct / 100)
+                            # 金曜→月曜 = 土日2日分、土曜→月曜 = 日曜1日分
+                            _hint2_weekend_saved = (
+                                _hint2_fri_moved * 2 + _hint2_sat_moved * 1
+                            ) * _UNIT_PRICE_PER_DAY
                             _hint2_annual = _hint2_weekend_saved * 12
+                            _hint2_moved = _hint2_fri_moved + _hint2_sat_moved
                             _hint2_profit_pct = _hint2_annual / _OPERATING_PROFIT * 100
 
-                            _hint_savings["金曜退院分散"] = _hint2_annual
+                            _hint_savings["金+土退院振替"] = _hint2_annual
 
                             # Before/After の曜日分布チャート
                             _before_vals = [_wd_dist.get(i, 0) for i in range(7)]
                             _after_vals = list(_before_vals)
-                            # 金曜から火〜木へ均等に振り分け
-                            _after_vals[4] = max(0, _after_vals[4] - _hint2_moved)
-                            _per_day_add = _hint2_moved / 3  # 火・水・木に均等配分
-                            for _di in [1, 2, 3]:
+                            # 金・土から月曜以降（月・火・水・木）に均等振り分け
+                            _after_vals[4] = max(0, _after_vals[4] - _hint2_fri_moved)
+                            _after_vals[5] = max(0, _after_vals[5] - _hint2_sat_moved)
+                            _per_day_add = _hint2_moved / 4  # 月・火・水・木に均等配分
+                            for _di in [0, 1, 2, 3]:
                                 _after_vals[_di] += _per_day_add
 
                             _fig_h2 = go.Figure()
@@ -10313,7 +10334,11 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
                             _h2c1, _h2c2 = st.columns(2)
                             with _h2c1:
-                                st.metric("移動する退院件数", f"{_hint2_moved}件/月")
+                                st.metric(
+                                    "振替する退院件数",
+                                    f"{_hint2_moved}件/月",
+                                    help=f"金 {_hint2_fri_moved} 件 + 土 {_hint2_sat_moved} 件",
+                                )
                             with _h2c2:
                                 st.metric("年間改善額", f"{_hint2_annual/10000:.0f}万円",
                                           delta="改善余地あり")
@@ -10329,7 +10354,10 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
             _doc_names_h3 = sorted(_dis_df_h3["attending_doctor"].unique())
             if len(_doc_names_h3) > 0:
                 with st.expander("🔍 医師別の退院曜日偏り", expanded=False):
-                    st.caption("特定医師の退院曜日を調整した場合の効果をシミュレーション")
+                    st.caption(
+                        "特定医師の退院曜日を調整した場合の効果をシミュレーション "
+                        "（金+土退院 → 月曜以降への振替。日曜・祝日も 1 病棟 2 人/日 まで補助枠として活用可）"
+                    )
 
                     _hint3_doc = st.selectbox(
                         "分析する医師を選択",
@@ -10341,43 +10369,53 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                         _doc_vals_h3 = [_doc_wd_h3.get(i, 0) for i in range(7)]
                         _doc_total_h3 = sum(_doc_vals_h3)
                         _doc_fri_h3 = _doc_vals_h3[4]
+                        _doc_sat_h3 = _doc_vals_h3[5]
+                        _doc_fri_sat_h3 = _doc_fri_h3 + _doc_sat_h3
 
-                        # 医師の現在の分布チャート
+                        # 医師の現在の分布チャート（金・土を強調）
                         _fig_h3 = go.Figure()
-                        _colors_h3 = ["#3B82F6" if i != 4 else "#EF4444" for i in range(7)]
+                        _colors_h3 = ["#EF4444" if i in (4, 5) else "#3B82F6" for i in range(7)]
                         _fig_h3.add_trace(go.Bar(
                             x=_wd_labels, y=_doc_vals_h3,
                             marker_color=_colors_h3,
                         ))
                         _fig_h3.update_layout(
                             height=250,
-                            title=f"{_hint3_doc} の退院曜日分布",
+                            title=f"{_hint3_doc} の退院曜日分布（金・土を強調）",
                             xaxis_title="曜日", yaxis_title="退院件数",
                             margin=dict(t=40, b=40, l=40, r=20),
                             showlegend=False,
                         )
                         st.plotly_chart(_fig_h3, use_container_width=True)
 
-                        # What-If: この医師の金曜退院を移動
+                        # What-If: この医師の金+土退院を月曜以降に振替
                         st.markdown("##### 🔧 What-If シミュレーション")
-                        _hint3_max_move = max(int(_doc_fri_h3), 0)
+                        _hint3_max_move = max(int(_doc_fri_sat_h3), 0)
                         if _hint3_max_move > 0:
                             _hint3_move = st.slider(
-                                f"この医師の金曜退院を何件火〜木に移動？",
+                                f"この医師の金+土退院を何件月曜以降に振替？",
                                 min_value=0, max_value=_hint3_max_move, step=1,
                                 value=min(_hint3_max_move, max(1, _hint3_max_move // 2)),
                                 key="_hint_doc_fri_slider",
                             )
-                            _hint3_saved = _hint3_move * 2 * _UNIT_PRICE_PER_DAY * 12
+                            # 金:土 の比率で按分（実態に合わせる）
+                            if _doc_fri_sat_h3 > 0:
+                                _move_fri = round(_hint3_move * _doc_fri_h3 / _doc_fri_sat_h3)
+                            else:
+                                _move_fri = 0
+                            _move_sat = _hint3_move - _move_fri
+                            # 金曜→月曜 = 土日2日分、土曜→月曜 = 日曜1日分
+                            _hint3_saved = (_move_fri * 2 + _move_sat * 1) * _UNIT_PRICE_PER_DAY * 12
                             _hint3_profit = _hint3_saved / _OPERATING_PROFIT * 100
 
-                            _hint_savings[f"{_hint3_doc}退院調整"] = _hint3_saved
+                            _hint_savings[f"{_hint3_doc}退院振替"] = _hint3_saved
 
-                            # Before/After
+                            # Before/After（金土から月〜木に振り分け）
                             _after_h3 = list(_doc_vals_h3)
-                            _after_h3[4] = max(0, _after_h3[4] - _hint3_move)
-                            _per_day_h3 = _hint3_move / 3
-                            for _di in [1, 2, 3]:
+                            _after_h3[4] = max(0, _after_h3[4] - _move_fri)
+                            _after_h3[5] = max(0, _after_h3[5] - _move_sat)
+                            _per_day_h3 = _hint3_move / 4
+                            for _di in [0, 1, 2, 3]:
                                 _after_h3[_di] += _per_day_h3
 
                             _fig_h3b = go.Figure()
@@ -10393,7 +10431,11 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
 
                             _h3c1, _h3c2 = st.columns(2)
                             with _h3c1:
-                                st.metric("移動する退院件数", f"{_hint3_move}件/月")
+                                st.metric(
+                                    "振替する退院件数",
+                                    f"{_hint3_move}件/月",
+                                    help=f"金 {_move_fri} 件 + 土 {_move_sat} 件",
+                                )
                             with _h3c2:
                                 st.metric("年間改善額", f"{_hint3_saved/10000:.0f}万円",
                                           delta="改善余地あり")
@@ -10401,7 +10443,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "💡 改善のヒン
                                 _h3_gap_pct = min(100, _hint3_saved / _annual_loss_total * 100)
                                 st.caption(f"→ 稼働率ギャップの **{_h3_gap_pct:.0f}%** をカバー")
                         else:
-                            st.info(f"{_hint3_doc} の金曜退院は0件です。調整の必要はありません。")
+                            st.info(f"{_hint3_doc} の金+土退院は0件です。調整の必要はありません。")
                     else:
                         st.info(f"{_hint3_doc} の退院データがありません。")
 
