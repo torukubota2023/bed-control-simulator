@@ -1166,6 +1166,12 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE:
 # 両方の依存 view が揃っていないときのみセクションを出す（片方だけでも出す運用はしない）
 if _CONFERENCE_VIEW_AVAILABLE and _DEMAND_FORECAST_AVAILABLE and _VIEWS_AVAILABLE:
     _section_names.append("🏥 退院調整")
+# 📈 過去1年分析: 情報階層リデザイン Phase 5（2026-04-25）
+# 旧「🛡️ 制度管理 > 📊 過去1年分析」タブを独立セクションに昇格。
+# 制度管理 = 現場目線（今この瞬間の制度コンプライアンス監視）、
+# 過去1年分析 = 経営者目線（過去 1 年の傾向理解、理事会/師長会議の議論材料）。
+if _PAST_ADMISSIONS_AVAILABLE:
+    _section_names.append("📈 過去1年分析")
 # ⚙️ データ・設定: 情報階層リデザイン Phase 4（2026-04-18・最終）
 # 旧「📋 データ管理」に旧「📨 HOPE連携」セクションとサイドバー短手3 パラメータを統合。
 # データ・設定モジュールの依存があれば（or HOPE 単独でも）セクションを出す。
@@ -3257,9 +3263,11 @@ elif _selected_section == "\U0001f6e1\ufe0f 制度管理":
     tab_names = ["\U0001f6e1\ufe0f 制度・需要・C群"]
     if _DOCTOR_MASTER_AVAILABLE:
         tab_names.append("\U0001f4a1 改善のヒント")
-    # 2026-04-24: 過去1年実データの可視化タブ（事務提供CSV）
-    if _PAST_ADMISSIONS_AVAILABLE:
-        tab_names.append("\U0001f4ca 過去1年分析")
+    # 2026-04-25: 「📊 過去1年分析」は新セクション「📈 過去1年分析」に移設（Phase 5）
+elif _selected_section == "\U0001f4c8 過去1年分析":
+    # 2026-04-25 Phase 5: 経営者目線の過去 1 年深掘り分析（独立セクションに昇格）
+    # 旧「🛡️ 制度管理 > 📊 過去1年分析」タブを移設。1 タブ単一ページ構成。
+    tab_names = ["\U0001f4ca 過去1年分析"]
 elif _selected_section == "\U0001f3e5 退院調整":
     # Phase 1 情報階層リデザイン（2026-04-18）: 5 タブ統合
     # 2026-04-23: 「📅 退院カレンダー」を新規追加（副院長指示）、既存「📅 予約可能枠」を「📅 入院受入枠」に改名
@@ -9017,6 +9025,20 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
     with tabs[_tab_idx["👨‍⚕️ 医師別分析"]]:
         st.subheader("👨‍⚕️ 医師別分析")
 
+        # データ出典の注意書き（実運用開始までの過渡期表示）
+        # 本タブは 2 系統のデータを表示しているため、混乱を防ぐためバナーで明示する。
+        # 実運用で admission_details に実医師コードが入力され始めたら、
+        # 上半分も自動的に実データに切り替わる（その時点でこのバナーは不要になる）。
+        _bc_alert(
+            "**📌 データ出典の注意** "
+            "本タブの**上半分**（医師別パフォーマンス・退院曜日分布・改善の可能性）は、"
+            "現在は教育用デモデータ（A医師〜J医師、`admission_details.csv`）を表示しています。"
+            "実運用で実医師コードが入力され始めると、ここは自動的に実データに切り替わります。"
+            "／ 一方、**下半分**（過去1年プロファイル分析）は事務提供の実データ"
+            "（実医師コード UEMH/TAM 等、`past_admissions_2025fy.csv`）です。",
+            severity="info",
+        )
+
         _detail_df = st.session_state.get("admission_details", pd.DataFrame())
 
         if not isinstance(_detail_df, pd.DataFrame) or len(_detail_df) == 0:
@@ -9268,11 +9290,12 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
             if not _pa_df_prof.empty:
                 st.markdown("---")
                 _bc_section_title(
-                    "過去1年プロファイル分析（退院曜日・自主回転・週末空床リスク）",
+                    "過去1年プロファイル分析（実データ：退院曜日・自主回転・週末空床リスク）",
                     icon="📊",
                 )
                 st.caption(
-                    "事務提供の 2025 年度データ（1,823 件）から、医師ごとの退院行動を可視化。"
+                    "📍 **データ出典**: 事務提供の 2025 年度実データ（1,823 件、実医師コード UEMH/TAM 等）。"
+                    "上半分のデモデータ（A医師〜J医師）とは出典が異なります。"
                     "**他医師の中央値（同診療科 or 全体）との差** で提示し、順位付けは避けています。"
                     "件数 < 20 件の医師は参考値扱い（グレー表示）。"
                 )

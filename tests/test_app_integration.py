@@ -468,7 +468,7 @@ class TestSectionTabMapping:
         menu_sections = set()
         for m in re.finditer(r'"([^"]+)"', menu_block):
             val = m.group(1)
-            if any(kw in val for kw in ["今日の運営", "意思決定", "制度", "データ", "HOPE"]):
+            if any(kw in val for kw in ["今日の運営", "意思決定", "制度", "データ", "HOPE", "過去1年"]):
                 menu_sections.add(_normalize(val))
 
         # 各メニューセクションに対応する条件分岐があること
