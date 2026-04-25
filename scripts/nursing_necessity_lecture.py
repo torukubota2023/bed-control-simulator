@@ -377,6 +377,7 @@ REFERENCES: list[dict] = [
         "local_path": "docs/admin/references/nursing_necessity_evaluation_2026.png",
         "original_url": "https://www.imimed.co.jp/int/spot/medical-fee_2026_1/",
         "description": "厚労省公開資料を IMI が見やすく整理した評価項目一覧表。判定に迷ったときの正典。",
+        "always_visible": True,  # 副院長要望: 折りたたまず常時表示
     },
     {
         "title": "公式 地域包括医療病棟入院料 1/2 施設基準まとめ（令和8改定）(画像)",
@@ -401,6 +402,37 @@ def render_references(streamlit_module, project_root: str) -> None:
     import os
 
     st = streamlit_module
+
+    # ========================================================================
+    # Phase 1: always_visible=True の参照を冒頭で常時表示（折りたたみなし）
+    # 副院長要望: 公式評価項目表は判断の正典なので常に見える状態にする
+    # ========================================================================
+    for ref in REFERENCES:
+        if not ref.get("always_visible", False):
+            continue
+        local_path_rel = ref.get("local_path", "")
+        local_path_abs = os.path.join(project_root, local_path_rel) if local_path_rel else ""
+        if not (local_path_abs and os.path.exists(local_path_abs)):
+            continue
+        title = ref.get("title", "(無題)")
+        description = ref.get("description", "")
+        original_url = ref.get("original_url", "")
+        kind = ref.get("kind", "url")
+
+        st.markdown(f"#### {title}")
+        if description:
+            st.caption(description)
+        if kind == "image":
+            st.image(local_path_abs, use_container_width=True)
+        st.caption(
+            f"📍 ローカル: `{local_path_rel}`／"
+            f"原典: {original_url}（ネット接続時に確認）"
+        )
+        st.markdown("---")
+
+    # ========================================================================
+    # Phase 2: 通常の参照は expander で折りたたみ表示
+    # ========================================================================
     st.markdown("#### 📚 参考エビデンス・出典(オフライン対応)")
     st.caption(
         "院内 LAN 環境でも全資料を参照可能。各エキスパンダーをクリックで展開。"
@@ -408,6 +440,8 @@ def render_references(streamlit_module, project_root: str) -> None:
     )
 
     for ref in REFERENCES:
+        if ref.get("always_visible", False):
+            continue  # 既に冒頭で表示済
         title = ref.get("title", "(無題)")
         kind = ref.get("kind", "url")
         local_path_rel = ref.get("local_path", "")
