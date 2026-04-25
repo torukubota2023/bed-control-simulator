@@ -82,6 +82,51 @@
 - [x] 過去/新規データの区別（`data_version` カラム：`legacy_binary` vs `detailed_v1`）
 - [ ] **手動シード入力機構**：`settings/manual_seed_emergency_ratio.yaml` + `settings_tab.py` UI + `emergency_ratio.py` 統合（2026-04-20 実装予定）
 
+## 📊 看護必要度モニタリング（Stage A 実装、2026-04-25）
+
+事務提供の看護必要度年間データ（XLSM 12 ヶ月分、計 48MB）を解析した結果、
+2026-06-01 から適用される新基準（Ⅰ 16%→19%、Ⅱ 14%→18%）に対し、
+**当院は両病棟・両指標とも未達リスク**が判明:
+
+| 病棟 | Ⅰ 12ヶ月平均 | 新基準19% | Ⅱ 12ヶ月平均 | 新基準18% |
+|---|---|---|---|---|
+| 5F | 18.21% | -0.79pt 未達 | 16.36% | -1.64pt 未達 |
+| 6F | 16.06% | **🔴 -2.94pt 未達** | 13.13% | **🔴 -4.87pt 大幅未達** |
+
+ただし令和8改定で新設の **救急患者応需係数（病床あたり年間救急搬送 × 0.005、上限10%）**
+を加算すると当院は約 1.48% 上振れ → 5F-Ⅰ は達成圏に入る、6F は依然未達。
+
+### 副院長月次運用手順（XLSM 受領→ CSV 更新）
+
+```bash
+# 1. 事務から受領した zip を /tmp に展開
+mkdir -p /tmp/nursing_2026 && cd /tmp/nursing_2026
+unzip ~/Desktop/看護必要度YYYY.zip
+
+# 2. CSV を再生成（リポジトリ直下で実行）
+cd ~/ai-management
+.venv/bin/python scripts/extract_nursing_necessity_from_xlsm.py \
+    --src /tmp/nursing_2026/看護必要度YYYY/ \
+    --dest data/nursing_necessity_2025fy.csv
+
+# 3. 動作確認後 commit
+git add data/nursing_necessity_2025fy.csv
+git commit -m "data: 看護必要度 YYYY-MM 更新"
+```
+
+### 個人情報保護
+
+- 元 XLSM はリポジトリに **commit しない**（`.gitignore` で `*.xlsm` 除外）
+- 「データ（全体）」シート（日次×病棟集計）のみ抽出 → 集計値で個人情報なし
+- 「患者別」「MedFile」シートは取り込まない設計（loader/extract スクリプトは
+  「データ（全体）」シート以外を読まない）
+
+### Stage B/C ロードマップ
+
+- **Stage B（予定）**: 制度管理セクションに「📊 看護必要度」サブタブ追加
+  → リアルタイム rolling 3 ヶ月達成率監視 + アラート
+- **Stage C（予定）**: 救急15% + ALOS + 看護必要度 の 3 軸統合ダッシュボード
+
 ## 📐 制度ルール確定事項（2026-06-01 以降の地域包括医療病棟運用）
 
 **確定日:** 2026-04-15（事務担当者からの仕様確定を受領）
@@ -322,6 +367,7 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 | v3.5i | 2026-06-01 本則適用準備（救急 rolling 3ヶ月・LOS 階段関数・短手3 Day 5 アラート）・Playwright E2E Green 化（7 testid） | `emergency_ratio.py`, `bed_data_manager.py → get_short3_day5_patients()`, `playwright/test_app.spec.ts` |
 | v3.5j | 📅 退院カレンダー新設（月俯瞰 × 病棟別 × 当月/翌月、3 層カラー表示、枠超過警告、日曜推奨、動的枠調整インフラ）・既存「予約可能枠」を「入院受入枠」に改名 | `discharge_plan_store.py`, `discharge_slot_config.py`, `views/discharge_calendar_view.py` |
 | v3.5k | 経営者目線セクション分離（Phase 5, 2026-04-25）— 「📈 過去1年分析」を独立セクションに昇格（5→6 セクション）。医師別分析タブにデモデータ警告バナーを追加し実運用切替時の混乱を予防 | `bed_control_simulator_app.py` （セクション定義 + dispatch + バナー） |
+| v3.5l | 看護必要度トレンド分析 Stage A（2026-04-25）— 「📈 過去1年分析」セクションに看護必要度サブセクション追加。2026-06-01 新基準（Ⅰ16%→19%, Ⅱ14%→18%）対応 + 救急患者応需係数（年間救急 ÷ 病床数 × 0.005、上限10%）を該当割合に加算する判定ロジック。当院想定値 1.48% で実態判定可能に | `nursing_necessity_loader.py`, `nursing_necessity_thresholds.py`, `extract_nursing_necessity_from_xlsm.py`, `data/nursing_necessity_2025fy.csv` |
 
 ### 📅 退院カレンダー（v3.5j, 2026-04-23 副院長判断）
 副院長の「不在のベッドコントローラーの代理」要望に応える機能。木曜カンファで
