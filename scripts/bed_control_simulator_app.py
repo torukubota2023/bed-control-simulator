@@ -305,9 +305,15 @@ try:
         calculate_emergency_response_coefficient as nn_calc_response_coef,
         get_threshold as nn_get_threshold,
     )
+    from nursing_necessity_lecture import (
+        LECTURE_MARKDOWN as _NN_LECTURE_MD,
+        render_references as _nn_render_references,
+    )
     _NURSING_NECESSITY_AVAILABLE = True
 except Exception:
     _NURSING_NECESSITY_AVAILABLE = False
+    _NN_LECTURE_MD = ""
+    _nn_render_references = None
 
 
 # ---------------------------------------------------------------------------
@@ -10123,6 +10129,25 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                 f"**経過措置終了まで残 {days_until_transitional_end()} 日**: "
                 f"2026-06-01 から新基準（Ⅰ {THRESHOLD_I_NEW:.0%}, Ⅱ {THRESHOLD_II_NEW:.0%}）が適用されます。"
             )
+
+            # ===== 📚 看護必要度ミニレクチャー（医師・看護師の協力で達成する） =====
+            # 当院特有の戦略・役割分担・実践 TIPS を網羅した教育コンテンツ。
+            # データを見る前にまず制度を理解する人向けに上部配置（デフォルト閉じる）。
+            if _NN_LECTURE_MD:
+                with st.expander(
+                    "📚 看護必要度ミニレクチャー — 医師・看護師の協力で達成する（クリックで展開）",
+                    expanded=False,
+                ):
+                    st.markdown(_NN_LECTURE_MD)
+                    # レクチャー直下に参考エビデンス・出典をオフライン対応で描画
+                    # 公式 PDF（厚労省・日循）+ 要約 markdown + 評価項目表画像 を統一管理
+                    if _nn_render_references is not None:
+                        import os as _nn_os
+                        _nn_project_root = _nn_os.path.normpath(
+                            _nn_os.path.join(_nn_os.path.dirname(_nn_os.path.abspath(__file__)), "..")
+                        )
+                        st.markdown("---")
+                        _nn_render_references(st, _nn_project_root)
 
             try:
                 import plotly.graph_objects as go
