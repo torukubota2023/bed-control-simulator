@@ -9332,19 +9332,21 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                 _weekend_risk = compute_weekend_vacancy_risk(_pa_df_prof)
 
                 if _view_mode == "🌐 全体概観":
-                    # --- 週末空床リスク寄与度（木+金退院率）ランキング ---
-                    st.markdown("#### 🔴 週末空床リスク寄与度（木+金退院率）")
+                    # --- 週末空床リスク寄与度（金+土退院率）ランキング ---
+                    st.markdown("#### 🔴 週末空床リスク寄与度（金+土退院率）")
                     st.caption(
-                        "金曜＋木曜の退院が多いほど、土日に空床が発生しやすい。"
-                        "他医師の中央値と比較して、週末空床リスクへの寄与を可視化。"
+                        "金曜＋土曜の退院が多いほど、土日に空床が発生しやすい "
+                        "（当院は土曜入院 2.2件/日・日曜入院 0.3件/日でほぼ補充されない）。"
+                        "他医師の中央値より高い医師は、対象患者の "
+                        "**日曜または月曜以降への退院振替** を検討。"
                     )
                     if _plotly_dp and _weekend_risk:
                         _risk_sorted = sorted(
                             [(d, r) for d, r in _weekend_risk.items()],
-                            key=lambda kv: -kv[1]["thu_fri_pct"],
+                            key=lambda kv: -kv[1]["fri_sat_pct"],
                         )
                         _doctors = [d for d, _ in _risk_sorted]
-                        _thu_fri = [r["thu_fri_pct"] for _, r in _risk_sorted]
+                        _fri_sat = [r["fri_sat_pct"] for _, r in _risk_sorted]
                         _colors = [
                             "#9CA3AF" if r["is_small_sample"]
                             else ("#DC2626" if r["delta_vs_peer"] >= 5
@@ -9352,14 +9354,14 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                                   else "#10B981")
                             for _, r in _risk_sorted
                         ]
-                        _peer_med = _risk_sorted[0][1]["peer_thu_fri_pct"] if _risk_sorted else 0
+                        _peer_med = _risk_sorted[0][1]["peer_fri_sat_pct"] if _risk_sorted else 0
                         _fig_risk = go.Figure()
                         _fig_risk.add_trace(go.Bar(
-                            x=_thu_fri, y=_doctors, orientation="h",
+                            x=_fri_sat, y=_doctors, orientation="h",
                             marker_color=_colors,
-                            text=[f"{v:.1f}%" for v in _thu_fri],
+                            text=[f"{v:.1f}%" for v in _fri_sat],
                             textposition="outside",
-                            hovertemplate="%{y}<br>木+金: %{x:.1f}%<extra></extra>",
+                            hovertemplate="%{y}<br>金+土: %{x:.1f}%<extra></extra>",
                         ))
                         _fig_risk.add_vline(
                             x=_peer_med, line_width=2, line_dash="dash",
@@ -9369,13 +9371,13 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                         )
                         _fig_risk.update_layout(
                             height=max(300, 30 * len(_doctors)),
-                            xaxis_title="木+金曜退院率 (%)",
+                            xaxis_title="金+土曜退院率 (%)",
                             margin=dict(l=60, r=80, t=30, b=40),
                             showlegend=False,
                         )
                         st.plotly_chart(_fig_risk, use_container_width=True)
                         st.caption(
-                            "🔴 赤＝他医師の中央値より +5pt 以上（リスク寄与大）／"
+                            "🔴 赤＝他医師の中央値より +5pt 以上（リスク寄与大、振替推奨）／"
                             "🟠 オレンジ＝他医師の中央値より 0〜5pt 上／"
                             "🟢 緑＝他医師の中央値より下（リスク抑制）／"
                             "⚪ グレー＝件数 < 20（参考値）"
@@ -9488,8 +9490,8 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                             delta=f"{_wd.get('friday_pct', 0) - 14.3:+.1f}pt（均等比）",
                         )
                         _cols_prof[2].metric(
-                            "木+金退院率",
-                            f"{_wr.get('thu_fri_pct', 0):.1f}%",
+                            "金+土退院率",
+                            f"{_wr.get('fri_sat_pct', 0):.1f}%",
                             delta=f"{_wr.get('delta_vs_peer', 0):+.1f}pt（他医師との差）",
                             delta_color="inverse",  # 高いほど悪い
                         )

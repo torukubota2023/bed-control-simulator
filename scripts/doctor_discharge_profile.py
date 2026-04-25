@@ -12,7 +12,7 @@
 **4 指標:**
 1. 退院曜日の偏り（Gini 係数 + 各曜日の割合）
 2. 自分主導の短期退院傾向（予定入院×手術なし の median LOS）
-3. 稼働率下落への影響（金曜＋木曜退院割合 = 週末空床リスク寄与）
+3. 稼働率下落への影響（金曜＋土曜退院割合 = 週末空床リスク寄与）
 4. 個別サマリー（1-3 を 1 医師分まとめる）
 
 **Data source 非依存:**
@@ -88,7 +88,7 @@ def compute_weekday_profile(
                        gini: 偏り指数,
                        friday_pct: 金曜率,
                        monday_pct: 月曜率,
-                       weekend_risk_pct: 金+木曜率 (週末空床リスク),
+                       weekend_risk_pct: 金+土曜率 (週末空床リスク),
                        flag: 'friday_heavy' | 'monday_heavy' | 'uniform' | 'normal',
                        is_small_sample: bool}}``
     """
@@ -113,8 +113,8 @@ def compute_weekday_profile(
         gini = _gini_coefficient([float(c) for c in counts])
         fri_pct = pcts[4]
         mon_pct = pcts[0]
-        thu_pct = pcts[3]
-        weekend_risk = round(fri_pct + thu_pct, 1)
+        sat_pct = pcts[5]
+        weekend_risk = round(fri_pct + sat_pct, 1)
 
         if fri_pct >= FRIDAY_HEAVY_PCT:
             flag = "friday_heavy"
@@ -264,15 +264,19 @@ def compute_weekend_vacancy_risk(
     doctor_col: str = "医師",
     discharge_date_col: str = "discharge_date",
 ) -> Dict[str, Dict[str, Any]]:
-    """木金退院の割合（週末空床リスク寄与度）を医師別に算出.
+    """金土退院の割合（週末空床リスク寄与度）を医師別に算出.
 
-    **考え方:**
-    金曜または木曜退院は、土日入院が少ない運営下で直接的な週末空床に繋がる。
-    医師個別の"金+木"率を peer 平均と比較して、稼働率下落への影響傾向を可視化。
+    **考え方（2026-04-25 副院長指示で木金→金土に変更）:**
+    当院の過去1年データでは土曜入院 2.22 件/日（平日の 30%）、
+    日曜入院 0.27 件/日（ほぼゼロ）。金曜退院 → 土日 2 日間空床、
+    土曜退院 → 日曜 1 日間空床と直接的に週末空床を生む。
+    医師個別の"金+土"率を peer 平均と比較し、稼働率下落への影響傾向を可視化。
+    対策: 金土退院対象患者を **日曜（補充ほぼゼロで滞留しない）** または
+    **月曜以降（月曜入院 7.35 件/日で当日中に補充される）** に振り替える。
 
     Returns:
-        ``{医師コード: {friday_pct, thursday_pct, thu_fri_pct,
-                       peer_thu_fri_pct (全医師の同指標の中央値),
+        ``{医師コード: {friday_pct, saturday_pct, fri_sat_pct,
+                       peer_fri_sat_pct (全医師の同指標の中央値),
                        delta_vs_peer: 正=peer より高い(リスク寄与大),
                        total_discharges, is_small_sample}}``
     """
@@ -280,7 +284,7 @@ def compute_weekend_vacancy_risk(
     if not profile:
         return {}
 
-    # 全医師の thu_fri_pct 中央値を peer として使う
+    # 全医師の fri_sat_pct 中央値を peer として使う
     # （該当サンプル数 >= SMALL_SAMPLE_THRESHOLD の医師だけで計算）
     qualifying = [
         v["weekend_risk_pct"] for v in profile.values()
@@ -294,9 +298,9 @@ def compute_weekend_vacancy_risk(
     for doctor, pf in profile.items():
         result[doctor] = {
             "friday_pct": pf["friday_pct"],
-            "thursday_pct": pf["pcts"][3],
-            "thu_fri_pct": pf["weekend_risk_pct"],
-            "peer_thu_fri_pct": round(peer_median, 1),
+            "saturday_pct": pf["pcts"][5],
+            "fri_sat_pct": pf["weekend_risk_pct"],
+            "peer_fri_sat_pct": round(peer_median, 1),
             "delta_vs_peer": round(pf["weekend_risk_pct"] - peer_median, 1),
             "total_discharges": pf["total"],
             "is_small_sample": pf["is_small_sample"],
@@ -349,7 +353,7 @@ def build_doctor_summary(
         elif weekday["flag"] == "friday_heavy":
             insights.append(
                 f"⚠️ 金曜退院が {weekday['friday_pct']:.0f}% と集中。"
-                f"週末空床リスク寄与度が高め"
+                f"対象患者の **月曜以降** への退院振替を検討（土日空床抑制）"
             )
         elif weekday["flag"] == "monday_heavy":
             insights.append(
@@ -375,13 +379,14 @@ def build_doctor_summary(
         delta_w = weekend_risk.get("delta_vs_peer", 0.0)
         if delta_w <= -5.0:
             insights.append(
-                f"✅ 木+金退院率 {weekend_risk['thu_fri_pct']:.0f}% "
-                f"(他医師 {weekend_risk['peer_thu_fri_pct']:.0f}%) — 週末空床リスクを抑えている"
+                f"✅ 金+土退院率 {weekend_risk['fri_sat_pct']:.0f}% "
+                f"(他医師 {weekend_risk['peer_fri_sat_pct']:.0f}%) — 週末空床リスクを抑えている"
             )
         elif delta_w >= 5.0:
             insights.append(
-                f"⚠️ 木+金退院率 {weekend_risk['thu_fri_pct']:.0f}% "
-                f"(他医師 {weekend_risk['peer_thu_fri_pct']:.0f}%) — 週末稼働率低下への寄与"
+                f"⚠️ 金+土退院率 {weekend_risk['fri_sat_pct']:.0f}% "
+                f"(他医師 {weekend_risk['peer_fri_sat_pct']:.0f}%) — "
+                f"対象患者の **日曜または月曜以降** への退院振替を検討"
             )
 
     return {
