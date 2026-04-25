@@ -1230,6 +1230,19 @@ _selected_section = st.sidebar.radio("メニュー", _section_names, label_visib
 st.sidebar.markdown("---")
 
 # ---------------------------------------------------------------------------
+# 看護必要度ミニレクチャー — サイドバー常時アクセス（全セクションから参照可）
+# 副院長要望 2026-04-25: トップページ左サイドにすぐ参照できる位置に配置
+# ---------------------------------------------------------------------------
+if _NN_LECTURE_MD:
+    with st.sidebar.expander("📚 看護必要度ミニレクチャー", expanded=False):
+        st.caption(
+            "医師の 5 つの行動変容を中心とした実践型レクチャー。"
+            "詳細データは「📈 過去1年分析 > 📊 看護必要度トレンド」参照。"
+        )
+        st.markdown(_NN_LECTURE_MD)
+    st.sidebar.markdown("---")
+
+# ---------------------------------------------------------------------------
 # 経過措置終了カウントダウン（地域包括医療病棟・救急搬送15%）
 # 令和6改定の経過措置は 2026-05-31 まで。6/1 以降は本則完全適用。
 # 本シミュレーターの判定ロジック自体は既に本則ベースだが、運用現場の
@@ -10335,22 +10348,38 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                 f"2026-06-01 から新基準（Ⅰ {THRESHOLD_I_NEW:.0%}, Ⅱ {THRESHOLD_II_NEW:.0%}）が適用されます。"
             )
 
-            # ===== 📚 看護必要度ミニレクチャー（医師・看護師の協力で達成する） =====
-            # 当院特有の戦略・役割分担・実践 TIPS を網羅した教育コンテンツ。
-            # データを見る前にまず制度を理解する人向けに上部配置（デフォルト閉じる）。
+            # ===== 📘 公式 看護必要度評価項目表（令和8改定）— 常時表示 =====
+            # 副院長要望 2026-04-25: 折りたたまず最初から見える状態に
+            # 判断に迷ったときの正典を即座に参照可能にする
+            import os as _nn_os
+            _nn_project_root = _nn_os.path.normpath(
+                _nn_os.path.join(_nn_os.path.dirname(_nn_os.path.abspath(__file__)), "..")
+            )
+            _nn_eval_img_path = _nn_os.path.join(
+                _nn_project_root, "docs", "admin", "references",
+                "nursing_necessity_evaluation_2026.png",
+            )
+            if _nn_os.path.exists(_nn_eval_img_path):
+                st.markdown("##### 📘 公式 看護必要度評価項目表（A・B・C項目、令和8改定）")
+                st.caption(
+                    "出典: 厚労省 令和8年度診療報酬改定 説明資料"
+                    "（IMI Co.,Ltd. 公開資料を参考に副院長判断で社内利用）"
+                )
+                st.image(_nn_eval_img_path, use_container_width=True)
+                st.markdown("---")
+
+            # ===== 📚 看護必要度ミニレクチャー（医師の行動変容） =====
+            # 当院特有の戦略・5 つの行動変容・C 項目活用を網羅した教育コンテンツ。
+            # **同じ内容はサイドバーからも常時アクセス可能**（全セクションから参照）。
             if _NN_LECTURE_MD:
                 with st.expander(
-                    "📚 看護必要度ミニレクチャー — 医師・看護師の協力で達成する（クリックで展開）",
+                    "📚 看護必要度ミニレクチャー — 医師の行動変容で達成する（サイドバーからも参照可）",
                     expanded=False,
                 ):
                     st.markdown(_NN_LECTURE_MD)
                     # レクチャー直下に参考エビデンス・出典をオフライン対応で描画
-                    # 公式 PDF（厚労省・日循）+ 要約 markdown + 評価項目表画像 を統一管理
+                    # 公式 PDF（厚労省・日循）+ 要約 markdown を統一管理
                     if _nn_render_references is not None:
-                        import os as _nn_os
-                        _nn_project_root = _nn_os.path.normpath(
-                            _nn_os.path.join(_nn_os.path.dirname(_nn_os.path.abspath(__file__)), "..")
-                        )
                         st.markdown("---")
                         _nn_render_references(st, _nn_project_root)
 
