@@ -212,6 +212,7 @@ try:
         TARGET_NURSING_NECESSITY_II_PCT as _nn_target_ii,
         build_nursing_necessity_actions as _nn_build_actions,
         build_patient_day_conversion_rows as _nn_conversion_rows,
+        build_physician_case_matching_rows as _nn_physician_case_rows,
         calculate_6f_action_mix as _nn_calc_6f_action_mix,
         estimate_intervention_gain_pct as _nn_estimate_gain,
         simulate_strategy_package as _nn_simulate_strategy_package,
@@ -10567,6 +10568,15 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                                 "- 分母は過去実績どおり受け入れ、月75〜80件前後の入院と高稼働を維持する前提です。\n"
                                 "- 優先するのは、酸素・注射・処置・C項目など、医学的に適応のある該当患者日を医師と看護師で拾い切ることです。"
                             )
+
+                        st.markdown("**医師向け: 今の患者をこの型に当てはめる**")
+                        _nn_physician_display = pd.DataFrame(_nn_physician_case_rows()).rename(columns={
+                            "case_pattern": "患者の見え方",
+                            "fit_type": "当てはめる型",
+                            "doctor_check": "医師が見るもの",
+                            "nurse_sync": "看護師と揃える記録",
+                        })
+                        st.table(_nn_physician_display)
 
                         st.markdown("**1件あたり何患者日になるか（単独で埋めるなら）**")
                         _nn_safety_conv = {

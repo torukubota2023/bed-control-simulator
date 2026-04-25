@@ -14,6 +14,7 @@ from nursing_necessity_strategy import (  # noqa: E402
     build_6f_strategy_cards,
     build_nursing_necessity_actions,
     build_patient_day_conversion_rows,
+    build_physician_case_matching_rows,
     calculate_6f_action_mix,
     calculate_emergency_response_coefficient,
     estimate_intervention_gain_pct,
@@ -237,13 +238,31 @@ def test_patient_day_conversion_rows_translate_shortage_to_cases():
     assert by_action["内科A項目 5日維持"]["required_cases_per_month"] == 20
 
 
+def test_physician_case_matching_rows_are_clinical_and_actionable():
+    rows = build_physician_case_matching_rows()
+    combined = " ".join(
+        row["case_pattern"] + row["fit_type"] + row["doctor_check"] + row["nurse_sync"]
+        for row in rows
+    )
+
+    assert len(rows) >= 8
+    assert "肺炎" in combined
+    assert "心不全" in combined
+    assert "CV" in combined
+    assert "PEG" in combined
+    assert "薬剤名" in combined
+    assert "同日" in combined
+
+
 def test_default_6f_action_mix_reaches_recent_safety_line():
     mix = calculate_6f_action_mix()
     by_action = {row["action"]: row for row in mix["rows"]}
 
     assert by_action["記録回収"]["patient_days"] == 11
     assert by_action["内科A項目"]["patient_days"] == 40
+    assert "肺炎" in by_action["内科A項目"]["note"]
     assert by_action["ペイン科A6"]["patient_days"] == 9
+    assert "薬剤名" in by_action["ペイン科A6"]["note"]
     assert by_action["C21系"]["patient_days"] == 16
     assert by_action["C22系"]["patient_days"] == 4
     assert by_action["C23系"]["patient_days"] == 20

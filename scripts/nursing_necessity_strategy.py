@@ -83,27 +83,78 @@ PATIENT_DAY_CONVERSION_RULES: List[Dict[str, Any]] = [
     {
         "action": "記録回収",
         "patient_days_per_case": 1,
-        "example": "酸素・注射・処置の実施済み記録を同日確定する",
+        "example": "酸素、注射薬、輸血、処置の開始・終了と必要性を同日確定",
     },
     {
         "action": "ペイン科A6 3日維持",
         "patient_days_per_case": 3,
-        "example": "適応が明確な疼痛管理を3日分正しく評価する",
+        "example": "リドカイン等の持続点滴・疼痛処置は薬剤名/目的/投与日を確認",
     },
     {
         "action": "C21系 1件",
         "patient_days_per_case": C_ITEM_DAYS["C21"],
-        "example": "CV、腰椎穿刺、ERCP、内視鏡止血など",
+        "example": "CV、腰椎穿刺、ERCP、内視鏡止血などは実施日から4日を確認",
     },
     {
         "action": "C23系 1件",
         "patient_days_per_case": C_ITEM_DAYS["C23"],
-        "example": "PEG、PTCD、CART、消化管ステントなど",
+        "example": "PEG、PTCD、CART、消化管ステントなどは実施日から5日を確認",
     },
     {
         "action": "内科A項目 5日維持",
         "patient_days_per_case": 5,
-        "example": "酸素+注射3種、輸血、シリンジポンプ等を5日分評価する",
+        "example": "肺炎/心不全/COPD増悪で酸素+注射3種、輸血、シリンジポンプを確認",
+    },
+]
+
+PHYSICIAN_CASE_MATCHING_ROWS: List[Dict[str, str]] = [
+    {
+        "case_pattern": "肺炎・誤嚥性肺炎",
+        "fit_type": "酸素 + 注射薬3種類、または輸血/シリンジポンプ",
+        "doctor_check": "酸素の開始/終了、抗菌薬を含む注射薬数、輸血、シリンジポンプ",
+        "nurse_sync": "酸素流量、注射薬の種類、開始終了時刻を同日記録",
+    },
+    {
+        "case_pattern": "心不全・COPD増悪・呼吸不全",
+        "fit_type": "酸素/呼吸ケア + 注射治療の組み合わせ",
+        "doctor_check": "酸素、利尿薬/ステロイド等の注射、NPPV、輸血の有無",
+        "nurse_sync": "酸素・NPPVの実施時間、注射内容、症状変化を同日確認",
+    },
+    {
+        "case_pattern": "敗血症・ショック・急性増悪",
+        "fit_type": "昇圧薬、シリンジポンプ、輸血などのA項目候補",
+        "doctor_check": "昇圧薬、持続注射、輸血/血液製剤、集中管理の必要性",
+        "nurse_sync": "薬剤名、投与経路、開始終了時刻、観察強化の記録",
+    },
+    {
+        "case_pattern": "消化管出血・貧血・血液製剤使用",
+        "fit_type": "輸血A項目 + 内視鏡止血ならC21候補",
+        "doctor_check": "輸血日、内視鏡止血、処置日、再出血リスク",
+        "nurse_sync": "輸血実施、処置後観察、バイタル変化を同日記録",
+    },
+    {
+        "case_pattern": "CV・腰椎穿刺・ERCP・内視鏡止血",
+        "fit_type": "C21候補: 1件で4患者日",
+        "doctor_check": "処置名、実施日、医学的必要性、合併症観察",
+        "nurse_sync": "処置日から4日分の観察・管理が拾えているか",
+    },
+    {
+        "case_pattern": "気管支鏡・TEE・EBUS",
+        "fit_type": "C22候補: 1件で2患者日",
+        "doctor_check": "検査名、実施日、検査目的、検査後観察",
+        "nurse_sync": "実施日から2日分の観察・管理が拾えているか",
+    },
+    {
+        "case_pattern": "PEG・PTCD・CART・消化管ステント",
+        "fit_type": "C23候補: 1件で5患者日",
+        "doctor_check": "処置名、実施日、処置目的、ドレーン/穿刺部管理",
+        "nurse_sync": "実施日から5日分の観察・管理が拾えているか",
+    },
+    {
+        "case_pattern": "ペイン科の持続点滴・疼痛処置",
+        "fit_type": "A6候補: 薬剤名/手技名で評価表と照合",
+        "doctor_check": "薬剤名、目的、投与日、手技名、疼痛管理の必要性",
+        "nurse_sync": "投与日、投与経路、処置実施、疼痛スケールを同日確認",
     },
 ]
 
@@ -619,6 +670,11 @@ def build_patient_day_conversion_rows(required_days_per_month: float) -> List[Di
     return rows
 
 
+def build_physician_case_matching_rows() -> List[Dict[str, str]]:
+    """医師が患者を看護必要度の候補に当てはめるための早見表."""
+    return [dict(row) for row in PHYSICIAN_CASE_MATCHING_ROWS]
+
+
 def calculate_6f_action_mix(
     record_recovery_days: int = DEFAULT_6F_ACTION_MIX["record_recovery_days"],
     internal_cases: int = DEFAULT_6F_ACTION_MIX["internal_cases"],
@@ -636,42 +692,42 @@ def calculate_6f_action_mix(
             "monthly_cases": _as_int(record_recovery_days),
             "days_per_case": 1,
             "patient_days": _as_int(record_recovery_days),
-            "note": "実施済みの酸素・注射・処置を同日確定",
+            "note": "医師: 必要性と開始/終了。看護: 実施記録を同日確定",
         },
         {
             "action": "内科A項目",
             "monthly_cases": _as_int(internal_cases),
             "days_per_case": _as_int(internal_days_per_case, 5),
             "patient_days": _as_int(internal_cases) * _as_int(internal_days_per_case, 5),
-            "note": "酸素+注射3種、輸血、シリンジポンプなど",
+            "note": "肺炎/心不全/COPD増悪: 酸素+注射3種、輸血、シリンジポンプ",
         },
         {
             "action": "ペイン科A6",
             "monthly_cases": _as_int(pain_cases),
             "days_per_case": _as_int(pain_days_per_case, 3),
             "patient_days": _as_int(pain_cases) * _as_int(pain_days_per_case, 3),
-            "note": "適応が明確な疼痛管理を正しく評価",
+            "note": "薬剤名、投与目的、投与日、手技名を評価表と照合",
         },
         {
             "action": "C21系",
             "monthly_cases": _as_int(c21_cases),
             "days_per_case": C_ITEM_DAYS["C21"],
             "patient_days": _as_int(c21_cases) * C_ITEM_DAYS["C21"],
-            "note": "CV、腰椎穿刺、ERCP、内視鏡止血など",
+            "note": "CV、腰椎穿刺、ERCP、内視鏡止血: 実施日から4日",
         },
         {
             "action": "C22系",
             "monthly_cases": _as_int(c22_cases),
             "days_per_case": C_ITEM_DAYS["C22"],
             "patient_days": _as_int(c22_cases) * C_ITEM_DAYS["C22"],
-            "note": "気管支鏡、TEE、EBUSなど",
+            "note": "気管支鏡、TEE、EBUS: 実施日から2日",
         },
         {
             "action": "C23系",
             "monthly_cases": _as_int(c23_cases),
             "days_per_case": C_ITEM_DAYS["C23"],
             "patient_days": _as_int(c23_cases) * C_ITEM_DAYS["C23"],
-            "note": "PEG、PTCD、CART、消化管ステントなど",
+            "note": "PEG、PTCD、CART、消化管ステント: 実施日から5日",
         },
     ]
     total = sum(row["patient_days"] for row in rows)
