@@ -54,8 +54,8 @@ test.afterAll(() => {
 test.describe('監査1: 全セクション×全病棟の巡回', () => {
   test('全セクションを開いて Python エラー・Tracebackを検出', async ({ page }) => {
     test.setTimeout(300000); // 5分タイムアウト（巡回は時間がかかる）
-    // Phase 4（2026-04-18・最終）: 「📋 データ管理」「📨 HOPE連携」を「⚙️ データ・設定」へ統合
-    const sections = ['今日の運営', 'What-if・戦略', '制度管理', '退院調整', 'データ・設定'];
+    // Phase 5（2026-04-25）: 「📊 過去1年分析」を新セクション「📈 過去1年分析」に独立化（5→6 セクション）
+    const sections = ['今日の運営', 'What-if・戦略', '制度管理', '退院調整', '過去1年分析', 'データ・設定'];
     const wards: Array<'全体' | '5F' | '6F'> = ['全体', '5F', '6F'];
 
     await page.goto('/');
