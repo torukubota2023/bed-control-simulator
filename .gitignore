@@ -72,3 +72,9 @@ data/forecast_snapshots/
 playwright/screenshots/*.png
 playwright-report/
 test-results/
+
+# 週末・祝日 KPI スライド作業ディレクトリの npm 関連
+# （成果物の .pptx/.docx と build_*.js はリポジトリに残しているため、npm 環境は再現不要）
+docs/admin/slides/weekend_holiday_kpi/package.json
+docs/admin/slides/weekend_holiday_kpi/package-lock.json
+docs/admin/slides/weekend_holiday_kpi/node_modules/

@@ -238,8 +238,8 @@ def build_weekday_insights(df: pd.DataFrame) -> List[Dict]:
                 "— 退院が週末前に集中する傾向"
             )
             action_hint = (
-                "金曜退院のうち家族調整が可能なケースを火〜木に分散すると、"
-                "土日の稼働率低下を抑えられる可能性"
+                "金+土退院のうち家族調整が可能なケースを **月曜以降に振替** すると、"
+                "土日の稼働率低下を抑えられる可能性（日曜・祝日も 1 病棟 2 人/日 まで補助枠として活用可）"
             )
         elif (prof["friday_pct"] - overall_friday) >= FRIDAY_DEVIATION_WARNING_PP:
             observation = (

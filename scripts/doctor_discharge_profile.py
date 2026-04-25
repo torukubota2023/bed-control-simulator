@@ -380,13 +380,14 @@ def build_doctor_summary(
         if delta_w <= -5.0:
             insights.append(
                 f"✅ 金+土退院率 {weekend_risk['fri_sat_pct']:.0f}% "
-                f"(他医師 {weekend_risk['peer_fri_sat_pct']:.0f}%) — 週末空床リスクを抑えている"
+                f"(全医師中央値 {weekend_risk['peer_fri_sat_pct']:.0f}%) — 週末空床リスクを抑えている"
             )
         elif delta_w >= 5.0:
             insights.append(
                 f"⚠️ 金+土退院率 {weekend_risk['fri_sat_pct']:.0f}% "
-                f"(他医師 {weekend_risk['peer_fri_sat_pct']:.0f}%) — "
-                f"対象患者の **日曜または月曜以降** への退院振替を検討"
+                f"(全医師中央値 {weekend_risk['peer_fri_sat_pct']:.0f}%) — "
+                f"対象患者の **月曜以降** への退院振替を検討"
+                f"（日曜・祝日は 1 病棟 2 人/日 まで補助枠として活用可）"
             )
 
     return {
