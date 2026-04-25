@@ -1,4 +1,4 @@
-# 病棟稼働率シミュレーター v3.5j
+# 病棟稼働率シミュレーター v3.5k
 
 **空床時間マネジメント** で病床経営を改善する Streamlit アプリ
 
@@ -46,6 +46,7 @@
 | **需要波** | 前2週vs直近1週の入院トレンド比較、閑散/繁忙の自動判定 |
 | **C群コントロール** | 制度余力の中でC群による稼働率下支え効果を可視化 |
 | **救急搬送後患者割合** | 15%基準の rolling 3ヶ月管理、病棟別判定、未達アラート |
+| **2026看護必要度ギャップ管理** | 割合指数（該当患者割合+救急患者応需係数）を病棟別に試算し、A/C項目で必要な月間該当日数を提示 |
 | **サイドバーナビゲーション** | 今日の運営 / What-if・戦略 / 制度管理 / 退院調整 / データ・設定 の5セクションに整理 |
 | **パスワード認証** | アプリ起動時にパスワード認証（session_state管理） |
 | **改善仮説の保存・比較** | What-Ifシナリオの名前付き保存、複数比較、ルールベースAI分析 |
@@ -111,6 +112,7 @@ scripts/
   demand_wave.py                 # 需要波モデル
   c_group_control.py             # C群コントロール
   emergency_ratio.py             # 救急搬送後患者割合
+  nursing_necessity_strategy.py  # 2026看護必要度ギャップ管理（pure function）
   scenario_manager.py            # シナリオ保存・比較・AI分析
   action_recommendation.py       # 結論カード・優先アクション推薦（pure function）
   c_group_candidates.py          # C群候補一覧・トレードオフ評価（pure function）
@@ -126,6 +128,7 @@ tests/
   test_demand_wave.py            # 需要波のテスト（11件）
   test_c_group_control.py        # C群コントロールのテスト（10件）
   test_emergency_ratio.py        # 救急搬送後患者割合のテスト（21件）
+  test_nursing_necessity_strategy.py  # 2026看護必要度ギャップ管理のテスト
   test_hope_message.py           # HOPEメッセージのテスト（8件）
   test_scenario_manager.py       # シナリオマネージャーのテスト（10件）
   test_action_recommendation.py  # 結論カード・優先アクションのテスト（14件）

@@ -198,6 +198,28 @@ except Exception as _di_err:
     _DOCTOR_INSIGHT_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# 2026看護必要度 ギャップ管理（Codex 提案 2026-04-25）
+# 注: PR #22 の loader/thresholds/lecture モジュールとは別系統。
+# フラグ名は `_NURSING_NECESSITY_AVAILABLE` (loader/thresholds/lecture 用) と
+# 衝突しないよう `_NURSING_NECESSITY_STRATEGY_AVAILABLE` を使用する。
+# ---------------------------------------------------------------------------
+try:
+    from nursing_necessity_strategy import (
+        DEFAULT_BASE_NEED_PCT_BY_WARD as _nn_default_base_need,
+        DEFAULT_WARD_BEDS as _nn_default_ward_beds,
+        TARGET_NURSING_NECESSITY_I_PCT as _nn_target_i,
+        TARGET_NURSING_NECESSITY_II_PCT as _nn_target_ii,
+        build_nursing_necessity_actions as _nn_build_actions,
+        estimate_intervention_gain_pct as _nn_estimate_gain,
+        summarize_nursing_necessity as _nn_summarize,
+    )
+    _NURSING_NECESSITY_STRATEGY_AVAILABLE = True
+except Exception as _nn_strategy_err:
+    import traceback as _nn_strategy_tb
+    _NURSING_NECESSITY_STRATEGY_ERROR = f"{_nn_strategy_err}\n{_nn_strategy_tb.format_exc()}"
+    _NURSING_NECESSITY_STRATEGY_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
 # 空床マネジメント指標モジュール
 # ---------------------------------------------------------------------------
 try:
@@ -9371,6 +9393,189 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                 _weekend_risk = compute_weekend_vacancy_risk(_pa_df_prof)
 
                 if _view_mode == "🌐 全体概観":
+                    # --- 2026看護必要度 ギャップ管理（係数込み）— Codex 提案 (2026-04-25) ---
+                    # 注: フラグ名は loader/thresholds 用 _NURSING_NECESSITY_AVAILABLE と
+                    # 衝突を避けるため _NURSING_NECESSITY_STRATEGY_AVAILABLE を使用。
+                    if _NURSING_NECESSITY_STRATEGY_AVAILABLE:
+                        st.markdown("#### 🧭 2026看護必要度 ギャップ管理（係数込み）")
+                        st.caption(
+                            "割合指数 = 該当患者割合 + 救急患者応需係数。"
+                            "過去1年の救急搬送件数から係数を推計し、A/C項目で埋める不足を病棟別に表示します。"
+                        )
+
+                        _nn_ctrl_cols = st.columns([1, 1, 1, 1])
+                        _nn_target_mode = _nn_ctrl_cols[0].radio(
+                            "基準",
+                            ["必要度I 19%", "必要度II 18%"],
+                            horizontal=True,
+                            key="nursing_necessity_target_mode",
+                        )
+                        _nn_target_pct = (
+                            _nn_target_ii if _nn_target_mode.startswith("必要度II") else _nn_target_i
+                        )
+                        _nn_base_5f = _nn_ctrl_cols[1].number_input(
+                            "5F 現在割合(%)",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(_nn_default_base_need.get("5F", 16.0)),
+                            step=0.1,
+                            key="nursing_necessity_base_5f",
+                        )
+                        _nn_base_6f = _nn_ctrl_cols[2].number_input(
+                            "6F 現在割合(%)",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(_nn_default_base_need.get("6F", 11.0)),
+                            step=0.1,
+                            key="nursing_necessity_base_6f",
+                        )
+                        _nn_occupancy = _nn_ctrl_cols[3].number_input(
+                            "分母稼働率",
+                            min_value=0.50,
+                            max_value=1.00,
+                            value=0.90,
+                            step=0.01,
+                            format="%.2f",
+                            key="nursing_necessity_occupancy",
+                        )
+
+                        _nn_summary = _nn_summarize(
+                            _pa_df_prof,
+                            base_need_pct_by_ward={"5F": _nn_base_5f, "6F": _nn_base_6f},
+                            target_pct=_nn_target_pct,
+                            occupancy_target=_nn_occupancy,
+                        )
+
+                        _nn_metric_cols = st.columns(len(_nn_summary))
+                        for _idx, _row in enumerate(_nn_summary):
+                            _delta_vs_target = _row["index_pct"] - _row["target_pct"]
+                            _nn_metric_cols[_idx].metric(
+                                f"{_row['ward']} 割合指数",
+                                f"{_row['index_pct']:.1f}%",
+                                delta=f"{_delta_vs_target:+.1f}pt vs基準",
+                            )
+
+                        _nn_display = pd.DataFrame([
+                            {
+                                "病棟": row["ward"],
+                                "現在割合": f"{row['base_need_pct']:.1f}%",
+                                "救急搬送": f"{row['annual_emergency_count']}件/年",
+                                "救急係数": f"+{row['emergency_coeff_pct']:.2f}pt",
+                                "割合指数": f"{row['index_pct']:.2f}%",
+                                "不足": "達成" if row["gap_pct"] <= 0 else f"{row['gap_pct']:.2f}pt",
+                                "月あたり必要AC日": f"{row['required_ac_days_per_month']:.1f}日",
+                                "判定": row["status"],
+                            }
+                            for row in _nn_summary
+                        ])
+                        st.dataframe(_nn_display, use_container_width=True, hide_index=True)
+
+                        for _action in _nn_build_actions(_nn_summary):
+                            _severity = {
+                                "maintain": "success",
+                                "watch": "info",
+                                "focus": "warning",
+                                "urgent": "error",
+                            }.get(_action["priority"], "neutral")
+                            _action_lines = "\n".join(
+                                f"- {hint}" for hint in _action["next_actions"]
+                            )
+                            _bc_alert(
+                                f"**{_action['ward']} { _action['status'] }**: "
+                                f"{_action['message']} "
+                                f"不足 {_action['gap_pct']:.1f}pt ≒ "
+                                f"月 {_action['required_ac_days_per_month']:.0f} 該当日。",
+                                severity=_severity,
+                            )
+                            with st.expander(f"{_action['ward']} の次アクション", expanded=False):
+                                st.markdown(_action_lines)
+
+                        with st.expander("6F集中パッケージ試算（A/C項目で不足を埋める）", expanded=True):
+                            _pkg_cols = st.columns([1, 1, 1, 1, 1])
+                            _pkg_ward = _pkg_cols[0].selectbox(
+                                "病棟",
+                                ["6F", "5F"],
+                                index=0,
+                                key="nursing_necessity_package_ward",
+                            )
+                            _pkg_c21 = _pkg_cols[1].number_input(
+                                "C21件/月",
+                                min_value=0,
+                                max_value=50,
+                                value=8,
+                                step=1,
+                                key="nursing_necessity_c21_cases",
+                            )
+                            _pkg_c22 = _pkg_cols[2].number_input(
+                                "C22件/月",
+                                min_value=0,
+                                max_value=50,
+                                value=5,
+                                step=1,
+                                key="nursing_necessity_c22_cases",
+                            )
+                            _pkg_c23 = _pkg_cols[3].number_input(
+                                "C23件/月",
+                                min_value=0,
+                                max_value=50,
+                                value=2,
+                                step=1,
+                                key="nursing_necessity_c23_cases",
+                            )
+                            _pkg_a6_days = _pkg_cols[4].number_input(
+                                "A6該当日/月",
+                                min_value=0,
+                                max_value=200,
+                                value=45,
+                                step=1,
+                                key="nursing_necessity_a6_days",
+                            )
+
+                            _pkg_beds = int(_nn_default_ward_beds.get(_pkg_ward, 47))
+                            _pkg_gain = _nn_estimate_gain(
+                                c21_cases=int(_pkg_c21),
+                                c22_cases=int(_pkg_c22),
+                                c23_cases=int(_pkg_c23),
+                                a6_days=int(_pkg_a6_days),
+                                beds=_pkg_beds,
+                                occupancy_target=float(_nn_occupancy),
+                            )
+                            _pkg_summary_by_ward = {row["ward"]: row for row in _nn_summary}
+                            _pkg_base_row = _pkg_summary_by_ward.get(_pkg_ward, {})
+                            _pkg_after_index = (
+                                float(_pkg_base_row.get("index_pct", 0.0))
+                                + float(_pkg_gain["total_gain_pct"])
+                            )
+                            _pkg_gap_after = max(0.0, float(_nn_target_pct) - _pkg_after_index)
+                            _pkg_metrics = st.columns(4)
+                            _pkg_metrics[0].metric(
+                                "押し上げ合計",
+                                f"+{_pkg_gain['total_gain_pct']:.1f}pt",
+                                help=f"月 {_pkg_gain['total_days']} 該当日 / 分母 {_pkg_gain['denominator_days']:.0f}日",
+                            )
+                            _pkg_metrics[1].metric(
+                                "実行後指数",
+                                f"{_pkg_after_index:.1f}%",
+                                delta=f"{_pkg_after_index - _nn_target_pct:+.1f}pt vs基準",
+                            )
+                            _pkg_metrics[2].metric(
+                                "C項目該当日",
+                                f"{_pkg_gain['c21_days'] + _pkg_gain['c22_days'] + _pkg_gain['c23_days']}日/月",
+                            )
+                            _pkg_metrics[3].metric(
+                                "残不足",
+                                "達成" if _pkg_gap_after <= 0 else f"{_pkg_gap_after:.1f}pt",
+                            )
+                            st.caption(
+                                "医学的に必要な処置・ケアの記録漏れを減らすための試算です。"
+                                "不必要な処置を増やす目的ではありません。"
+                            )
+                    elif "_NURSING_NECESSITY_STRATEGY_ERROR" in dir():
+                        st.caption(
+                            "（看護必要度ギャップ管理モジュールの読み込みに失敗しました: "
+                            f"{_NURSING_NECESSITY_STRATEGY_ERROR[:200]}）"
+                        )
+
                     # --- 週末空床リスク寄与度（金+土退院率）ランキング ---
                     st.markdown("#### 🔴 週末空床リスク寄与度（金+土退院率）")
                     st.caption(
