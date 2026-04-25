@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Mapping, Optional
 
 import pandas as pd
@@ -66,6 +67,45 @@ DEFAULT_6F_STRATEGY_PACKAGE: Dict[str, int] = {
     "pain_a6_days": 6,
     "c_item_days": 12,
 }
+
+DEFAULT_6F_ACTION_MIX: Dict[str, int] = {
+    "record_recovery_days": 11,
+    "internal_cases": 8,
+    "internal_days_per_case": 5,
+    "pain_cases": 3,
+    "pain_days_per_case": 3,
+    "c21_cases": 4,
+    "c22_cases": 2,
+    "c23_cases": 4,
+}
+
+PATIENT_DAY_CONVERSION_RULES: List[Dict[str, Any]] = [
+    {
+        "action": "記録回収",
+        "patient_days_per_case": 1,
+        "example": "酸素・注射・処置の実施済み記録を同日確定する",
+    },
+    {
+        "action": "ペイン科A6 3日維持",
+        "patient_days_per_case": 3,
+        "example": "適応が明確な疼痛管理を3日分正しく評価する",
+    },
+    {
+        "action": "C21系 1件",
+        "patient_days_per_case": C_ITEM_DAYS["C21"],
+        "example": "CV、腰椎穿刺、ERCP、内視鏡止血など",
+    },
+    {
+        "action": "C23系 1件",
+        "patient_days_per_case": C_ITEM_DAYS["C23"],
+        "example": "PEG、PTCD、CART、消化管ステントなど",
+    },
+    {
+        "action": "内科A項目 5日維持",
+        "patient_days_per_case": 5,
+        "example": "酸素+注射3種、輸血、シリンジポンプ等を5日分評価する",
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +545,85 @@ def simulate_strategy_package(
         "remaining_gap_pct": round(remaining_gap, 2),
         "surplus_pct": round(surplus, 2),
         "meets_target": after_index >= target,
+    }
+
+
+def build_patient_day_conversion_rows(required_days_per_month: float) -> List[Dict[str, Any]]:
+    """不足患者日を「何件/月が必要か」に換算する."""
+    required = max(_as_float(required_days_per_month), 0.0)
+    rows: List[Dict[str, Any]] = []
+    for rule in PATIENT_DAY_CONVERSION_RULES:
+        unit_days = max(_as_float(rule["patient_days_per_case"], 1.0), 1.0)
+        monthly_cases = math.ceil(required / unit_days) if required > 0 else 0
+        rows.append({
+            "action": rule["action"],
+            "patient_days_per_case": unit_days,
+            "required_cases_per_month": monthly_cases,
+            "required_cases_per_week": round(monthly_cases / 4.3, 1) if monthly_cases else 0.0,
+            "example": rule["example"],
+        })
+    return rows
+
+
+def calculate_6f_action_mix(
+    record_recovery_days: int = DEFAULT_6F_ACTION_MIX["record_recovery_days"],
+    internal_cases: int = DEFAULT_6F_ACTION_MIX["internal_cases"],
+    internal_days_per_case: int = DEFAULT_6F_ACTION_MIX["internal_days_per_case"],
+    pain_cases: int = DEFAULT_6F_ACTION_MIX["pain_cases"],
+    pain_days_per_case: int = DEFAULT_6F_ACTION_MIX["pain_days_per_case"],
+    c21_cases: int = DEFAULT_6F_ACTION_MIX["c21_cases"],
+    c22_cases: int = DEFAULT_6F_ACTION_MIX["c22_cases"],
+    c23_cases: int = DEFAULT_6F_ACTION_MIX["c23_cases"],
+) -> Dict[str, Any]:
+    """6F向け月間アクションミックスを患者日へ換算する."""
+    rows = [
+        {
+            "action": "記録回収",
+            "monthly_cases": _as_int(record_recovery_days),
+            "days_per_case": 1,
+            "patient_days": _as_int(record_recovery_days),
+            "note": "実施済みの酸素・注射・処置を同日確定",
+        },
+        {
+            "action": "内科A項目",
+            "monthly_cases": _as_int(internal_cases),
+            "days_per_case": _as_int(internal_days_per_case, 5),
+            "patient_days": _as_int(internal_cases) * _as_int(internal_days_per_case, 5),
+            "note": "酸素+注射3種、輸血、シリンジポンプなど",
+        },
+        {
+            "action": "ペイン科A6",
+            "monthly_cases": _as_int(pain_cases),
+            "days_per_case": _as_int(pain_days_per_case, 3),
+            "patient_days": _as_int(pain_cases) * _as_int(pain_days_per_case, 3),
+            "note": "適応が明確な疼痛管理を正しく評価",
+        },
+        {
+            "action": "C21系",
+            "monthly_cases": _as_int(c21_cases),
+            "days_per_case": C_ITEM_DAYS["C21"],
+            "patient_days": _as_int(c21_cases) * C_ITEM_DAYS["C21"],
+            "note": "CV、腰椎穿刺、ERCP、内視鏡止血など",
+        },
+        {
+            "action": "C22系",
+            "monthly_cases": _as_int(c22_cases),
+            "days_per_case": C_ITEM_DAYS["C22"],
+            "patient_days": _as_int(c22_cases) * C_ITEM_DAYS["C22"],
+            "note": "気管支鏡、TEE、EBUSなど",
+        },
+        {
+            "action": "C23系",
+            "monthly_cases": _as_int(c23_cases),
+            "days_per_case": C_ITEM_DAYS["C23"],
+            "patient_days": _as_int(c23_cases) * C_ITEM_DAYS["C23"],
+            "note": "PEG、PTCD、CART、消化管ステントなど",
+        },
+    ]
+    total = sum(row["patient_days"] for row in rows)
+    return {
+        "rows": rows,
+        "total_patient_days": total,
     }
 
 

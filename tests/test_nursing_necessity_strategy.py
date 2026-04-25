@@ -13,6 +13,8 @@ from nursing_necessity_strategy import (  # noqa: E402
     TARGET_NURSING_NECESSITY_I_PCT,
     build_6f_strategy_cards,
     build_nursing_necessity_actions,
+    build_patient_day_conversion_rows,
+    calculate_6f_action_mix,
     calculate_emergency_response_coefficient,
     estimate_intervention_gain_pct,
     simulate_strategy_package,
@@ -200,6 +202,30 @@ def test_strategy_package_simulation_shows_remaining_gap():
     assert result["after_index_pct"] == pytest.approx(17.94, abs=0.01)
     assert result["remaining_gap_pct"] == pytest.approx(0.06, abs=0.01)
     assert result["meets_target"] is False
+
+
+def test_patient_day_conversion_rows_translate_shortage_to_cases():
+    rows = build_patient_day_conversion_rows(99.4)
+    by_action = {row["action"]: row for row in rows}
+
+    assert by_action["記録回収"]["required_cases_per_month"] == 100
+    assert by_action["ペイン科A6 3日維持"]["required_cases_per_month"] == 34
+    assert by_action["C21系 1件"]["required_cases_per_month"] == 25
+    assert by_action["C23系 1件"]["required_cases_per_month"] == 20
+    assert by_action["内科A項目 5日維持"]["required_cases_per_month"] == 20
+
+
+def test_default_6f_action_mix_reaches_recent_safety_line():
+    mix = calculate_6f_action_mix()
+    by_action = {row["action"]: row for row in mix["rows"]}
+
+    assert by_action["記録回収"]["patient_days"] == 11
+    assert by_action["内科A項目"]["patient_days"] == 40
+    assert by_action["ペイン科A6"]["patient_days"] == 9
+    assert by_action["C21系"]["patient_days"] == 16
+    assert by_action["C22系"]["patient_days"] == 4
+    assert by_action["C23系"]["patient_days"] == 20
+    assert mix["total_patient_days"] == 100
 
 
 def test_6f_strategy_cards_include_ethics_behavior_and_ui_lenses():
