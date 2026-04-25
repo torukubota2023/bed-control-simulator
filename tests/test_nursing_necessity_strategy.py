@@ -19,6 +19,7 @@ from nursing_necessity_strategy import (  # noqa: E402
     estimate_intervention_gain_pct,
     simulate_strategy_package,
     summarize_actual_necessity_gaps,
+    summarize_monthly_admission_volume,
     summarize_nursing_necessity,
     summarize_ward_case_mix,
 )
@@ -184,6 +185,27 @@ def test_ward_case_mix_uses_doctor_map_and_department_fallback():
     assert mix["scheduled_pct"] == pytest.approx(33.3, abs=0.1)
     assert mix["ambulance_pct"] == pytest.approx(33.3, abs=0.1)
     assert mix["median_los"] == pytest.approx(9.0)
+
+
+def test_monthly_admission_volume_summarizes_ward_range():
+    df = pd.DataFrame([
+        {"病棟": "6F", "入院日": "2026-01-01"},
+        {"病棟": "6F", "入院日": "2026-01-02"},
+        {"病棟": "6F", "入院日": "2026-02-01"},
+        {"病棟": "5F", "入院日": "2026-02-01"},
+    ])
+
+    volume = summarize_monthly_admission_volume(df, ward="6F")
+
+    assert volume["total_admissions"] == 3
+    assert volume["mean_admissions"] == pytest.approx(1.5)
+    assert volume["median_admissions"] == pytest.approx(1.5)
+    assert volume["min_admissions"] == 1
+    assert volume["max_admissions"] == 2
+    assert volume["monthly_rows"] == [
+        {"ym": "2026-01", "admissions": 2},
+        {"ym": "2026-02", "admissions": 1},
+    ]
 
 
 def test_strategy_package_simulation_shows_remaining_gap():

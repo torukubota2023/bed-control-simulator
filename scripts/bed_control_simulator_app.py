@@ -216,6 +216,7 @@ try:
         estimate_intervention_gain_pct as _nn_estimate_gain,
         simulate_strategy_package as _nn_simulate_strategy_package,
         summarize_actual_necessity_gaps as _nn_actual_gaps,
+        summarize_monthly_admission_volume as _nn_admission_volume,
         summarize_nursing_necessity as _nn_summarize,
         summarize_ward_case_mix as _nn_ward_case_mix,
     )
@@ -10500,6 +10501,7 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                         ward="6F",
                         specialty_map=_nn_doc_group,
                     )
+                    _nn_adm_volume = _nn_admission_volume(_nn_pa_df, ward="6F")
 
                     if _nn_gap_rows:
                         _nn_gap_df = pd.DataFrame(_nn_gap_rows)
@@ -10528,6 +10530,8 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                             f"（新基準 {_nn_safety_row['target_pct']:.0f}%）。"
                             f"安全ラインまで **月{_nn_safety_days:.1f}患者日**、"
                             f"1日あたり **{_nn_daily_safety_days:.1f}患者日** が不足しています。"
+                            "<br>これは入院数を減らす提案ではありません。6Fの入院数は過去実績どおり月75〜80件前後を維持し、"
+                            "その中で該当患者日を増やす設計です。"
                             "<br>患者日 = 「基準該当患者 1人 × 1日」。C23を1件拾うと5患者日、C21を1件拾うと4患者日として考えます。",
                             severity="danger",
                         )
@@ -10550,8 +10554,18 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                             f"6F特性: 内科系 {_nn_case_mix.get('internal_pct', 0):.1f}% / "
                             f"ペイン科 {_nn_case_mix.get('pain_pct', 0):.1f}% / "
                             f"手術なし {_nn_case_mix.get('no_surgery_pct', 0):.1f}% 。"
-                            "不足を埋めるだけでなく、非該当の長期在院で分母を膨らませないことも同じくらい重要です。"
+                            f"月間入院数は平均 {_nn_adm_volume.get('mean_admissions', 0):.1f}件"
+                            f"（範囲 {_nn_adm_volume.get('min_admissions', 0)}〜{_nn_adm_volume.get('max_admissions', 0)}件）。"
+                            "入院数は維持し、非該当の長期在院日を該当患者日または退院支援へ置き換える発想です。"
                         )
+
+                        with st.expander("稼働率との衝突をどう考えるか", expanded=False):
+                            st.markdown(
+                                "- 6Fの入院数を減らすと稼働率と救急受入に悪影響が出るため、ここは減らさない前提です。\n"
+                                "- 看護必要度の分母は入院件数ではなく在院患者日です。問題になるのは、非該当のまま長く残る患者日です。\n"
+                                "- 長期入院が必要な患者は維持しつつ、酸素・注射・処置・C項目など適応のある該当日を同日評価します。\n"
+                                "- 非該当が続く長期在院は、稼働率目的だけで延ばさず、退院支援・転院・在宅調整の対象として早めに動かします。"
+                            )
 
                         st.markdown("**1件あたり何患者日になるか（単独で埋めるなら）**")
                         _nn_safety_conv = {

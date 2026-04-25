@@ -523,6 +523,60 @@ def summarize_ward_case_mix(
     }
 
 
+def summarize_monthly_admission_volume(
+    past_df: pd.DataFrame,
+    ward: str = "6F",
+) -> Dict[str, Any]:
+    """過去入院CSVから病棟別の月間入院数レンジを返す."""
+    empty = {
+        "ward": ward,
+        "months": [],
+        "total_admissions": 0,
+        "mean_admissions": 0.0,
+        "median_admissions": 0.0,
+        "min_admissions": 0,
+        "max_admissions": 0,
+        "monthly_rows": [],
+    }
+    if past_df is None or past_df.empty:
+        return empty
+
+    work = past_df.copy()
+    ward_col = "病棟" if "病棟" in work.columns else "ward"
+    if ward_col not in work.columns:
+        return empty
+    work = work[work[ward_col].astype(str) == ward].copy()
+    if work.empty:
+        return empty
+
+    if "admission_date" in work.columns:
+        dates = pd.to_datetime(work["admission_date"], errors="coerce")
+    elif "入院日" in work.columns:
+        dates = pd.to_datetime(work["入院日"], errors="coerce")
+    else:
+        return empty
+    work = work[dates.notna()].copy()
+    if work.empty:
+        return empty
+    work["_ym"] = dates[dates.notna()].dt.to_period("M").astype(str)
+
+    monthly = work.groupby("_ym").size().sort_index()
+    rows = [
+        {"ym": str(ym), "admissions": int(count)}
+        for ym, count in monthly.items()
+    ]
+    return {
+        "ward": ward,
+        "months": [row["ym"] for row in rows],
+        "total_admissions": int(monthly.sum()),
+        "mean_admissions": round(float(monthly.mean()), 1),
+        "median_admissions": round(float(monthly.median()), 1),
+        "min_admissions": int(monthly.min()),
+        "max_admissions": int(monthly.max()),
+        "monthly_rows": rows,
+    }
+
+
 def simulate_strategy_package(
     base_rate_pct: float,
     emergency_coefficient_pct: float,
