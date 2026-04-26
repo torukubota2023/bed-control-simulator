@@ -1178,7 +1178,7 @@ def _build_past_year_focus_payload() -> dict:
             "chips": [
                 ("月不足", f"{_shortage:.1f}患者日"),
                 ("1日不足", f"{_daily:.1f}患者日"),
-                ("参考ペース", f"月{_cases}件"),
+                ("参考ペース", f"(参考) 月{_cases}件"),
             ],
             "note": "PR #30のガンマ思想：「記録するだけでなく選ぶ」。適応外処置・虚偽記録・病棟都合の患者選別は絶対NG。",
         }
@@ -1254,7 +1254,11 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
             _remaining = days_until_transitional_end()
         except Exception:
             pass
-        chips = [("見る順", "救急15%→LOS→C群"), ("今日の完了", "赤/黄を1つ是正")]
+        chips = [
+            ("見る順", "救急15%→LOS→C群"),
+            ("今日の完了", "赤/黄を1つ是正"),
+            ("判定単位", "病棟別"),
+        ]
         if _remaining is not None:
             chips.append(("本則まで", f"あと{_remaining}日"))
         return {
