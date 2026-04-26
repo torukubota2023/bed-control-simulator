@@ -10569,12 +10569,18 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                                 "- 優先するのは、酸素・注射・処置・C項目など、医学的に適応のある該当患者日を医師と看護師で拾い切ることです。"
                             )
 
-                        st.markdown("**医師向け: 今の患者をこの型に当てはめる**")
-                        _nn_physician_display = pd.DataFrame(_nn_physician_case_rows()).rename(columns={
-                            "case_pattern": "患者の見え方",
-                            "fit_type": "当てはめる型",
-                            "doctor_check": "医師が見るもの",
-                            "nurse_sync": "看護師と揃える記録",
+                        st.markdown("**医師向け: こんな患者を見たら、この一手**")
+                        st.caption(
+                            "看護必要度の制度用語を使わず、臨床判断のついでに該当患者になる動線を示します。"
+                            "★ 適応のある患者の取りこぼしを防ぐのが目的、過剰治療は禁止 ★"
+                        )
+                        _nn_physician_display = pd.DataFrame(_nn_physician_case_rows())[[
+                            "case_pattern", "doctor_check", "duration", "nurse_sync",
+                        ]].rename(columns={
+                            "case_pattern": "患者像",
+                            "doctor_check": "医師が確認すること",
+                            "duration": "カウント期間",
+                            "nurse_sync": "看護師と揃える 1 点",
                         })
                         st.table(_nn_physician_display)
 

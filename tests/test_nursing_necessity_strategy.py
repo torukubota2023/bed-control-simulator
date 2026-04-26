@@ -241,7 +241,7 @@ def test_patient_day_conversion_rows_translate_shortage_to_cases():
 def test_physician_case_matching_rows_are_clinical_and_actionable():
     rows = build_physician_case_matching_rows()
     combined = " ".join(
-        row["case_pattern"] + row["fit_type"] + row["doctor_check"] + row["nurse_sync"]
+        row["case_pattern"] + row["doctor_check"] + row["duration"] + row["nurse_sync"]
         for row in rows
     )
 
@@ -252,6 +252,32 @@ def test_physician_case_matching_rows_are_clinical_and_actionable():
     assert "PEG" in combined
     assert "薬剤名" in combined
     assert "同日" in combined
+
+
+def test_physician_case_matching_rows_use_plain_clinical_language():
+    """看護必要度を知らない医師でも理解できる平易な臨床語で書かれていること.
+
+    制度用語（A項目候補、C21候補、A6候補 等）はテーブル外で説明しても、
+    本表内では使わないことで「患者像 → 臨床判断 → カウント期間」が
+    一目で分かるようにする。
+    """
+    rows = build_physician_case_matching_rows()
+    combined = " ".join(
+        row["case_pattern"] + row["doctor_check"] + row["duration"] + row["nurse_sync"]
+        for row in rows
+    )
+
+    # 制度用語を含めない（医師が看護必要度を知らなくても読める）
+    forbidden_terms = ["A項目候補", "C21候補", "C22候補", "C23候補", "A6候補", "評価表と照合"]
+    for term in forbidden_terms:
+        assert term not in combined, f"制度用語 '{term}' が含まれている"
+
+    # 各行が必須キーを持つ
+    for row in rows:
+        assert "case_pattern" in row
+        assert "doctor_check" in row
+        assert "duration" in row
+        assert "nurse_sync" in row
 
 
 def test_default_6f_action_mix_reaches_recent_safety_line():
