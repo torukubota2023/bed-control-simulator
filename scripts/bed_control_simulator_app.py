@@ -1046,7 +1046,7 @@ st.markdown(
     @media (max-width: 700px) {
         .stMarkdown h1.bc-app-title,
         h1.bc-app-title {
-            font-size: clamp(1.25rem, 5.5vw, 1.75rem) !important;
+            font-size: clamp(1.15rem, 5vw, 1.65rem) !important;
         }
     }
     </style>

@@ -35,6 +35,8 @@ from design_tokens import (
     FONT_FAMILY_SANS,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
+    FONT_SIZE_H1,
+    FONT_SIZE_H2,
     FONT_SIZE_H3,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_MEDIUM,
@@ -78,12 +80,68 @@ def render_theme_css() -> str:
       background-color: {COLOR_BG};
     }}
 
+    /* --- 見出しの折り返し抑制 ---
+       サイドバー表示などで本文幅が狭い場合も、見出しが2行に割れて視線が散らないようにする。 */
+    div[data-testid="stHeading"] h1,
+    div[data-testid="stHeading"] h2,
+    div[data-testid="stHeading"] h3,
+    div[data-testid="stMarkdownContainer"] h1,
+    div[data-testid="stMarkdownContainer"] h2,
+    div[data-testid="stMarkdownContainer"] h3,
+    div[data-testid="stMarkdownContainer"] h4,
+    .bc-app-title,
+    .bc-section-title {{
+      white-space: nowrap !important;
+      word-break: keep-all !important;
+      overflow-wrap: normal !important;
+      max-width: 100% !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      letter-spacing: 0 !important;
+    }}
+
+    div[data-testid="stHeading"] h1,
+    div[data-testid="stMarkdownContainer"] h1:not(.bc-app-title) {{
+      font-size: clamp(1.55rem, 2.6vw, {FONT_SIZE_H1}) !important;
+      line-height: 1.12 !important;
+    }}
+    div[data-testid="stHeading"] h2,
+    div[data-testid="stMarkdownContainer"] h2 {{
+      font-size: clamp(1.25rem, 2vw, {FONT_SIZE_H2}) !important;
+      line-height: 1.18 !important;
+    }}
+    div[data-testid="stHeading"] h3,
+    div[data-testid="stMarkdownContainer"] h3 {{
+      font-size: clamp(1.05rem, 1.55vw, {FONT_SIZE_H3}) !important;
+      line-height: 1.22 !important;
+    }}
+    div[data-testid="stMarkdownContainer"] h4,
+    .bc-section-title {{
+      font-size: clamp(1rem, 1.35vw, {FONT_SIZE_H3}) !important;
+      line-height: 1.25 !important;
+    }}
+
+    @media (max-width: 700px) {{
+      div[data-testid="stHeading"] h1,
+      div[data-testid="stMarkdownContainer"] h1:not(.bc-app-title) {{
+        font-size: clamp(1.15rem, 5vw, 1.5rem) !important;
+      }}
+      div[data-testid="stHeading"] h2,
+      div[data-testid="stMarkdownContainer"] h2 {{
+        font-size: clamp(1rem, 4.2vw, 1.25rem) !important;
+      }}
+      div[data-testid="stHeading"] h3,
+      div[data-testid="stMarkdownContainer"] h3,
+      div[data-testid="stMarkdownContainer"] h4,
+      .bc-section-title {{
+        font-size: clamp(0.95rem, 3.8vw, 1.05rem) !important;
+      }}
+    }}
+
     /* --- セクションヘッダー標準化 --- */
     .bc-section-title {{
-      font-size: {FONT_SIZE_H3};
       font-weight: {FONT_WEIGHT_SEMIBOLD};
       color: {COLOR_TEXT_PRIMARY};
-      letter-spacing: 0.02em;
       margin: {SPACE_5} 0 {SPACE_3} 0;
       padding-bottom: {SPACE_2};
       border-bottom: 1px solid {COLOR_BORDER};
