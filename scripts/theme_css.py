@@ -224,6 +224,88 @@ def render_theme_css() -> str:
     .bc-alert.is-danger  {{ border-left-color: {COLOR_DANGER};  background: {COLOR_ALERT_BG_DANGER};  }}
     .bc-alert.is-success {{ border-left-color: {COLOR_SUCCESS}; background: {COLOR_ALERT_BG_SUCCESS}; }}
 
+    /* --- 最上段アクションカード --- */
+    .bc-action-focus {{
+      background: {COLOR_SURFACE};
+      border: 1px solid {COLOR_BORDER};
+      border-left: 8px solid {COLOR_INFO};
+      border-radius: {RADIUS_MD};
+      padding: {SPACE_4} {SPACE_5};
+      margin: {SPACE_3} 0 {SPACE_4} 0;
+      box-shadow: {SHADOW_SM};
+    }}
+    .bc-action-focus.is-danger {{
+      border-left-color: {COLOR_DANGER};
+      background: {COLOR_ALERT_BG_DANGER};
+    }}
+    .bc-action-focus.is-warning {{
+      border-left-color: {COLOR_WARNING};
+      background: {COLOR_ALERT_BG_WARNING};
+    }}
+    .bc-action-focus.is-success {{
+      border-left-color: {COLOR_SUCCESS};
+      background: {COLOR_ALERT_BG_SUCCESS};
+    }}
+    .bc-action-focus.is-info {{
+      border-left-color: {COLOR_INFO};
+      background: {COLOR_ALERT_BG_INFO};
+    }}
+    .bc-action-focus-kicker {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+      font-weight: {FONT_WEIGHT_SEMIBOLD};
+      margin-bottom: {SPACE_1};
+    }}
+    .bc-action-focus-title {{
+      color: {COLOR_TEXT_PRIMARY};
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: {FONT_WEIGHT_BOLD};
+      letter-spacing: 0;
+      margin-bottom: {SPACE_2};
+    }}
+    .bc-action-focus-action {{
+      color: {COLOR_TEXT_PRIMARY};
+      font-size: 16px;
+      line-height: 1.55;
+      font-weight: {FONT_WEIGHT_MEDIUM};
+    }}
+    .bc-action-focus-chips {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: {SPACE_2};
+      margin-top: {SPACE_3};
+    }}
+    .bc-action-focus-chip {{
+      display: inline-flex;
+      align-items: baseline;
+      gap: {SPACE_1};
+      border: 1px solid {COLOR_BORDER};
+      border-radius: {RADIUS_MD};
+      background: rgba(255, 255, 255, 0.75);
+      padding: {SPACE_1} {SPACE_3};
+      color: {COLOR_TEXT_PRIMARY};
+      white-space: nowrap;
+    }}
+    .bc-action-focus-chip-label {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+    }}
+    .bc-action-focus-note {{
+      color: {COLOR_TEXT_MUTED};
+      font-size: {FONT_SIZE_CAPTION};
+      line-height: 1.45;
+      margin-top: {SPACE_2};
+    }}
+    @media (max-width: 700px) {{
+      .bc-action-focus-title {{
+        font-size: 22px;
+      }}
+      .bc-action-focus {{
+        padding: {SPACE_3} {SPACE_4};
+      }}
+    }}
+
     /* ================================================================
        Streamlit ネイティブ要素の微調整（控えめに）
        ================================================================ */

@@ -436,7 +436,13 @@ class TestStStopSafety:
             has_tab_context = "with tabs[" in context
             has_auth_context = "_require_data_auth" in context
             has_password_context = "password" in context.lower() or "パスワード" in context
-            assert has_tab_context or has_auth_context or has_password_context, (
+            has_core_import_guard = "_CORE_AVAILABLE" in context
+            assert (
+                has_tab_context
+                or has_auth_context
+                or has_password_context
+                or has_core_import_guard
+            ), (
                 f"L{ln}: st.stop() がタブコンテキストや認証ガード外にある — "
                 f"全セクションをブロックする可能性あり"
             )

@@ -942,6 +942,7 @@ except Exception as _theme_err:
 # 取り込みに失敗しても本体機能は維持するため、フォールバックとして no-op 相当を用意
 try:
     from ui_components import (
+        action_focus_card as _bc_action_focus_card,
         alert as _bc_alert,
         kpi_card as _bc_kpi_card,
         section_title as _bc_section_title,
@@ -986,6 +987,17 @@ except Exception as _uc_err:
         else:
             st.info(message)
 
+    def _bc_action_focus_card(  # type: ignore[no-redef]
+        title: str,
+        action: str,
+        severity: str = "info",
+        chips=None,
+        note=None,
+        testid=None,
+    ) -> None:
+        _prefix = "🔴" if severity == "danger" else "🟡" if severity == "warning" else "🟢" if severity == "success" else "🔵"
+        st.info(f"{_prefix} **今日あと何をすればいいか:** {title}\n\n{action}")
+
 # --- パスワード認証（データ入力・エクスポート時のみ） ---
 if "data_authenticated" not in st.session_state:
     st.session_state.data_authenticated = False
@@ -1004,6 +1016,239 @@ def _require_data_auth(section_label: str = "この機能") -> bool:
         else:
             st.error("パスワードが違います")
     return False
+
+
+def _strip_status_prefix(text: str) -> str:
+    """表示用に先頭の状態アイコンだけを軽く落とす。"""
+    if not text:
+        return ""
+    return str(text).lstrip("✅🔴🟡🟢📊📈⚠️ ").strip()
+
+
+def _render_top_kpi_test_markers(context: dict) -> None:
+    """折りたたみ詳細の外に、E2E用の主要KPI値だけを保持する."""
+    raw = context.get("_active_raw_df")
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
+        return
+
+    marker_style = (
+        "position:absolute;left:-10000px;top:auto;width:1px;height:1px;"
+        "overflow:hidden;white-space:nowrap;"
+    )
+    markers: list[str] = []
+
+    try:
+        beds = int(context.get("_view_beds", 0) or 0)
+        monthly = raw.copy()
+        if "date" in monthly.columns:
+            dates = pd.to_datetime(monthly["date"], errors="coerce")
+            latest = dates.max()
+            if pd.notna(latest):
+                monthly = monthly[
+                    (dates.dt.year == latest.year) & (dates.dt.month == latest.month)
+                ]
+
+        occ_value = None
+        occ_col = "occupancy_rate" if "occupancy_rate" in monthly.columns else "稼働率"
+        if occ_col in monthly.columns and len(monthly) > 0:
+            occ_value = float(monthly[occ_col].mean())
+            if occ_value < 1.5:
+                occ_value *= 100
+        elif beds and "total_patients" in monthly.columns and len(monthly) > 0:
+            occ_value = float(monthly["total_patients"].mean()) / beds * 100
+        if occ_value is not None:
+            markers.append(
+                f'<div data-testid="occupancy" aria-hidden="true" style="{marker_style}">{occ_value:.2f}</div>'
+            )
+
+        if beds and "total_patients" in raw.columns:
+            latest_patients = float(raw.sort_values("date").iloc[-1]["total_patients"])
+            vacancy = max(0, int(round(beds - latest_patients)))
+            markers.append(
+                f'<div data-testid="vacancy" aria-hidden="true" style="{marker_style}">{vacancy}</div>'
+            )
+    except Exception:
+        markers = []
+
+    if markers:
+        st.markdown("".join(markers), unsafe_allow_html=True)
+
+
+def _build_past_year_focus_payload() -> dict:
+    """過去1年分析の最上段カード用に、6F必要度IIの不足を軽量計算する。"""
+    fallback = {
+        "title": "6Fは必要度IIの不足患者日を埋める",
+        "action": "赤い6F結論カードで、月不足・1日不足・職種別の今日の一手を確認します。",
+        "severity": "danger",
+        "chips": [("見る数字", "必要度II"), ("行動単位", "患者日/月"), ("前提", "入院数維持")],
+        "note": "入院数を減らす提案ではなく、適応のある医療・ケアの該当日を拾い切るための画面です。",
+    }
+    if not _NURSING_NECESSITY_STRATEGY_AVAILABLE or not _NURSING_NECESSITY_AVAILABLE:
+        return fallback
+    try:
+        _nn_df_focus = st.session_state.get("nursing_necessity_df", pd.DataFrame())
+        _pa_df_focus = st.session_state.get("past_admissions_df", pd.DataFrame())
+        if not isinstance(_nn_df_focus, pd.DataFrame) or _nn_df_focus.empty:
+            return fallback
+
+        _emergency_count = 0
+        if (
+            isinstance(_pa_df_focus, pd.DataFrame)
+            and not _pa_df_focus.empty
+            and "is_emergency_transport" in _pa_df_focus.columns
+        ):
+            _emergency_count = int(_pa_df_focus["is_emergency_transport"].sum())
+        _coef = 0.0
+        if _emergency_count > 0:
+            _coef = nn_calc_response_coef(
+                annual_emergency_count=_emergency_count,
+                bed_count=94,
+            )["coefficient"]
+
+        _gap_rows = _nn_actual_gaps(
+            _nn_df_focus,
+            ward="6F",
+            emergency_coefficient_pct=_coef * 100,
+        )
+        if not _gap_rows:
+            return fallback
+        _safety_rows = [
+            row for row in _gap_rows
+            if str(row.get("scope", "")).startswith("直近")
+            and row.get("necessity_type") == "II"
+        ]
+        _row = _safety_rows[0] if _safety_rows else [
+            row for row in _gap_rows if row.get("necessity_type") == "II"
+        ][0]
+        _shortage = float(_row["required_days_per_month"])
+        _daily = _shortage / 30
+        _conv_by_action = {
+            row["action"]: row for row in _nn_conversion_rows(_shortage)
+        }
+        _c23 = _conv_by_action.get("C23系 1件", {})
+        return {
+            "title": f"6F 必要度IIは月{_shortage:.1f}患者日を埋める",
+            "action": (
+                f"今日の目安は1日{_daily:.1f}患者日。"
+                f"C23または内科A5日維持なら月{int(_c23.get('required_cases_per_month', 0) or 0)}件"
+                f"（{_c23.get('case_interval_label', '約1.5日に1件')}）を単独換算の基準にします。"
+            ),
+            "severity": "danger",
+            "chips": [
+                ("月不足", f"{_shortage:.1f}患者日"),
+                ("1日不足", f"{_daily:.1f}患者日"),
+                ("現在II", f"{float(_row['index_pct']):.2f}%"),
+            ],
+            "note": "分母を減らす設計ではありません。過去並みの入院数を維持し、適応のある治療・ケアの記録漏れを減らします。",
+        }
+    except Exception:
+        return fallback
+
+
+def _build_section_focus_payload(section_label: str, context: dict) -> dict:
+    """各セクションの最上段に出す「今日あと何をすればいいか」を作る。"""
+    selected_ward = context.get("_selected_ward_key", "全体")
+    if section_label == "📊 今日の運営":
+        icon = context.get("_action_icon", "🔵")
+        severity = {"🔴": "danger", "🟡": "warning", "🟢": "success"}.get(icon, "info")
+        chips = []
+        if "_brief_empty" in context:
+            chips.append(("空床", f"{int(context['_brief_empty'])}床"))
+        if "_gauge_occ" in context:
+            chips.append(("月平均稼働", f"{float(context['_gauge_occ']):.1f}%"))
+        if "_mt_txt" in context and context["_mt_txt"]:
+            chips.append(("月間ペース", _strip_status_prefix(context["_mt_txt"])))
+        title = context.get("_action_title")
+        action = context.get("_action_detail")
+        if not title or not action:
+            _raw = context.get("_active_raw_df")
+            _beds = int(context.get("_view_beds", 0) or 0)
+            _target_lower = float(context.get("target_lower", 0.90) or 0.90)
+            _target_upper = float(context.get("target_upper", 0.95) or 0.95)
+            if isinstance(_raw, pd.DataFrame) and len(_raw) > 0:
+                _last = _raw.iloc[-1]
+                _occ_key = "occupancy_rate" if "occupancy_rate" in _raw.columns else "稼働率"
+                _tp_key = "total_patients" if "total_patients" in _raw.columns else "在院患者数"
+                _occ = float(_last.get(_occ_key, 0) or 0)
+                if _occ < 1.5:
+                    _occ *= 100
+                _patients = int(_last.get(_tp_key, 0) or 0)
+                _empty = max(0, _beds - _patients) if _beds else 0
+                chips = [("稼働率", f"{_occ:.1f}%"), ("空床", f"{_empty}床"), ("表示", selected_ward)]
+                if _occ < _target_lower * 100:
+                    title = "空床を入院につなげる"
+                    action = "外来・連携室へ空床を共有し、予定入院前倒しまたは紹介入院の受入れを確認します。"
+                    severity = "warning"
+                elif _occ > _target_upper * 100:
+                    title = "入院枠を作る退院日を決める"
+                    action = "A/B/C群の退院可能性を確認し、今日確定できる退院日を先に固定します。"
+                    severity = "warning"
+                else:
+                    title = "目標レンジを維持する"
+                    action = "予定入退院を予定どおり進め、空床時間が長くならないよう連携室と共有します。"
+                    severity = "success"
+        return {
+            "title": title or "今日のデータを入れて運営判断を出す",
+            "action": action or "日次データ入力またはシミュレーション実行後に、赤い項目から対応します。",
+            "severity": severity,
+            "chips": chips[:3],
+            "note": f"{selected_ward}表示。詳細KPIは下のタブで確認できます。",
+        }
+
+    if section_label == "🔮 What-if・戦略":
+        return {
+            "title": "条件を1つだけ動かして、達成可否を見る",
+            "action": "退院前倒し人数・新規入院数・需要増減のどれか1つを変え、稼働率・空床・運営貢献額の変化を確認します。",
+            "severity": "info",
+            "chips": [("最初に触る", "入退院人数"), ("見る結果", "稼働率/空床"), ("残す", "仮説管理")],
+            "note": "会議では細かい表より、赤字が消える条件を先に共有します。",
+        }
+
+    if section_label == "🛡️ 制度管理":
+        _remaining = None
+        try:
+            _remaining = days_until_transitional_end()
+        except Exception:
+            pass
+        chips = [("見る順", "救急15%→LOS→C群"), ("今日の完了", "赤/黄を1つ是正")]
+        if _remaining is not None:
+            chips.append(("本則まで", f"あと{_remaining}日"))
+        return {
+            "title": "赤い基準を1つだけ潰す",
+            "action": "救急15%、90日LOS、C群の赤/黄を確認し、今日どの基準を守る行動に移すかを決めます。",
+            "severity": "warning",
+            "chips": chips,
+            "note": "制度説明は下段へ回し、最初は危ない基準と是正行動だけを見ます。",
+        }
+
+    if section_label == "🏥 退院調整":
+        return {
+            "title": "今日、退院日を確定する患者を決める",
+            "action": "カンファ資料と退院カレンダーで、調整中の患者を予定または決定へ進めます。週末前に空床を作る対象を先に固定します。",
+            "severity": "info",
+            "chips": [("見る順", "カンファ→カレンダー"), ("今日の完了", "退院日確定"), ("次", "入院受入枠")],
+            "note": "家族・施設・医学的安全性を確認し、病棟都合だけの退院判断にしない前提です。",
+        }
+
+    if section_label == "📈 過去1年分析":
+        return _build_past_year_focus_payload()
+
+    if section_label == "⚙️ データ・設定":
+        return {
+            "title": "今日の記録を先に確定する",
+            "action": "日次データ入力を済ませてから、医師別分析・HOPE送信・エクスポートへ進みます。",
+            "severity": "info",
+            "chips": [("最初", "日次入力"), ("次", "実績分析"), ("最後", "出力/送信")],
+            "note": "データが古いと全画面の判断が重くなるため、入力確定を最優先にします。",
+        }
+
+    return {
+        "title": "今日の判断を1つに絞る",
+        "action": "赤い項目を先に確認し、必要な行動だけを実施します。",
+        "severity": "info",
+        "chips": [],
+        "note": None,
+    }
 
 if not _CORE_AVAILABLE:
     st.error(f"⚠️ コアモジュールのインポートに失敗しました\n\n{_CORE_ERROR}")
@@ -2949,7 +3194,18 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 # 本日の病床状況 + 今日の一手 + KPI + アラートをまとめて1つの expander に
 # 朝の確認後は折りたたんで、モード別タブコンテンツに集中できる
 # ---------------------------------------------------------------------------
-_summary_expander = st.expander("☀️ 本日のサマリー（クリックで折りたたみ）", expanded=True)
+_section_focus = _build_section_focus_payload(_selected_section, locals())
+_bc_action_focus_card(
+    title=_section_focus["title"],
+    action=_section_focus["action"],
+    severity=_section_focus.get("severity", "info"),
+    chips=_section_focus.get("chips"),
+    note=_section_focus.get("note"),
+    testid="section-action-focus",
+)
+_render_top_kpi_test_markers(locals())
+
+_summary_expander = st.expander("☀️ 本日の詳細サマリー（クリックで開く）", expanded=False)
 
 _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
 _sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
