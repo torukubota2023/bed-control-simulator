@@ -339,11 +339,17 @@ try:
         LECTURE_MARKDOWN as _NN_LECTURE_MD,
         render_references as _nn_render_references,
     )
+    from nursing_necessity_disease_manual import (
+        DISEASE_MANUAL_MARKDOWN as _NN_DISEASE_MANUAL_MD,
+        render_in_streamlit as _nn_render_disease_manual,
+    )
     _NURSING_NECESSITY_AVAILABLE = True
 except Exception:
     _NURSING_NECESSITY_AVAILABLE = False
     _NN_LECTURE_MD = ""
+    _NN_DISEASE_MANUAL_MD = ""
     _nn_render_references = None
+    _nn_render_disease_manual = None
 
 
 # ---------------------------------------------------------------------------
@@ -1274,7 +1280,15 @@ if _NN_LECTURE_MD:
     # ダイアログ関数定義（クリック時に広いモーダルで全文表示）
     @st.dialog("📚 看護必要度ミニレクチャー — 医師の行動変容で達成する", width="large")
     def _show_nn_lecture_dialog():
-        st.markdown(_NN_LECTURE_MD)
+        st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
+        # レクチャーに続けて疾患別マニュアル + 参考エビデンス
+        if _NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not None:
+            st.markdown("---")
+            with st.expander(
+                "🏥 疾患別マニュアル — 医師担当部分の判断・処置リファレンス（17 疾患）",
+                expanded=False,
+            ):
+                _nn_render_disease_manual(st)
         if _nn_render_references is not None:
             import os as _nn_dlg_os
             _nn_dlg_root = _nn_dlg_os.path.normpath(
@@ -10442,12 +10456,26 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     "📚 看護必要度ミニレクチャー — 医師の行動変容で達成する（サイドバーからも参照可）",
                     expanded=False,
                 ):
-                    st.markdown(_NN_LECTURE_MD)
+                    st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
                     # レクチャー直下に参考エビデンス・出典をオフライン対応で描画
                     # 公式 PDF（厚労省・日循）+ 要約 markdown を統一管理
                     if _nn_render_references is not None:
                         st.markdown("---")
                         _nn_render_references(st, _nn_project_root)
+
+            # ===== 🏥 疾患別マニュアル（医師担当部分の実臨床リファレンス） =====
+            # ミニレクチャー = 概念整理（行動変容の 5 ステップ）
+            # 疾患別マニュアル = 疾患入口型（この患者を見たらこの選択肢）の臨床リファレンス
+            # DOCX ダウンロードで院内 LAN 配布・印刷も可能。
+            if _NN_DISEASE_MANUAL_MD:
+                with st.expander(
+                    "🏥 疾患別マニュアル — 医師担当部分の判断・処置リファレンス（17 疾患）",
+                    expanded=False,
+                ):
+                    if _nn_render_disease_manual is not None:
+                        _nn_render_disease_manual(st)
+                    else:
+                        st.markdown(_NN_DISEASE_MANUAL_MD, unsafe_allow_html=True)
 
             try:
                 import plotly.graph_objects as go
