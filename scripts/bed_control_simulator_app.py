@@ -12,6 +12,7 @@ import sys
 import os
 import io
 import calendar
+from html import escape
 from datetime import date, timedelta
 
 import streamlit as st
@@ -1025,20 +1026,26 @@ def _strip_status_prefix(text: str) -> str:
     return str(text).lstrip("✅🔴🟡🟢📊📈⚠️ ").strip()
 
 
-def _render_top_kpi_test_markers(context: dict) -> None:
-    """折りたたみ詳細の外に、E2E用の主要KPI値だけを保持する."""
+def _with_safety_lead(action: str, lead: str) -> str:
+    """行動文の冒頭に、患者安全・適応確認の前提を置く."""
+    if not action:
+        return lead.rstrip("、。") + "。"
+    text = str(action).strip()
+    if text.startswith(("🛡️", "患者安全", "医学的安全性", "記録の正確性", "患者選別や適応外対応ではなく")):
+        return text
+    return f"{lead}{text}"
+
+
+def _get_top_kpi_snapshot(context: dict) -> dict | None:
+    """折りたたみ詳細の外に出す管理者用3KPIを計算する."""
     raw = context.get("_active_raw_df")
     if not isinstance(raw, pd.DataFrame) or raw.empty:
-        return
-
-    marker_style = (
-        "position:absolute;left:-10000px;top:auto;width:1px;height:1px;"
-        "overflow:hidden;white-space:nowrap;"
-    )
-    markers: list[str] = []
+        return None
 
     try:
         beds = int(context.get("_view_beds", 0) or 0)
+        ward = str(context.get("_selected_ward_key", "全体"))
+        sorted_raw = raw.sort_values("date") if "date" in raw.columns else raw
         monthly = raw.copy()
         if "date" in monthly.columns:
             dates = pd.to_datetime(monthly["date"], errors="coerce")
@@ -1056,32 +1063,65 @@ def _render_top_kpi_test_markers(context: dict) -> None:
                 occ_value *= 100
         elif beds and "total_patients" in monthly.columns and len(monthly) > 0:
             occ_value = float(monthly["total_patients"].mean()) / beds * 100
-        if occ_value is not None:
-            markers.append(
-                f'<div data-testid="occupancy" aria-hidden="true" style="{marker_style}">{occ_value:.2f}</div>'
-            )
 
-        if beds and "total_patients" in raw.columns:
-            latest_patients = float(raw.sort_values("date").iloc[-1]["total_patients"])
-            vacancy = max(0, int(round(beds - latest_patients)))
-            markers.append(
-                f'<div data-testid="vacancy" aria-hidden="true" style="{marker_style}">{vacancy}</div>'
-            )
+        tp_col = "total_patients" if "total_patients" in sorted_raw.columns else "在院患者数"
+        patients = None
+        vacancy = None
+        if tp_col in sorted_raw.columns:
+            patients = int(round(float(sorted_raw.iloc[-1][tp_col] or 0)))
+            vacancy = max(0, int(round(beds - patients))) if beds else None
+        return {
+            "ward": ward,
+            "occupancy": occ_value,
+            "vacancy": vacancy,
+            "patients": patients,
+        }
     except Exception:
-        markers = []
+        return None
 
-    if markers:
-        st.markdown("".join(markers), unsafe_allow_html=True)
+
+def _render_admin_kpi_strip(context: dict) -> None:
+    """朝礼で即答するための小型KPI行を、詳細サマリーの外に残す."""
+    snapshot = _get_top_kpi_snapshot(context)
+    if not snapshot:
+        return
+
+    occ = snapshot.get("occupancy")
+    vacancy = snapshot.get("vacancy")
+    patients = snapshot.get("patients")
+    ward = escape(str(snapshot.get("ward", "全体")))
+    occ_value = f"{float(occ):.1f}" if occ is not None else "—"
+    vacancy_value = str(int(vacancy)) if vacancy is not None else "—"
+    patients_value = str(int(patients)) if patients is not None else "—"
+    st.markdown(
+        f"""
+<div class="bc-admin-kpi-strip" data-testid="admin-kpi-strip" aria-label="管理者用即答KPI">
+  <div class="bc-admin-kpi-item">
+    <div class="bc-admin-kpi-label">{ward} 稼働率</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="occupancy">{occ_value}</strong><span>%</span></div>
+  </div>
+  <div class="bc-admin-kpi-item">
+    <div class="bc-admin-kpi-label">今の空床</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="vacancy">{vacancy_value}</strong><span>床</span></div>
+  </div>
+  <div class="bc-admin-kpi-item">
+    <div class="bc-admin-kpi-label">在院患者数</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="current-patients">{patients_value}</strong><span>名</span></div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 def _build_past_year_focus_payload() -> dict:
     """過去1年分析の最上段カード用に、6F必要度IIの不足を軽量計算する。"""
     fallback = {
-        "title": "6Fは必要度IIの不足患者日を埋める",
-        "action": "赤い6F結論カードで、月不足・1日不足・職種別の今日の一手を確認します。",
+        "title": "6F 必要度II: 月不足患者日ギャップ",
+        "action": "🛡️ 適応のある患者を見つけて、C23/内科A5日維持の選択肢を取る。件数ペースは適応評価後の参考値です。",
         "severity": "danger",
         "chips": [("見る数字", "必要度II"), ("行動単位", "患者日/月"), ("前提", "入院数維持")],
-        "note": "入院数を減らす提案ではなく、適応のある医療・ケアの該当日を拾い切るための画面です。",
+        "note": "PR #30のガンマ思想：「記録するだけでなく選ぶ」。適応外処置・虚偽記録・病棟都合の患者選別は絶対NG。",
     }
     if not _NURSING_NECESSITY_STRATEGY_AVAILABLE or not _NURSING_NECESSITY_AVAILABLE:
         return fallback
@@ -1126,20 +1166,21 @@ def _build_past_year_focus_payload() -> dict:
             row["action"]: row for row in _nn_conversion_rows(_shortage)
         }
         _c23 = _conv_by_action.get("C23系 1件", {})
+        _cases = int(_c23.get("required_cases_per_month", 0) or 0)
+        _interval = _c23.get("case_interval_label", "約1.5日に1件")
         return {
-            "title": f"6F 必要度IIは月{_shortage:.1f}患者日を埋める",
+            "title": f"6F 必要度II: 月{_shortage:.1f}患者日ギャップ",
             "action": (
-                f"今日の目安は1日{_daily:.1f}患者日。"
-                f"C23または内科A5日維持なら月{int(_c23.get('required_cases_per_month', 0) or 0)}件"
-                f"（{_c23.get('case_interval_label', '約1.5日に1件')}）を単独換算の基準にします。"
+                "🛡️ 適応のある患者を見つけて、C23/内科A5日維持の選択肢を取る。"
+                f"件数ペースは月{_cases}件（{_interval}）ですが、適応評価後の参考値です。"
             ),
             "severity": "danger",
             "chips": [
                 ("月不足", f"{_shortage:.1f}患者日"),
                 ("1日不足", f"{_daily:.1f}患者日"),
-                ("現在II", f"{float(_row['index_pct']):.2f}%"),
+                ("参考ペース", f"月{_cases}件"),
             ],
-            "note": "分母を減らす設計ではありません。過去並みの入院数を維持し、適応のある治療・ケアの記録漏れを減らします。",
+            "note": "PR #30のガンマ思想：「記録するだけでなく選ぶ」。適応外処置・虚偽記録・病棟都合の患者選別は絶対NG。",
         }
     except Exception:
         return fallback
@@ -1189,7 +1230,10 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
                     severity = "success"
         return {
             "title": title or "今日のデータを入れて運営判断を出す",
-            "action": action or "日次データ入力またはシミュレーション実行後に、赤い項目から対応します。",
+            "action": _with_safety_lead(
+                action or "日次データ入力またはシミュレーション実行後に、赤い項目から対応します。",
+                "患者安全と適応を前提に、",
+            ),
             "severity": severity,
             "chips": chips[:3],
             "note": f"{selected_ward}表示。詳細KPIは下のタブで確認できます。",
@@ -1198,7 +1242,7 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
     if section_label == "🔮 What-if・戦略":
         return {
             "title": "条件を1つだけ動かして、達成可否を見る",
-            "action": "退院前倒し人数・新規入院数・需要増減のどれか1つを変え、稼働率・空床・運営貢献額の変化を確認します。",
+            "action": "患者選別や適応外対応ではなく、実行可能な運用条件として退院前倒し人数・新規入院数・需要増減のどれか1つを変えます。",
             "severity": "info",
             "chips": [("最初に触る", "入退院人数"), ("見る結果", "稼働率/空床"), ("残す", "仮説管理")],
             "note": "会議では細かい表より、赤字が消える条件を先に共有します。",
@@ -1215,7 +1259,7 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
             chips.append(("本則まで", f"あと{_remaining}日"))
         return {
             "title": "赤い基準を1つだけ潰す",
-            "action": "救急15%、90日LOS、C群の赤/黄を確認し、今日どの基準を守る行動に移すかを決めます。",
+            "action": "患者安全と制度目的を守る前提で、救急15%、90日LOS、C群の赤/黄を確認し、今日の是正行動を1つ決めます。",
             "severity": "warning",
             "chips": chips,
             "note": "制度説明は下段へ回し、最初は危ない基準と是正行動だけを見ます。",
@@ -1224,7 +1268,7 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
     if section_label == "🏥 退院調整":
         return {
             "title": "今日、退院日を確定する患者を決める",
-            "action": "カンファ資料と退院カレンダーで、調整中の患者を予定または決定へ進めます。週末前に空床を作る対象を先に固定します。",
+            "action": "医学的安全性・家族/施設調整を確認したうえで、調整中の患者を予定または決定へ進めます。週末前に空床を作る対象を先に固定します。",
             "severity": "info",
             "chips": [("見る順", "カンファ→カレンダー"), ("今日の完了", "退院日確定"), ("次", "入院受入枠")],
             "note": "家族・施設・医学的安全性を確認し、病棟都合だけの退院判断にしない前提です。",
@@ -1236,7 +1280,7 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
     if section_label == "⚙️ データ・設定":
         return {
             "title": "今日の記録を先に確定する",
-            "action": "日次データ入力を済ませてから、医師別分析・HOPE送信・エクスポートへ進みます。",
+            "action": "記録の正確性を守るため、日次データ入力を済ませてから、医師別分析・HOPE送信・エクスポートへ進みます。",
             "severity": "info",
             "chips": [("最初", "日次入力"), ("次", "実績分析"), ("最後", "出力/送信")],
             "note": "データが古いと全画面の判断が重くなるため、入力確定を最優先にします。",
@@ -1244,7 +1288,7 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
 
     return {
         "title": "今日の判断を1つに絞る",
-        "action": "赤い項目を先に確認し、必要な行動だけを実施します。",
+        "action": "患者安全と適応を前提に、赤い項目を先に確認し、必要な行動だけを実施します。",
         "severity": "info",
         "chips": [],
         "note": None,
@@ -3203,7 +3247,7 @@ _bc_action_focus_card(
     note=_section_focus.get("note"),
     testid="section-action-focus",
 )
-_render_top_kpi_test_markers(locals())
+_render_admin_kpi_strip(locals())
 
 _summary_expander = st.expander("☀️ 本日の詳細サマリー（クリックで開く）", expanded=False)
 

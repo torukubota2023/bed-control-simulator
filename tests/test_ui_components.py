@@ -259,6 +259,7 @@ class TestRenderThemeCss:
             ".bc-kpi-value",
             ".bc-alert",
             ".bc-action-focus",
+            ".bc-admin-kpi-strip",
         ):
             assert cls in css, f"{cls} missing from theme CSS"
 

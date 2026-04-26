@@ -297,12 +297,56 @@ def render_theme_css() -> str:
       line-height: 1.45;
       margin-top: {SPACE_2};
     }}
+
+    /* --- 管理者用 即答KPI行 --- */
+    .bc-admin-kpi-strip {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: {SPACE_3};
+      margin: -{SPACE_2} 0 {SPACE_4} 0;
+    }}
+    .bc-admin-kpi-item {{
+      background: {COLOR_BG};
+      border: 1px solid {COLOR_BORDER};
+      border-radius: {RADIUS_MD};
+      padding: {SPACE_2} {SPACE_3};
+      min-width: 0;
+    }}
+    .bc-admin-kpi-label {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .bc-admin-kpi-value-row {{
+      display: flex;
+      align-items: baseline;
+      gap: {SPACE_1};
+      color: {COLOR_TEXT_PRIMARY};
+      line-height: 1.2;
+      margin-top: {SPACE_1};
+    }}
+    .bc-admin-kpi-value-row strong {{
+      font-size: 22px;
+      font-weight: {FONT_WEIGHT_BOLD};
+      letter-spacing: 0;
+    }}
+    .bc-admin-kpi-value-row span {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_BODY};
+    }}
     @media (max-width: 700px) {{
       .bc-action-focus-title {{
         font-size: 22px;
       }}
       .bc-action-focus {{
         padding: {SPACE_3} {SPACE_4};
+      }}
+      .bc-admin-kpi-strip {{
+        grid-template-columns: 1fr;
+        gap: {SPACE_2};
       }}
     }}
 
