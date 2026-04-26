@@ -854,8 +854,15 @@ _HEADER = """# 看護必要度 疾患別マニュアル — 医師担当部分
 
 
 def _render_disease_md(d: dict[str, Any]) -> str:
-    """1 疾患の dict を markdown ブロックに変換."""
+    """1 疾患の dict を markdown ブロックに変換.
+
+    見出しの前に明示的な HTML アンカー (<a id="disease-N">) を置くことで、
+    Streamlit の markdown スラッグ化が括弧・スラッシュ等で破綻する問題を回避。
+    目次は (#disease-N) で参照する (シンプルで確実)。
+    """
     lines: list[str] = []
+    # 明示アンカー (Streamlit でも GitHub でも安定)
+    lines.append(f'<a id="disease-{d["id"]}"></a>')
     lines.append(f"### {d['id']}. {d['icon']} {d['name']}")
     lines.append("")
 
@@ -906,12 +913,12 @@ def _build_markdown() -> str:
     """DISEASE_DATA から完全な markdown 文字列を生成."""
     out: list[str] = [_HEADER]
 
-    # 目次
+    # 目次 (明示アンカー #disease-N で参照)
     for group_name, diseases in DISEASE_DATA:
         out.append(f"### {group_name}")
         out.append("")
         for d in diseases:
-            out.append(f"- [{d['id']}. {d['icon']} {d['name']}](#{d['id']}-{d['icon']}-{d['name']})")
+            out.append(f"- [{d['id']}. {d['icon']} {d['name']}](#disease-{d['id']})")
         out.append("")
     out.append("---")
     out.append("")
