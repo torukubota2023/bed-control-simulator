@@ -19,13 +19,15 @@
 
 from __future__ import annotations
 
-from typing import Literal, Mapping, Optional
+from html import escape
+from typing import Iterable, Literal, Mapping, Optional, Sequence, Tuple
 
 import streamlit as st
 
 Severity = Literal["neutral", "success", "warning", "danger", "info"]
 AlertSeverity = Literal["info", "warning", "danger", "success"]
 KpiSize = Literal["sm", "md", "lg"]  # md が既定、lg は Hero 用の拡大表示
+ActionFocusSeverity = Literal["success", "warning", "danger", "info", "neutral"]
 
 
 def _build_testid_html(
@@ -124,6 +126,33 @@ def alert(
     )
 
 
+def action_focus_card(
+    title: str,
+    action: str,
+    severity: ActionFocusSeverity = "info",
+    chips: Optional[Sequence[Tuple[str, str]]] = None,
+    note: Optional[str] = None,
+    testid: Optional[str] = None,
+) -> None:
+    """画面最上段の「今日あと何をするか」カードを描画する.
+
+    各セクションで同じ情報階層にするための小さな Hero コンポーネント。
+    医師・看護師が初見でも、最初の数秒で「見る数字」と「今日の行動」を
+    つかめることを優先する。
+    """
+    st.markdown(
+        action_focus_card_html(
+            title=title,
+            action=action,
+            severity=severity,
+            chips=chips,
+            note=note,
+            testid=testid,
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 文字列だけ欲しいとき用（テスト / 複合レイアウトでの埋め込み用）
 # ---------------------------------------------------------------------------
@@ -167,3 +196,42 @@ def kpi_card_html(
 def alert_html(message: str, severity: AlertSeverity = "info") -> str:
     """alert と同じ HTML を文字列で返す."""
     return f'<div class="bc-alert is-{severity}">{message}</div>'
+
+
+def action_focus_card_html(
+    title: str,
+    action: str,
+    severity: ActionFocusSeverity = "info",
+    chips: Optional[Sequence[Tuple[str, str]]] = None,
+    note: Optional[str] = None,
+    testid: Optional[str] = None,
+) -> str:
+    """action_focus_card と同じ HTML を文字列で返す."""
+    sev_class = f"is-{severity}" if severity != "neutral" else "is-neutral"
+    chip_html = ""
+    if chips:
+        chip_parts: Iterable[str] = (
+            f'<span class="bc-action-focus-chip">'
+            f'<span class="bc-action-focus-chip-label">{escape(str(label))}</span>'
+            f'<strong>{escape(str(value))}</strong>'
+            f'</span>'
+            for label, value in chips
+        )
+        chip_html = f'<div class="bc-action-focus-chips">{"".join(chip_parts)}</div>'
+    note_html = f'<div class="bc-action-focus-note">{escape(note)}</div>' if note else ""
+    testid_html = (
+        f'<div data-testid="{escape(testid)}" style="display:none">'
+        f'{escape(title)} {escape(action)}</div>'
+        if testid
+        else ""
+    )
+    return (
+        f'<div class="bc-action-focus {sev_class}">'
+        '<div class="bc-action-focus-kicker">今日あと何をすればいいか</div>'
+        f'<div class="bc-action-focus-title">{escape(title)}</div>'
+        f'<div class="bc-action-focus-action">{escape(action)}</div>'
+        f'{chip_html}'
+        f'{note_html}'
+        f'{testid_html}'
+        '</div>'
+    )

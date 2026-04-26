@@ -12,6 +12,7 @@ import sys
 import os
 import io
 import calendar
+from html import escape
 from datetime import date, timedelta
 
 import streamlit as st
@@ -213,6 +214,7 @@ try:
         build_nursing_necessity_actions as _nn_build_actions,
         build_patient_day_conversion_rows as _nn_conversion_rows,
         build_physician_case_matching_rows as _nn_physician_case_rows,
+        build_role_daily_action_rows as _nn_role_daily_rows,
         calculate_6f_action_mix as _nn_calc_6f_action_mix,
         estimate_intervention_gain_pct as _nn_estimate_gain,
         simulate_strategy_package as _nn_simulate_strategy_package,
@@ -941,6 +943,7 @@ except Exception as _theme_err:
 # 取り込みに失敗しても本体機能は維持するため、フォールバックとして no-op 相当を用意
 try:
     from ui_components import (
+        action_focus_card as _bc_action_focus_card,
         alert as _bc_alert,
         kpi_card as _bc_kpi_card,
         section_title as _bc_section_title,
@@ -985,6 +988,17 @@ except Exception as _uc_err:
         else:
             st.info(message)
 
+    def _bc_action_focus_card(  # type: ignore[no-redef]
+        title: str,
+        action: str,
+        severity: str = "info",
+        chips=None,
+        note=None,
+        testid=None,
+    ) -> None:
+        _prefix = "🔴" if severity == "danger" else "🟡" if severity == "warning" else "🟢" if severity == "success" else "🔵"
+        st.info(f"{_prefix} **今日あと何をすればいいか:** {title}\n\n{action}")
+
 # --- パスワード認証（データ入力・エクスポート時のみ） ---
 if "data_authenticated" not in st.session_state:
     st.session_state.data_authenticated = False
@@ -1003,6 +1017,282 @@ def _require_data_auth(section_label: str = "この機能") -> bool:
         else:
             st.error("パスワードが違います")
     return False
+
+
+def _strip_status_prefix(text: str) -> str:
+    """表示用に先頭の状態アイコンだけを軽く落とす。"""
+    if not text:
+        return ""
+    return str(text).lstrip("✅🔴🟡🟢📊📈⚠️ ").strip()
+
+
+def _with_safety_lead(action: str, lead: str) -> str:
+    """行動文の冒頭に、患者安全・適応確認の前提を置く."""
+    if not action:
+        return lead.rstrip("、。") + "。"
+    text = str(action).strip()
+    if text.startswith(("🛡️", "患者安全", "医学的安全性", "記録の正確性", "患者選別や適応外対応ではなく")):
+        return text
+    return f"{lead}{text}"
+
+
+def _get_top_kpi_snapshot(context: dict) -> dict | None:
+    """折りたたみ詳細の外に出す管理者用3KPIを計算する."""
+    raw = context.get("_active_raw_df")
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
+        return None
+
+    try:
+        beds = int(context.get("_view_beds", 0) or 0)
+        ward = str(context.get("_selected_ward_key", "全体"))
+        sorted_raw = raw.sort_values("date") if "date" in raw.columns else raw
+        monthly = raw.copy()
+        if "date" in monthly.columns:
+            dates = pd.to_datetime(monthly["date"], errors="coerce")
+            latest = dates.max()
+            if pd.notna(latest):
+                monthly = monthly[
+                    (dates.dt.year == latest.year) & (dates.dt.month == latest.month)
+                ]
+
+        occ_value = None
+        occ_col = "occupancy_rate" if "occupancy_rate" in monthly.columns else "稼働率"
+        if occ_col in monthly.columns and len(monthly) > 0:
+            occ_value = float(monthly[occ_col].mean())
+            if occ_value < 1.5:
+                occ_value *= 100
+        elif beds and "total_patients" in monthly.columns and len(monthly) > 0:
+            occ_value = float(monthly["total_patients"].mean()) / beds * 100
+
+        tp_col = "total_patients" if "total_patients" in sorted_raw.columns else "在院患者数"
+        patients = None
+        vacancy = None
+        if tp_col in sorted_raw.columns:
+            patients = int(round(float(sorted_raw.iloc[-1][tp_col] or 0)))
+            vacancy = max(0, int(round(beds - patients))) if beds else None
+        return {
+            "ward": ward,
+            "occupancy": occ_value,
+            "vacancy": vacancy,
+            "patients": patients,
+        }
+    except Exception:
+        return None
+
+
+def _render_admin_kpi_strip(context: dict) -> None:
+    """朝礼で即答するための小型KPI行を、詳細サマリーの外に残す."""
+    snapshot = _get_top_kpi_snapshot(context)
+    if not snapshot:
+        return
+
+    occ = snapshot.get("occupancy")
+    vacancy = snapshot.get("vacancy")
+    patients = snapshot.get("patients")
+    ward = escape(str(snapshot.get("ward", "全体")))
+    occ_value = f"{float(occ):.1f}" if occ is not None else "—"
+    vacancy_value = str(int(vacancy)) if vacancy is not None else "—"
+    patients_value = str(int(patients)) if patients is not None else "—"
+    st.markdown(
+        f"""
+<div class="bc-admin-kpi-strip" data-testid="admin-kpi-strip" aria-label="管理者用即答KPI">
+  <div class="bc-admin-kpi-item">
+    <div class="bc-admin-kpi-label">{ward} 稼働率</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="occupancy">{occ_value}</strong><span>%</span></div>
+  </div>
+  <div class="bc-admin-kpi-item">
+    <div class="bc-admin-kpi-label">今の空床</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="vacancy">{vacancy_value}</strong><span>床</span></div>
+  </div>
+  <div class="bc-admin-kpi-item">
+    <div class="bc-admin-kpi-label">在院患者数</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="current-patients">{patients_value}</strong><span>名</span></div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def _build_past_year_focus_payload() -> dict:
+    """過去1年分析の最上段カード用に、6F必要度IIの不足を軽量計算する。"""
+    fallback = {
+        "title": "6F 必要度II: 月不足患者日ギャップ",
+        "action": "🛡️ 適応のある患者を見つけて、C23/内科A5日維持の選択肢を取る。件数ペースは適応評価後の参考値です。",
+        "severity": "danger",
+        "chips": [("見る数字", "必要度II"), ("行動単位", "患者日/月"), ("前提", "入院数維持")],
+        "note": "PR #30のガンマ思想：「記録するだけでなく選ぶ」。適応外処置・虚偽記録・病棟都合の患者選別は絶対NG。",
+    }
+    if not _NURSING_NECESSITY_STRATEGY_AVAILABLE or not _NURSING_NECESSITY_AVAILABLE:
+        return fallback
+    try:
+        _nn_df_focus = st.session_state.get("nursing_necessity_df", pd.DataFrame())
+        _pa_df_focus = st.session_state.get("past_admissions_df", pd.DataFrame())
+        if not isinstance(_nn_df_focus, pd.DataFrame) or _nn_df_focus.empty:
+            return fallback
+
+        _emergency_count = 0
+        if (
+            isinstance(_pa_df_focus, pd.DataFrame)
+            and not _pa_df_focus.empty
+            and "is_emergency_transport" in _pa_df_focus.columns
+        ):
+            _emergency_count = int(_pa_df_focus["is_emergency_transport"].sum())
+        _coef = 0.0
+        if _emergency_count > 0:
+            _coef = nn_calc_response_coef(
+                annual_emergency_count=_emergency_count,
+                bed_count=94,
+            )["coefficient"]
+
+        _gap_rows = _nn_actual_gaps(
+            _nn_df_focus,
+            ward="6F",
+            emergency_coefficient_pct=_coef * 100,
+        )
+        if not _gap_rows:
+            return fallback
+        _safety_rows = [
+            row for row in _gap_rows
+            if str(row.get("scope", "")).startswith("直近")
+            and row.get("necessity_type") == "II"
+        ]
+        _row = _safety_rows[0] if _safety_rows else [
+            row for row in _gap_rows if row.get("necessity_type") == "II"
+        ][0]
+        _shortage = float(_row["required_days_per_month"])
+        _daily = _shortage / 30
+        _conv_by_action = {
+            row["action"]: row for row in _nn_conversion_rows(_shortage)
+        }
+        _c23 = _conv_by_action.get("C23系 1件", {})
+        _cases = int(_c23.get("required_cases_per_month", 0) or 0)
+        _interval = _c23.get("case_interval_label", "約1.5日に1件")
+        return {
+            "title": f"6F 必要度II: 月{_shortage:.1f}患者日ギャップ",
+            "action": (
+                "🛡️ 適応のある患者を見つけて、C23/内科A5日維持の選択肢を取る。"
+                f"件数ペースは月{_cases}件（{_interval}）ですが、適応評価後の参考値です。"
+            ),
+            "severity": "danger",
+            "chips": [
+                ("月不足", f"{_shortage:.1f}患者日"),
+                ("1日不足", f"{_daily:.1f}患者日"),
+                ("参考ペース", f"月{_cases}件"),
+            ],
+            "note": "PR #30のガンマ思想：「記録するだけでなく選ぶ」。適応外処置・虚偽記録・病棟都合の患者選別は絶対NG。",
+        }
+    except Exception:
+        return fallback
+
+
+def _build_section_focus_payload(section_label: str, context: dict) -> dict:
+    """各セクションの最上段に出す「今日あと何をすればいいか」を作る。"""
+    selected_ward = context.get("_selected_ward_key", "全体")
+    if section_label == "📊 今日の運営":
+        icon = context.get("_action_icon", "🔵")
+        severity = {"🔴": "danger", "🟡": "warning", "🟢": "success"}.get(icon, "info")
+        chips = []
+        if "_brief_empty" in context:
+            chips.append(("空床", f"{int(context['_brief_empty'])}床"))
+        if "_gauge_occ" in context:
+            chips.append(("月平均稼働", f"{float(context['_gauge_occ']):.1f}%"))
+        if "_mt_txt" in context and context["_mt_txt"]:
+            chips.append(("月間ペース", _strip_status_prefix(context["_mt_txt"])))
+        title = context.get("_action_title")
+        action = context.get("_action_detail")
+        if not title or not action:
+            _raw = context.get("_active_raw_df")
+            _beds = int(context.get("_view_beds", 0) or 0)
+            _target_lower = float(context.get("target_lower", 0.90) or 0.90)
+            _target_upper = float(context.get("target_upper", 0.95) or 0.95)
+            if isinstance(_raw, pd.DataFrame) and len(_raw) > 0:
+                _last = _raw.iloc[-1]
+                _occ_key = "occupancy_rate" if "occupancy_rate" in _raw.columns else "稼働率"
+                _tp_key = "total_patients" if "total_patients" in _raw.columns else "在院患者数"
+                _occ = float(_last.get(_occ_key, 0) or 0)
+                if _occ < 1.5:
+                    _occ *= 100
+                _patients = int(_last.get(_tp_key, 0) or 0)
+                _empty = max(0, _beds - _patients) if _beds else 0
+                chips = [("稼働率", f"{_occ:.1f}%"), ("空床", f"{_empty}床"), ("表示", selected_ward)]
+                if _occ < _target_lower * 100:
+                    title = "空床を入院につなげる"
+                    action = "外来・連携室へ空床を共有し、予定入院前倒しまたは紹介入院の受入れを確認します。"
+                    severity = "warning"
+                elif _occ > _target_upper * 100:
+                    title = "入院枠を作る退院日を決める"
+                    action = "A/B/C群の退院可能性を確認し、今日確定できる退院日を先に固定します。"
+                    severity = "warning"
+                else:
+                    title = "目標レンジを維持する"
+                    action = "予定入退院を予定どおり進め、空床時間が長くならないよう連携室と共有します。"
+                    severity = "success"
+        return {
+            "title": title or "今日のデータを入れて運営判断を出す",
+            "action": _with_safety_lead(
+                action or "日次データ入力またはシミュレーション実行後に、赤い項目から対応します。",
+                "患者安全と適応を前提に、",
+            ),
+            "severity": severity,
+            "chips": chips[:3],
+            "note": f"{selected_ward}表示。詳細KPIは下のタブで確認できます。",
+        }
+
+    if section_label == "🔮 What-if・戦略":
+        return {
+            "title": "条件を1つだけ動かして、達成可否を見る",
+            "action": "患者選別や適応外対応ではなく、実行可能な運用条件として退院前倒し人数・新規入院数・需要増減のどれか1つを変えます。",
+            "severity": "info",
+            "chips": [("最初に触る", "入退院人数"), ("見る結果", "稼働率/空床"), ("残す", "仮説管理")],
+            "note": "会議では細かい表より、赤字が消える条件を先に共有します。",
+        }
+
+    if section_label == "🛡️ 制度管理":
+        _remaining = None
+        try:
+            _remaining = days_until_transitional_end()
+        except Exception:
+            pass
+        chips = [("見る順", "救急15%→LOS→C群"), ("今日の完了", "赤/黄を1つ是正")]
+        if _remaining is not None:
+            chips.append(("本則まで", f"あと{_remaining}日"))
+        return {
+            "title": "赤い基準を1つだけ潰す",
+            "action": "患者安全と制度目的を守る前提で、救急15%、90日LOS、C群の赤/黄を確認し、今日の是正行動を1つ決めます。",
+            "severity": "warning",
+            "chips": chips,
+            "note": "制度説明は下段へ回し、最初は危ない基準と是正行動だけを見ます。",
+        }
+
+    if section_label == "🏥 退院調整":
+        return {
+            "title": "今日、退院日を確定する患者を決める",
+            "action": "医学的安全性・家族/施設調整を確認したうえで、調整中の患者を予定または決定へ進めます。週末前に空床を作る対象を先に固定します。",
+            "severity": "info",
+            "chips": [("見る順", "カンファ→カレンダー"), ("今日の完了", "退院日確定"), ("次", "入院受入枠")],
+            "note": "家族・施設・医学的安全性を確認し、病棟都合だけの退院判断にしない前提です。",
+        }
+
+    if section_label == "📈 過去1年分析":
+        return _build_past_year_focus_payload()
+
+    if section_label == "⚙️ データ・設定":
+        return {
+            "title": "今日の記録を先に確定する",
+            "action": "記録の正確性を守るため、日次データ入力を済ませてから、医師別分析・HOPE送信・エクスポートへ進みます。",
+            "severity": "info",
+            "chips": [("最初", "日次入力"), ("次", "実績分析"), ("最後", "出力/送信")],
+            "note": "データが古いと全画面の判断が重くなるため、入力確定を最優先にします。",
+        }
+
+    return {
+        "title": "今日の判断を1つに絞る",
+        "action": "患者安全と適応を前提に、赤い項目を先に確認し、必要な行動だけを実施します。",
+        "severity": "info",
+        "chips": [],
+        "note": None,
+    }
 
 if not _CORE_AVAILABLE:
     st.error(f"⚠️ コアモジュールのインポートに失敗しました\n\n{_CORE_ERROR}")
@@ -2948,7 +3238,18 @@ def _render_ward_kpi_with_alert(raw_df, target_lower, target_upper, view_beds):
 # 本日の病床状況 + 今日の一手 + KPI + アラートをまとめて1つの expander に
 # 朝の確認後は折りたたんで、モード別タブコンテンツに集中できる
 # ---------------------------------------------------------------------------
-_summary_expander = st.expander("☀️ 本日のサマリー（クリックで折りたたみ）", expanded=True)
+_section_focus = _build_section_focus_payload(_selected_section, locals())
+_bc_action_focus_card(
+    title=_section_focus["title"],
+    action=_section_focus["action"],
+    severity=_section_focus.get("severity", "info"),
+    chips=_section_focus.get("chips"),
+    note=_section_focus.get("note"),
+    testid="section-action-focus",
+)
+_render_admin_kpi_strip(locals())
+
+_summary_expander = st.expander("☀️ 本日の詳細サマリー（クリックで開く）", expanded=False)
 
 _is_demo = st.session_state.get("data_mode") == "🎮 デモモード（サンプルデータ）"
 _sim_has_data = _simulation_available and isinstance(st.session_state.get("sim_df_raw"), pd.DataFrame) and len(st.session_state.sim_df_raw) > 0
@@ -10428,9 +10729,9 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                 f"2026-06-01 から新基準（Ⅰ {THRESHOLD_I_NEW:.0%}, Ⅱ {THRESHOLD_II_NEW:.0%}）が適用されます。"
             )
 
-            # ===== 📘 公式 看護必要度評価項目表（令和8改定）— 常時表示 =====
-            # 副院長要望 2026-04-25: 折りたたまず最初から見える状態に
-            # 判断に迷ったときの正典を即座に参照可能にする
+            # ===== 📚 参考資料 =====
+            # 試験運用前UI: 最初に6Fの不足と今日の行動を見せるため、
+            # 公式表・ミニレクチャー・疾患別マニュアルは参照ボックスに集約する。
             import os as _nn_os
             _nn_project_root = _nn_os.path.normpath(
                 _nn_os.path.join(_nn_os.path.dirname(_nn_os.path.abspath(__file__)), "..")
@@ -10439,39 +10740,26 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                 _nn_project_root, "docs", "admin", "references",
                 "nursing_necessity_evaluation_2026.png",
             )
-            if _nn_os.path.exists(_nn_eval_img_path):
-                st.markdown("##### 📘 公式 看護必要度評価項目表（A・B・C項目、令和8改定）")
-                st.caption(
-                    "出典: 厚労省 令和8年度診療報酬改定 説明資料"
-                    "（IMI Co.,Ltd. 公開資料を参考に副院長判断で社内利用）"
-                )
-                st.image(_nn_eval_img_path, use_container_width=True)
-                st.markdown("---")
-
-            # ===== 📚 看護必要度ミニレクチャー（医師の行動変容） =====
-            # 当院特有の戦略・5 つの行動変容・C 項目活用を網羅した教育コンテンツ。
-            # **同じ内容はサイドバーからも常時アクセス可能**（全セクションから参照）。
-            if _NN_LECTURE_MD:
-                with st.expander(
-                    "📚 看護必要度ミニレクチャー — 医師の行動変容で達成する（サイドバーからも参照可）",
-                    expanded=False,
-                ):
+            with st.expander("📚 参考資料: 公式表・ミニレクチャー・疾患別マニュアル", expanded=False):
+                if _nn_os.path.exists(_nn_eval_img_path):
+                    st.markdown("##### 📘 公式 看護必要度評価項目表（A・B・C項目、令和8改定）")
+                    st.caption(
+                        "出典: 厚労省 令和8年度診療報酬改定 説明資料"
+                        "（IMI Co.,Ltd. 公開資料を参考に副院長判断で社内利用）"
+                    )
+                    st.image(_nn_eval_img_path, use_container_width=True)
+                    st.markdown("---")
+                if _NN_LECTURE_MD:
+                    st.markdown("##### 📚 看護必要度ミニレクチャー")
                     st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
                     # レクチャー直下に参考エビデンス・出典をオフライン対応で描画
                     # 公式 PDF（厚労省・日循）+ 要約 markdown を統一管理
                     if _nn_render_references is not None:
                         st.markdown("---")
                         _nn_render_references(st, _nn_project_root)
-
-            # ===== 🏥 疾患別マニュアル（医師担当部分の実臨床リファレンス） =====
-            # ミニレクチャー = 概念整理（行動変容の 5 ステップ）
-            # 疾患別マニュアル = 疾患入口型（この患者を見たらこの選択肢）の臨床リファレンス
-            # DOCX ダウンロードで院内 LAN 配布・印刷も可能。
-            if _NN_DISEASE_MANUAL_MD:
-                with st.expander(
-                    "🏥 疾患別マニュアル — 医師担当部分の判断・処置リファレンス（17 疾患）",
-                    expanded=False,
-                ):
+                    st.markdown("---")
+                if _NN_DISEASE_MANUAL_MD:
+                    st.markdown("##### 🏥 疾患別マニュアル — 医師担当部分の判断・処置リファレンス（17 疾患）")
                     if _nn_render_disease_manual is not None:
                         _nn_render_disease_manual(st)
                     else:
@@ -10502,12 +10790,11 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     _nn_coef_dict = {"per_bed_count": 0, "coefficient_raw": 0, "capped": False}
 
                 # 救急応需係数のサマリーカード
-                _bc_alert(
+                st.info(
                     f"**🚑 救急患者応需係数（令和8改定で新設）**: "
                     f"年間救急搬送 {_nn_emergency_count} 件 ÷ {_nn_bed_count} 床 × 0.005 "
                     f"= **{_nn_coef * 100:.2f}%**（上限 {EMERGENCY_RESPONSE_COEFFICIENT_CAP:.0%}）"
-                    f"<br>この値が **新基準 19% / 18% に対して該当患者割合に加算**されます（旧基準には不適用）。",
-                    severity="info",
+                    f"\n\nこの値が **新基準 19% / 18% に対して該当患者割合に加算**されます（旧基準には不適用）。",
                 )
 
                 # ===== 12ヶ月平均カード（4 枚: 5F-Ⅰ, 5F-Ⅱ, 6F-Ⅰ, 6F-Ⅱ）=====
@@ -10580,26 +10867,57 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                         _nn_minimum_days = float(_nn_minimum_row["required_days_per_month"])
                         _nn_safety_days = float(_nn_safety_row["required_days_per_month"])
                         _nn_daily_safety_days = _nn_safety_days / 30
-                        _bc_alert(
-                            f"**6F 必要度IIが最優先課題です。** "
-                            f"{_nn_safety_row['scope']}の割合指数は **{_nn_safety_row['index_pct']:.2f}%** "
-                            f"（新基準 {_nn_safety_row['target_pct']:.0f}%）。"
-                            f"安全ラインまで **月{_nn_safety_days:.1f}患者日**、"
-                            f"1日あたり **{_nn_daily_safety_days:.1f}患者日** が不足しています。"
-                            "<br>これは入院数を減らす提案ではありません。6Fの入院数は過去実績どおり月75〜80件前後を維持し、"
-                            "その中で該当患者日を増やす設計です。"
-                            "<br>患者日 = 「基準該当患者 1人 × 1日」。C23を1件拾うと5患者日、C21を1件拾うと4患者日として考えます。",
-                            severity="danger",
+                        _nn_safety_conv_rows = _nn_conversion_rows(_nn_safety_days)
+                        _nn_safety_conv_by_action = {
+                            row["action"]: row for row in _nn_safety_conv_rows
+                        }
+                        _nn_c23_pace = _nn_safety_conv_by_action.get("C23系 1件", {})
+                        _nn_c21_pace = _nn_safety_conv_by_action.get("C21系 1件", {})
+                        _nn_mean_admissions = float(_nn_adm_volume.get("mean_admissions", 0.0) or 0.0)
+                        _nn_c23_monthly = int(_nn_c23_pace.get("required_cases_per_month", 0) or 0)
+                        _nn_c23_interval = str(_nn_c23_pace.get("case_interval_label", "-"))
+                        _nn_c21_monthly = int(_nn_c21_pace.get("required_cases_per_month", 0) or 0)
+                        _nn_c21_interval = str(_nn_c21_pace.get("case_interval_label", "-"))
+                        st.markdown(
+                            f"""
+                            <div style="
+                                border: 1px solid #FCA5A5;
+                                border-left: 8px solid #DC2626;
+                                border-radius: 8px;
+                                background: #FEF2F2;
+                                padding: 18px 20px;
+                                margin: 8px 0 16px 0;
+                            ">
+                              <div style="font-size: 0.95rem; font-weight: 700; color: #991B1B;">
+                                6F 今日の結論
+                              </div>
+                              <div style="font-size: 2.1rem; line-height: 1.2; font-weight: 800; color: #7F1D1D;">
+                                必要度II 安全ラインまで 月{_nn_safety_days:.1f}患者日不足
+                              </div>
+                              <div style="font-size: 1.05rem; color: #374151; margin-top: 8px;">
+                                1日あたり <b>{_nn_daily_safety_days:.1f}患者日</b>。
+                                C23または内科A項目5日維持なら <b>月{_nn_c23_monthly}件（{_nn_c23_interval}）</b> が単独換算の目安です。
+                                入院数は過去実績どおり月{_nn_mean_admissions:.1f}件前後を維持する前提です。
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        st.caption(
+                            "患者日 = 「基準該当患者 1人 × 1日」。"
+                            "C23は1件で5患者日、C21は1件で4患者日として単独換算します。"
                         )
 
-                        _nn_summary_cols = st.columns(4)
+                        _nn_summary_cols = st.columns(5)
                         with _nn_summary_cols[0]:
-                            st.metric("安全ライン", f"{_nn_safety_days:.1f}", "患者日/月")
+                            st.metric("月不足", f"{_nn_safety_days:.1f}", "患者日/月")
                         with _nn_summary_cols[1]:
-                            st.metric("1日あたり", f"{_nn_daily_safety_days:.1f}", "患者日/日")
+                            st.metric("1日不足", f"{_nn_daily_safety_days:.1f}", "患者日/日")
                         with _nn_summary_cols[2]:
-                            st.metric("最低ライン", f"{_nn_minimum_days:.1f}", "患者日/月")
+                            st.metric("C23/内科A5日", f"月{_nn_c23_monthly}件", _nn_c23_interval)
                         with _nn_summary_cols[3]:
+                            st.metric("C21", f"月{_nn_c21_monthly}件", _nn_c21_interval)
+                        with _nn_summary_cols[4]:
                             st.metric(
                                 "現在の必要度II",
                                 f"{_nn_safety_row['index_pct']:.2f}%",
@@ -10615,6 +10933,15 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                             "非該当日を持つ長期入院で稼働率を支える現実は前提として受け入れます。"
                             "入院数と稼働率は維持し、臨床・看護の工夫により該当患者日を増やす発想です。"
                         )
+
+                        st.markdown("**職種別 今日の一手（試験運用の最小セット）**")
+                        _nn_role_display = pd.DataFrame(_nn_role_daily_rows()).rename(columns={
+                            "role": "職種",
+                            "timing": "タイミング",
+                            "action": "今日やること",
+                            "metric": "見る指標",
+                        })
+                        st.table(_nn_role_display)
 
                         with st.expander("稼働率との衝突をどう考えるか", expanded=False):
                             st.markdown(
@@ -10640,10 +10967,7 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                         st.table(_nn_physician_display)
 
                         st.markdown("**1件あたり何患者日になるか（単独で埋めるなら）**")
-                        _nn_safety_conv = {
-                            row["action"]: row
-                            for row in _nn_conversion_rows(_nn_safety_days)
-                        }
+                        _nn_safety_conv = {row["action"]: row for row in _nn_safety_conv_rows}
                         _nn_minimum_conv = {
                             row["action"]: row
                             for row in _nn_conversion_rows(_nn_minimum_days)
@@ -10656,6 +10980,7 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                                 "1件の患者日": f"{_safety['patient_days_per_case']:.0f}日",
                                 "最低ライン": f"{_minimum.get('required_cases_per_month', 0)}件/月",
                                 "安全ライン": f"{_safety['required_cases_per_month']}件/月",
+                                "単独達成ペース": _safety["case_interval_label"],
                                 "週目安": f"{_safety['required_cases_per_week']:.1f}件/週",
                                 "例": _safety["example"],
                             })
@@ -10750,8 +11075,19 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                             if r["action"] != "記録回収" else f"{int(r['patient_days'])}日",
                             axis=1,
                         )
+                        _nn_mix_display["行動リズム"] = _nn_mix_display.apply(
+                            lambda r: (
+                                f"月{int(r['monthly_cases'])}件 = 約{30 / max(int(r['monthly_cases']), 1):.1f}日に1件"
+                                if r["action"] != "記録回収" and int(r["monthly_cases"]) > 0
+                                else (
+                                    f"月{int(r['patient_days'])}日分 = 約{30 / max(int(r['patient_days']), 1):.1f}日に1日分"
+                                    if int(r["patient_days"]) > 0 else "-"
+                                )
+                            ),
+                            axis=1,
+                        )
                         _nn_mix_display = _nn_mix_display[[
-                            "action", "月間アクション", "patient_days", "note",
+                            "action", "月間アクション", "行動リズム", "patient_days", "note",
                         ]].rename(columns={
                             "action": "項目",
                             "patient_days": "患者日/月",

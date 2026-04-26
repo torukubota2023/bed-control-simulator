@@ -224,6 +224,132 @@ def render_theme_css() -> str:
     .bc-alert.is-danger  {{ border-left-color: {COLOR_DANGER};  background: {COLOR_ALERT_BG_DANGER};  }}
     .bc-alert.is-success {{ border-left-color: {COLOR_SUCCESS}; background: {COLOR_ALERT_BG_SUCCESS}; }}
 
+    /* --- 最上段アクションカード --- */
+    .bc-action-focus {{
+      background: {COLOR_SURFACE};
+      border: 1px solid {COLOR_BORDER};
+      border-left: 8px solid {COLOR_INFO};
+      border-radius: {RADIUS_MD};
+      padding: {SPACE_4} {SPACE_5};
+      margin: {SPACE_3} 0 {SPACE_4} 0;
+      box-shadow: {SHADOW_SM};
+    }}
+    .bc-action-focus.is-danger {{
+      border-left-color: {COLOR_DANGER};
+      background: {COLOR_ALERT_BG_DANGER};
+    }}
+    .bc-action-focus.is-warning {{
+      border-left-color: {COLOR_WARNING};
+      background: {COLOR_ALERT_BG_WARNING};
+    }}
+    .bc-action-focus.is-success {{
+      border-left-color: {COLOR_SUCCESS};
+      background: {COLOR_ALERT_BG_SUCCESS};
+    }}
+    .bc-action-focus.is-info {{
+      border-left-color: {COLOR_INFO};
+      background: {COLOR_ALERT_BG_INFO};
+    }}
+    .bc-action-focus-kicker {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+      font-weight: {FONT_WEIGHT_SEMIBOLD};
+      margin-bottom: {SPACE_1};
+    }}
+    .bc-action-focus-title {{
+      color: {COLOR_TEXT_PRIMARY};
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: {FONT_WEIGHT_BOLD};
+      letter-spacing: 0;
+      margin-bottom: {SPACE_2};
+    }}
+    .bc-action-focus-action {{
+      color: {COLOR_TEXT_PRIMARY};
+      font-size: 16px;
+      line-height: 1.55;
+      font-weight: {FONT_WEIGHT_MEDIUM};
+    }}
+    .bc-action-focus-chips {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: {SPACE_2};
+      margin-top: {SPACE_3};
+    }}
+    .bc-action-focus-chip {{
+      display: inline-flex;
+      align-items: baseline;
+      gap: {SPACE_1};
+      border: 1px solid {COLOR_BORDER};
+      border-radius: {RADIUS_MD};
+      background: rgba(255, 255, 255, 0.75);
+      padding: {SPACE_1} {SPACE_3};
+      color: {COLOR_TEXT_PRIMARY};
+      white-space: nowrap;
+    }}
+    .bc-action-focus-chip-label {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+    }}
+    .bc-action-focus-note {{
+      color: {COLOR_TEXT_MUTED};
+      font-size: {FONT_SIZE_CAPTION};
+      line-height: 1.45;
+      margin-top: {SPACE_2};
+    }}
+
+    /* --- 管理者用 即答KPI行 --- */
+    .bc-admin-kpi-strip {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: {SPACE_3};
+      margin: -{SPACE_2} 0 {SPACE_4} 0;
+    }}
+    .bc-admin-kpi-item {{
+      background: {COLOR_BG};
+      border: 1px solid {COLOR_BORDER};
+      border-radius: {RADIUS_MD};
+      padding: {SPACE_2} {SPACE_3};
+      min-width: 0;
+    }}
+    .bc-admin-kpi-label {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .bc-admin-kpi-value-row {{
+      display: flex;
+      align-items: baseline;
+      gap: {SPACE_1};
+      color: {COLOR_TEXT_PRIMARY};
+      line-height: 1.2;
+      margin-top: {SPACE_1};
+    }}
+    .bc-admin-kpi-value-row strong {{
+      font-size: 22px;
+      font-weight: {FONT_WEIGHT_BOLD};
+      letter-spacing: 0;
+    }}
+    .bc-admin-kpi-value-row span {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_BODY};
+    }}
+    @media (max-width: 700px) {{
+      .bc-action-focus-title {{
+        font-size: 22px;
+      }}
+      .bc-action-focus {{
+        padding: {SPACE_3} {SPACE_4};
+      }}
+      .bc-admin-kpi-strip {{
+        grid-template-columns: 1fr;
+        gap: {SPACE_2};
+      }}
+    }}
+
     /* ================================================================
        Streamlit ネイティブ要素の微調整（控えめに）
        ================================================================ */

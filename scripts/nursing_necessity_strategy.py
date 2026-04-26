@@ -663,11 +663,15 @@ def build_patient_day_conversion_rows(required_days_per_month: float) -> List[Di
     for rule in PATIENT_DAY_CONVERSION_RULES:
         unit_days = max(_as_float(rule["patient_days_per_case"], 1.0), 1.0)
         monthly_cases = math.ceil(required / unit_days) if required > 0 else 0
+        interval_days = round(MONTH_DAYS / monthly_cases, 1) if monthly_cases else 0.0
         rows.append({
             "action": rule["action"],
             "patient_days_per_case": unit_days,
             "required_cases_per_month": monthly_cases,
             "required_cases_per_week": round(monthly_cases / 4.3, 1) if monthly_cases else 0.0,
+            "case_interval_days": interval_days,
+            "case_interval_label": f"約{interval_days:g}日に1件" if monthly_cases else "-",
+            "required_patient_days_per_day": round(required / MONTH_DAYS, 1) if required else 0.0,
             "example": rule["example"],
         })
     return rows
@@ -676,6 +680,30 @@ def build_patient_day_conversion_rows(required_days_per_month: float) -> List[Di
 def build_physician_case_matching_rows() -> List[Dict[str, str]]:
     """医師が患者を看護必要度の候補に当てはめるための早見表."""
     return [dict(row) for row in PHYSICIAN_CASE_MATCHING_ROWS]
+
+
+def build_role_daily_action_rows() -> List[Dict[str, str]]:
+    """試験運用前に見せる、職種別の最小行動セットを返す."""
+    return [
+        {
+            "role": "医師",
+            "timing": "入院時 + 朝ラウンド",
+            "action": "酸素、注射3種、輸血、シリンジポンプ、C項目処置の適応と開始/終了を同日回答",
+            "metric": "同日回答率 / 未回答件数",
+        },
+        {
+            "role": "看護師",
+            "timing": "毎朝 + 処置当日",
+            "action": "薬剤名、投与時刻、酸素流量、処置後観察、ドレーン/穿刺部管理を評価表と照合",
+            "metric": "翌日持ち越し件数",
+        },
+        {
+            "role": "管理者",
+            "timing": "週1回ハドル",
+            "action": "不足患者日、今月の件数ペース、未回答症例を共有し、責めずに仕組みを直す",
+            "metric": "残不足患者日/月",
+        },
+    ]
 
 
 def calculate_6f_action_mix(

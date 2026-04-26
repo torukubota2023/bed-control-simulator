@@ -59,7 +59,7 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
     await selectSection(page, '今日の運営');
     // v3.5 本体は初期状態では main content が「サイドバーのパラメータを設定し
     // 『シミュレーション実行』ボタンを押してください」の案内のみで、
-    // data-testid (occupancy / alos / phase / vacancy / action-card / guardrail-summary)
+    // data-testid (occupancy / alos / phase / vacancy / section-action-focus / action-card / guardrail-summary)
     // は描画されない。「📊 今日の運営」本体を描画させるためにボタンを押す。
     const runButton = page.getByRole('button', { name: 'シミュレーション実行' }).first();
     if (await runButton.count() > 0) {
@@ -80,6 +80,7 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
       'phase',
       'vacancy',
       'revenue',
+      'section-action-focus',
       'action-card',
       'guardrail-summary',
     ];

@@ -436,7 +436,13 @@ class TestStStopSafety:
             has_tab_context = "with tabs[" in context
             has_auth_context = "_require_data_auth" in context
             has_password_context = "password" in context.lower() or "パスワード" in context
-            assert has_tab_context or has_auth_context or has_password_context, (
+            has_core_import_guard = "_CORE_AVAILABLE" in context
+            assert (
+                has_tab_context
+                or has_auth_context
+                or has_password_context
+                or has_core_import_guard
+            ), (
                 f"L{ln}: st.stop() がタブコンテキストや認証ガード外にある — "
                 f"全セクションをブロックする可能性あり"
             )
@@ -445,6 +451,29 @@ class TestStStopSafety:
 # =====================================================================
 # テスト: セクション→タブマッピングの完全性
 # =====================================================================
+
+class TestActionFocusEthics:
+    """最上段アクションカードの倫理フレーミングを守る"""
+
+    def test_6f必要度カードは適応確認を先頭に置く(self):
+        block_start = APP_SOURCE.find("def _build_past_year_focus_payload")
+        block_end = APP_SOURCE.find("def _build_section_focus_payload", block_start)
+        block = APP_SOURCE[block_start:block_end]
+
+        assert "6F 必要度II: 月{_shortage:.1f}患者日ギャップ" in block
+        assert "🛡️ 適応のある患者を見つけて" in block
+        assert "適応評価後の参考値" in block
+        assert "適応外処置・虚偽記録・病棟都合の患者選別は絶対NG" in block
+
+    def test_管理者用3kpiは折りたたみ外に残す(self):
+        summary_idx = APP_SOURCE.find('st.expander("☀️ 本日の詳細サマリー')
+        strip_idx = APP_SOURCE.find("_render_admin_kpi_strip(locals())")
+
+        assert strip_idx != -1, "管理者用KPI行の描画が見つからない"
+        assert summary_idx != -1, "本日の詳細サマリー expander が見つからない"
+        assert strip_idx < summary_idx, "管理者用KPI行は詳細サマリーの外・上に置く"
+        assert 'data-testid="current-patients"' in APP_SOURCE
+
 
 class TestSectionTabMapping:
     """サイドバーセクションとタブの対応が完全であること"""

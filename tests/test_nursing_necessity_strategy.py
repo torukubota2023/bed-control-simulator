@@ -15,6 +15,7 @@ from nursing_necessity_strategy import (  # noqa: E402
     build_nursing_necessity_actions,
     build_patient_day_conversion_rows,
     build_physician_case_matching_rows,
+    build_role_daily_action_rows,
     calculate_6f_action_mix,
     calculate_emergency_response_coefficient,
     estimate_intervention_gain_pct,
@@ -236,6 +237,24 @@ def test_patient_day_conversion_rows_translate_shortage_to_cases():
     assert by_action["C21系 1件"]["required_cases_per_month"] == 25
     assert by_action["C23系 1件"]["required_cases_per_month"] == 20
     assert by_action["内科A項目 5日維持"]["required_cases_per_month"] == 20
+    assert by_action["C23系 1件"]["case_interval_label"] == "約1.5日に1件"
+    assert by_action["C23系 1件"]["required_patient_days_per_day"] == pytest.approx(3.3)
+
+
+def test_role_daily_action_rows_focus_on_action_without_unsafe_incentives():
+    rows = build_role_daily_action_rows()
+    by_role = {row["role"]: row for row in rows}
+    combined = " ".join(
+        row["role"] + row["timing"] + row["action"] + row["metric"]
+        for row in rows
+    )
+
+    assert {"医師", "看護師", "管理者"} <= set(by_role.keys())
+    assert "同日回答" in by_role["医師"]["action"]
+    assert "評価表" in by_role["看護師"]["action"]
+    assert "責めずに仕組みを直す" in by_role["管理者"]["action"]
+    assert "入院数を減らす" not in combined
+    assert "不必要な処置" not in combined
 
 
 def test_physician_case_matching_rows_are_clinical_and_actionable():

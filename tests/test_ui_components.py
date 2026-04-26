@@ -154,6 +154,35 @@ class TestAlertHtml:
         assert "is-info" in html
 
 
+class TestActionFocusCardHtml:
+    def test_basic_action_focus_card(self) -> None:
+        html = uc.action_focus_card_html(
+            "6Fは必要度IIの不足患者日を埋める",
+            "C23または内科A5日を月20件ペースで確認する",
+            severity="danger",
+            chips=[("月不足", "99.4患者日"), ("ペース", "約1.5日に1件")],
+            note="適応のある医療・ケアの記録漏れ防止のみ",
+            testid="section-action-focus",
+        )
+        assert "bc-action-focus" in html
+        assert "is-danger" in html
+        assert "今日あと何をすればいいか" in html
+        assert "6Fは必要度II" in html
+        assert "99.4患者日" in html
+        assert 'data-testid="section-action-focus"' in html
+
+    def test_action_focus_card_escapes_html(self) -> None:
+        html = uc.action_focus_card_html(
+            "<script>",
+            "A < B",
+            chips=[("x", "<b>")],
+        )
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+        assert "A &lt; B" in html
+        assert "&lt;b&gt;" in html
+
+
 # ---------------------------------------------------------------------------
 # Streamlit を呼ぶ関数 — monkeypatch で副作用のみ確認
 # ---------------------------------------------------------------------------
@@ -198,6 +227,18 @@ class TestStreamlitWrappers:
         assert "LOS が上限に接近" in body
         assert kwargs.get("unsafe_allow_html") is True
 
+    def test_action_focus_card_calls_markdown(self, monkeypatch) -> None:
+        calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            uc.st, "markdown", lambda body, **k: calls.append((body, k))
+        )
+        uc.action_focus_card("今日の一手", "退院日を1名確定", severity="warning")
+        assert len(calls) == 1
+        body, kwargs = calls[0]
+        assert "bc-action-focus" in body
+        assert "今日の一手" in body
+        assert kwargs.get("unsafe_allow_html") is True
+
 
 # ---------------------------------------------------------------------------
 # theme_css.render_theme_css()
@@ -217,6 +258,8 @@ class TestRenderThemeCss:
             ".bc-kpi-label",
             ".bc-kpi-value",
             ".bc-alert",
+            ".bc-action-focus",
+            ".bc-admin-kpi-strip",
         ):
             assert cls in css, f"{cls} missing from theme CSS"
 
