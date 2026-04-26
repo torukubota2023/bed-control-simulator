@@ -46,7 +46,7 @@
 ### ❤️ 循環器系疾患
 
 - [10. ❤️ 重症 Af / 心房粗動（血行動態不安定）](#disease-10)
-- [11. ❤️ 心不全急性増悪（hot/wet 型）](#disease-11)
+- [11. ❤️ 心不全急性増悪（hot/wet 型: 高血圧 + うっ血）](#disease-11)
 
 ### 🦠 感染症（昇圧剤適応・非適応）
 
@@ -412,36 +412,47 @@
 ---
 
 <a id="disease-11"></a>
-### 11. ❤️ 心不全急性増悪（hot/wet 型）
+### 11. ❤️ 心不全急性増悪（hot/wet 型: 高血圧 + うっ血）
 
 #### 🩺 入口（こんな患者を見たら）
 - 急性肺水腫 + 起座呼吸 + SpO2 低下
-- 末梢冷感・血圧不安定 (cardiogenic shock 移行リスク)
+- **SBP > 140 mmHg + 末梢温暖**（hot/wet 型、急性肺水腫の典型）
 - BNP 高値、CXR で肺うっ血
+- ※ cold/wet (cardiogenic shock 移行例) は SBP < 90 + 末梢冷感、A6⑦ 昇圧剤主体に切替
 
 #### 💊 第一選択 vs 看護必要度貢献選択肢（医学的に同等以上）
 
 | 場面 | 従来の選択肢 | 看護必要度に貢献する選択肢 |
 |---|---|---|
-| 血行動態維持 | 利尿剤のみで経過観察 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ NE/DOA/DOB 持続点滴</span> — 低血圧合併で必要十分な期間維持 |
+| 前負荷・後負荷軽減（hot/wet の主軸） | 利尿剤 (フロセミド IV ボーラス) のみ | <span style="color:#F59E0B;font-weight:bold">🟠 A4 + A3 ペア</span> — ニトログリセリン IV 持続点滴 (シリンジポンプ管理) + 利尿剤 + 補液 |
+| cold/wet 移行例の血行動態維持 | 経過観察、利尿剤継続 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ NE/DOB 持続点滴</span> — SBP < 90 で必要十分な期間維持 |
 
 #### 📋 看護必要度寄与
-- <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ 昇圧剤の使用</span>: **3 点 / 日 × 1-3 日**
-- <span style="color:#F59E0B;font-weight:bold">🟠 A4 シリンジポンプ</span>: 1 点 (昇圧剤持続)
+- <span style="color:#F59E0B;font-weight:bold">🟠 A4 シリンジポンプ管理</span>: **1 点 / 日** (NTG 持続)
+- <span style="color:#F59E0B;font-weight:bold">🟠 A3 注射薬剤 3 種類以上</span>: **1 点 / 日** (利尿剤 + NTG + 補液)
+- → <span style="color:#F59E0B;font-weight:bold">🟠 A4 + A3 = 2 点</span> で **該当患者** (NE なしの基本パターン)
+- <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ 昇圧剤</span>: 3 点 / 日 (cold/wet 移行例で追加)
 - <span style="color:#F59E0B;font-weight:bold">🟠 A2 呼吸ケア (酸素 A2)</span>: 1 点 / 日 (酸素必要日)
 
 #### 📚 エビデンス
-- **強**: [PMID 34599691](https://pubmed.ncbi.nlm.nih.gov/34599691/) — Surviving Sepsis 2021 — NE 第一選択 (cardiogenic shock も準用)、心機能低下時は ± dobutamine
+- **強**: [PMID 35379503](https://pubmed.ncbi.nlm.nih.gov/35379503/) — 2022 AHA/ACC/HFSA HF GL — 急性肺水腫 + 高血圧で IV vasodilator (NTG/SNP) 推奨
+- **強**: [PMID 35636830](https://pubmed.ncbi.nlm.nih.gov/35636830/) — 2021 ESC HF GL — SBP > 110 mmHg の急性心不全で IV vasodilator (Class IIa)
+- **中**: [PMID 40834833](https://pubmed.ncbi.nlm.nih.gov/40834833/) — Henry AJEM 2025 (SCAPE 441 例) — IV NTG 高用量 (≥100 μg/min) は酸素 weaning 早い (2.7h vs 3.3h)、低血圧少ない
+- **中**: [PMID 40833345](https://pubmed.ncbi.nlm.nih.gov/40833345/) — Galluzzo JCP 2025 (国際 survey、170 医師、32 国) — AHF での IVV 第一選択は NTG 48%、ニトロプルシド 29%
 
 #### 🛡️ 倫理ガードレール（疾患特異）
-- cardiogenic shock の早期認識 (lactate、SvO2)
-- 早すぎる昇圧剤離脱を避ける（必要十分な期間維持）
-- 利尿剤過剰で腎前性 AKI を起こさない
+- **SBP < 90 mmHg は禁忌** (NTG 減量・中止)、最低 SBP > 100 mmHg を維持
+- 24-72h で経口血管拡張薬 (ACE-I/ARNI) への移行を検討、持続を惰性で続けない
+- cold/wet 進行 (低血圧 + 末梢冷感) を見逃さない → A6⑦ NE/DOB 追加判断
+- 5 日以上の持続は通常不要 (A3 注射薬剤の最大 7 日カウントを意識)
+- PDE5 阻害薬使用例では NTG は禁忌 (重度低血圧リスク)
 
 #### 📝 オーダー例
-- 「ノルアドレナリン 0.05 μg/kg/min 開始、MAP > 65 維持」
-- 「ドブタミン 5 μg/kg/min 併用 (心機能低下例)」
-- 「Aライン留置、CVP モニター」
+- 「ニトログリセリン 5 μg/min 開始 → 5 μg/min ずつ 3-5 分ごと増量 (max 200 μg/min)」
+- 「フロセミド 20-40mg IV ボーラス + 適宜追加 (尿量モニター)」
+- 「シリンジポンプで NTG 持続、SBP > 100 mmHg 維持」
+- 「A line + NIBP モニター継続、尿量 1 時間ごと記録」
+- 「cold/wet 移行時は NE 0.05 μg/kg/min 追加開始」
 
 ---
 
