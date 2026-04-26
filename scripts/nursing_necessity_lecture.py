@@ -111,10 +111,10 @@ LECTURE_MARKDOWN: str = """
 | 項目 | 現状の医療提供 | 工夫の方向（適応の範囲内） | A/C 寄与 |
 |---|---|---|---|
 | <span style="color:#F59E0B;font-weight:bold">🟠 A6③ 麻薬注射</span> | がん性疼痛で経口移行を急ぐ | 適応継続中は持続点滴を維持（疼痛コントロール優先） | A 3 点 / 3-5 日 |
-| <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ 昇圧剤</span> | 敗血症で短時間使用、早期離脱 | 必要十分な期間まで維持（早すぎる中止を避ける） | A 3 点 / 1-3 日 |
+| <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ 昇圧剤</span> | 敗血症 / 心不全 cold/wet で短時間使用、早期離脱 | 必要十分な期間まで維持（早すぎる中止を避ける） | A 3 点 / 1-3 日 |
 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑧ 抗不整脈剤</span> | Af で経口管理を優先 | 急性期は IV アミオダロン / ペイン PHN は IV リドカイン | A 3 点 / 1-7 日 |
 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑨ 抗血栓持続</span> | PE で DOAC 移行を急ぐ | 高リスク・腎不全例は UFH 持続を維持 | A 3 点 / 3-7 日 |
-| <span style="color:#F59E0B;font-weight:bold">🟠 A4 + A3 ペア</span> | β-ラクタム間欠投与 | 重症感染症で PIPC/TAZ・MEPM 持続点滴を選択 | A 2 点 / 5-7 日 |
+| <span style="color:#F59E0B;font-weight:bold">🟠 A4 + A3 ペア</span> | β-ラクタム間欠投与 / 心不全 hot/wet を利尿剤のみで対応 | 重症感染症で PIPC/TAZ・MEPM 持続点滴 / 心不全 hot/wet で **ニトログリセリン IV 持続** | A 2 点 / 5-7 日 |
 | <span style="color:#10B981;font-weight:bold">🟢 C21③ 内視鏡治療</span> | 適応症例で見送り傾向 | ESD・ERCP・内視鏡止血を積極化 | C 項目 / 各 4 日 |
 | <span style="color:#10B981;font-weight:bold">🟢 C23 PEG・CV 挿入</span> | 末梢困難でも見送り | 適応症例で閾値を下げる | C 項目 / PEG 5 日・CV 4 日 |
 
@@ -126,20 +126,29 @@ LECTURE_MARKDOWN: str = """
 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑨ 抗血栓持続</span> | 高リスク PE / CrCl<30 DVT → UFH 持続 | **強**: 日循 2025 GL（[ローカル PDF](docs/admin/references/pdf/jcs2025_pte_dvt_guideline.pdf)）|
 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑧ 抗不整脈剤</span> (Af) | 重症 Af / 心房粗動 → IV アミオダロン | **強**: 2024 ESC AF GL — 血行動態不安定で推奨（PMID 39210723）|
 | <span style="color:#F59E0B;font-weight:bold">🟠 A6⑧ 抗不整脈剤</span> (PHN) | PHN / CRPS → IV リドカイン | **弱**: PHN への IV リドカインの長期効果は **未証明**（PMID 16013891、PMID 36288104）。**ペイン科判断で症例選択** |
-| <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ 昇圧剤</span> | 敗血症 / ショック → NE 持続 | **強**: Surviving Sepsis 2021 — NE 第一選択（PMID 34599691）|
+| <span style="color:#F59E0B;font-weight:bold">🟠 A6⑦ 昇圧剤</span> | 敗血症 / ショック / 心不全 cold/wet → NE 持続 | **強**: Surviving Sepsis 2021（PMID 34599691）+ 2022 AHA HF GL（PMID 35379503）|
+| <span style="color:#F59E0B;font-weight:bold">🟠 A4+A3 (心不全 hot/wet)</span> | 急性肺水腫 + SBP > 140 → ニトログリセリン IV 持続 + 利尿剤 | **強**: 2022 AHA HF GL（PMID 35379503）+ 2021 ESC HF GL（PMID 35636830）+ SCAPE 高用量 NTG 試験（PMID 40834833） |
 
-##### <span style="color:#F59E0B;font-weight:bold">🟠 A4 + A3 ペア（合計 2 点）</span> — 昇圧剤なし重症感染症で威力
+##### <span style="color:#F59E0B;font-weight:bold">🟠 A4 + A3 ペア（合計 2 点）</span> — 昇圧剤なし重症感染症 & 心不全 hot/wet で威力
 
-敗血症ショック患者は通常 A6⑦ 昇圧剤（3 点）でカバーされるため、**真の活用ニッチは「昇圧剤を必要としない重症感染症」**。
-β-ラクタム持続点滴（シリンジポンプ管理）+ 多剤併用で **A4 (1 点) + A3 (1 点) = 2 点 → 該当患者** にできる:
+敗血症ショック患者は通常 A6⑦ 昇圧剤（3 点）でカバーされる。**A4+A3 ペアの活用ニッチは「昇圧剤を必要としない持続点滴症例」**。
+シリンジポンプ管理 + 多剤併用で **A4 (1 点) + A3 (1 点) = 2 点 → 該当患者** にできる:
 
 | こんな患者を見たら | 検討すべき方法 | 該当 (合計 2 点) | エビデンス強度 |
 |---|---|---|---|
+| **心不全 hot/wet（急性肺水腫 + SBP > 140 + 末梢温暖）** | **ニトログリセリン IV 持続 + 利尿剤 + 補液（シリンジポンプ）** | A4+A3 = 2 点 | **強**: 2022 AHA HF GL（PMID 35379503）+ 2021 ESC HF GL（PMID 35636830）+ SCAPE 高用量 NTG 試験（PMID 40834833） |
 | 重症肺炎（CURB-65 高、低酸素血症、ICU 候補だがショックなし） | β-ラクタム持続点滴 + シリンジポンプ | A4+A3 = 2 点 | **中**: BLING-III 陰性、メタ解析有意（PMID 38864155）|
 | 発熱性好中球減少症 (FN) | 同上 | 同上 | 中 + 免疫不全で trough 重要 |
 | 複雑性腹腔内感染 (cIAI) | 同上 | 同上 | 中 |
 | 重症腎盂腎炎（ESBL 産生菌など高 MIC） | 同上 | 同上 | 中 + 高 MIC で %T>MIC 重要 |
 | Augmented renal clearance（若年外傷、熱傷、CrCl > 130） | 同上 | 同上 | 中 + trough 低下リスク |
+
+**心不全 hot/wet (NTG 持続) のポイント**:
+- 適応: SBP > 140 + 急性肺水腫 + 末梢温暖（cold/wet 移行例は A6⑦ NE 主体に切替）
+- 投与: 5 μg/min 開始 → 5 μg/min ずつ 3-5 分ごと増量（max 200 μg/min）
+- 禁忌: SBP < 90 mmHg / PDE5 阻害薬使用例
+- 期間: 24-72h で経口血管拡張薬（ACE-I/ARNI）に移行
+- 詳細は **🏥 疾患別マニュアル #11 心不全急性増悪** を参照
 
 **具体的な投与方法（当院使用 β-ラクタム）**:
 
