@@ -1274,7 +1274,7 @@ if _NN_LECTURE_MD:
     # ダイアログ関数定義（クリック時に広いモーダルで全文表示）
     @st.dialog("📚 看護必要度ミニレクチャー — 医師の行動変容で達成する", width="large")
     def _show_nn_lecture_dialog():
-        st.markdown(_NN_LECTURE_MD)
+        st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
         if _nn_render_references is not None:
             import os as _nn_dlg_os
             _nn_dlg_root = _nn_dlg_os.path.normpath(
@@ -10442,7 +10442,7 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     "📚 看護必要度ミニレクチャー — 医師の行動変容で達成する（サイドバーからも参照可）",
                     expanded=False,
                 ):
-                    st.markdown(_NN_LECTURE_MD)
+                    st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
                     # レクチャー直下に参考エビデンス・出典をオフライン対応で描画
                     # 公式 PDF（厚労省・日循）+ 要約 markdown を統一管理
                     if _nn_render_references is not None:
