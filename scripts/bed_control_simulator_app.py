@@ -1026,7 +1026,34 @@ if not _BED_MGMT_METRICS_AVAILABLE and "_BED_MGMT_METRICS_ERROR" in dir():
 if not _GUARDRAIL_AVAILABLE and "_GUARDRAIL_ERROR" in dir():
     st.sidebar.warning(f"⚠️ 施設基準チェックモジュールのインポートに失敗しました\n\n{_GUARDRAIL_ERROR}")
 
-st.title("🏥 ベッドコントロールシミュレーター")
+st.markdown(
+    """
+    <style>
+    .stMarkdown h1.bc-app-title,
+    h1.bc-app-title {
+        margin: 0 0 0.25rem !important;
+        padding: 0 !important;
+        color: #1f2937 !important;
+        font-size: clamp(1.55rem, 2.85vw, 2.25rem) !important;
+        font-weight: 800 !important;
+        line-height: 1.08 !important;
+        letter-spacing: 0 !important;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
+        overflow-wrap: normal !important;
+    }
+
+    @media (max-width: 700px) {
+        .stMarkdown h1.bc-app-title,
+        h1.bc-app-title {
+            font-size: clamp(1.25rem, 5.5vw, 1.75rem) !important;
+        }
+    }
+    </style>
+    <h1 class="bc-app-title">🏥&nbsp;ベッドコントロールシミュレーター</h1>
+    """,
+    unsafe_allow_html=True,
+)
 st.caption("地域包括医療病棟（おもろまちメディカルセンター）向け日次シミュレーション")
 
 
