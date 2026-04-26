@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Mapping, Optional
 
 import pandas as pd
@@ -54,6 +55,111 @@ C_ITEM_DAYS: Dict[str, int] = {
     "C22": 2,  # 気管支鏡, TEE, EBUSなど
     "C23": 5,  # PEG, PTCD, CART, 消化管ステントなど
 }
+
+NECESSITY_TARGET_PCT: Dict[str, float] = {
+    "I": TARGET_NURSING_NECESSITY_I_PCT,
+    "II": TARGET_NURSING_NECESSITY_II_PCT,
+}
+
+DEFAULT_6F_STRATEGY_PACKAGE: Dict[str, int] = {
+    "record_recovery_days": 8,
+    "internal_medicine_a2_days": 14,
+    "pain_a6_days": 6,
+    "c_item_days": 12,
+}
+
+DEFAULT_6F_ACTION_MIX: Dict[str, int] = {
+    "record_recovery_days": 11,
+    "internal_cases": 8,
+    "internal_days_per_case": 5,
+    "pain_cases": 3,
+    "pain_days_per_case": 3,
+    "c21_cases": 4,
+    "c22_cases": 2,
+    "c23_cases": 4,
+}
+
+PATIENT_DAY_CONVERSION_RULES: List[Dict[str, Any]] = [
+    {
+        "action": "記録回収",
+        "patient_days_per_case": 1,
+        "example": "酸素、注射薬、輸血、処置の開始・終了と必要性を同日確定",
+    },
+    {
+        "action": "ペイン科A6 3日維持",
+        "patient_days_per_case": 3,
+        "example": "リドカイン等の持続点滴・疼痛処置は薬剤名/目的/投与日を確認",
+    },
+    {
+        "action": "C21系 1件",
+        "patient_days_per_case": C_ITEM_DAYS["C21"],
+        "example": "CV、腰椎穿刺、ERCP、内視鏡止血などは実施日から4日を確認",
+    },
+    {
+        "action": "C23系 1件",
+        "patient_days_per_case": C_ITEM_DAYS["C23"],
+        "example": "PEG、PTCD、CART、消化管ステントなどは実施日から5日を確認",
+    },
+    {
+        "action": "内科A項目 5日維持",
+        "patient_days_per_case": 5,
+        "example": "肺炎/心不全/COPD増悪で酸素+注射3種、輸血、シリンジポンプを確認",
+    },
+]
+
+PHYSICIAN_CASE_MATCHING_ROWS: List[Dict[str, str]] = [
+    # 医師が看護必要度の制度用語を知らなくても「臨床判断のついで」に
+    # 該当患者になることが分かるよう、平易な臨床語で記述する。
+    # 表示順: 患者像 → 医師の判断ポイント → カウント期間 → 看護師との同期。
+    {
+        "case_pattern": "🫁 肺炎・誤嚥性肺炎",
+        "doctor_check": "酸素を続けているか／抗菌薬+輸液+電解質補正など同時 3 剤を投与中か",
+        "duration": "治療継続中の毎日カウント",
+        "nurse_sync": "酸素流量・開始終了時刻、注射薬 3 剤の種類を毎日同日記録",
+    },
+    {
+        "case_pattern": "🫀 心不全急性増悪・COPD増悪・呼吸不全",
+        "doctor_check": "酸素・NPPV／利尿薬・ステロイド等の注射治療を継続しているか",
+        "duration": "治療継続中の毎日カウント",
+        "nurse_sync": "NPPV 装着時間、注射時刻、症状変化を毎日同日記録",
+    },
+    {
+        "case_pattern": "🚨 敗血症・ショック・急性増悪",
+        "doctor_check": "昇圧薬の持続点滴／シリンジポンプ管理／輸血の必要性",
+        "duration": "持続点滴中の毎日（高得点）",
+        "nurse_sync": "薬剤名・流量、シリンジ交換時刻、観察強化の記録",
+    },
+    {
+        "case_pattern": "🩸 消化管出血・貧血・輸血必要例",
+        "doctor_check": "輸血を実施するか／内視鏡的止血術を行うか",
+        "duration": "輸血当日 + 内視鏡実施日から 4 日間",
+        "nurse_sync": "輸血実施記録、処置後バイタル変化を当日確定",
+    },
+    {
+        "case_pattern": "🩺 CV挿入・腰椎穿刺・ERCP・内視鏡止血",
+        "doctor_check": "実施日と医学的必要性をカルテに明記",
+        "duration": "実施日から 4 日間",
+        "nurse_sync": "4 日分の処置部位観察・管理を欠落なく記録",
+    },
+    {
+        "case_pattern": "🔍 気管支鏡・TEE・EBUS",
+        "doctor_check": "検査実施日と検査目的をカルテに明記",
+        "duration": "実施日から 2 日間",
+        "nurse_sync": "2 日分の検査後観察を記録",
+    },
+    {
+        "case_pattern": "💉 PEG・PTCD・CART・消化管ステント",
+        "doctor_check": "実施日と処置目的、ドレーン/穿刺部管理計画をカルテに明記",
+        "duration": "実施日から 5 日間",
+        "nurse_sync": "5 日分のドレーン/穿刺部管理を毎日同日記録",
+    },
+    {
+        "case_pattern": "💊 ペイン科 持続点滴・疼痛処置",
+        "doctor_check": "キシロカイン・モルヒネ・リドカイン等の薬剤名と疼痛管理の必要性を明記",
+        "duration": "投与継続中の毎日",
+        "nurse_sync": "薬剤名・投与時刻・疼痛スケールを毎日同日記録",
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +391,388 @@ def build_nursing_necessity_actions(summary_rows: List[Mapping[str, Any]]) -> Li
             "next_actions": next_actions,
         })
     return actions
+
+
+# ---------------------------------------------------------------------------
+# 6F 実データ戦略ボード
+# ---------------------------------------------------------------------------
+
+def summarize_actual_necessity_gaps(
+    nursing_df: pd.DataFrame,
+    ward: str = "6F",
+    emergency_coefficient_pct: float = 0.0,
+    recent_months: int = 3,
+) -> List[Dict[str, Any]]:
+    """看護必要度実績 CSV から、通年/直近の不足該当日数を計算する.
+
+    ``nursing_necessity_loader`` の DataFrame を直接受け、必要度 I/II の
+    実績割合、救急患者応需係数加算後の割合指数、月あたり必要該当日数を返す。
+    """
+    if nursing_df is None or nursing_df.empty:
+        return []
+    if "ward" not in nursing_df.columns:
+        return []
+
+    work = nursing_df[nursing_df["ward"].astype(str) == ward].copy()
+    if work.empty:
+        return []
+    if "ym" not in work.columns and "date" in work.columns:
+        work["date"] = pd.to_datetime(work["date"], errors="coerce")
+        work["ym"] = work["date"].dt.to_period("M").astype(str)
+
+    months = sorted(work["ym"].dropna().unique()) if "ym" in work.columns else []
+    recent = months[-max(_as_int(recent_months, 3), 1):] if months else []
+
+    scopes = [
+        ("12ヶ月平均", work, max(len(months), 1), months),
+    ]
+    if recent:
+        scopes.append((
+            f"直近{len(recent)}ヶ月",
+            work[work["ym"].isin(recent)],
+            len(recent),
+            recent,
+        ))
+
+    rows: List[Dict[str, Any]] = []
+    for scope_label, scope_df, period_months, scope_months in scopes:
+        for typ in ("I", "II"):
+            total_col = f"{typ}_total"
+            pass_col = f"{typ}_pass1"
+            if total_col not in scope_df.columns or pass_col not in scope_df.columns:
+                continue
+            denominator_days = int(pd.to_numeric(scope_df[total_col], errors="coerce").fillna(0).sum())
+            pass_days = int(pd.to_numeric(scope_df[pass_col], errors="coerce").fillna(0).sum())
+            if denominator_days <= 0:
+                continue
+            rate_pct = pass_days / denominator_days * 100
+            target_pct = NECESSITY_TARGET_PCT[typ]
+            index_pct = rate_pct + emergency_coefficient_pct
+            gap_pct = max(0.0, target_pct - index_pct)
+            required_days_total = gap_pct / 100 * denominator_days
+            required_days_per_month = required_days_total / max(period_months, 1)
+            denominator_days_per_month = denominator_days / max(period_months, 1)
+
+            rows.append({
+                "ward": ward,
+                "scope": scope_label,
+                "months": list(scope_months),
+                "period_months": period_months,
+                "necessity_type": typ,
+                "target_pct": round(target_pct, 2),
+                "rate_pct": round(rate_pct, 2),
+                "emergency_coeff_pct": round(emergency_coefficient_pct, 2),
+                "index_pct": round(index_pct, 2),
+                "gap_pct": round(gap_pct, 2),
+                "denominator_days": denominator_days,
+                "denominator_days_per_month": round(denominator_days_per_month, 1),
+                "pass_days": pass_days,
+                "required_days_total": round(required_days_total, 1),
+                "required_days_per_month": round(required_days_per_month, 1),
+                "status": _classify_gap(gap_pct),
+            })
+    return rows
+
+
+def summarize_ward_case_mix(
+    past_df: pd.DataFrame,
+    ward: str = "6F",
+    specialty_map: Optional[Mapping[str, str]] = None,
+) -> Dict[str, Any]:
+    """過去入院 CSV から 6F の患者ミックスを要約する."""
+    if past_df is None or past_df.empty:
+        return {
+            "ward": ward,
+            "n": 0,
+            "internal_pct": 0.0,
+            "pain_pct": 0.0,
+            "no_surgery_pct": 0.0,
+            "scheduled_pct": 0.0,
+            "ambulance_pct": 0.0,
+            "median_los": 0.0,
+            "specialty_rows": [],
+        }
+
+    work = past_df.copy()
+    ward_col = "病棟" if "病棟" in work.columns else "ward"
+    if ward_col not in work.columns:
+        return summarize_ward_case_mix(pd.DataFrame(), ward, specialty_map)
+    work = work[work[ward_col].astype(str) == ward].copy()
+    if work.empty:
+        return summarize_ward_case_mix(pd.DataFrame(), ward, specialty_map)
+
+    doctor_col = "医師" if "医師" in work.columns else "attending_doctor"
+    dept_col = "診療科" if "診療科" in work.columns else None
+    los_col = "日数" if "日数" in work.columns else "los_days"
+    surgery_col = "手術" if "手術" in work.columns else "has_surgery"
+    emergency_col = "救急車" if "救急車" in work.columns else "is_emergency_transport"
+    scheduled_col = "緊急" if "緊急" in work.columns else "is_scheduled"
+
+    if specialty_map and doctor_col in work.columns:
+        def _map_group(row: pd.Series) -> str:
+            doctor = str(row.get(doctor_col, ""))
+            mapped = specialty_map.get(doctor)
+            if mapped:
+                return mapped
+            if dept_col:
+                return str(row.get(dept_col, "未分類"))
+            return "未分類"
+
+        work["_group"] = work.apply(_map_group, axis=1)
+    elif dept_col:
+        work["_group"] = work[dept_col].astype(str)
+    else:
+        work["_group"] = "未分類"
+
+    los = pd.to_numeric(work[los_col], errors="coerce") if los_col in work.columns else pd.Series(dtype=float)
+    n = int(len(work))
+    internal_count = int(work["_group"].isin(["内科", "循内科"]).sum())
+    pain_count = int((work["_group"] == "ペイン科").sum())
+
+    if surgery_col in work.columns:
+        if work[surgery_col].dtype == bool:
+            surgery_count = int(work[surgery_col].fillna(False).sum())
+        else:
+            surgery_count = int((work[surgery_col].astype(str) == "○").sum())
+    else:
+        surgery_count = 0
+
+    if emergency_col in work.columns:
+        if work[emergency_col].dtype == bool:
+            ambulance_count = int(work[emergency_col].fillna(False).sum())
+        else:
+            ambulance_count = int(work[emergency_col].astype(str).isin(["有り", "あり", "有"]).sum())
+    else:
+        ambulance_count = 0
+
+    if scheduled_col in work.columns:
+        if work[scheduled_col].dtype == bool:
+            scheduled_count = int(work[scheduled_col].fillna(False).sum())
+        else:
+            scheduled_count = int((work[scheduled_col].astype(str) == "予定入院").sum())
+    else:
+        scheduled_count = 0
+
+    specialty_rows: List[Dict[str, Any]] = []
+    for group, sub in work.groupby("_group"):
+        sub_los = pd.to_numeric(sub[los_col], errors="coerce") if los_col in sub.columns else pd.Series(dtype=float)
+        specialty_rows.append({
+            "group": str(group),
+            "n": int(len(sub)),
+            "pct": round(len(sub) / n * 100, 1) if n else 0.0,
+            "median_los": round(float(sub_los.median()), 1) if len(sub_los.dropna()) else 0.0,
+        })
+    specialty_rows.sort(key=lambda r: r["n"], reverse=True)
+
+    return {
+        "ward": ward,
+        "n": n,
+        "internal_pct": round(internal_count / n * 100, 1) if n else 0.0,
+        "pain_pct": round(pain_count / n * 100, 1) if n else 0.0,
+        "no_surgery_pct": round((n - surgery_count) / n * 100, 1) if n else 0.0,
+        "scheduled_pct": round(scheduled_count / n * 100, 1) if n else 0.0,
+        "ambulance_pct": round(ambulance_count / n * 100, 1) if n else 0.0,
+        "median_los": round(float(los.median()), 1) if len(los.dropna()) else 0.0,
+        "specialty_rows": specialty_rows,
+    }
+
+
+def summarize_monthly_admission_volume(
+    past_df: pd.DataFrame,
+    ward: str = "6F",
+) -> Dict[str, Any]:
+    """過去入院CSVから病棟別の月間入院数レンジを返す."""
+    empty = {
+        "ward": ward,
+        "months": [],
+        "total_admissions": 0,
+        "mean_admissions": 0.0,
+        "median_admissions": 0.0,
+        "min_admissions": 0,
+        "max_admissions": 0,
+        "monthly_rows": [],
+    }
+    if past_df is None or past_df.empty:
+        return empty
+
+    work = past_df.copy()
+    ward_col = "病棟" if "病棟" in work.columns else "ward"
+    if ward_col not in work.columns:
+        return empty
+    work = work[work[ward_col].astype(str) == ward].copy()
+    if work.empty:
+        return empty
+
+    if "admission_date" in work.columns:
+        dates = pd.to_datetime(work["admission_date"], errors="coerce")
+    elif "入院日" in work.columns:
+        dates = pd.to_datetime(work["入院日"], errors="coerce")
+    else:
+        return empty
+    work = work[dates.notna()].copy()
+    if work.empty:
+        return empty
+    work["_ym"] = dates[dates.notna()].dt.to_period("M").astype(str)
+
+    monthly = work.groupby("_ym").size().sort_index()
+    rows = [
+        {"ym": str(ym), "admissions": int(count)}
+        for ym, count in monthly.items()
+    ]
+    return {
+        "ward": ward,
+        "months": [row["ym"] for row in rows],
+        "total_admissions": int(monthly.sum()),
+        "mean_admissions": round(float(monthly.mean()), 1),
+        "median_admissions": round(float(monthly.median()), 1),
+        "min_admissions": int(monthly.min()),
+        "max_admissions": int(monthly.max()),
+        "monthly_rows": rows,
+    }
+
+
+def simulate_strategy_package(
+    base_rate_pct: float,
+    emergency_coefficient_pct: float,
+    target_pct: float,
+    denominator_days_per_month: float,
+    added_eligible_days_per_month: float,
+) -> Dict[str, Any]:
+    """追加該当日数が割合指数を何pt改善するかを試算する."""
+    denominator = max(_as_float(denominator_days_per_month), 1.0)
+    gain_pct = _as_float(added_eligible_days_per_month) / denominator * 100
+    before_index = _as_float(base_rate_pct) + _as_float(emergency_coefficient_pct)
+    after_index = before_index + gain_pct
+    target = _as_float(target_pct)
+    remaining_gap = max(0.0, target - after_index)
+    surplus = after_index - target
+    return {
+        "gain_pct": round(gain_pct, 2),
+        "before_index_pct": round(before_index, 2),
+        "after_index_pct": round(after_index, 2),
+        "remaining_gap_pct": round(remaining_gap, 2),
+        "surplus_pct": round(surplus, 2),
+        "meets_target": after_index >= target,
+    }
+
+
+def build_patient_day_conversion_rows(required_days_per_month: float) -> List[Dict[str, Any]]:
+    """不足患者日を「何件/月が必要か」に換算する."""
+    required = max(_as_float(required_days_per_month), 0.0)
+    rows: List[Dict[str, Any]] = []
+    for rule in PATIENT_DAY_CONVERSION_RULES:
+        unit_days = max(_as_float(rule["patient_days_per_case"], 1.0), 1.0)
+        monthly_cases = math.ceil(required / unit_days) if required > 0 else 0
+        rows.append({
+            "action": rule["action"],
+            "patient_days_per_case": unit_days,
+            "required_cases_per_month": monthly_cases,
+            "required_cases_per_week": round(monthly_cases / 4.3, 1) if monthly_cases else 0.0,
+            "example": rule["example"],
+        })
+    return rows
+
+
+def build_physician_case_matching_rows() -> List[Dict[str, str]]:
+    """医師が患者を看護必要度の候補に当てはめるための早見表."""
+    return [dict(row) for row in PHYSICIAN_CASE_MATCHING_ROWS]
+
+
+def calculate_6f_action_mix(
+    record_recovery_days: int = DEFAULT_6F_ACTION_MIX["record_recovery_days"],
+    internal_cases: int = DEFAULT_6F_ACTION_MIX["internal_cases"],
+    internal_days_per_case: int = DEFAULT_6F_ACTION_MIX["internal_days_per_case"],
+    pain_cases: int = DEFAULT_6F_ACTION_MIX["pain_cases"],
+    pain_days_per_case: int = DEFAULT_6F_ACTION_MIX["pain_days_per_case"],
+    c21_cases: int = DEFAULT_6F_ACTION_MIX["c21_cases"],
+    c22_cases: int = DEFAULT_6F_ACTION_MIX["c22_cases"],
+    c23_cases: int = DEFAULT_6F_ACTION_MIX["c23_cases"],
+) -> Dict[str, Any]:
+    """6F向け月間アクションミックスを患者日へ換算する."""
+    rows = [
+        {
+            "action": "記録回収",
+            "monthly_cases": _as_int(record_recovery_days),
+            "days_per_case": 1,
+            "patient_days": _as_int(record_recovery_days),
+            "note": "医師: 必要性と開始/終了。看護: 実施記録を同日確定",
+        },
+        {
+            "action": "内科A項目",
+            "monthly_cases": _as_int(internal_cases),
+            "days_per_case": _as_int(internal_days_per_case, 5),
+            "patient_days": _as_int(internal_cases) * _as_int(internal_days_per_case, 5),
+            "note": "肺炎/心不全/COPD増悪: 酸素+注射3種、輸血、シリンジポンプ",
+        },
+        {
+            "action": "ペイン科A6",
+            "monthly_cases": _as_int(pain_cases),
+            "days_per_case": _as_int(pain_days_per_case, 3),
+            "patient_days": _as_int(pain_cases) * _as_int(pain_days_per_case, 3),
+            "note": "薬剤名、投与目的、投与日、手技名を評価表と照合",
+        },
+        {
+            "action": "C21系",
+            "monthly_cases": _as_int(c21_cases),
+            "days_per_case": C_ITEM_DAYS["C21"],
+            "patient_days": _as_int(c21_cases) * C_ITEM_DAYS["C21"],
+            "note": "CV、腰椎穿刺、ERCP、内視鏡止血: 実施日から4日",
+        },
+        {
+            "action": "C22系",
+            "monthly_cases": _as_int(c22_cases),
+            "days_per_case": C_ITEM_DAYS["C22"],
+            "patient_days": _as_int(c22_cases) * C_ITEM_DAYS["C22"],
+            "note": "気管支鏡、TEE、EBUS: 実施日から2日",
+        },
+        {
+            "action": "C23系",
+            "monthly_cases": _as_int(c23_cases),
+            "days_per_case": C_ITEM_DAYS["C23"],
+            "patient_days": _as_int(c23_cases) * C_ITEM_DAYS["C23"],
+            "note": "PEG、PTCD、CART、消化管ステント: 実施日から5日",
+        },
+    ]
+    total = sum(row["patient_days"] for row in rows)
+    return {
+        "rows": rows,
+        "total_patient_days": total,
+    }
+
+
+def build_6f_strategy_cards(case_mix: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """6F の内科・ペイン科特性に合わせた行動カードを返す."""
+    internal_pct = _as_float(case_mix.get("internal_pct", 0.0))
+    pain_pct = _as_float(case_mix.get("pain_pct", 0.0))
+    no_surgery_pct = _as_float(case_mix.get("no_surgery_pct", 0.0))
+
+    return [
+        {
+            "lens": "医療倫理",
+            "owner": "全職種",
+            "signal": "点数目的の処置は不可",
+            "action": "適応のある治療・ケアの記録漏れだけを回収する。迷う症例は医師・看護師・医事で同日確認。",
+            "metric": "虚偽記載 0、適応外処置 0",
+        },
+        {
+            "lens": "医学的エビデンス",
+            "owner": "内科・ペイン科医師",
+            "signal": f"6Fは内科系 {internal_pct:.1f}%、ペイン科 {pain_pct:.1f}%、手術なし {no_surgery_pct:.1f}%",
+            "action": "内科は酸素+注射3種/A4+A3/輸血/ドレナージ/C項目を、ペイン科は適応が明確なA6処置のみを確認。",
+            "metric": "A2以上 or C1以上の該当日数",
+        },
+        {
+            "lens": "行動人間学",
+            "owner": "医師・看護師ペア",
+            "signal": "入院時と朝の判断が、その日の評価を決める",
+            "action": "入院時30秒自問、朝ラウンド即答、木曜ハドルの3つに固定。チェックリストで記憶に頼らない。",
+            "metric": "同日回答率、翌日持ち越し件数",
+        },
+        {
+            "lens": "UI/視覚効果",
+            "owner": "管理者",
+            "signal": "不足ptより「月に何日足りないか」の方が行動に移りやすい",
+            "action": "赤/黄/緑、進捗バー、残不足日数、職種別の今日の一手を同じ画面に表示する。",
+            "metric": "残不足患者日/月",
+        },
+    ]
