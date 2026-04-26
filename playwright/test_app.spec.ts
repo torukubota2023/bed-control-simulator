@@ -356,6 +356,38 @@ test.describe('ベッドコントロール E2E (test_app)', () => {
     expect(body).toMatch(/経過措置|本則|2026-06-01|2026-05-31/);
   });
 
+  test('tablet 768px: 制度管理の action focus chips がカード幅内に収まる', async ({ page }) => {
+    await selectSection(page, '制度管理');
+    await waitForStreamlitLoad(page, 120000);
+    await page.setViewportSize({ width: 768, height: 900 });
+    await page.waitForTimeout(1000);
+
+    const card = page.locator('.bc-action-focus').first();
+    await expect(card).toBeVisible();
+
+    const chipBoxes = await card.locator('.bc-action-focus-chip').evaluateAll((chips) =>
+      chips.map((chip) => {
+        const chipRect = chip.getBoundingClientRect();
+        const cardRect = (chip.closest('.bc-action-focus') as HTMLElement).getBoundingClientRect();
+        return {
+          left: chipRect.left,
+          right: chipRect.right,
+          cardLeft: cardRect.left,
+          cardRight: cardRect.right,
+        };
+      })
+    );
+
+    expect(chipBoxes.length, '制度管理セクションは4個目のカウントダウンchipまで表示する').toBeGreaterThanOrEqual(4);
+    for (const box of chipBoxes) {
+      expect(box.left, `chip left ${box.left} がカード外へ出ている`).toBeGreaterThanOrEqual(box.cardLeft - 1);
+      expect(box.right, `chip right ${box.right} がカード外へ出ている`).toBeLessThanOrEqual(box.cardRight + 1);
+    }
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `768px viewport で横スクロールが発生: ${overflow}px`).toBeLessThanOrEqual(1);
+  });
+
   // ---------------------------------------------------------------------------
   // グループ7: 再現性（乱数シード固定 or 決定的出力）
   // ---------------------------------------------------------------------------

@@ -463,6 +463,7 @@ class TestActionFocusEthics:
         assert "6F 必要度II: 月{_shortage:.1f}患者日ギャップ" in block
         assert "🛡️ 適応のある患者を見つけて" in block
         assert "適応評価後の参考値" in block
+        assert '"参考ペース", f"(参考) 月{_cases}件"' in block
         assert "適応外処置・虚偽記録・病棟都合の患者選別は絶対NG" in block
 
     def test_管理者用3kpiは折りたたみ外に残す(self):
