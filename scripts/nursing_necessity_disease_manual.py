@@ -222,6 +222,22 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "胆道酵素上昇 + 画像で胆道拡張・結石・腫瘍",
                 "東京ガイドライン Grade II/III の中等症〜重症",
             ],
+            "severity_assessment": [
+                {
+                    "name": "Tokyo Guidelines 2018 (TG18) 急性胆管炎 重症度分類",
+                    "items": [
+                        {"label": "Grade I (軽症)", "criteria": "Grade II/III の所見なし、初期治療に反応", "points": "—"},
+                        {"label": "Grade II (中等症)", "criteria": "下記 5 項目のうち **2 項目以上**：①WBC > 12,000 or < 4,000、②BT ≥ 39℃、③年齢 ≥ 75 歳、④T-Bil ≥ 5 mg/dL、⑤ALB < 0.7×LL", "points": "—"},
+                        {"label": "Grade III (重症)", "criteria": "**臓器障害 1 つ以上**: ①循環（昇圧剤要）、②CNS（意識障害）、③呼吸（PaO2/FiO2 < 300）、④腎（Cre > 2.0 / 乏尿）、⑤肝（PT-INR > 1.5）、⑥血液（Plt < 10万）", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Grade I", "meaning": "保存的治療 + 抗菌薬、24-48h 反応なければ胆道ドレナージ"},
+                        {"range": "**Grade II**", "meaning": "**早期胆道ドレナージ（24-48h 以内）+ 抗菌薬 IV**"},
+                        {"range": "**Grade III**", "meaning": "**緊急胆道ドレナージ（24h 以内）+ 臓器サポート + 集中治療**"},
+                    ],
+                    "source": "Kiriyama S et al. J Hepatobiliary Pancreat Sci 2018 ([PMID 29032610](https://pubmed.ncbi.nlm.nih.gov/29032610/)) — Tokyo Guidelines 2018",
+                },
+            ],
             "options": [
                 {
                     "scene": "胆道ドレナージ",
@@ -239,7 +255,34 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑩ ドレナージ管理") + ": 2 点 / 留置中毎日 (PTCD 後)",
                 _a("A4 シリンジポンプ") + " + " + _a("A3 注射薬剤 3 種類以上") + ": 2 点 (β-ラクタム持続併用時)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 胆石性胆管炎 (TG18 Grade II)",
+                    "background": "72 歳女性、胆石症既往、糖尿病",
+                    "presentation": "前日からの右上腹部痛 + 発熱、来院時黄疸あり",
+                    "vitals": "BT 39.2℃、BP 118/72、HR 102、SpO2 96% RA、Murphy +、黄疸 +",
+                    "labs": "WBC 14,800、CRP 12、T-Bil 6.8、AST/ALT 285/198、ALP 580、γ-GTP 420、CT で総胆管結石 + 胆管拡張",
+                    "score_calc": "TG18 Grade II 該当 = WBC > 12,000 (1) + BT > 39 (1) + T-Bil > 5 (1) = **3 項目で Grade II（中等症）**",
+                    "plan": "緊急入院、6F 病棟、PIPC/TAZ 4.5g 持続点滴、24-48h 以内に消化器内科コンサルト → ERCP + 胆管ステント留置（または EBD）",
+                    "necessity_contrib": _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C21③ 侵襲的消化器治療 (ERCP)") + " **4 日カウント該当患者扱い** / " + _a("A7 救急搬送後") + " 2 点 → **A 計 4 点 + C 該当**",
+                },
+                {
+                    "title": "例 B: 化膿性胆管炎 (TG18 Grade III)",
+                    "background": "78 歳男性、肝細胞癌の既往、抗血栓薬（Apixaban）内服中",
+                    "presentation": "1 日前からの上腹部痛 + 高熱、来院時意識朦朧と低血圧",
+                    "vitals": "GCS 13、BT 39.5℃、BP 86/52、HR 132、呼吸数 28、SpO2 92% RA、CRT > 3 秒",
+                    "labs": "WBC 22,000、CRP 28、T-Bil 8.2、Cre 2.4 (base 1.0)、Plt 8.2 万、PT-INR 1.8、Lactate 3.5、CT で胆管拡張 + 膿瘍疑い",
+                    "score_calc": "TG18 Grade III 該当 = 循環不全（昇圧剤要）+ 腎障害（Cre > 2）+ 血液（Plt < 10万）+ 肝（PT-INR > 1.5）= **4 項目の臓器障害で Grade III（重症）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理（当院対応範囲）**、ノルアドレナリン 0.05 μg/kg/min 開始、CV 挿入、MEPM 1g IV → 3g/24h 持続、抗血栓薬中止（Apixaban）+ ビタミン K + 新鮮凍結血漿、緊急 PTCD（凝固障害で ERCP より優先）。挿管必要・治療反応不良なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _c("C21③ PTCD") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PTCD 後)") + " 2 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "[PMID 29032610](https://pubmed.ncbi.nlm.nih.gov/29032610/)",
+                    "summary": "Kiriyama S et al. J Hepatobiliary Pancreat Sci 2018 — Tokyo Guidelines 2018: 急性胆管炎の診断基準と Grade I/II/III 重症度分類",
+                },
                 {
                     "strength": "強",
                     "ref": "東京ガイドライン (TG18)",
@@ -266,6 +309,41 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "ショック傾向 / 起立性低血圧 / 頻脈",
                 "PPI 内服歴・NSAIDs・抗血栓薬使用歴",
             ],
+            "severity_assessment": [
+                {
+                    "name": "Glasgow-Blatchford Score (GBS、上部消化管出血、最大 23 点)",
+                    "items": [
+                        {"label": "BUN (mmol/L)", "criteria": "6.5-7.9 (2点) / 8-9.9 (3点) / 10-24.9 (4点) / ≥25 (6点)", "points": "2-6点"},
+                        {"label": "Hb 男性 (g/dL)", "criteria": "12-12.9 (1点) / 10-11.9 (3点) / <10 (6点)", "points": "1-6点"},
+                        {"label": "Hb 女性 (g/dL)", "criteria": "10-11.9 (1点) / <10 (6点)", "points": "1-6点"},
+                        {"label": "収縮期血圧 (mmHg)", "criteria": "100-109 (1点) / 90-99 (2点) / <90 (3点)", "points": "1-3点"},
+                        {"label": "その他", "criteria": "脈拍 ≥ 100 / 黒色便 / 失神 / 肝疾患 / 心不全 各 1-2 点", "points": "各1-2点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-1 点", "meaning": "**外来管理可能（介入不要 99%）**"},
+                        {"range": "2-3 点", "meaning": "中等リスク — 入院、内視鏡検討"},
+                        {"range": "**≥ 6 点**", "meaning": "**高リスク — 緊急入院、24h 以内の内視鏡 + 輸血準備**"},
+                        {"range": "**≥ 12 点**", "meaning": "**超高リスク — 集中治療管理、緊急内視鏡**"},
+                    ],
+                    "source": "Blatchford O et al. Lancet 2000 / ESGE NVUGIH GL 2021 ([PMID 33567467](https://pubmed.ncbi.nlm.nih.gov/33567467/))",
+                },
+                {
+                    "name": "AIMS65 (院内死亡予測、5 項目 5 点満点)",
+                    "items": [
+                        {"label": "A: Albumin", "criteria": "ALB < 3.0 g/dL", "points": "1点"},
+                        {"label": "I: INR", "criteria": "PT-INR > 1.5", "points": "1点"},
+                        {"label": "M: Mental status", "criteria": "意識変容（GCS < 14）", "points": "1点"},
+                        {"label": "S: Systolic BP", "criteria": "収縮期 ≤ 90 mmHg", "points": "1点"},
+                        {"label": "65: Age", "criteria": "年齢 > 65 歳", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-1 点", "meaning": "院内死亡率 < 2%"},
+                        {"range": "2 点", "meaning": "院内死亡率 5-7%"},
+                        {"range": "**≥ 3 点**", "meaning": "**院内死亡率 > 10% — 集中治療管理**"},
+                    ],
+                    "source": "Saltzman JR et al. Gastrointest Endosc 2011（AIMS65 オリジナル）",
+                },
+            ],
             "options": [
                 {
                     "scene": "出血源同定と止血",
@@ -283,7 +361,34 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A5 輸血管理") + ": 2 点 / 輸血実施日 (該当患者扱い)",
                 _a("A6⑨ 抗血栓持続") + " (UFH への切替時): 3 点 / 日",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 出血性十二指腸潰瘍 中等リスク (GBS 8 点 / AIMS65 1 点)",
+                    "background": "68 歳男性、NSAIDs 内服 (慢性腰痛)、PPI 未投与",
+                    "presentation": "前夜のタール便、来院時無症状",
+                    "vitals": "BP 116/72、HR 96、SpO2 97% RA、貧血様、顔面蒼白",
+                    "labs": "Hb 8.2、BUN 30、Cre 0.9、ALB 3.5、PT-INR 1.0、CT で出血源不明、便潜血 +",
+                    "score_calc": "GBS = BUN 4(10-24.9) + Hb 6(<10) + 黒色便 1 = **8 点（高リスク）** / AIMS65 = 65歳超 1 = **1 点（低リスク）**",
+                    "plan": "緊急入院、6F 病棟、24h 以内に上部消化管内視鏡、PPI (オメプラゾール 80mg ボーラス → 8mg/h 持続)、RBC 2 単位輸血、NSAIDs 中止",
+                    "necessity_contrib": _c("C21③ 内視鏡的止血") + " 4 日カウント / " + _a("A5 輸血管理") + " 2 点 / " + _a("A4 シリンジポンプ (PPI 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 6 点 + C 該当**",
+                },
+                {
+                    "title": "例 B: 食道静脈瘤破裂 高リスク (GBS 18 点 / AIMS65 4 点)",
+                    "background": "62 歳男性、肝硬変 (Child-Pugh C)、食道静脈瘤治療歴あり、抗血栓薬なし",
+                    "presentation": "大量吐血で救急搬送、来院時意識朦朧と低血圧",
+                    "vitals": "GCS 13、BP 78/42、HR 132、呼吸数 28、SpO2 92% RA、皮膚蒼白",
+                    "labs": "Hb 6.5、BUN 42、Cre 1.4、ALB 2.8、PT-INR 2.1、Plt 6.5万",
+                    "score_calc": "GBS = BUN 4 + Hb 6 + SBP 3(< 90) + 脈拍 1 + 失神 2 + 肝疾患 2 = **18 点（超高リスク）** / AIMS65 = ALB(1) + INR(1) + 意識(1) + SBP(1) = **4 点（院内死亡率 > 25%）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理（当院対応範囲）**、緊急上部消化管内視鏡 + EVL（食道静脈瘤結紮術）、テルリプレシン IV（血管収縮薬）、RBC 6 単位輸血 + FFP、CV 挿入、ノルアドレナリン 0.05 μg/kg/min、CTM 2g IV q12h（自発性細菌性腹膜炎予防）。再出血・治療反応不良なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A5 輸血管理") + " 2 点 / " + _c("C21③ 内視鏡的止血") + " 4 日カウント / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "[PMID 33567467](https://pubmed.ncbi.nlm.nih.gov/33567467/)",
+                    "summary": "ESGE NVUGIH GL 2021 — 上部消化管出血の最新管理: GBS によるリスク階層化、24h 以内の内視鏡推奨",
+                },
                 {
                     "strength": "強",
                     "ref": "ACG ガイドライン 2021 (Laine et al.)",
@@ -310,6 +415,36 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "脈管侵襲なし、リンパ節転移リスク低",
                 "ESD/EMR 適応 (絶対適応 / 拡大適応)",
             ],
+            "severity_assessment": [
+                {
+                    "name": "胃癌 ESD 治癒切除判定（日本胃癌学会 2023）",
+                    "items": [
+                        {"label": "**絶対適応**", "criteria": "**2cm 以下の分化型 cT1a (M)、潰瘍 (UL) なし**", "points": "—"},
+                        {"label": "**拡大適応**", "criteria": "**①>2cm 分化型 M ULなし、②3cm以下 分化型 M UL有り、③2cm以下 未分化型 M ULなし**", "points": "—"},
+                        {"label": "適応外", "criteria": "上記以外、深達度 SM 以深、リンパ節転移リスク高", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "**絶対適応**", "meaning": "**ESD 第一選択、5 年生存率は外科手術と同等**"},
+                        {"range": "**拡大適応**", "meaning": "**症例検討、ESD 後病理で eCura 評価、追加外科切除の判断**"},
+                        {"range": "適応外", "meaning": "外科手術紹介"},
+                    ],
+                    "source": "日本胃癌学会 胃癌治療ガイドライン 第6版 2023",
+                },
+                {
+                    "name": "TNM 分類 8th ed. 深達度（早期癌の特定）",
+                    "items": [
+                        {"label": "T1a (M)", "criteria": "粘膜固有層〜粘膜筋板までの浸潤", "points": "—"},
+                        {"label": "T1b (SM)", "criteria": "粘膜下層への浸潤（SM1: < 0.5mm / SM2: ≥ 0.5mm）", "points": "—"},
+                        {"label": "T2 以深", "criteria": "固有筋層以深への浸潤", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "**T1a**", "meaning": "**リンパ節転移率 < 1% — ESD 第一選択**"},
+                        {"range": "T1b SM1", "meaning": "リンパ節転移率 1-5% — ESD 適応症例あり、病理で eCura 判定"},
+                        {"range": "T1b SM2 以深", "meaning": "リンパ節転移率 > 10% — 外科手術原則"},
+                    ],
+                    "source": "UICC TNM 分類 第 8 版（2017）",
+                },
+            ],
             "options": [
                 {
                     "scene": "早期癌の治療選択",
@@ -321,10 +456,22 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _c("C21③ 侵襲的消化器治療") + ": **4 日カウント**",
                 _a("A1 創傷処置") + ": 1 点 / 日 (穿孔・出血合併時のドレナージ管理)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 早期胃癌 (T1a 絶対適応 ESD)",
+                    "background": "68 歳男性、ピロリ除菌後、検診で発見",
+                    "presentation": "無症状、検診胃カメラで胃体下部小弯に 1.5cm の発赤陥凹病変、生検で分化型腺癌",
+                    "vitals": "全身状態良好、PS 0",
+                    "labs": "EGD: 1.5cm IIc 病変、潰瘍なし、生検で分化型腺癌、CT で他臓器転移なし、リンパ節転移なし",
+                    "score_calc": "**絶対適応**: 2cm 以下 + 分化型 + cT1a + UL なし → **ESD 第一選択**",
+                    "plan": "予定入院、5F 病棟、消化器内科で ESD 実施、術後 24 時間絶食、PPI、出血モニター、退院後 3 ヶ月で内視鏡 follow-up",
+                    "necessity_contrib": _c("C21③ ESD") + " **4 日カウント該当患者扱い** / " + _a("A1 創傷処置 (術後)") + " 1 点 / 日（術後 1-2 日）→ **C 該当**",
+                },
+            ],
             "evidence": [
                 {
                     "strength": "強",
-                    "ref": "胃癌治療ガイドライン (日本胃癌学会)",
+                    "ref": "胃癌治療ガイドライン 第6版 (日本胃癌学会 2023)",
                     "summary": "ESD 絶対適応病変は 5 年生存率が外科手術と同等、QOL 維持に優位",
                 },
             ],
@@ -348,6 +495,38 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "VF / VE で誤嚥確認、経口摂取で誤嚥性肺炎反復",
                 "経鼻胃管 (NG) 長期化 (4 週間以上) で QOL 低下",
             ],
+            "severity_assessment": [
+                {
+                    "name": "藤島嚥下グレード（10 段階）",
+                    "items": [
+                        {"label": "Gr.1-3 (重度)", "criteria": "経口不可、唾液嚥下も困難 (Gr.1) / 唾液のみ可 (Gr.2) / 楽しみ程度 (Gr.3)", "points": "—"},
+                        {"label": "Gr.4-6 (中等度)", "criteria": "1食摂取可・他は経管 (Gr.4) / 1-2食 + 経管補助 (Gr.5) / 3食経口 + 経管 (Gr.6)", "points": "—"},
+                        {"label": "Gr.7-9 (軽度)", "criteria": "嚥下食 3食 (Gr.7) / 特別食以外 OK (Gr.8) / 常食 (Gr.9)", "points": "—"},
+                        {"label": "Gr.10 (正常)", "criteria": "正常嚥下", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "**Gr.1-3**", "meaning": "**経口栄養不可、4 週以上見込みなら PEG 適応**"},
+                        {"range": "Gr.4-6", "meaning": "経管栄養併用、嚥下訓練継続"},
+                        {"range": "Gr.7-9", "meaning": "経口可、嚥下食 / 経過観察"},
+                    ],
+                    "source": "藤島一郎 嚥下グレード（リハ医学会で広く使用）",
+                },
+                {
+                    "name": "改訂水飲みテスト (MWST、5 段階)",
+                    "items": [
+                        {"label": "1 点", "criteria": "嚥下なし、むせ + 呼吸切迫", "points": "—"},
+                        {"label": "2 点", "criteria": "嚥下あり、呼吸切迫 (silent aspiration 疑い)", "points": "—"},
+                        {"label": "3 点", "criteria": "嚥下あり、呼吸良好だが むせ + 湿性嗄声", "points": "—"},
+                        {"label": "4 点", "criteria": "嚥下あり、呼吸良好、むせなし", "points": "—"},
+                        {"label": "5 点", "criteria": "4 + 30 秒以内に追加嚥下 2 回以上可", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "**1-3 点**", "meaning": "**経口摂取再開困難、VF/VE 精査推奨、誤嚥リスク高**"},
+                        {"range": "4-5 点", "meaning": "経口摂取再開検討可"},
+                    ],
+                    "source": "才藤栄一ら 1999（日本リハ医学会嚥下評価表）",
+                },
+            ],
             "options": [
                 {
                     "scene": "長期栄養経路",
@@ -358,6 +537,18 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
             "contributions": [
                 _c("C23 別に定める手術・処置 (PEG)") + ": **5 日カウント** (該当患者扱い)",
                 _a("A1 創傷処置") + ": 1 点 / 日 (PEG 創部管理)",
+            ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 脳梗塞後 4 週間経過、藤島 Gr.3、MWST 2 点",
+                    "background": "76 歳男性、左中大脳動脈領域脳梗塞後 4 週、右片麻痺・構音障害",
+                    "presentation": "急性期病院から下り搬送、経鼻胃管留置中、経口訓練で誤嚥",
+                    "vitals": "意識清明、BT 36.8℃、BP 138/82、SpO2 96% RA、構音障害 +、舌偏位 +",
+                    "labs": "ALB 3.2、Pre-ALB 18、Hb 11.5、ST 評価で藤島 Gr.3、MWST 2 点（silent aspiration 疑い）",
+                    "score_calc": "藤島 **Gr.3** + MWST **2 点** = **重度嚥下障害**、4 週以上の経口摂取困難見込み → PEG 適応",
+                    "plan": "ST + リハ継続、家族と PEG 適応の話し合い → 同意取得 → PEG 造設、術後 24h 絶食、その後経管栄養開始",
+                    "necessity_contrib": _c("C23 PEG 造設") + " **5 日カウント該当患者扱い** / " + _a("A1 創傷処置 (PEG 創部)") + " 1 点 / 日（術後 1 週間）→ **C 該当 + A 連日 1 点**",
+                },
             ],
             "evidence": [
                 {
@@ -386,6 +577,32 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "発熱 + 腹膜刺激症状 + CT で膿瘍・遊離ガス",
                 "重症度評価 (qSOFA、APACHE II)",
             ],
+            "severity_assessment": [
+                {
+                    "name": "qSOFA（cIAI 重症度判定にも有用）",
+                    "items": [
+                        {"label": "呼吸数", "criteria": "≥ 22/min", "points": "1点"},
+                        {"label": "意識変容", "criteria": "GCS < 15", "points": "1点"},
+                        {"label": "収縮期血圧", "criteria": "≤ 100 mmHg", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-1 点", "meaning": "局所感染、保存的 + 抗菌薬間欠投与"},
+                        {"range": "**≥ 2 点**", "meaning": "**敗血症併発の可能性 — 緊急対応、source control + β-ラクタム持続点滴**"},
+                    ],
+                    "source": "Singer M et al. JAMA 2016 Sepsis-3 ([PMID 26903338](https://pubmed.ncbi.nlm.nih.gov/26903338/)) — qSOFA は cIAI でも重症化予測に活用",
+                },
+                {
+                    "name": "WSES Sepsis Severity Score（cIAI 専用、4 群）",
+                    "items": [
+                        {"label": "WSESCC: Stable / Sepsis / Severe sepsis / Septic shock", "criteria": "感染源 + 全身炎症 + 臓器障害の段階", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Stable / Sepsis", "meaning": "ドレナージ + 抗菌薬間欠投与"},
+                        {"range": "**Severe sepsis / Septic shock**", "meaning": "**個室管理 + 集中治療 + 早期 source control（緊急ドレナージ or 緊急手術）**"},
+                    ],
+                    "source": "Sartelli M et al. World J Emerg Surg 2014 (WSES Position paper)",
+                },
+            ],
             "options": [
                 {
                     "scene": "抗菌薬投与",
@@ -401,6 +618,28 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
             "contributions": [
                 _a("A4 シリンジポンプ") + " + " + _a("A3 注射薬剤 3 種類以上") + ": **2 点** (該当患者)",
                 _a("A6⑩ ドレナージ管理") + ": 2 点 / 留置中毎日",
+            ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 穿孔性虫垂炎 局所膿瘍 (qSOFA 1 点 / WSES Sepsis)",
+                    "background": "58 歳男性、既往なし、体重正常",
+                    "presentation": "3 日前からの右下腹部痛 + 発熱、自宅で様子見、増悪して来院",
+                    "vitals": "BT 38.5℃、BP 124/76、HR 102、呼吸数 20、SpO2 97% RA、McBurney 圧痛 + 反跳痛 +",
+                    "labs": "WBC 16,500、CRP 18、Lactate 1.8、CT で穿孔性虫垂炎 + 局所膿瘍 (4cm)",
+                    "score_calc": "qSOFA = 0 点 / WSES = **Sepsis（局所感染 + 全身炎症、臓器障害なし）**",
+                    "plan": "緊急入院、6F 病棟、PIPC/TAZ 4.5g IV q8h（または持続点滴）、外科コンサルト → 開腹虫垂切除 + 膿瘍ドレナージ、術後ドレーン留置",
+                    "necessity_contrib": _c("C17 開腹手術") + " **6 日カウント該当患者扱い** / " + _a("A6⑩ ドレナージ管理") + " 2 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A1 創傷処置 (術後創部)") + " 1 点 → **A 計 4 点 + C 該当**",
+                },
+                {
+                    "title": "例 B: 憩室炎穿孔による汎発性腹膜炎 (qSOFA 3 点 / WSES Septic shock)",
+                    "background": "72 歳男性、糖尿病、便秘症、抗血栓薬（アスピリン）内服",
+                    "presentation": "前日から左下腹部痛、未明から急激な腹痛増悪と意識朦朧、救急搬送",
+                    "vitals": "GCS 13、BT 38.9℃、BP 86/50、HR 132、呼吸数 28、SpO2 91% RA、腹部全体の筋性防御 + 圧痛",
+                    "labs": "WBC 22,000、CRP 32、Lactate 4.2、Cre 1.8、PCT 35、CT で S 状結腸穿孔 + 汎発性腹膜炎 + 遊離ガス + 大量腹水",
+                    "score_calc": "qSOFA = 呼吸数(1) + 意識(1) + 血圧(1) = **3 点（陽性）** / WSES = **Septic shock（多臓器機能障害）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理**、ノルアドレナリン 0.05 μg/kg/min、CV 挿入、MEPM 1g IV → 3g/24h 持続、緊急開腹手術（S 状結腸切除 + ハルトマン手術）、術後 PCD 留置、HFNC 装着。挿管必要・治療反応不良なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _c("C17 開腹手術") + " **6 日カウント** / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PCD)") + " 2 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 10 点 + C 該当 = 圧倒的な該当患者**",
+                },
             ],
             "evidence": [
                 {
@@ -550,6 +789,37 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "緊張性気胸 (緊急)、大量胸水 (>1L)",
                 "外傷後の血胸、膿胸 (CT で液貯留 + 胸壁肥厚)",
             ],
+            "severity_assessment": [
+                {
+                    "name": "BTS 気胸ガイドライン 2023 重症度判定",
+                    "items": [
+                        {"label": "小気胸", "criteria": "肺尖から胸壁まで < 2cm（Light の方法）", "points": "—"},
+                        {"label": "**大気胸**", "criteria": "**肺尖から胸壁まで ≥ 2cm**", "points": "—"},
+                        {"label": "**症候性**（重症）", "criteria": "**呼吸困難 / 頻脈 (HR > 120) / 低血圧 / 低酸素 (SpO2 < 92%)**", "points": "—"},
+                        {"label": "**緊張性気胸**（最重症）", "criteria": "**気管偏位 + 静脈怒張 + 循環虚脱（即座に脱気必要）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "小気胸 + 無症状", "meaning": "経過観察、酸素投与、入院検討"},
+                        {"range": "**大気胸 OR 症候性**", "meaning": "**胸腔ドレナージ必須（緊急〜準緊急）**"},
+                        {"range": "**緊張性気胸**", "meaning": "**即座に大口径針穿刺脱気 → 胸腔ドレナージ（救命処置）**"},
+                    ],
+                    "source": "Roberts ME et al. Thorax 2023 — BTS Pleural Guideline 2023（気胸の管理）",
+                },
+                {
+                    "name": "膿胸 ACCP 分類（3 期）",
+                    "items": [
+                        {"label": "Stage I (浸出期)", "criteria": "発症 1-3 日、漿液性、自由液", "points": "—"},
+                        {"label": "**Stage II (線維素膿性期)**", "criteria": "**4-14 日、フィブリン沈着、隔壁形成、ドレナージ困難**", "points": "—"},
+                        {"label": "**Stage III (器質化期)**", "criteria": "**> 14 日、肺嵌頓、胸郭運動制限、外科的決定的治療**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Stage I", "meaning": "胸腔ドレナージ + 抗菌薬で対応可"},
+                        {"range": "**Stage II**", "meaning": "**胸腔鏡下剥皮術 (VATS) 検討、外科コンサルト**"},
+                        {"range": "**Stage III**", "meaning": "**開胸剥皮術または高度医療機関へ転院**"},
+                    ],
+                    "source": "ACCP Empyema Consensus Statement",
+                },
+            ],
             "options": [
                 {
                     "scene": "胸腔ドレナージ",
@@ -561,11 +831,33 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑩ ドレナージの管理") + ": **2 点 / 留置中毎日** (該当患者)",
                 _a("A1 創傷処置") + ": 1 点 / 日 (ドレーン創部管理)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 自然気胸 大気胸 + 症候性 (BTS 大気胸 + 呼吸困難)",
+                    "background": "32 歳男性、痩せ型 (BMI 18)、喫煙者、既往なし",
+                    "presentation": "前夜の突然の左胸痛 + 軽度呼吸困難、経過観察で増悪",
+                    "vitals": "BT 36.8℃、BP 122/76、HR 108、呼吸数 22、SpO2 93% RA、左肺呼吸音減弱",
+                    "labs": "CXR で左肺尖部から胸壁まで 3.5cm の気胸（大気胸）、CT で気腫性ブラ確認",
+                    "score_calc": "BTS 大気胸（≥ 2cm）+ 症候性（呼吸困難 + 頻脈）→ **胸腔ドレナージ必須**",
+                    "plan": "緊急入院、6F 病棟、左胸腔ドレーン挿入（24Fr、第 5 肋間中腋窩線）、低圧持続吸引、酸素 2L 鼻カニュラ、CXR 翌朝 + 抜去前",
+                    "necessity_contrib": _a("A6⑩ ドレナージの管理") + " 2 点 / 日（留置中毎日）/ " + _a("A1 創傷処置 (ドレーン創部)") + " 1 点 / " + _a("A2 呼吸ケア (酸素)") + " 1 点 → **A 計 4 点で該当**",
+                },
+                {
+                    "title": "例 B: 緊張性気胸（救命処置必須）",
+                    "background": "65 歳男性、COPD（既往）、慢性気管支炎",
+                    "presentation": "急激な胸痛 + 呼吸困難で救急搬送、来院時意識レベル低下",
+                    "vitals": "GCS 13、BP 78/42、HR 138、呼吸数 36、SpO2 84% RA、気管偏位（右へ）、頸静脈怒張、左肺呼吸音消失",
+                    "labs": "CXR は撮影前に診断（緊張性気胸の臨床診断）",
+                    "score_calc": "**緊張性気胸 → 救命処置必須**（CT 待ちは禁忌）",
+                    "plan": "**即座に大口径針穿刺脱気**（左第 2 肋間鎖骨中線、14G 針）→ ドレーン挿入（28Fr）、酸素高流量、HFNC 装着、心電図モニター、ABG。安定化後 6F 病棟入室",
+                    "necessity_contrib": _a("A6⑩ ドレナージの管理") + " 2 点 / 日 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 6 点で該当**",
+                },
+            ],
             "evidence": [
                 {
                     "strength": "強",
-                    "ref": "BTS ガイドライン 2010",
-                    "summary": "症候性気胸 (≥ 2cm) は胸腔ドレナージ推奨、膿胸は早期外科介入も検討",
+                    "ref": "BTS Pleural Guideline 2023",
+                    "summary": "Roberts et al. Thorax 2023 — 大気胸（≥ 2cm）または症候性は胸腔ドレナージ、膿胸は早期外科介入",
                 },
             ],
             "guardrails": [
@@ -588,6 +880,39 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "右心負荷所見 (RV/LV ≥ 1.0、TAPSE 低下、トロポニン上昇)",
                 "腎不全 (CrCl < 30) で DOAC・LMWH が使用しにくい",
             ],
+            "severity_assessment": [
+                {
+                    "name": "sPESI (simplified Pulmonary Embolism Severity Index、6 項目 6 点満点)",
+                    "items": [
+                        {"label": "年齢 > 80 歳", "criteria": "年齢 > 80", "points": "1点"},
+                        {"label": "癌の既往", "criteria": "癌の現病・既往", "points": "1点"},
+                        {"label": "慢性心肺疾患", "criteria": "心不全 / COPD", "points": "1点"},
+                        {"label": "心拍数", "criteria": "≥ 110/min", "points": "1点"},
+                        {"label": "収縮期血圧", "criteria": "< 100 mmHg", "points": "1点"},
+                        {"label": "酸素飽和度", "criteria": "SaO2 < 90%", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "**0 点 (低リスク)**", "meaning": "**30 日死亡率 < 1% — 早期退院 / 外来治療検討可**"},
+                        {"range": "**≥ 1 点 (高リスク)**", "meaning": "**30 日死亡率 10% — 入院、抗凝固療法**"},
+                    ],
+                    "source": "Jiménez D et al. Arch Intern Med 2010 (sPESI 開発) / Validation in COMMAND VTE Registry ([PMID 30203659](https://pubmed.ncbi.nlm.nih.gov/30203659/))",
+                },
+                {
+                    "name": "ESC 2019 PE リスク階層化（4 段階）",
+                    "items": [
+                        {"label": "低リスク", "criteria": "sPESI 0 + RV 機能正常 + 心筋トロポニン陰性", "points": "—"},
+                        {"label": "中等度リスク (低)", "criteria": "sPESI ≥ 1 + RV 機能 OR トロポニンの一方異常", "points": "—"},
+                        {"label": "**中等度リスク (高)**", "criteria": "**sPESI ≥ 1 + RV 機能異常 + トロポニン上昇**", "points": "—"},
+                        {"label": "**高リスク (massive)**", "criteria": "**血行動態不安定（SBP < 90 mmHg、ショック、心停止）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "低 / 中等度（低）", "meaning": "DOAC または LMWH、外来管理も可"},
+                        {"range": "**中等度（高）**", "meaning": "**入院、UFH 持続点滴 + 厳重モニタリング、状態悪化なら血栓溶解検討**"},
+                        {"range": "**高リスク**", "meaning": "**血栓溶解療法 (rt-PA) 適応 — 高度医療機関へ転院（ECMO/カテーテル治療）**"},
+                    ],
+                    "source": "Konstantinides SV et al. Eur Heart J 2020 ESC GL on Acute PE",
+                },
+            ],
             "options": [
                 {
                     "scene": "抗凝固",
@@ -599,7 +924,34 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑨ 抗血栓塞栓薬の持続点滴") + ": **3 点 / 日 × 3-7 日**",
                 _a("A4 シリンジポンプ") + ": 1 点 (UFH 持続併用)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 中等度リスク PE (sPESI 2 / ESC 中等度高)",
+                    "background": "70 歳男性、CKD（CrCl 25 mL/min）、肺癌術後 3 ヶ月",
+                    "presentation": "前日からの呼吸困難 + 軽度胸痛、来院時血圧維持",
+                    "vitals": "BP 116/72、HR 116、呼吸数 24、SpO2 88% RA",
+                    "labs": "造影 CT で右肺動脈葉枝に血栓、心エコーで RV/LV = 1.1（軽度右心負荷）、トロポニン軽度上昇 (0.08)、Cre 2.5",
+                    "score_calc": "sPESI = 癌(1) + 心拍 ≥ 110(1) + SaO2 < 90(1) = **3 点（高リスク）** / ESC = RV 異常 + トロポニン上昇 → **中等度（高）リスク**",
+                    "plan": "緊急入院、6F 病棟、UFH 80 単位/kg 負荷 → 18 単位/kg/h 持続（CrCl 低下のため DOAC 不適）、APTT 6h ごと、酸素 3L 鼻カニュラ、状態悪化なら血栓溶解検討",
+                    "necessity_contrib": _a("A6⑨ 抗血栓塞栓薬の持続点滴") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A2 呼吸ケア (酸素)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 7 点で該当**",
+                },
+                {
+                    "title": "例 B: 高リスク PE (massive PE、血行動態不安定 / ESC 高リスク)",
+                    "background": "65 歳女性、卵巣癌化学療法中、長期臥床",
+                    "presentation": "突然の胸痛 + 呼吸困難、来院時すでにショック",
+                    "vitals": "意識朦朧 (GCS 12)、BP 78/45、HR 132、呼吸数 32、SpO2 84% RA",
+                    "labs": "造影 CT で両側肺動脈本幹の鞍状血栓、心エコーで著明な右心負荷、トロポニン 2.5、BNP 1,800、Lactate 4.5",
+                    "score_calc": "ESC = **高リスク (massive PE) — 血行動態不安定 + 心停止リスク**",
+                    "plan": "**当院対応範囲超過 → 高度医療機関への緊急転院推奨**（カテーテル血栓除去 / ECMO 適応評価のため）。転院前安定化として: 個室入室、ノルアドレナリン 0.05 μg/kg/min、UFH 持続点滴（rt-PA 検討）、HFNC 装着、CV 挿入。状態安定後に救急車搬送",
+                    "necessity_contrib": "（転院前安定化中）" + _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A6⑨ 抗血栓塞栓薬の持続点滴") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 10 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "[PMID 30203659](https://pubmed.ncbi.nlm.nih.gov/30203659/)",
+                    "summary": "Yamashita Y et al. J Cardiol 2020 COMMAND VTE Registry — sPESI 0 で 30 日死亡率 < 1%、高リスクは 10%",
+                },
                 {
                     "strength": "強",
                     "ref": "[日循 2025 GL](docs/admin/references/pdf/jcs2025_pte_dvt_guideline.pdf)",
@@ -631,6 +983,43 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "胸痛・心不全症状の合併",
                 "経口β遮断薬・Ca 拮抗薬で コントロール不十分",
             ],
+            "severity_assessment": [
+                {
+                    "name": "EHRA 症状スケール（Af 症状重症度、4 段階）",
+                    "items": [
+                        {"label": "EHRA 1", "criteria": "症状なし", "points": "—"},
+                        {"label": "EHRA 2a", "criteria": "軽症（日常生活影響なし）", "points": "—"},
+                        {"label": "EHRA 2b", "criteria": "中等症（不快、日常生活軽度影響）", "points": "—"},
+                        {"label": "**EHRA 3**", "criteria": "**重症（日常生活著明影響、心不全症状）**", "points": "—"},
+                        {"label": "**EHRA 4**", "criteria": "**身体機能廃絶（失神・心原性ショック）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "EHRA 1-2a", "meaning": "経口治療でフォロー、リズム/レート選択判断"},
+                        {"range": "**EHRA 2b-3**", "meaning": "**入院 + IV 抗不整脈剤検討（アミオダロン）**"},
+                        {"range": "**EHRA 4**", "meaning": "**緊急電気的除細動 + 集中治療**"},
+                    ],
+                    "source": "Wynn GJ et al. Europace 2014 / ESC AF Guidelines 2024",
+                },
+                {
+                    "name": "CHA2DS2-VASc スコア（脳卒中リスク評価、最大 9 点）",
+                    "items": [
+                        {"label": "C: 心不全", "criteria": "うっ血性心不全 / LVEF低下", "points": "1点"},
+                        {"label": "H: 高血圧", "criteria": "高血圧の既往", "points": "1点"},
+                        {"label": "A2: 年齢 ≥ 75歳", "criteria": "75 歳以上", "points": "**2点**"},
+                        {"label": "D: 糖尿病", "criteria": "糖尿病の既往", "points": "1点"},
+                        {"label": "S2: 脳卒中・TIA", "criteria": "脳卒中 / TIA / 血栓塞栓症の既往", "points": "**2点**"},
+                        {"label": "V: 血管疾患", "criteria": "心筋梗塞 / 末梢動脈疾患 / 大動脈プラーク", "points": "1点"},
+                        {"label": "A: 年齢 65-74歳", "criteria": "65-74 歳", "points": "1点"},
+                        {"label": "Sc: 性別", "criteria": "女性", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "**0 点 (男性) / 1 点 (女性)**", "meaning": "抗凝固療法不要"},
+                        {"range": "1 点 (男性) / 2 点 (女性)", "meaning": "**抗凝固療法を考慮（推奨）**"},
+                        {"range": "**≥ 2 点 (男性) / ≥ 3 点 (女性)**", "meaning": "**抗凝固療法強く推奨（DOAC 第一選択）**"},
+                    ],
+                    "source": "Lip GY et al. Chest 2010 / Validation in 多数のコホート ([PMID 28375552](https://pubmed.ncbi.nlm.nih.gov/28375552/) systematic review)",
+                },
+            ],
             "options": [
                 {
                     "scene": "心拍コントロール",
@@ -642,11 +1031,28 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑧ 抗不整脈剤の使用") + ": **3 点 / 日 × 1-3 日**",
                 _a("A4 シリンジポンプ") + ": 1 点 (アミオダロン持続併用)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 重症 Af + 心不全悪化 (EHRA 3 / CHA2DS2-VASc 5)",
+                    "background": "78 歳女性、心房細動既往（DOAC 内服中）、慢性心不全、糖尿病、高血圧",
+                    "presentation": "前日からの動悸 + 呼吸困難、内服アドヒアランス不良で受診",
+                    "vitals": "BP 102/68、HR 158（不整）、呼吸数 26、SpO2 92% RA、両肺野湿性ラ音",
+                    "labs": "Af + RVR、BNP 1,250、トロポニン陰性、Cre 1.4、TSH 正常、CXR で軽度肺うっ血",
+                    "score_calc": "EHRA = **3（重症、日常生活著明影響）** / CHA2DS2-VASc = C(1) + H(1) + A2(2) + D(1) + Sc(1) = **5 点（高リスク、抗凝固強く推奨）**",
+                    "plan": "緊急入院、6F 病棟、アミオダロン 150mg ローディング → 1mg/min × 6h → 0.5mg/min 持続（シリンジポンプ）、フロセミド 20mg IV、酸素 2L、DOAC 継続（または UFH 持続切替）、心エコー精査、24-48h で経口メトプロロール移行",
+                    "necessity_contrib": _a("A6⑧ 抗不整脈剤注射") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (酸素)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点で該当**",
+                },
+            ],
             "evidence": [
                 {
                     "strength": "強",
                     "ref": "[PMID 39210723](https://pubmed.ncbi.nlm.nih.gov/39210723/)",
                     "summary": "2024 ESC AF GL — 血行動態不安定例で IV アミオダロン推奨",
+                },
+                {
+                    "strength": "強",
+                    "ref": "[PMID 28375552](https://pubmed.ncbi.nlm.nih.gov/28375552/)",
+                    "summary": "Borre ED et al. Thromb Haemost 2017 — CHA2DS2-VASc systematic review、脳卒中リスク予測の確立されたスコア",
                 },
             ],
             "guardrails": [
@@ -898,6 +1304,26 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "好中球数 < 500 /μL + 発熱 (38.3℃以上 or 38.0℃以上 1h 持続)",
                 "MASCC スコアで高リスク (< 21)",
             ],
+            "severity_assessment": [
+                {
+                    "name": "MASCC スコア（FN リスク評価、最大 26 点）",
+                    "items": [
+                        {"label": "発熱時の症状負担", "criteria": "なし or 軽度", "points": "5点"},
+                        {"label": "症状負担", "criteria": "中等度", "points": "3点"},
+                        {"label": "血圧低下なし", "criteria": "SBP > 90 mmHg", "points": "5点"},
+                        {"label": "COPD なし", "criteria": "活動性 COPD なし", "points": "4点"},
+                        {"label": "固形腫瘍 OR 真菌感染歴なし", "criteria": "固形腫瘍 OR 過去の真菌感染なし", "points": "4点"},
+                        {"label": "脱水なし", "criteria": "輸液不要", "points": "3点"},
+                        {"label": "外来発症", "criteria": "外来通院中の発症", "points": "3点"},
+                        {"label": "年齢 < 60 歳", "criteria": "60 歳未満", "points": "2点"},
+                    ],
+                    "interpretation": [
+                        {"range": "**≥ 21 点（低リスク）**", "meaning": "**外来管理 + 経口抗菌薬可（IDSA 適応で）**"},
+                        {"range": "**< 21 点（高リスク）**", "meaning": "**入院 + IV 広域抗菌薬必須、合併症率 36% / 死亡率 14%**"},
+                    ],
+                    "source": "Klastersky J et al. J Clin Oncol 2000 — MASCC 開発、外的検証多数",
+                },
+            ],
             "options": [
                 {
                     "scene": "経験的抗菌薬",
@@ -909,7 +1335,24 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A4 + A3") + ": **2 点** (該当患者)",
                 _a("A2 呼吸ケア (酸素 A2)") + ": 1 点 (呼吸器症状あれば)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 高リスク FN (MASCC 16 点)",
+                    "background": "62 歳男性、肺癌化学療法 (シスプラチン+ペメトレキセド) 7 日目、COPD 既往",
+                    "presentation": "前夜からの発熱と倦怠感、来院時意識清明だが脱水あり",
+                    "vitals": "BT 38.7℃、BP 102/68、HR 110、呼吸数 22、SpO2 94% RA",
+                    "labs": "WBC 1,200（好中球 320 /μL）、CRP 8.5、Cre 0.9、Lactate 1.5、ALB 3.0、CXR 異常なし",
+                    "score_calc": "MASCC = 症状中等度(3) + SBP > 90(5) + COPD なし→COPDあり(0) + 固形腫瘍(4) + 脱水あり→なし(0) + 入院発症→外来発症(3) + 60歳超(0) = **16 点（高リスク）**",
+                    "plan": "緊急入院、6F 病棟、PIPC/TAZ 4.5g 負荷 → 13.5g/24h 持続点滴、輸液（脱水補正）、血液培養 2 セット、G-CSF (フィルグラスチム 75μg/日 SC) 検討、48h 後培養結果で de-escalation",
+                    "necessity_contrib": _a("A4 シリンジポンプ (PIPC/TAZ 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 4 点で該当**",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "Klastersky J et al. J Clin Oncol 2000",
+                    "summary": "MASCC スコア開発論文 — 1,139 例で外的検証、< 21 で高リスク（合併症 36% / 死亡 14%）",
+                },
                 {
                     "strength": "強",
                     "ref": "IDSA FN ガイドライン 2010",
@@ -941,6 +1384,33 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "尿培養で ESBL 産生大腸菌・KP 検出 (or 既往あり)",
                 "qSOFA ≥ 1、SIRS 合併",
             ],
+            "severity_assessment": [
+                {
+                    "name": "qSOFA（重症腎盂腎炎での敗血症評価）",
+                    "items": [
+                        {"label": "呼吸数", "criteria": "≥ 22/min", "points": "1点"},
+                        {"label": "意識変容", "criteria": "GCS < 15", "points": "1点"},
+                        {"label": "収縮期血圧", "criteria": "≤ 100 mmHg", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-1 点", "meaning": "局所感染 — 経口 or IV 抗菌薬"},
+                        {"range": "**≥ 2 点**", "meaning": "**敗血症併発の可能性 — 緊急入院、IV 広域抗菌薬、source control 評価**"},
+                    ],
+                    "source": "Sepsis-3 ([PMID 26903338](https://pubmed.ncbi.nlm.nih.gov/26903338/))",
+                },
+                {
+                    "name": "閉塞性腎盂腎炎判定（ドレナージ要否）",
+                    "items": [
+                        {"label": "閉塞所見なし", "criteria": "CT で水腎症なし、結石なし", "points": "—"},
+                        {"label": "**閉塞性腎盂腎炎**", "criteria": "**水腎症あり / 結石による尿路閉塞 / 腫瘍による圧迫**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "非閉塞性", "meaning": "抗菌薬のみで改善見込み"},
+                        {"range": "**閉塞性**", "meaning": "**緊急ドレナージ必須（尿管ステント or PCN 経皮的腎瘻）— 24-48h 以内**"},
+                    ],
+                    "source": "IDSA UTI ガイドライン / 日本泌尿器科学会",
+                },
+            ],
             "options": [
                 {
                     "scene": "抗菌薬",
@@ -950,6 +1420,28 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
             ],
             "contributions": [
                 _a("A4 + A3") + ": **2 点** (該当患者)",
+            ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: ESBL 産生菌による重症腎盂腎炎 (qSOFA 1 点)",
+                    "background": "70 歳女性、糖尿病、過去に ESBL 産生大腸菌による尿路感染歴あり",
+                    "presentation": "前日からの発熱と腰背部痛、来院時食欲不振 + 嘔気",
+                    "vitals": "BT 39.0℃、BP 126/78、HR 104、呼吸数 20、SpO2 96% RA、左 CVA tenderness +",
+                    "labs": "WBC 16,500、CRP 14、Cre 1.2、尿沈渣 WBC > 100/HPF、亜硝酸塩 +、尿培養 → ESBL 大腸菌、CT で水腎症なし",
+                    "score_calc": "qSOFA = 0 点 / **非閉塞性 + ESBL 既往** → カルバペネム第一選択",
+                    "plan": "緊急入院、6F 病棟、MEPM 1g 負荷 → 3g/24h 持続点滴、輸液、血液培養 + 尿培養、CT で源確認、48h 後に培養感受性で de-escalation",
+                    "necessity_contrib": _a("A4 シリンジポンプ (MEPM 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 4 点で該当**",
+                },
+                {
+                    "title": "例 B: 閉塞性腎盂腎炎 + 敗血症 (qSOFA 2 点)",
+                    "background": "76 歳男性、尿管結石既往、前立腺肥大",
+                    "presentation": "前日からの右腰背部痛 + 発熱、来院時意識朦朧",
+                    "vitals": "GCS 13、BT 39.5℃、BP 96/58、HR 124、呼吸数 26、SpO2 92% RA、右 CVA tenderness +",
+                    "labs": "WBC 22,000、CRP 28、Cre 2.1、Lactate 3.2、PCT 25、CT で右尿管結石（10mm）+ 水腎症（中等度）+ 腎盂内膿瘍",
+                    "score_calc": "qSOFA = 意識(1) + 血圧(1) = **2 点（陽性）** / **閉塞性腎盂腎炎 → 緊急ドレナージ必須**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理**、緊急泌尿器科コンサルト → 24h 以内に右尿管ステント留置（or PCN）、MEPM 1g 負荷 → 3g/24h 持続点滴、輸液、必要なら昇圧剤、血液 + 尿培養。挿管必要・治療反応不良なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 尿管ステント or PCN") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PCN 後)") + " 2 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 6 点 + C 該当**",
+                },
             ],
             "evidence": [
                 {
@@ -988,6 +1480,41 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "境界不明瞭な紅斑、リンパ管炎所見あり",
                 "重症化・壊死性筋膜炎との鑑別 (LRINEC スコア)",
             ],
+            "severity_assessment": [
+                {
+                    "name": "Eron 分類（蜂窩織炎重症度、4 群）",
+                    "items": [
+                        {"label": "Class I", "criteria": "全身症状なし、合併症なし、外来管理可", "points": "—"},
+                        {"label": "Class II", "criteria": "全身症状あり（発熱）または合併症あり（PVD・肥満）、入院検討", "points": "—"},
+                        {"label": "**Class III**", "criteria": "**重篤な全身症状（不穏、頻脈、頻呼吸、低血圧）または重要組織障害**", "points": "—"},
+                        {"label": "**Class IV**", "criteria": "**敗血症 OR 壊死性筋膜炎の疑い — 緊急**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Class I", "meaning": "外来 + 経口抗菌薬 (アモキシシリン)"},
+                        {"range": "Class II", "meaning": "**入院 + IV 抗菌薬（CEZ / SBT/ABPC）**"},
+                        {"range": "**Class III**", "meaning": "**入院 + 広域 IV 抗菌薬 + 集中管理**"},
+                        {"range": "**Class IV**", "meaning": "**緊急外科コンサルト（壊死性筋膜炎なら緊急デブリ）+ 広域抗菌薬**"},
+                    ],
+                    "source": "Eron LJ et al. J Antimicrob Chemother 2003 — 蜂窩織炎重症度分類",
+                },
+                {
+                    "name": "LRINEC スコア（壊死性筋膜炎リスク評価、最大 13 点）",
+                    "items": [
+                        {"label": "CRP", "criteria": "≥ 15 mg/dL", "points": "4点"},
+                        {"label": "WBC", "criteria": "15-25 (1点) / > 25 (2点)", "points": "1-2点"},
+                        {"label": "Hb", "criteria": "11-13.5 (1点) / < 11 (2点)", "points": "1-2点"},
+                        {"label": "Na", "criteria": "< 135 mEq/L", "points": "2点"},
+                        {"label": "Cre", "criteria": "> 1.6 mg/dL", "points": "2点"},
+                        {"label": "Glu", "criteria": "> 180 mg/dL", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-5 点", "meaning": "壊死性筋膜炎の可能性低（陰性予測 96%）"},
+                        {"range": "**6-7 点**", "meaning": "**中等リスク — 注意深く観察**"},
+                        {"range": "**≥ 8 点**", "meaning": "**高リスク — 緊急画像評価 + 外科コンサルト**"},
+                    ],
+                    "source": "Wong CH et al. Crit Care Med 2004 — LRINEC オリジナル開発",
+                },
+            ],
             "options": [
                 {
                     "scene": "創傷処置",
@@ -998,7 +1525,39 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
             "contributions": [
                 _a("A1 + A3") + ": **2 点** (該当患者)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 下肢蜂窩織炎 中等症 (Eron Class II / LRINEC 3 点)",
+                    "background": "65 歳男性、糖尿病、軽度の足白癬",
+                    "presentation": "3 日前からの右下腿発赤・腫脹、来院時発熱と疼痛増悪",
+                    "vitals": "BT 38.5℃、BP 130/80、HR 96、SpO2 97% RA、右下腿全体の発赤 + 圧痛 + 熱感",
+                    "labs": "WBC 14,200、CRP 8.5、Hb 12.5、Na 138、Cre 0.9、Glu 165",
+                    "score_calc": "Eron = **Class II（発熱 + DM 合併、入院）** / LRINEC = CRP(0) + WBC(1) + Hb(0) + Na(0) + Cre(0) + Glu(1) = **2 点（壊死性筋膜炎の可能性低）**",
+                    "plan": "入院、5F 病棟、CEZ 1g IV q8h（または SBT/ABPC 3g IV q6h）、創部洗浄 + 滅菌ガーゼ被覆、下肢挙上、安静、48-72h で経口切替判断",
+                    "necessity_contrib": _a("A1 創傷処置") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点（IV 抗菌薬 + 輸液 + 鎮痛薬）/ " + _a("A7 救急搬送後") + " 2 点 → **A 計 4 点で該当**",
+                },
+                {
+                    "title": "例 B: 壊死性筋膜炎疑い (Eron Class IV / LRINEC 9 点)",
+                    "background": "68 歳男性、糖尿病、CKD、PAD",
+                    "presentation": "前日からの右下肢の急速な腫脹 + 強い疼痛、来院時意識朦朧と低血圧",
+                    "vitals": "GCS 13、BT 39.2℃、BP 88/56、HR 128、呼吸数 28、SpO2 91% RA、右下腿の暗紫色変色 + 水疱 + 触診時激痛",
+                    "labs": "WBC 28,500、CRP 22、Hb 10.5、Na 132、Cre 2.5、Glu 220、Lactate 4.5、CT で皮下気腫 + 筋膜下液貯留",
+                    "score_calc": "Eron = **Class IV（敗血症 + 壊死性筋膜炎の疑い）** / LRINEC = CRP(4) + WBC(2) + Hb(2) + Na(2) + Cre(2) + Glu(1) = **13 点（高リスク確定）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理**、緊急形成・整形外科コンサルト → 緊急デブリードマン（壊死筋膜切除）、PIPC/TAZ 4.5g 持続点滴 + クリンダマイシン 600mg IV q8h（毒素産生抑制）+ バンコマイシン（MRSA カバー）、ノルアドレナリン 0.05 μg/kg/min、CV 挿入、HFNC、血糖管理。デブリ困難・再建必要なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤") + " **3 点** / " + _c("C23 緊急デブリードマン") + " 4 日カウント / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "Eron LJ et al. J Antimicrob Chemother 2003",
+                    "summary": "蜂窩織炎の重症度分類（Class I-IV）、外来 vs 入院 vs 緊急の判断基準",
+                },
+                {
+                    "strength": "強",
+                    "ref": "Wong CH et al. Crit Care Med 2004",
+                    "summary": "LRINEC スコア — 壊死性筋膜炎の早期診断、≥ 6 で高リスク",
+                },
                 {
                     "strength": "強",
                     "ref": "IDSA SSTI ガイドライン 2014",
@@ -1025,6 +1584,41 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "Wagner 分類 / IWGDF 分類で評価",
                 "X 線・MRI で骨髄炎の有無確認",
             ],
+            "severity_assessment": [
+                {
+                    "name": "Wagner 分類（糖尿病性足病変、6 段階）",
+                    "items": [
+                        {"label": "Grade 0", "criteria": "皮膚病変なし、ハイリスク足", "points": "—"},
+                        {"label": "Grade 1", "criteria": "表在性潰瘍（真皮内）", "points": "—"},
+                        {"label": "Grade 2", "criteria": "深在性潰瘍（腱・筋に達する、骨に達しない）", "points": "—"},
+                        {"label": "**Grade 3**", "criteria": "**深在性潰瘍 + 骨髄炎 / 深部膿瘍**", "points": "—"},
+                        {"label": "**Grade 4**", "criteria": "**部分壊疽（前足部・足趾）**", "points": "—"},
+                        {"label": "**Grade 5**", "criteria": "**広範壊疽（足部全体）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Grade 0-1", "meaning": "外来管理 + 局所治療"},
+                        {"range": "Grade 2", "meaning": "入院 + IV 抗菌薬 + デブリ"},
+                        {"range": "**Grade 3-4**", "meaning": "**入院 + 集中治療 + 緊急デブリ + 血行再建評価**"},
+                        {"range": "**Grade 5**", "meaning": "**下肢切断検討 + 集中治療**"},
+                    ],
+                    "source": "Wagner FW Jr. Foot Ankle 1981 — 糖尿病性足病変重症度分類",
+                },
+                {
+                    "name": "IWGDF/IDSA PEDIS 分類（重症度、4 段階 - 感染部分）",
+                    "items": [
+                        {"label": "Grade 1 (感染なし)", "criteria": "炎症所見なし", "points": "—"},
+                        {"label": "Grade 2 (軽症)", "criteria": "局所感染（紅斑 ≤ 2cm、浅い）", "points": "—"},
+                        {"label": "**Grade 3 (中等症)**", "criteria": "**局所感染 + 紅斑 > 2cm OR 深部組織まで（筋膜・骨・関節）**", "points": "—"},
+                        {"label": "**Grade 4 (重症)**", "criteria": "**全身感染（SIRS ≥ 2 / 敗血症）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Grade 1-2", "meaning": "外来 + 経口抗菌薬"},
+                        {"range": "**Grade 3**", "meaning": "**入院 + IV 広域抗菌薬 + 多分野連携（整形・形成・血管）**"},
+                        {"range": "**Grade 4**", "meaning": "**個室管理 + 集中治療 + 緊急 source control**"},
+                    ],
+                    "source": "IWGDF/IDSA Diabetic Foot Infection Guidelines 2023",
+                },
+            ],
             "options": [
                 {
                     "scene": "創傷処置",
@@ -1036,10 +1630,37 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A1 + A3") + ": **2 点** (該当患者)",
                 _a("A6⑩ ドレナージ管理") + ": 2 点 (深部膿瘍・壊死組織のドレナージ後)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 糖尿病性足感染 中等症 (Wagner Grade 2 / PEDIS Grade 3)",
+                    "background": "70 歳男性、2 型糖尿病 (HbA1c 9.5%)、PAD 軽度、血糖コントロール不良",
+                    "presentation": "1 週間前からの右第 1 趾の潰瘍 + 周囲発赤、悪臭 +",
+                    "vitals": "BT 37.8℃、BP 132/76、HR 92、SpO2 97% RA、右第 1 趾内側に 2cm の潰瘍 + 紅斑 4cm + 排膿",
+                    "labs": "WBC 13,500、CRP 9.2、血糖 285、HbA1c 9.5、X 線で骨破壊なし、MRI で筋層まで感染",
+                    "score_calc": "Wagner = **Grade 2（深在性、骨に達しない）** / PEDIS = **Grade 3（中等症、紅斑 > 2cm + 深部組織まで）**",
+                    "plan": "入院、5F 病棟、ABPC/SBT 3g IV q6h、形成外科コンサルト → デブリードマン、創傷洗浄毎日、血糖管理（インスリン強化）、X 線・MRI fellow up、PAD 評価で必要なら血管内治療科紹介",
+                    "necessity_contrib": _a("A1 創傷処置") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点（ABPC/SBT + 輸液 + インスリン）/ " + _a("A7 救急搬送後 or 緊急入院") + " 2 点 → **A 計 4 点で該当**",
+                },
+                {
+                    "title": "例 B: 糖尿病性足壊疽 重症 (Wagner Grade 4 / PEDIS Grade 4)",
+                    "background": "75 歳男性、糖尿病 (HbA1c 11.2%)、CKD ステージ 4、PAD（ABI 0.5）、心不全",
+                    "presentation": "数週間前からの右足趾の黒色変化、急速進行 + 発熱で救急搬送",
+                    "vitals": "BT 38.7℃、BP 92/58、HR 122、呼吸数 24、SpO2 92% RA、右足部全前足部の壊疽 + 悪臭 + 上行性紅斑",
+                    "labs": "WBC 22,000、CRP 28、血糖 320、Cre 2.8、Lactate 3.0、PCT 18、X 線で複数骨破壊、CT で深部膿瘍",
+                    "score_calc": "Wagner = **Grade 4（部分壊疽、前足部）** / PEDIS = **Grade 4（重症、SIRS + 敗血症）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理**、緊急形成・整形・血管外科コンサルト → 下肢切断（Chopart 切断 or 下腿切断）+ デブリ、MEPM 1g 負荷 → 3g/24h 持続、ノルアドレナリン 0.05 μg/kg/min、CV 挿入、HFNC、強化血糖管理、術前 ABI/SPP 評価で血行再建可能性検討",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤") + " **3 点** / " + _c("C18 骨の手術 (切断)") + " **10 日カウント** / " + _c("C23 CV 挿入") + " 4 日 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
                 {
                     "strength": "強",
-                    "ref": "IWGDF ガイドライン 2023",
+                    "ref": "Wagner FW Jr. Foot Ankle 1981",
+                    "summary": "糖尿病性足病変重症度分類 — Grade 0-5 の標準的な分類、世界中で使用",
+                },
+                {
+                    "strength": "強",
+                    "ref": "IWGDF/IDSA Guidelines 2023",
                     "summary": "糖尿病性足感染症は早期評価 + 適切なデブリ + 多分野連携 (整形・形成・血管)",
                 },
             ],
@@ -1069,6 +1690,49 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "CRPS Type I/II の急性期 (灼熱痛、アロディニア)",
                 "他治療抵抗性の難治性神経障害性疼痛",
             ],
+            "severity_assessment": [
+                {
+                    "name": "NRS（Numerical Rating Scale、疼痛強度、0-10）",
+                    "items": [
+                        {"label": "0-3", "criteria": "軽症（日常生活影響なし〜軽度）", "points": "—"},
+                        {"label": "4-6", "criteria": "**中等症（活動制限あり、薬物療法必要）**", "points": "—"},
+                        {"label": "**7-10**", "criteria": "**重症（日常生活著明影響、難治性、入院加療検討）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-3", "meaning": "外来 + 経口薬（プレガバリン・トラマドール）"},
+                        {"range": "4-6", "meaning": "ペイン科コンサルト、神経ブロック検討"},
+                        {"range": "**7-10**", "meaning": "**入院ペイン管理、IV リドカイン・神経ブロック・脊髄刺激療法など多面的アプローチ**"},
+                    ],
+                    "source": "国際疼痛学会 (IASP) — 標準的疼痛評価",
+                },
+                {
+                    "name": "DN4（Douleur Neuropathique 4 questions、神経障害性疼痛診断、10 点満点）",
+                    "items": [
+                        {"label": "灼熱痛", "criteria": "あり", "points": "1点"},
+                        {"label": "冷感性疼痛", "criteria": "あり", "points": "1点"},
+                        {"label": "電撃痛", "criteria": "あり", "points": "1点"},
+                        {"label": "チクチク痛・蟻走感・痺れ・かゆみ", "criteria": "各 1 点", "points": "各1点"},
+                        {"label": "知覚低下（触覚・針刺し）", "criteria": "各 1 点", "points": "各1点"},
+                        {"label": "ブラッシングで増悪", "criteria": "あり", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "**≥ 4 点**", "meaning": "**神経障害性疼痛と診断（感度 83% / 特異度 90%）— 抗けいれん薬・抗うつ薬・神経ブロック適応**"},
+                        {"range": "< 4 点", "meaning": "侵害受容性疼痛の可能性 — NSAIDs・アセトアミノフェン中心"},
+                    ],
+                    "source": "Bouhassira D et al. Pain 2005 — DN4 開発、神経障害性疼痛の確立されたスクリーニングツール",
+                },
+                {
+                    "name": "Budapest 診断基準 (CRPS、4 カテゴリ各 1 症状以上 + 2 カテゴリ各 1 徴候以上)",
+                    "items": [
+                        {"label": "症状（自覚）", "criteria": "①感覚異常（痛覚過敏・アロディニア）②血管運動（皮膚温・色調）③発汗・浮腫④運動・栄養変化", "points": "各カテゴリ 1 つ以上"},
+                        {"label": "徴候（他覚）", "criteria": "上記 4 カテゴリのうち **2 カテゴリ以上で各 1 つの徴候**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "**全基準満たす**", "meaning": "**CRPS と臨床診断 — 早期介入で慢性化予防、ペイン科 + リハ多分野連携**"},
+                    ],
+                    "source": "Harden RN et al. Pain Med 2013 — Budapest 基準（CRPS 国際標準診断基準）",
+                },
+            ],
             "options": [
                 {
                     "scene": "難治性神経痛のレスキュー",
@@ -1080,7 +1744,29 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑧ 抗不整脈剤の使用") + ": **3 点 / 日 × 1-7 日**",
                 _a("A4 シリンジポンプ") + ": 1 点 (リドカイン持続)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 帯状疱疹後神経痛 (PHN) 難治例 (NRS 8 / DN4 7)",
+                    "background": "75 歳男性、半年前に右胸部帯状疱疹、急性期治療後も疼痛継続",
+                    "presentation": "右第 5 肋間神経領域の灼熱痛 + アロディニア、夜間眠れない、内服 3 種類（プレガバリン・アミトリプチリン・トラマドール）でコントロール不良",
+                    "vitals": "全身状態良好、PS 1、NRS 8（最強）",
+                    "labs": "DN4 = 灼熱痛(1) + 電撃痛(1) + チクチク痛(1) + 痺れ(1) + 知覚低下(1) + ブラッシング(1) = **7 点（神経障害性疼痛確診）**",
+                    "score_calc": "**NRS 8（重症）+ DN4 7（神経障害性疼痛）** + 経口薬 3 種類無効 → ペイン科入院適応",
+                    "plan": "ペイン科入院、6F 病棟、IV リドカイン 1 mg/kg/h 持続点滴 24-48h（効果判定）、心電図モニター、神経ブロック評価（肋間神経ブロック）、効果なければ脊髄刺激療法など検討。**注: IV リドカインのエビデンスは弱い、適応外で投与しない**",
+                    "necessity_contrib": _a("A6⑧ 抗不整脈剤注射 (リドカイン持続)") + " **3 点 / 日 × 1-3 日** / " + _a("A4 シリンジポンプ") + " 1 点 → **A 計 4 点で該当**（治療効果あり継続中）",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "Bouhassira D et al. Pain 2005",
+                    "summary": "DN4 開発論文 — 神経障害性疼痛のスクリーニングツール（感度 83% / 特異度 90%）",
+                },
+                {
+                    "strength": "強",
+                    "ref": "Harden RN et al. Pain Med 2013",
+                    "summary": "Budapest 診断基準 — CRPS の国際標準診断基準",
+                },
                 {
                     "strength": "弱",
                     "ref": "[PMID 16013891](https://pubmed.ncbi.nlm.nih.gov/16013891/)",
