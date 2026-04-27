@@ -9750,8 +9750,11 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
                     "過去1年プロファイル分析（実データ：退院曜日・自主回転・週末空床リスク）",
                     icon="📊",
                 )
+                # データ出典の件数は CSV から動的取得 (4 月分追加など反映)
+                _pa_df_for_caption = st.session_state.get("past_admissions_df", pd.DataFrame())
+                _pa_total_for_caption = len(_pa_df_for_caption) if not _pa_df_for_caption.empty else 0
                 st.caption(
-                    "📍 **データ出典**: 事務提供の 2025 年度実データ（1,823 件、実医師コード UEMH/TAM 等）。"
+                    f"📍 **データ出典**: 事務提供の実データ（{_pa_total_for_caption:,} 件、実医師コード UEMH/TAM 等）。"
                     "上半分のデモデータ（A医師〜J医師）とは出典が異なります。"
                     "**中央値との差** で提示し、順位付けは避けています "
                     "（中央在院日数 = 同診療科の他医師 / 金+土退院率 = 全医師。"
@@ -10218,7 +10221,7 @@ if _DOCTOR_MASTER_AVAILABLE and _DETAIL_DATA_AVAILABLE and "👨‍⚕️ 医師
 #   - 短手3 識別は統計用途のみで救急比率計算とは分離
 if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
     with tabs[_tab_idx["\U0001f4ca 過去1年分析"]]:
-        st.header("\U0001f4ca 過去1年分析（2025年度事務提供データ）")
+        st.header("\U0001f4ca 過去1年分析（事務提供 実データ）")
         _pa_df = st.session_state.get("past_admissions_df", pd.DataFrame())
         if _pa_df.empty:
             st.warning(
@@ -10229,8 +10232,11 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
             _pa_5f = int((_pa_df["病棟"] == "5F").sum())
             _pa_6f = int((_pa_df["病棟"] == "6F").sum())
             _pa_total = len(_pa_df)
+            # 期間は CSV の入院日 min/max から動的取得 (4 月分など追加時も自動反映)
+            _pa_min = pd.to_datetime(_pa_df["入院日"]).min().strftime("%Y-%m-%d")
+            _pa_max = pd.to_datetime(_pa_df["入院日"]).max().strftime("%Y-%m-%d")
             st.caption(
-                f"期間: 2025-04-01〜2026-03-31 ｜ "
+                f"期間: {_pa_min}〜{_pa_max} ｜ "
                 f"{_pa_total:,} 件 ｜ 5F: {_pa_5f:,} / 6F: {_pa_6f:,} ｜ "
                 f"救急搬送: {int(_pa_df['is_emergency_transport'].sum())} 件"
                 f"（自院 {int(_pa_df['is_self_emergency'].sum())} / "
