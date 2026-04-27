@@ -1982,6 +1982,58 @@ def _strip_html(s: str) -> str:
     return s
 
 
+def _plain_text(s: str) -> str:
+    """Streamlit の絞り込み・カード表示用に markdown/html を簡易除去する."""
+    import re
+
+    s = _strip_html(s)
+    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+    s = re.sub(r"[*_`#>-]", "", s)
+    return " ".join(s.split())
+
+
+def _all_diseases() -> list[tuple[str, dict[str, Any]]]:
+    """疾患群名と疾患 dict の平坦なリストを返す."""
+    return [(group_name, disease) for group_name, diseases in DISEASE_DATA for disease in diseases]
+
+
+def _search_diseases(query: str, group_filter: str = "すべて") -> list[tuple[str, dict[str, Any]]]:
+    """疾患名・入口・確認点を対象に、軽量検索した結果を返す."""
+    q = query.strip().lower()
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for group_name, disease in _all_diseases():
+        if group_filter != "すべて" and group_name != group_filter:
+            continue
+        haystack = " ".join(
+            [
+                disease["name"],
+                group_name,
+                *disease.get("entry", []),
+                *disease.get("contributions", []),
+                *[opt.get("scene", "") for opt in disease.get("options", [])],
+                *[opt.get("necessity", "") for opt in disease.get("options", [])],
+            ]
+        )
+        if not q or q in _plain_text(haystack).lower():
+            matches.append((group_name, disease))
+    return matches
+
+
+def _format_disease_label(group_name: str, disease: dict[str, Any]) -> str:
+    """selectbox 用の短い疾患ラベル."""
+    clean_group = _plain_text(group_name.split(" ", 1)[-1])
+    return f"{disease['id']:02d}. {disease['name']} / {clean_group}"
+
+
+def _render_bullets(st: Any, items: list[str], *, max_items: int | None = None) -> None:
+    """HTML span を含む bullet list を Streamlit に描画する."""
+    shown = items if max_items is None else items[:max_items]
+    for item in shown:
+        st.markdown(f"- {item}", unsafe_allow_html=True)
+    if max_items is not None and len(items) > max_items:
+        st.caption(f"ほか {len(items) - max_items} 項目は詳細タブに表示")
+
+
 def generate_docx() -> bytes:
     """疾患別マニュアル DOCX を生成して bytes で返す.
 
@@ -2172,7 +2224,192 @@ def render_in_streamlit(streamlit_module) -> None:
         streamlit_module: ``streamlit`` モジュール
     """
     st = streamlit_module
-    st.markdown(DISEASE_MANUAL_MARKDOWN, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <style>
+        .nn-manual-hero {
+            border-left: 6px solid #2563EB;
+            background: #EFF6FF;
+            padding: 16px 18px;
+            border-radius: 8px;
+            margin: 6px 0 14px 0;
+        }
+        .nn-manual-hero h3 {
+            margin: 0 0 6px 0;
+            color: #1E3A8A;
+            font-size: 1.1rem;
+        }
+        .nn-manual-hero p {
+            margin: 0;
+            color: #374151;
+            line-height: 1.65;
+        }
+        .nn-manual-chip {
+            display: inline-block;
+            padding: 3px 9px;
+            margin: 0 6px 6px 0;
+            border-radius: 999px;
+            background: #F3F4F6;
+            color: #374151;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+        .nn-manual-focus {
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 8px 0 12px 0;
+            background: #FFFFFF;
+        }
+        .nn-manual-focus-title {
+            color: #111827;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+        .nn-manual-safe {
+            background: #F0FDF4;
+            border-left: 5px solid #10B981;
+            padding: 10px 12px;
+            border-radius: 8px;
+            color: #065F46;
+            margin: 8px 0 12px 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="nn-manual-hero">
+          <h3>疾患を選ぶ → 今日見る項目だけ先に確認</h3>
+          <p>全文を順番に読む資料ではなく、目の前の患者に近い疾患から入口・評価点・具体例を確認するためのリファレンスです。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    group_names = ["すべて"] + [group_name for group_name, _ in DISEASE_DATA]
+    group_filter = st.selectbox(
+        "領域",
+        group_names,
+        key="nn_disease_manual_group_filter",
+    )
+    query = st.text_input(
+        "疾患名・症状・処置で絞り込み",
+        placeholder="例: 心不全、PTCD、酸素、輸血、ペイン",
+        key="nn_disease_manual_query",
+    )
+
+    matches = _search_diseases(query, group_filter)
+    if not matches:
+        st.warning("該当する疾患がありません。検索語を短くしてください。")
+        return
+
+    labels = [_format_disease_label(group_name, disease) for group_name, disease in matches]
+    selected_label = st.selectbox(
+        "表示する疾患",
+        labels,
+        key="nn_disease_manual_selected_disease",
+    )
+    selected_index = labels.index(selected_label)
+    selected_group, disease = matches[selected_index]
+
+    st.markdown(
+        f"""
+        <div class="nn-manual-focus">
+          <div class="nn-manual-focus-title">{disease['id']}. {disease['name']}</div>
+          <span class="nn-manual-chip">{_plain_text(selected_group)}</span>
+          <span class="nn-manual-chip">入口 {len(disease.get('entry', []))}項目</span>
+          <span class="nn-manual-chip">具体例 {len(disease.get('clinical_examples', []))}例</span>
+          <span class="nn-manual-chip">根拠 {len(disease.get('evidence', []))}件</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="nn-manual-safe">
+        🛡️ 適応外処置は絶対に行わない。ここで見るのは、医学的に適応のある治療・処置・記録の取りこぼし防止です。
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab_first, tab_record, tab_examples, tab_safety, tab_full = st.tabs(
+        ["最初に見る", "評価・記録", "具体例", "根拠・安全", "全文"]
+    )
+
+    with tab_first:
+        st.markdown("#### 入口（この患者を見たら）")
+        _render_bullets(st, disease.get("entry", []))
+
+        if disease.get("severity_assessment"):
+            st.markdown("#### 重症度スコア")
+            for score in disease["severity_assessment"]:
+                with st.expander(score["name"], expanded=False):
+                    if score.get("items"):
+                        st.table(score["items"])
+                    if score.get("interpretation"):
+                        st.markdown("**解釈**")
+                        for item in score["interpretation"]:
+                            st.markdown(f"- **{item['range']}**: {item['meaning']}", unsafe_allow_html=True)
+                    if score.get("source"):
+                        st.caption(f"出典: {_plain_text(score['source'])}")
+
+        st.markdown("#### 今日の確認点")
+        _render_bullets(st, disease.get("contributions", []), max_items=4)
+
+    with tab_record:
+        st.markdown("#### 場面別: 適応時に確認する項目")
+        if disease.get("options"):
+            option_lines = [
+                "| 場面 | 従来の選択肢 | 適応時に確認する項目 |",
+                "|---|---|---|",
+            ]
+            for opt in disease["options"]:
+                option_lines.append(f"| {opt['scene']} | {opt['conventional']} | {opt['necessity']} |")
+            st.markdown("\n".join(option_lines), unsafe_allow_html=True)
+        st.markdown("#### 評価・記録上の確認点")
+        _render_bullets(st, disease.get("contributions", []))
+
+    with tab_examples:
+        examples = disease.get("clinical_examples", [])
+        if not examples:
+            st.info("この疾患の具体例は未整備です。")
+        for idx, ex in enumerate(examples):
+            with st.expander(ex["title"], expanded=(idx == 0)):
+                for key, label in [
+                    ("background", "背景"),
+                    ("presentation", "主訴・経過"),
+                    ("vitals", "バイタル・身体所見"),
+                    ("labs", "検査所見"),
+                    ("score_calc", "スコア計算"),
+                    ("plan", "治療方針"),
+                    ("necessity_contrib", "評価・記録上の確認点"),
+                ]:
+                    if ex.get(key):
+                        st.markdown(f"**{label}**: {ex[key]}", unsafe_allow_html=True)
+
+    with tab_safety:
+        st.markdown("#### エビデンス")
+        for ev in disease.get("evidence", []):
+            st.markdown(
+                f"- **{ev['strength']}**: {ev['ref']} — {ev['summary']}",
+                unsafe_allow_html=True,
+            )
+        st.markdown("#### 疾患特異の倫理ガードレール")
+        _render_bullets(st, disease.get("guardrails", []))
+        st.markdown("#### オーダー例")
+        _render_bullets(st, disease.get("orders", []))
+
+    with tab_full:
+        st.markdown("#### 選択中の疾患全文")
+        st.markdown(_render_disease_md(disease), unsafe_allow_html=True)
+        with st.expander("17疾患すべての全文を開く", expanded=False):
+            st.markdown(DISEASE_MANUAL_MARKDOWN, unsafe_allow_html=True)
+
     st.markdown("---")
     try:
         docx_bytes = generate_docx()

@@ -1570,7 +1570,7 @@ st.sidebar.markdown("---")
 # サイドバーは「クイックリファレンス」のみ。詳細はモーダルダイアログ (st.dialog)
 # で広い表示領域で読めるようにする。
 # ---------------------------------------------------------------------------
-if _NN_LECTURE_MD:
+if _NN_LECTURE_MD or (_NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not None):
     # ダイアログ関数定義（クリック時に広いモーダルで全文表示）
     @st.dialog("📚 看護必要度ミニレクチャー — 医師の行動変容で達成する", width="large")
     def _show_nn_lecture_dialog():
@@ -1591,6 +1591,11 @@ if _NN_LECTURE_MD:
             st.markdown("---")
             _nn_render_references(st, _nn_dlg_root)
 
+    if _NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not None:
+        @st.dialog("🏥 看護必要度 疾患別マニュアル — 医師担当部分", width="large")
+        def _show_nn_disease_manual_dialog():
+            _nn_render_disease_manual(st)
+
     # サイドバー: 最小限のクイックリファレンス
     with st.sidebar.expander("📚 看護必要度クイックリファレンス", expanded=False):
         st.markdown(
@@ -1608,12 +1613,20 @@ if _NN_LECTURE_MD:
             "- ドレナージ・輸血で 2 点単独\n"
             "- A1+A3、A4+A3 ペアで 2 点"
         )
-        if st.button(
-            "📖 詳細レクチャーを開く",
-            key="open_nn_lecture_dialog_btn",
-            use_container_width=True,
-        ):
-            _show_nn_lecture_dialog()
+        if _NN_LECTURE_MD:
+            if st.button(
+                "📖 詳細レクチャーを開く",
+                key="open_nn_lecture_dialog_btn",
+                use_container_width=True,
+            ):
+                _show_nn_lecture_dialog()
+        if _NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not None:
+            if st.button(
+                "🏥 疾患別マニュアルを開く",
+                key="open_nn_disease_manual_dialog_btn",
+                use_container_width=True,
+            ):
+                _show_nn_disease_manual_dialog()
     st.sidebar.markdown("---")
 
 # ---------------------------------------------------------------------------

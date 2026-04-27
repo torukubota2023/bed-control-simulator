@@ -11,7 +11,11 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from nursing_necessity_disease_manual import DISEASE_MANUAL_MARKDOWN  # noqa: E402
+from nursing_necessity_disease_manual import (  # noqa: E402
+    DISEASE_MANUAL_MARKDOWN,
+    _all_diseases,
+    _search_diseases,
+)
 
 
 def test_cv_and_ptcd_c_item_classification_is_current_2026():
@@ -48,3 +52,15 @@ def test_manual_uses_ethically_safe_action_framing():
     ]
     for term in unsafe_terms:
         assert term not in md
+
+
+def test_structured_streamlit_view_has_searchable_disease_index():
+    """アプリ表示用に17疾患を個別選択できる検索インデックスを持つ."""
+    diseases = _all_diseases()
+    assert len(diseases) == 17
+
+    ptcd_matches = _search_diseases("PTCD")
+    assert any(disease["name"] == "急性胆管炎・閉塞性黄疸" for _, disease in ptcd_matches)
+
+    heart_failure_matches = _search_diseases("心不全")
+    assert any("心不全急性増悪" in disease["name"] for _, disease in heart_failure_matches)
