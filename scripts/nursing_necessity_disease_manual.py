@@ -63,10 +63,30 @@ def _c(text: str) -> str:
 #           "name": "疾患名",
 #           "icon": "絵文字",
 #           "entry": [str, ...],            # 入口 (こんな患者を見たら)
+#           "severity_assessment": [        # 重症度評価スコア (Phase 2A 以降に追加)
+#               {
+#                   "name": "スコア名 (出典)",
+#                   "items": [{"label": "項目", "criteria": "閾値", "points": "1点"}, ...],
+#                   "interpretation": [{"range": "0-1点", "meaning": "軽症 ..."}, ...],
+#                   "source": "PMID xxxx / GL ..."
+#               }, ...
+#           ],
 #           "options": [                    # 第一選択 vs 看護必要度貢献選択肢
 #               {"scene": "...", "conventional": "...", "necessity": "..."}
 #           ],
 #           "contributions": [str, ...],    # 看護必要度寄与
+#           "clinical_examples": [          # 具体例 (Phase 2A 以降に追加)
+#               {
+#                   "title": "例 A: 典型的入口 (XXスコア X点)",
+#                   "background": "年齢・性別・既往",
+#                   "presentation": "主訴・経過",
+#                   "vitals": "バイタル・身体所見",
+#                   "labs": "検査所見",
+#                   "score_calc": "スコア計算 (各項目)",
+#                   "plan": "治療方針",
+#                   "necessity_contrib": "看護必要度寄与 (A項目X点 + C項目Y点)"
+#               }, ...
+#           ],
 #           "evidence": [                   # エビデンス
 #               {"strength": "強/中/弱", "ref": "PMID xxx or 日循 GL", "summary": "..."}
 #           ],
@@ -77,6 +97,9 @@ def _c(text: str) -> str:
 #   ]),
 #   ...
 # ]
+#
+# 注: severity_assessment と clinical_examples は Phase 2A 以降に充実化中。
+# 既存疾患には未追加のものもある (空 list または欠損で互換維持)。
 
 DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
     # ========================================================================
@@ -91,6 +114,37 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "上腹部激痛 + アミラーゼ・リパーゼ高値、CT 重症度スコア高",
                 "BISAP ≥ 3 / Ranson 高 / 持続性 SIRS",
                 "経口摂取困難で 3 日以上の絶食 + 持続点滴が必要",
+            ],
+            "severity_assessment": [
+                {
+                    "name": "BISAP（来院後 24 時間以内、5 点満点）",
+                    "items": [
+                        {"label": "B: BUN", "criteria": "BUN > 25 mg/dL", "points": "1点"},
+                        {"label": "I: Impaired mental status", "criteria": "意識障害 (GCS < 15)", "points": "1点"},
+                        {"label": "S: SIRS", "criteria": "SIRS ≥ 2 項目（体温・心拍・呼吸・WBC）", "points": "1点"},
+                        {"label": "A: Age", "criteria": "年齢 > 60 歳", "points": "1点"},
+                        {"label": "P: Pleural effusion", "criteria": "胸水あり（画像確認）", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-2 点", "meaning": "軽症 — 死亡率 < 2%"},
+                        {"range": "**≥ 3 点**", "meaning": "**重症 — 臓器不全 OR 7.4、持続的臓器不全 OR 12.7、膵壊死 OR 3.8、死亡率 5-22%**"},
+                    ],
+                    "source": "Singh VK et al. Am J Gastroenterol 2009 ([PMID 19293787](https://pubmed.ncbi.nlm.nih.gov/19293787/))",
+                },
+                {
+                    "name": "改訂 Atlanta 分類 2012（重症度 3 段階）",
+                    "items": [
+                        {"label": "軽症 (Mild)", "criteria": "臓器不全なし + 局所合併症・全身合併症なし", "points": "—"},
+                        {"label": "中等症 (Moderately severe)", "criteria": "一過性臓器不全（< 48h）/ 局所合併症 / 既存基礎疾患の増悪", "points": "—"},
+                        {"label": "重症 (Severe)", "criteria": "**持続性臓器不全（> 48h）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "軽症", "meaning": "死亡率 < 1% — 通常入院加療"},
+                        {"range": "中等症", "meaning": "死亡率 1-2% — 入院、慎重なモニタリング"},
+                        {"range": "**重症**", "meaning": "**死亡率 30-50% — 個室管理 + 集中治療（当院対応範囲）/ 進行・合併症で高度医療機関へ転院**"},
+                    ],
+                    "source": "Banks PA et al. Gut 2013 改訂 Atlanta 分類（[PMID 23100216](https://pubmed.ncbi.nlm.nih.gov/23100216/)）",
+                },
             ],
             "options": [
                 {
@@ -109,7 +163,39 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A4 シリンジポンプ") + ": 1 点（同時計上可）",
                 _c("C23 CV 挿入実施日") + ": 4 日カウント (該当患者扱い)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 胆石性膵炎の中等症（BISAP 2 点 / Atlanta 中等症）",
+                    "background": "65 歳女性、胆石症既往、肥満（BMI 30）",
+                    "presentation": "前夜の脂質摂取後、上腹部激痛 + 嘔吐、12 時間後に来院",
+                    "vitals": "BT 37.8℃、BP 128/72、HR 102、呼吸数 22、SpO2 96% RA、上腹部圧痛 +、Murphy −",
+                    "labs": "Lipase 1,200、Amylase 850、WBC 12,800、CRP 8.5、BUN 18、Cre 0.9、AST/ALT 96/118、T-Bil 2.1、CT で膵腫大・周囲液貯留軽度",
+                    "score_calc": "BISAP = SIRS(1) + 65歳超(1) = **2 点（軽症圏）** / Atlanta = 一過性臓器不全 + 局所合併症 → **中等症**",
+                    "plan": "入院、絶食、輸液 (ラクテック 200 mL/h)、フェンタニル 25 μg/h 持続、PPI、ERCP は黄疸進行で検討",
+                    "necessity_contrib": _a("A6③ 麻薬注射") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点（フェンタニル + ラクテック + PPI）→ 入院初日 **A 計 5 点で該当**",
+                },
+                {
+                    "title": "例 B: アルコール性重症膵炎（BISAP 4 点 / Atlanta 重症）",
+                    "background": "58 歳男性、アルコール性肝障害、慢性膵炎の既往、独居",
+                    "presentation": "1 週間の飲酒後、上腹部激痛で発症、24 時間後に救急搬送、徐々に意識朦朧",
+                    "vitals": "GCS 13、BT 38.9℃、BP 92/58、HR 124、呼吸数 26、SpO2 92% RA、Cullen 徴候 +",
+                    "labs": "Lipase 4,500、WBC 22,000、CRP 28、BUN 36、Cre 1.8、Hct 48 (血液濃縮)、Lactate 4.2、CT で広範な膵壊死 + 両側胸水",
+                    "score_calc": "BISAP = BUN(1) + Imp(1) + SIRS(1) + 60超なし + Pleural(1) = **4 点（重症）** / Atlanta = 持続性臓器不全 → **重症**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理（当院対応範囲）**、CV 挿入、強力輸液（最初 6 時間で 5-10 mL/kg/h）、モルヒネ 1-2 mg/h 持続、必要なら HFNC/NPPV、CT 再評価で感染性膵壊死出現なら抗菌薬 + IVR 介入、栄養は早期経腸栄養 (< 48h)。ショック移行・呼吸不全進行で挿管必要なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A6③ 麻薬注射") + " **3 点 × 5 日** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " **4 日カウント該当患者扱い** / 感染合併で " + _a("A6⑦ 昇圧剤") + " **3 点** 追加可能性 → 圧倒的な該当患者",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "[PMID 19293787](https://pubmed.ncbi.nlm.nih.gov/19293787/)",
+                    "summary": "Singh VK et al. Am J Gastroenterol 2009 (397 例) — BISAP ≥ 3 で死亡・臓器不全・膵壊死リスク有意上昇",
+                },
+                {
+                    "strength": "強",
+                    "ref": "[PMID 23100216](https://pubmed.ncbi.nlm.nih.gov/23100216/)",
+                    "summary": "Banks PA et al. Gut 2013 — 改訂 Atlanta 分類、急性膵炎の標準的重症度分類",
+                },
                 {
                     "strength": "強",
                     "ref": "[PMID 38439202](https://pubmed.ncbi.nlm.nih.gov/38439202/)",
@@ -346,12 +432,48 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
     ("🫁 呼吸器系疾患", [
         {
             "id": 7,
-            "name": "重症肺炎（CURB-65 高、ICU 候補・ショックなし）",
+            "name": "重症肺炎（CURB-65 高・ショックなし）",
             "icon": "🫁",
             "entry": [
                 "CURB-65 ≥ 3、A-DROP ≥ 3、PSI Class IV/V",
                 "SpO2 < 90% (room air)、呼吸数 ≥ 30",
                 "意識障害なし、血圧維持できているがハイリスク",
+            ],
+            "severity_assessment": [
+                {
+                    "name": "CURB-65（英国胸部学会、5 点満点）",
+                    "items": [
+                        {"label": "C: Confusion", "criteria": "意識障害（AMTS ≤ 8 / 見当識障害）", "points": "1点"},
+                        {"label": "U: Urea", "criteria": "BUN > 20 mg/dL（脱水・腎機能低下）", "points": "1点"},
+                        {"label": "R: Respiratory rate", "criteria": "呼吸数 ≥ 30/min（頻呼吸）", "points": "1点"},
+                        {"label": "B: Blood pressure", "criteria": "収縮期 < 90 mmHg または 拡張期 ≤ 60 mmHg", "points": "1点"},
+                        {"label": "65: Age", "criteria": "年齢 ≥ 65 歳", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-1 点", "meaning": "軽症（30 日死亡率 0.7-3%）— 外来治療可"},
+                        {"range": "2 点", "meaning": "中等症（死亡率 9%）— **入院検討**"},
+                        {"range": "3 点", "meaning": "**重症（死亡率 17%）— 入院、個室管理 + 看護師監視強化（NPPV/HFNC 含む呼吸ケア）、抗菌薬 IV**"},
+                        {"range": "4-5 点", "meaning": "**超重症（死亡率 41-57%）— ショック・挿管必要なら高度医療機関へ転院**"},
+                    ],
+                    "source": "Lim WS et al. Thorax 2003 ([PMID 12728155](https://pubmed.ncbi.nlm.nih.gov/12728155/))",
+                },
+                {
+                    "name": "A-DROP（日本呼吸器学会、5 点満点）",
+                    "items": [
+                        {"label": "A: Age", "criteria": "男性 ≥ 70 歳 / 女性 ≥ 75 歳", "points": "1点"},
+                        {"label": "D: Dehydration", "criteria": "BUN ≥ 21 mg/dL", "points": "1点"},
+                        {"label": "R: Respiratory failure", "criteria": "SpO2 ≤ 90% または PaO2 ≤ 60 mmHg", "points": "1点"},
+                        {"label": "O: Orientation disorder", "criteria": "意識障害", "points": "1点"},
+                        {"label": "P: Pressure", "criteria": "収縮期血圧 ≤ 90 mmHg", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0 点", "meaning": "軽症 — 外来治療"},
+                        {"range": "1-2 点", "meaning": "中等症 — 入院検討"},
+                        {"range": "3 点", "meaning": "**重症 — 入院、個室管理 + NPPV/HFNC 含む呼吸ケア**"},
+                        {"range": "4-5 点", "meaning": "**超重症 — ショック・挿管必要なら高度医療機関へ転院**"},
+                    ],
+                    "source": "日本呼吸器学会 成人肺炎診療ガイドライン 2024",
+                },
             ],
             "options": [
                 {
@@ -369,11 +491,38 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A4 + A3") + ": **2 点** (該当患者)",
                 _a("A2 呼吸ケア (酸素 A2)") + ": 1 点 / 日 (酸素必要日)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 高齢の脱水＋意識障害（CURB-65 3 点 / A-DROP 4 点）",
+                    "background": "78 歳女性、施設入所中、糖尿病・高血圧",
+                    "presentation": "3 日前から食事摂取低下と発熱、来院前から意識朦朧",
+                    "vitals": "GCS 13、BT 38.7℃、呼吸数 28/min、BP 102/65、HR 110、SpO2 89% RA",
+                    "labs": "WBC 14,500、CRP 18.2、BUN 38 mg/dL、Cre 1.6、Na 134、CXR 右下葉浸潤影",
+                    "score_calc": "CURB-65 = C(1) + U(1) + 65(1) = **3 点（重症）** / A-DROP = A(1)+D(1)+R(1)+O(1) = **4 点（超重症）**",
+                    "plan": "緊急入院、6F 病棟、酸素 3L 鼻カニュラで SpO2 ≥ 94% 維持、PIPC/TAZ 4.5g 負荷 → 13.5g/24h 持続、輸液 + 電解質補正、血液培養 2 セット",
+                    "necessity_contrib": _a("A2 呼吸ケア (酸素)") + " 1 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点（入院日と翌日） → 初日 **A 計 5 点で該当**",
+                },
+                {
+                    "title": "例 B: 高齢のショック移行例（CURB-65 5 点）",
+                    "background": "82 歳男性、誤嚥性肺炎の既往、嚥下機能低下、寝たきり",
+                    "presentation": "発熱と呼吸困難で家族搬送、来院時すでに低血圧",
+                    "vitals": "意識混濁（GCS 11）、BT 38.5℃、呼吸数 32/min、BP 80/50、HR 124、SpO2 86% RA",
+                    "labs": "WBC 18,200、CRP 22、BUN 45、Cre 1.9、Lactate 3.2、CXR 両側浸潤影",
+                    "score_calc": "CURB-65 = C(1) + U(1) + R(1) + B(1) + 65(1) = **5 点（超重症、院内死亡率 ≥ 22%）**",
+                    "plan": "**当院対応範囲超過 → 高度医療機関への転院推奨**。転院前安定化として: CV 挿入、ノルアドレナリン 0.05 μg/kg/min 開始、MEPM 1g IV → 3g/24h 持続、HFNC または NPPV 装着、MRSA カバー追加検討。安定後に転院搬送",
+                    "necessity_contrib": "（転院前安定化中の当院での寄与）" + _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A2 呼吸ケア (HFNC/NPPV)") + " 1 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
                 {
                     "strength": "強",
                     "ref": "ATS/IDSA CAP ガイドライン 2019",
-                    "summary": "重症 CAP は β-ラクタム + マクロライド or キノロン併用、ICU 適応評価必須",
+                    "summary": "重症 CAP は β-ラクタム + マクロライド or キノロン併用、高度医療機関への転院適応評価必須",
+                },
+                {
+                    "strength": "強",
+                    "ref": "[PMID 12728155](https://pubmed.ncbi.nlm.nih.gov/12728155/)",
+                    "summary": "Lim WS et al. Thorax 2003 — CURB-65 オリジナル論文。1,068 例の国際多施設研究で 5 段階の死亡率階層化を確立",
                 },
                 {
                     "strength": "中",
@@ -384,7 +533,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
             "guardrails": [
                 "持続点滴は CURB-65 ≥ 3 の重症例に限定",
                 "経口移行・de-escalation は培養結果と臨床経過で判断",
-                "ICU 適応の見極め (呼吸不全進行・ショック移行) を逃さない",
+                "高度医療機関への転院適応の見極め（呼吸不全進行で挿管が必要、ショック移行で集中治療が必要）を逃さない",
             ],
             "orders": [
                 "「PIPC/TAZ 4.5g 負荷 → 13.5g/24h 持続」",
@@ -521,6 +670,40 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "BNP 高値、CXR で肺うっ血",
                 "※ cold/wet (cardiogenic shock 移行例) は SBP < 90 + 末梢冷感、A6⑦ 昇圧剤主体に切替",
             ],
+            "severity_assessment": [
+                {
+                    "name": "Forrester 分類（うっ血と末梢循環の組み合わせ、4 群）",
+                    "items": [
+                        {"label": "I 型 (dry/warm)", "criteria": "うっ血なし + 末梢温暖（PCWP < 18, CI > 2.2）", "points": "—"},
+                        {"label": "II 型 (wet/warm) — **hot/wet**", "criteria": "**うっ血あり + 末梢温暖**（PCWP > 18, CI > 2.2）", "points": "—"},
+                        {"label": "III 型 (dry/cold)", "criteria": "うっ血なし + 末梢冷感（PCWP < 18, CI < 2.2）", "points": "—"},
+                        {"label": "IV 型 (wet/cold) — **cold/wet**", "criteria": "**うっ血あり + 末梢冷感（cardiogenic shock）**（PCWP > 18, CI < 2.2）", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "I 型", "meaning": "経過観察、必要なら経口治療強化"},
+                        {"range": "**II 型（hot/wet）**", "meaning": "**血管拡張薬 (NTG IV) + 利尿剤 — 本疾患の典型**"},
+                        {"range": "III 型", "meaning": "輸液負荷検討、原因精査"},
+                        {"range": "**IV 型（cold/wet）**", "meaning": "**昇圧剤 (NE/DOB) + 血管拡張薬慎重に — IABP / 集中治療**"},
+                    ],
+                    "source": "Forrester JS et al. NEJM 1976（古典的分類）/ ESC HF GL 2021 で再確認",
+                },
+                {
+                    "name": "Killip 分類（急性心筋梗塞時の心不全重症度、4 段階）",
+                    "items": [
+                        {"label": "Class I", "criteria": "心不全所見なし", "points": "—"},
+                        {"label": "Class II", "criteria": "ラ音 < 1/2 肺野、S3、頸静脈怒張", "points": "—"},
+                        {"label": "Class III", "criteria": "**重症心不全（肺水腫、ラ音 > 1/2 肺野）**", "points": "—"},
+                        {"label": "Class IV", "criteria": "**心原性ショック（SBP < 90、末梢冷感）**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Class I", "meaning": "院内死亡率 < 5%"},
+                        {"range": "Class II", "meaning": "院内死亡率 10-20%"},
+                        {"range": "**Class III**", "meaning": "**院内死亡率 30-40% — 入院、集中治療**"},
+                        {"range": "**Class IV**", "meaning": "**院内死亡率 60-80% — 当院対応範囲超過、IABP/Impella 適応で高次医療機関へ転送**"},
+                    ],
+                    "source": "Killip T 3rd, Kimball JT. Am J Cardiol 1967 / Mello et al. Arq Bras Cardiol 2014 ([PMID 25014060](https://pubmed.ncbi.nlm.nih.gov/25014060/)) で 1906 例で再検証",
+                },
+            ],
             "options": [
                 {
                     "scene": "前負荷・後負荷軽減（hot/wet の主軸）",
@@ -540,11 +723,38 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑦ 昇圧剤") + ": 3 点 / 日 (cold/wet 移行例で追加)",
                 _a("A2 呼吸ケア (酸素 A2)") + ": 1 点 / 日 (酸素必要日)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 高血圧緊急症型 hot/wet (Forrester II / Killip III)",
+                    "background": "75 歳男性、高血圧・慢性心不全（HFpEF）、最近内服中断",
+                    "presentation": "夜間突然の呼吸困難、起座呼吸で救急搬送",
+                    "vitals": "BP 198/112、HR 118、呼吸数 32、SpO2 84% RA → 高流量酸素 (15L マスク) で 92%、両肺野でラ音、頸静脈怒張、末梢温暖",
+                    "labs": "BNP 1,850、トロポニン陰性、Cre 1.4、Na 138、CXR で両側肺野バタフライ陰影、CTR 60%",
+                    "score_calc": "Forrester = うっ血(+) + 末梢温暖 → **II 型 (hot/wet)** / Killip = 肺水腫 → **Class III**",
+                    "plan": "緊急入院、6F 病棟 (or HCU)、酸素 8-10L マスク、ニトログリセリン 5 μg/min IV → 増量 max 200 μg/min（SBP 100 維持）、フロセミド 40mg IV、A line、24-72h で経口 ACE-I/ARNI 移行",
+                    "necessity_contrib": _a("A4 シリンジポンプ管理 (NTG 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上 (NTG + フロセミド + 補液)") + " 1 点 / " + _a("A2 呼吸ケア (酸素)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点（入院日と翌日）→ 入院日 **A 計 5 点で該当**、NTG 継続中は連日 A4+A3=2 点で該当維持",
+                },
+                {
+                    "title": "例 B: cold/wet 移行 (Forrester IV / Killip IV — 心原性ショック)",
+                    "background": "82 歳女性、虚血性心疾患、CKD ステージ 4",
+                    "presentation": "前日からの呼吸困難 + 嘔吐、来院時すでに低血圧と末梢冷感",
+                    "vitals": "意識朦朧 (GCS 13)、BP 78/45、HR 132、呼吸数 36、SpO2 82% RA、末梢冷感・チアノーゼ、両肺野で湿性ラ音",
+                    "labs": "BNP 3,200、トロポニン上昇、Lactate 4.5、Cre 2.8、ABG: pH 7.28 / PaO2 58 / PaCO2 42 / HCO3 18",
+                    "score_calc": "Forrester = うっ血(+) + 末梢冷感 → **IV 型 (cold/wet)** / Killip = 心原性ショック → **Class IV（院内死亡率 60-80%）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理**、CV 挿入、ノルアドレナリン 0.05 μg/kg/min 開始、ドブタミン併用検討、HFNC または NPPV 装着、フロセミド少量 IV (尿量見ながら)、A line、Foley。IABP/Impella 適応または挿管必要時は高次医療機関（CCU）へ転送",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射 (NE 持続)") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (酸素・NPPV)") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
                 {
                     "strength": "強",
                     "ref": "[PMID 35379503](https://pubmed.ncbi.nlm.nih.gov/35379503/)",
                     "summary": "2022 AHA/ACC/HFSA HF GL — 急性肺水腫 + 高血圧で IV vasodilator (NTG/SNP) 推奨",
+                },
+                {
+                    "strength": "強",
+                    "ref": "[PMID 25014060](https://pubmed.ncbi.nlm.nih.gov/25014060/)",
+                    "summary": "Mello et al. Arq Bras Cardiol 2014 (1906 例 5 年追跡) — Killip 分類は 60 年経過後も有意な独立予後因子",
                 },
                 {
                     "strength": "強",
@@ -591,6 +801,33 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 "MAP < 65 (輸液後も)、lactate > 2 mmol/L",
                 "意識障害・乏尿・末梢冷感",
             ],
+            "severity_assessment": [
+                {
+                    "name": "qSOFA（quick SOFA、ベッドサイド 3 項目）",
+                    "items": [
+                        {"label": "呼吸数", "criteria": "≥ 22/min", "points": "1点"},
+                        {"label": "意識変容", "criteria": "GCS < 15（意識レベル低下）", "points": "1点"},
+                        {"label": "収縮期血圧", "criteria": "≤ 100 mmHg", "points": "1点"},
+                    ],
+                    "interpretation": [
+                        {"range": "0-1 点", "meaning": "敗血症リスク低、ただし疑いは継続"},
+                        {"range": "**≥ 2 点**", "meaning": "**敗血症の可能性高 — SOFA で正式評価、輸液 + 抗菌薬 + 培養を 1 時間以内に開始**"},
+                    ],
+                    "source": "Singer M et al. JAMA 2016 Sepsis-3 ([PMID 26903338](https://pubmed.ncbi.nlm.nih.gov/26903338/))",
+                },
+                {
+                    "name": "Sepsis-3 定義（Sepsis vs Septic shock）",
+                    "items": [
+                        {"label": "Sepsis", "criteria": "感染 + SOFA ≥ 2 点上昇（臓器障害）", "points": "—"},
+                        {"label": "**Septic shock**", "criteria": "**Sepsis + 輸液負荷後も MAP ≥ 65 維持に昇圧剤必要 + Lactate > 2 mmol/L**", "points": "—"},
+                    ],
+                    "interpretation": [
+                        {"range": "Sepsis", "meaning": "院内死亡率 > 10% — 集中治療"},
+                        {"range": "**Septic shock**", "meaning": "**院内死亡率 > 40% — 個室管理 + 看護師監視強化（昇圧剤・CV/A line・source control）/ 進行・治療反応不良で高度医療機関へ転院**"},
+                    ],
+                    "source": "Singer M et al. JAMA 2016 Sepsis-3 ([PMID 26903338](https://pubmed.ncbi.nlm.nih.gov/26903338/))",
+                },
+            ],
             "options": [
                 {
                     "scene": "昇圧剤",
@@ -607,7 +844,34 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 _a("A6⑦ 昇圧剤") + ": **3 点 / 日**",
                 _a("A4 + A3") + ": 2 点 (β-ラクタム持続併用時、該当患者ダブル達成)",
             ],
+            "clinical_examples": [
+                {
+                    "title": "例 A: 尿路感染症由来の Sepsis（qSOFA 2 点 / Sepsis-3）",
+                    "background": "76 歳女性、糖尿病、神経因性膀胱、尿道留置カテーテル",
+                    "presentation": "1 日前から発熱と全身倦怠、腰背部痛、来院前に意識朦朧",
+                    "vitals": "GCS 14、BT 38.9℃、BP 108/64、HR 116、呼吸数 24、SpO2 95% RA、CVA 圧痛 +",
+                    "labs": "WBC 16,800、CRP 22、BUN 24、Cre 1.5（base 0.8）、Lactate 2.1、尿沈渣 WBC 50/HPF、尿培養提出、血液培養 2 セット提出",
+                    "score_calc": "qSOFA = 呼吸数(1) + 意識(1) = **2 点（陽性）** → Sepsis-3 評価で SOFA ≥ 2 上昇 → **Sepsis**",
+                    "plan": "緊急入院、輸液 30 mL/kg を 3 時間以内、CMZ 1g IV q8h（地域 ESBL 状況見て検討）、カテーテル交換、血糖管理、source control 評価",
+                    "necessity_contrib": _a("A3 注射薬剤 3 種類以上 (抗菌薬 + 輸液 + 補正剤)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → 入院日 **A 計 3 点で該当**。昇圧剤不要のため A6⑦ なし",
+                },
+                {
+                    "title": "例 B: Septic shock（qSOFA 3 点 / Sepsis-3 ショック）",
+                    "background": "68 歳男性、肝硬変、糖尿病、自宅独居",
+                    "presentation": "数日前からの発熱と全身倦怠、家族発見時に意識朦朧、救急搬送",
+                    "vitals": "GCS 11、BT 39.2℃、BP 78/42 (輸液 1L 後も 88/52)、HR 138、呼吸数 30、SpO2 88% RA、末梢冷感、皮膚モットリング",
+                    "labs": "WBC 22,500、CRP 28、PCT 35、BUN 48、Cre 2.4、AST/ALT 285/198、Lactate 4.8、ABG: pH 7.22 / HCO3 14、Procalcitonin 高値",
+                    "score_calc": "qSOFA = 呼吸数(1) + 意識(1) + 血圧(1) = **3 点（陽性）** → SOFA 大幅上昇 + 輸液後も MAP < 65 + Lactate > 2 → **Septic shock（院内死亡率 > 40%）**",
+                    "plan": "**個室入室、看護師監視強化下で集中管理**、CV 挿入、ノルアドレナリン 0.1 μg/kg/min から開始、MEPM 1g IV → 3g/24h 持続（重症 + 肝障害）、A line、Foley、HFNC または NPPV 装着、適応次第でハイドロコルチゾン 200 mg/日、source 探索 (CT)。挿管必要・治療反応不良なら高度医療機関へ転院",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射 (NE 持続)") + " **3 点** / " + _a("A4 シリンジポンプ (NE + MEPM 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " **4 日カウント該当患者扱い** / " + _a("A7 救急搬送後") + " 2 点 → **A 計 7 点 + C 該当 = 圧倒的な該当患者**",
+                },
+            ],
             "evidence": [
+                {
+                    "strength": "強",
+                    "ref": "[PMID 26903338](https://pubmed.ncbi.nlm.nih.gov/26903338/)",
+                    "summary": "Singer M et al. JAMA 2016 — Sepsis-3 公式定義。qSOFA ≥ 2 / SOFA ≥ 2 上昇 / Septic shock の基準を確立",
+                },
                 {
                     "strength": "強",
                     "ref": "[PMID 34599691](https://pubmed.ncbi.nlm.nih.gov/34599691/)",
@@ -899,6 +1163,27 @@ def _render_disease_md(d: dict[str, Any]) -> str:
         lines.append(f"- {e}")
     lines.append("")
 
+    # 重症度評価スコア (Phase 2A 以降)
+    if d.get("severity_assessment"):
+        lines.append("#### 📊 重症度評価スコア")
+        for score in d["severity_assessment"]:
+            lines.append(f"##### {score['name']}")
+            if score.get("items"):
+                lines.append("")
+                lines.append("| 項目 | 該当条件 | 点数 |")
+                lines.append("|---|---|:-:|")
+                for it in score["items"]:
+                    lines.append(f"| {it['label']} | {it['criteria']} | {it.get('points','1点')} |")
+                lines.append("")
+            if score.get("interpretation"):
+                lines.append("**解釈**:")
+                for itp in score["interpretation"]:
+                    lines.append(f"- **{itp['range']}**: {itp['meaning']}")
+                lines.append("")
+            if score.get("source"):
+                lines.append(f"*出典: {score['source']}*")
+                lines.append("")
+
     # 選択肢比較テーブル
     lines.append("#### 💊 第一選択 vs 看護必要度貢献選択肢（医学的に同等以上）")
     lines.append("")
@@ -913,6 +1198,27 @@ def _render_disease_md(d: dict[str, Any]) -> str:
     for c in d["contributions"]:
         lines.append(f"- {c}")
     lines.append("")
+
+    # 具体例 (Phase 2A 以降)
+    if d.get("clinical_examples"):
+        lines.append("#### 🩺 具体例（典型的な患者像）")
+        for ex in d["clinical_examples"]:
+            lines.append(f"##### {ex['title']}")
+            if ex.get("background"):
+                lines.append(f"- **背景**: {ex['background']}")
+            if ex.get("presentation"):
+                lines.append(f"- **主訴・経過**: {ex['presentation']}")
+            if ex.get("vitals"):
+                lines.append(f"- **バイタル・身体所見**: {ex['vitals']}")
+            if ex.get("labs"):
+                lines.append(f"- **検査所見**: {ex['labs']}")
+            if ex.get("score_calc"):
+                lines.append(f"- **スコア計算**: {ex['score_calc']}")
+            if ex.get("plan"):
+                lines.append(f"- **治療方針**: {ex['plan']}")
+            if ex.get("necessity_contrib"):
+                lines.append(f"- **看護必要度寄与**: {ex['necessity_contrib']}")
+            lines.append("")
 
     # エビデンス
     lines.append("#### 📚 エビデンス")
@@ -1055,6 +1361,33 @@ def generate_docx() -> bytes:
             for e in d["entry"]:
                 doc.add_paragraph(_strip_html(e), style="List Bullet")
 
+            # 重症度評価スコア (Phase 2A 以降)
+            if d.get("severity_assessment"):
+                doc.add_heading("📊 重症度評価スコア", level=3)
+                for score in d["severity_assessment"]:
+                    doc.add_heading(score["name"], level=4)
+                    if score.get("items"):
+                        sa_table = doc.add_table(rows=1 + len(score["items"]), cols=3)
+                        sa_table.style = "Light Grid"
+                        sa_table.rows[0].cells[0].text = "項目"
+                        sa_table.rows[0].cells[1].text = "該当条件"
+                        sa_table.rows[0].cells[2].text = "点数"
+                        for i, it in enumerate(score["items"], start=1):
+                            sa_table.rows[i].cells[0].text = _strip_html(it["label"])
+                            sa_table.rows[i].cells[1].text = _strip_html(it["criteria"])
+                            sa_table.rows[i].cells[2].text = _strip_html(it.get("points", "1点"))
+                    if score.get("interpretation"):
+                        doc.add_paragraph("解釈:")
+                        for itp in score["interpretation"]:
+                            doc.add_paragraph(
+                                f"{itp['range']}: {itp['meaning']}",
+                                style="List Bullet",
+                            )
+                    if score.get("source"):
+                        p = doc.add_paragraph()
+                        run = p.add_run(f"出典: {_strip_html(score['source'])}")
+                        run.italic = True
+
             # 選択肢比較テーブル
             doc.add_heading("💊 第一選択 vs 看護必要度貢献選択肢", level=3)
             opt_table = doc.add_table(rows=1 + len(d["options"]), cols=3)
@@ -1071,6 +1404,27 @@ def generate_docx() -> bytes:
             doc.add_heading("📋 看護必要度寄与", level=3)
             for c in d["contributions"]:
                 doc.add_paragraph(_strip_html(c), style="List Bullet")
+
+            # 具体例 (Phase 2A 以降)
+            if d.get("clinical_examples"):
+                doc.add_heading("🩺 具体例（典型的な患者像）", level=3)
+                for ex in d["clinical_examples"]:
+                    doc.add_heading(ex["title"], level=4)
+                    field_labels = [
+                        ("background", "背景"),
+                        ("presentation", "主訴・経過"),
+                        ("vitals", "バイタル・身体所見"),
+                        ("labs", "検査所見"),
+                        ("score_calc", "スコア計算"),
+                        ("plan", "治療方針"),
+                        ("necessity_contrib", "看護必要度寄与"),
+                    ]
+                    for key, jp in field_labels:
+                        if ex.get(key):
+                            doc.add_paragraph(
+                                f"{jp}: {_strip_html(ex[key])}",
+                                style="List Bullet",
+                            )
 
             # エビデンス
             doc.add_heading("📚 エビデンス", level=3)
