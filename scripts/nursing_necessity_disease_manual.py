@@ -71,10 +71,10 @@ def _c(text: str) -> str:
 #                   "source": "PMID xxxx / GL ..."
 #               }, ...
 #           ],
-#           "options": [                    # 第一選択 vs 看護必要度貢献選択肢
+#           "options": [                    # 第一選択 vs 適応時に確認する項目
 #               {"scene": "...", "conventional": "...", "necessity": "..."}
 #           ],
-#           "contributions": [str, ...],    # 看護必要度寄与
+#           "contributions": [str, ...],    # 評価・記録上の確認点
 #           "clinical_examples": [          # 具体例 (Phase 2A 以降に追加)
 #               {
 #                   "title": "例 A: 典型的入口 (XXスコア X点)",
@@ -84,7 +84,7 @@ def _c(text: str) -> str:
 #                   "labs": "検査所見",
 #                   "score_calc": "スコア計算 (各項目)",
 #                   "plan": "治療方針",
-#                   "necessity_contrib": "看護必要度寄与 (A項目X点 + C項目Y点)"
+#                   "necessity_contrib": "評価・記録上の確認点 (A項目X点 + C項目Y点)"
 #               }, ...
 #           ],
 #           "evidence": [                   # エビデンス
@@ -155,13 +155,13 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 {
                     "scene": "持続点滴のルート",
                     "conventional": "末梢繰り返し穿刺",
-                    "necessity": _c("C23 CV 挿入") + " — A 項目ハブ・C 項目両取り",
+                    "necessity": _c("C21 CV 挿入") + " — 適応時に持続点滴・栄養管理と同日確認",
                 },
             ],
             "contributions": [
                 _a("A6③ 麻薬注射") + ": **3 点 / 日 × 3-5 日**",
                 _a("A4 シリンジポンプ") + ": 1 点（同時計上可）",
-                _c("C23 CV 挿入実施日") + ": 4 日カウント (該当患者扱い)",
+                _c("C21 CV 挿入実施日") + ": 4 日カウント (該当患者扱い)",
             ],
             "clinical_examples": [
                 {
@@ -182,7 +182,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "Lipase 4,500、WBC 22,000、CRP 28、BUN 36、Cre 1.8、Hct 48 (血液濃縮)、Lactate 4.2、CT で広範な膵壊死 + 両側胸水",
                     "score_calc": "BISAP = BUN(1) + Imp(1) + SIRS(1) + 60超なし + Pleural(1) = **4 点（重症）** / Atlanta = 持続性臓器不全 → **重症**",
                     "plan": "**個室入室、看護師監視強化下で集中管理（当院対応範囲）**、CV 挿入、強力輸液（最初 6 時間で 5-10 mL/kg/h）、モルヒネ 1-2 mg/h 持続、必要なら HFNC/NPPV、CT 再評価で感染性膵壊死出現なら抗菌薬 + IVR 介入、栄養は早期経腸栄養 (< 48h)。ショック移行・呼吸不全進行で挿管必要なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A6③ 麻薬注射") + " **3 点 × 5 日** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " **4 日カウント該当患者扱い** / 感染合併で " + _a("A6⑦ 昇圧剤") + " **3 点** 追加可能性 → 圧倒的な該当患者",
+                    "necessity_contrib": _a("A6③ 麻薬注射") + " **3 点 × 5 日** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C21 CV 挿入") + " **4 日カウント該当患者扱い** / 感染合併で " + _a("A6⑦ 昇圧剤") + " **3 点** 追加可能性 → 評価根拠が明確な患者",
                 },
             ],
             "evidence": [
@@ -247,11 +247,12 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 {
                     "scene": "経乳頭的アプローチ困難例",
                     "conventional": "手術的胆道ドレナージを検討",
-                    "necessity": _c("C21③ PTCD（経皮経肝胆道ドレナージ）") + " — 術後は " + _a("A6⑩ ドレナージ管理"),
+                    "necessity": _c("C23 PTCD（経皮的胆管ドレナージ）") + " — 術後は " + _a("A6⑩ ドレナージ管理") + "、医事コードを同日照合",
                 },
             ],
             "contributions": [
-                _c("C21③ 侵襲的消化器治療") + ": **4 日カウント** / 各処置",
+                _c("C21③ ERCP関連・内視鏡的胆道ステント") + ": **4 日カウント** / 該当コードを医事確認",
+                _c("C23 PTCD（経皮的胆管ドレナージ）") + ": **5 日カウント** / 該当コードを医事確認",
                 _a("A6⑩ ドレナージ管理") + ": 2 点 / 留置中毎日 (PTCD 後)",
                 _a("A4 シリンジポンプ") + " + " + _a("A3 注射薬剤 3 種類以上") + ": 2 点 (β-ラクタム持続併用時)",
             ],
@@ -274,7 +275,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 22,000、CRP 28、T-Bil 8.2、Cre 2.4 (base 1.0)、Plt 8.2 万、PT-INR 1.8、Lactate 3.5、CT で胆管拡張 + 膿瘍疑い",
                     "score_calc": "TG18 Grade III 該当 = 循環不全（昇圧剤要）+ 腎障害（Cre > 2）+ 血液（Plt < 10万）+ 肝（PT-INR > 1.5）= **4 項目の臓器障害で Grade III（重症）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理（当院対応範囲）**、ノルアドレナリン 0.05 μg/kg/min 開始、CV 挿入、MEPM 1g IV → 3g/24h 持続、抗血栓薬中止（Apixaban）+ ビタミン K + 新鮮凍結血漿、緊急 PTCD（凝固障害で ERCP より優先）。挿管必要・治療反応不良なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _c("C21③ PTCD") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PTCD 後)") + " 2 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C21 CV 挿入") + " 4 日カウント / " + _c("C23 PTCD") + " 5 日カウント / " + _a("A6⑩ ドレナージ管理 (PTCD 後)") + " 2 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -380,7 +381,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "Hb 6.5、BUN 42、Cre 1.4、ALB 2.8、PT-INR 2.1、Plt 6.5万",
                     "score_calc": "GBS = BUN 4 + Hb 6 + SBP 3(< 90) + 脈拍 1 + 失神 2 + 肝疾患 2 = **18 点（超高リスク）** / AIMS65 = ALB(1) + INR(1) + 意識(1) + SBP(1) = **4 点（院内死亡率 > 25%）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理（当院対応範囲）**、緊急上部消化管内視鏡 + EVL（食道静脈瘤結紮術）、テルリプレシン IV（血管収縮薬）、RBC 6 単位輸血 + FFP、CV 挿入、ノルアドレナリン 0.05 μg/kg/min、CTM 2g IV q12h（自発性細菌性腹膜炎予防）。再出血・治療反応不良なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A5 輸血管理") + " 2 点 / " + _c("C21③ 内視鏡的止血") + " 4 日カウント / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A5 輸血管理") + " 2 点 / " + _c("C21③ 内視鏡的止血") + " 4 日カウント / " + _c("C21 CV 挿入") + " 4 日カウント / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -449,7 +450,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 {
                     "scene": "早期癌の治療選択",
                     "conventional": "手術 (外科紹介) を即決",
-                    "necessity": _c("C21③ ESD / EMR") + " — 適応症例で内視鏡的切除を積極化",
+                    "necessity": _c("C21③ ESD / EMR") + " — 適応症例で内視鏡的切除を治療選択肢として確認",
                 },
             ],
             "contributions": [
@@ -638,7 +639,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 22,000、CRP 32、Lactate 4.2、Cre 1.8、PCT 35、CT で S 状結腸穿孔 + 汎発性腹膜炎 + 遊離ガス + 大量腹水",
                     "score_calc": "qSOFA = 呼吸数(1) + 意識(1) + 血圧(1) = **3 点（陽性）** / WSES = **Septic shock（多臓器機能障害）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理**、ノルアドレナリン 0.05 μg/kg/min、CV 挿入、MEPM 1g IV → 3g/24h 持続、緊急開腹手術（S 状結腸切除 + ハルトマン手術）、術後 PCD 留置、HFNC 装着。挿管必要・治療反応不良なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _c("C17 開腹手術") + " **6 日カウント** / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PCD)") + " 2 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 10 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _c("C17 開腹手術") + " **6 日カウント** / " + _c("C21 CV 挿入") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PCD)") + " 2 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 10 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -654,7 +655,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 },
             ],
             "guardrails": [
-                "ドレナージ可能な膿瘍は積極的に IR コンサルト",
+                "ドレナージ可能な膿瘍は IR コンサルトの適応を確認",
                 "抗菌薬持続点滴は重症例 (qSOFA ≥ 2) に限定、軽症は間欠投与",
                 "培養結果で 48-72h 後に de-escalation",
             ],
@@ -749,7 +750,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 18,200、CRP 22、BUN 45、Cre 1.9、Lactate 3.2、CXR 両側浸潤影",
                     "score_calc": "CURB-65 = C(1) + U(1) + R(1) + B(1) + 65(1) = **5 点（超重症、院内死亡率 ≥ 22%）**",
                     "plan": "**当院対応範囲超過 → 高度医療機関への転院推奨**。転院前安定化として: CV 挿入、ノルアドレナリン 0.05 μg/kg/min 開始、MEPM 1g IV → 3g/24h 持続、HFNC または NPPV 装着、MRSA カバー追加検討。安定後に転院搬送",
-                    "necessity_contrib": "（転院前安定化中の当院での寄与）" + _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A2 呼吸ケア (HFNC/NPPV)") + " 1 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": "（転院前安定化中の当院での評価確認）" + _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A2 呼吸ケア (HFNC/NPPV)") + " 1 点 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C21 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -824,7 +825,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                 {
                     "scene": "胸腔ドレナージ",
                     "conventional": "保存的に経過観察 (小さい気胸)",
-                    "necessity": _a("A6⑩ 胸腔ドレナージ") + " — 中等度以上で挿入閾値を下げる",
+                    "necessity": _a("A6⑩ 胸腔ドレナージ") + " — 中等度以上で適応を再確認",
                 },
             ],
             "contributions": [
@@ -943,7 +944,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "造影 CT で両側肺動脈本幹の鞍状血栓、心エコーで著明な右心負荷、トロポニン 2.5、BNP 1,800、Lactate 4.5",
                     "score_calc": "ESC = **高リスク (massive PE) — 血行動態不安定 + 心停止リスク**",
                     "plan": "**当院対応範囲超過 → 高度医療機関への緊急転院推奨**（カテーテル血栓除去 / ECMO 適応評価のため）。転院前安定化として: 個室入室、ノルアドレナリン 0.05 μg/kg/min、UFH 持続点滴（rt-PA 検討）、HFNC 装着、CV 挿入。状態安定後に救急車搬送",
-                    "necessity_contrib": "（転院前安定化中）" + _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A6⑨ 抗血栓塞栓薬の持続点滴") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 10 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": "（転院前安定化中）" + _a("A6⑦ 昇圧剤注射") + " **3 点** / " + _a("A6⑨ 抗血栓塞栓薬の持続点滴") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _c("C21 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 10 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -1148,7 +1149,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "BNP 3,200、トロポニン上昇、Lactate 4.5、Cre 2.8、ABG: pH 7.28 / PaO2 58 / PaCO2 42 / HCO3 18",
                     "score_calc": "Forrester = うっ血(+) + 末梢冷感 → **IV 型 (cold/wet)** / Killip = 心原性ショック → **Class IV（院内死亡率 60-80%）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理**、CV 挿入、ノルアドレナリン 0.05 μg/kg/min 開始、ドブタミン併用検討、HFNC または NPPV 装着、フロセミド少量 IV (尿量見ながら)、A line、Foley。IABP/Impella 適応または挿管必要時は高次医療機関（CCU）へ転送",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤注射 (NE 持続)") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (酸素・NPPV)") + " 1 点 / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射 (NE 持続)") + " **3 点** / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (酸素・NPPV)") + " 1 点 / " + _c("C21 CV 挿入") + " 4 日カウント / " + _a("A7 救急搬送後") + " 2 点 → **A 計 8 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -1269,7 +1270,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 22,500、CRP 28、PCT 35、BUN 48、Cre 2.4、AST/ALT 285/198、Lactate 4.8、ABG: pH 7.22 / HCO3 14、Procalcitonin 高値",
                     "score_calc": "qSOFA = 呼吸数(1) + 意識(1) + 血圧(1) = **3 点（陽性）** → SOFA 大幅上昇 + 輸液後も MAP < 65 + Lactate > 2 → **Septic shock（院内死亡率 > 40%）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理**、CV 挿入、ノルアドレナリン 0.1 μg/kg/min から開始、MEPM 1g IV → 3g/24h 持続（重症 + 肝障害）、A line、Foley、HFNC または NPPV 装着、適応次第でハイドロコルチゾン 200 mg/日、source 探索 (CT)。挿管必要・治療反応不良なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤注射 (NE 持続)") + " **3 点** / " + _a("A4 シリンジポンプ (NE + MEPM 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 CV 挿入") + " **4 日カウント該当患者扱い** / " + _a("A7 救急搬送後") + " 2 点 → **A 計 7 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤注射 (NE 持続)") + " **3 点** / " + _a("A4 シリンジポンプ (NE + MEPM 持続)") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C21 CV 挿入") + " **4 日カウント該当患者扱い** / " + _a("A7 救急搬送後") + " 2 点 → **A 計 7 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -1440,7 +1441,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 22,000、CRP 28、Cre 2.1、Lactate 3.2、PCT 25、CT で右尿管結石（10mm）+ 水腎症（中等度）+ 腎盂内膿瘍",
                     "score_calc": "qSOFA = 意識(1) + 血圧(1) = **2 点（陽性）** / **閉塞性腎盂腎炎 → 緊急ドレナージ必須**",
                     "plan": "**個室入室、看護師監視強化下で集中管理**、緊急泌尿器科コンサルト → 24h 以内に右尿管ステント留置（or PCN）、MEPM 1g 負荷 → 3g/24h 持続点滴、輸液、必要なら昇圧剤、血液 + 尿培養。挿管必要・治療反応不良なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C23 尿管ステント or PCN") + " 4 日カウント / " + _a("A6⑩ ドレナージ管理 (PCN 後)") + " 2 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 6 点 + C 該当**",
+                    "necessity_contrib": _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _c("C項目候補: 尿管ステント / PCN（術式コード要照合）") + " / " + _a("A6⑩ ドレナージ管理 (PCN 後)") + " 2 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 6 点 + C候補は医事照合**",
                 },
             ],
             "evidence": [
@@ -1544,7 +1545,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 28,500、CRP 22、Hb 10.5、Na 132、Cre 2.5、Glu 220、Lactate 4.5、CT で皮下気腫 + 筋膜下液貯留",
                     "score_calc": "Eron = **Class IV（敗血症 + 壊死性筋膜炎の疑い）** / LRINEC = CRP(4) + WBC(2) + Hb(2) + Na(2) + Cre(2) + Glu(1) = **13 点（高リスク確定）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理**、緊急形成・整形外科コンサルト → 緊急デブリードマン（壊死筋膜切除）、PIPC/TAZ 4.5g 持続点滴 + クリンダマイシン 600mg IV q8h（毒素産生抑制）+ バンコマイシン（MRSA カバー）、ノルアドレナリン 0.05 μg/kg/min、CV 挿入、HFNC、血糖管理。デブリ困難・再建必要なら高度医療機関へ転院",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤") + " **3 点** / " + _c("C23 緊急デブリードマン") + " 4 日カウント / " + _c("C23 CV 挿入") + " 4 日カウント / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤") + " **3 点** / " + _c("C項目候補: 緊急デブリードマン（術式コード要照合）") + " / " + _c("C21 CV 挿入") + " 4 日カウント / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C候補は医事照合 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -1649,7 +1650,7 @@ DISEASE_DATA: list[tuple[str, list[dict[str, Any]]]] = [
                     "labs": "WBC 22,000、CRP 28、血糖 320、Cre 2.8、Lactate 3.0、PCT 18、X 線で複数骨破壊、CT で深部膿瘍",
                     "score_calc": "Wagner = **Grade 4（部分壊疽、前足部）** / PEDIS = **Grade 4（重症、SIRS + 敗血症）**",
                     "plan": "**個室入室、看護師監視強化下で集中管理**、緊急形成・整形・血管外科コンサルト → 下肢切断（Chopart 切断 or 下腿切断）+ デブリ、MEPM 1g 負荷 → 3g/24h 持続、ノルアドレナリン 0.05 μg/kg/min、CV 挿入、HFNC、強化血糖管理、術前 ABI/SPP 評価で血行再建可能性検討",
-                    "necessity_contrib": _a("A6⑦ 昇圧剤") + " **3 点** / " + _c("C18 骨の手術 (切断)") + " **10 日カウント** / " + _c("C23 CV 挿入") + " 4 日 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 圧倒的な該当患者**",
+                    "necessity_contrib": _a("A6⑦ 昇圧剤") + " **3 点** / " + _c("C18 骨の手術 (切断)") + " **10 日カウント** / " + _c("C21 CV 挿入") + " 4 日 / " + _a("A4 シリンジポンプ") + " 1 点 / " + _a("A3 注射薬剤 3 種類以上") + " 1 点 / " + _a("A2 呼吸ケア (HFNC)") + " 1 点 / " + _a("A1 創傷処置") + " 1 点 / " + _a("A7 救急搬送後") + " 2 点 → **A 計 9 点 + C 該当 = 評価根拠が明確な患者**",
                 },
             ],
             "evidence": [
@@ -1823,6 +1824,13 @@ _HEADER = """# 看護必要度 疾患別マニュアル — 医師担当部分
 | 🔵 B 項目 | 青 | 患者の状況等（**新基準では評価不要**） |
 | 🟢 C 項目 | 緑 | 手術・侵襲的処置（4-5 日カウント） |
 
+## 🧾 制度コード照合メモ（2026-04-27 再確認）
+
+- C項目は、処置名だけで断定せず、**厚労省 別紙7別表1の診療行為コード**と医事確認を最終根拠にする。
+- PT-OT-ST.NET 別紙7別表1（2026版）では、**中心静脈注射用カテーテル挿入・腰椎穿刺・CHDF/PMX相当は C21（4日間）**として確認。
+- **PTCD（経皮的胆管ドレナージ）・PEG・CART・消化管ステントは C23（5日間）**として確認。
+- 尿管ステント、PCN、緊急デブリードマンなど、術式コードで揺れうるものは「C項目候補」として扱い、日数を医事と同日照合する。
+
 ---
 
 ## 📚 目次（17 疾患）
@@ -1871,16 +1879,16 @@ def _render_disease_md(d: dict[str, Any]) -> str:
                 lines.append("")
 
     # 選択肢比較テーブル
-    lines.append("#### 💊 第一選択 vs 看護必要度貢献選択肢（医学的に同等以上）")
+    lines.append("#### 💊 第一選択 vs 適応時に確認する項目（医学的に同等以上）")
     lines.append("")
-    lines.append("| 場面 | 従来の選択肢 | 看護必要度に貢献する選択肢 |")
+    lines.append("| 場面 | 従来の選択肢 | 適応時に確認する項目 |")
     lines.append("|---|---|---|")
     for opt in d["options"]:
         lines.append(f"| {opt['scene']} | {opt['conventional']} | {opt['necessity']} |")
     lines.append("")
 
-    # 看護必要度寄与
-    lines.append("#### 📋 看護必要度寄与")
+    # 評価・記録上の確認点
+    lines.append("#### 📋 評価・記録上の確認点")
     for c in d["contributions"]:
         lines.append(f"- {c}")
     lines.append("")
@@ -1903,7 +1911,7 @@ def _render_disease_md(d: dict[str, Any]) -> str:
             if ex.get("plan"):
                 lines.append(f"- **治療方針**: {ex['plan']}")
             if ex.get("necessity_contrib"):
-                lines.append(f"- **看護必要度寄与**: {ex['necessity_contrib']}")
+                lines.append(f"- **評価・記録上の確認点**: {ex['necessity_contrib']}")
             lines.append("")
 
     # エビデンス
@@ -1974,6 +1982,58 @@ def _strip_html(s: str) -> str:
     return s
 
 
+def _plain_text(s: str) -> str:
+    """Streamlit の絞り込み・カード表示用に markdown/html を簡易除去する."""
+    import re
+
+    s = _strip_html(s)
+    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+    s = re.sub(r"[*_`#>-]", "", s)
+    return " ".join(s.split())
+
+
+def _all_diseases() -> list[tuple[str, dict[str, Any]]]:
+    """疾患群名と疾患 dict の平坦なリストを返す."""
+    return [(group_name, disease) for group_name, diseases in DISEASE_DATA for disease in diseases]
+
+
+def _search_diseases(query: str, group_filter: str = "すべて") -> list[tuple[str, dict[str, Any]]]:
+    """疾患名・入口・確認点を対象に、軽量検索した結果を返す."""
+    q = query.strip().lower()
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for group_name, disease in _all_diseases():
+        if group_filter != "すべて" and group_name != group_filter:
+            continue
+        haystack = " ".join(
+            [
+                disease["name"],
+                group_name,
+                *disease.get("entry", []),
+                *disease.get("contributions", []),
+                *[opt.get("scene", "") for opt in disease.get("options", [])],
+                *[opt.get("necessity", "") for opt in disease.get("options", [])],
+            ]
+        )
+        if not q or q in _plain_text(haystack).lower():
+            matches.append((group_name, disease))
+    return matches
+
+
+def _format_disease_label(group_name: str, disease: dict[str, Any]) -> str:
+    """selectbox 用の短い疾患ラベル."""
+    clean_group = _plain_text(group_name.split(" ", 1)[-1])
+    return f"{disease['id']:02d}. {disease['name']} / {clean_group}"
+
+
+def _render_bullets(st: Any, items: list[str], *, max_items: int | None = None) -> None:
+    """HTML span を含む bullet list を Streamlit に描画する."""
+    shown = items if max_items is None else items[:max_items]
+    for item in shown:
+        st.markdown(f"- {item}", unsafe_allow_html=True)
+    if max_items is not None and len(items) > max_items:
+        st.caption(f"ほか {len(items) - max_items} 項目は詳細タブに表示")
+
+
 def generate_docx() -> bytes:
     """疾患別マニュアル DOCX を生成して bytes で返す.
 
@@ -2034,6 +2094,15 @@ def generate_docx() -> bytes:
         for j, val in enumerate(row_data):
             legend_table.rows[i].cells[j].text = val
 
+    doc.add_heading("🧾 制度コード照合メモ（2026-04-27 再確認）", level=1)
+    for line in [
+        "C項目は処置名だけで断定せず、厚労省 別紙7別表1の診療行為コードと医事確認を最終根拠にする。",
+        "中心静脈注射用カテーテル挿入・腰椎穿刺・CHDF/PMX相当は C21（4日間）として確認。",
+        "PTCD（経皮的胆管ドレナージ）・PEG・CART・消化管ステントは C23（5日間）として確認。",
+        "尿管ステント、PCN、緊急デブリードマンなど、術式コードで揺れうるものはC項目候補として扱い、日数を医事と同日照合する。",
+    ]:
+        doc.add_paragraph(line, style="List Bullet")
+
     doc.add_page_break()
 
     # 17 疾患を疾患群ごとに章立て
@@ -2075,19 +2144,19 @@ def generate_docx() -> bytes:
                         run.italic = True
 
             # 選択肢比較テーブル
-            doc.add_heading("💊 第一選択 vs 看護必要度貢献選択肢", level=3)
+            doc.add_heading("💊 第一選択 vs 適応時に確認する項目", level=3)
             opt_table = doc.add_table(rows=1 + len(d["options"]), cols=3)
             opt_table.style = "Light Grid"
             opt_table.rows[0].cells[0].text = "場面"
             opt_table.rows[0].cells[1].text = "従来の選択肢"
-            opt_table.rows[0].cells[2].text = "看護必要度に貢献する選択肢"
+            opt_table.rows[0].cells[2].text = "適応時に確認する項目"
             for i, opt in enumerate(d["options"], start=1):
                 opt_table.rows[i].cells[0].text = _strip_html(opt["scene"])
                 opt_table.rows[i].cells[1].text = _strip_html(opt["conventional"])
                 opt_table.rows[i].cells[2].text = _strip_html(opt["necessity"])
 
-            # 看護必要度寄与
-            doc.add_heading("📋 看護必要度寄与", level=3)
+            # 評価・記録上の確認点
+            doc.add_heading("📋 評価・記録上の確認点", level=3)
             for c in d["contributions"]:
                 doc.add_paragraph(_strip_html(c), style="List Bullet")
 
@@ -2103,7 +2172,7 @@ def generate_docx() -> bytes:
                         ("labs", "検査所見"),
                         ("score_calc", "スコア計算"),
                         ("plan", "治療方針"),
-                        ("necessity_contrib", "看護必要度寄与"),
+                        ("necessity_contrib", "評価・記録上の確認点"),
                     ]
                     for key, jp in field_labels:
                         if ex.get(key):
@@ -2155,7 +2224,192 @@ def render_in_streamlit(streamlit_module) -> None:
         streamlit_module: ``streamlit`` モジュール
     """
     st = streamlit_module
-    st.markdown(DISEASE_MANUAL_MARKDOWN, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <style>
+        .nn-manual-hero {
+            border-left: 6px solid #2563EB;
+            background: #EFF6FF;
+            padding: 16px 18px;
+            border-radius: 8px;
+            margin: 6px 0 14px 0;
+        }
+        .nn-manual-hero h3 {
+            margin: 0 0 6px 0;
+            color: #1E3A8A;
+            font-size: 1.1rem;
+        }
+        .nn-manual-hero p {
+            margin: 0;
+            color: #374151;
+            line-height: 1.65;
+        }
+        .nn-manual-chip {
+            display: inline-block;
+            padding: 3px 9px;
+            margin: 0 6px 6px 0;
+            border-radius: 999px;
+            background: #F3F4F6;
+            color: #374151;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+        .nn-manual-focus {
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 8px 0 12px 0;
+            background: #FFFFFF;
+        }
+        .nn-manual-focus-title {
+            color: #111827;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+        .nn-manual-safe {
+            background: #F0FDF4;
+            border-left: 5px solid #10B981;
+            padding: 10px 12px;
+            border-radius: 8px;
+            color: #065F46;
+            margin: 8px 0 12px 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="nn-manual-hero">
+          <h3>疾患を選ぶ → 今日見る項目だけ先に確認</h3>
+          <p>全文を順番に読む資料ではなく、目の前の患者に近い疾患から入口・評価点・具体例を確認するためのリファレンスです。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    group_names = ["すべて"] + [group_name for group_name, _ in DISEASE_DATA]
+    group_filter = st.selectbox(
+        "領域",
+        group_names,
+        key="nn_disease_manual_group_filter",
+    )
+    query = st.text_input(
+        "疾患名・症状・処置で絞り込み",
+        placeholder="例: 心不全、PTCD、酸素、輸血、ペイン",
+        key="nn_disease_manual_query",
+    )
+
+    matches = _search_diseases(query, group_filter)
+    if not matches:
+        st.warning("該当する疾患がありません。検索語を短くしてください。")
+        return
+
+    labels = [_format_disease_label(group_name, disease) for group_name, disease in matches]
+    selected_label = st.selectbox(
+        "表示する疾患",
+        labels,
+        key="nn_disease_manual_selected_disease",
+    )
+    selected_index = labels.index(selected_label)
+    selected_group, disease = matches[selected_index]
+
+    st.markdown(
+        f"""
+        <div class="nn-manual-focus">
+          <div class="nn-manual-focus-title">{disease['id']}. {disease['name']}</div>
+          <span class="nn-manual-chip">{_plain_text(selected_group)}</span>
+          <span class="nn-manual-chip">入口 {len(disease.get('entry', []))}項目</span>
+          <span class="nn-manual-chip">具体例 {len(disease.get('clinical_examples', []))}例</span>
+          <span class="nn-manual-chip">根拠 {len(disease.get('evidence', []))}件</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="nn-manual-safe">
+        🛡️ 適応外処置は絶対に行わない。ここで見るのは、医学的に適応のある治療・処置・記録の取りこぼし防止です。
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab_first, tab_record, tab_examples, tab_safety, tab_full = st.tabs(
+        ["最初に見る", "評価・記録", "具体例", "根拠・安全", "全文"]
+    )
+
+    with tab_first:
+        st.markdown("#### 入口（この患者を見たら）")
+        _render_bullets(st, disease.get("entry", []))
+
+        if disease.get("severity_assessment"):
+            st.markdown("#### 重症度スコア")
+            for score in disease["severity_assessment"]:
+                with st.expander(score["name"], expanded=False):
+                    if score.get("items"):
+                        st.table(score["items"])
+                    if score.get("interpretation"):
+                        st.markdown("**解釈**")
+                        for item in score["interpretation"]:
+                            st.markdown(f"- **{item['range']}**: {item['meaning']}", unsafe_allow_html=True)
+                    if score.get("source"):
+                        st.caption(f"出典: {_plain_text(score['source'])}")
+
+        st.markdown("#### 今日の確認点")
+        _render_bullets(st, disease.get("contributions", []), max_items=4)
+
+    with tab_record:
+        st.markdown("#### 場面別: 適応時に確認する項目")
+        if disease.get("options"):
+            option_lines = [
+                "| 場面 | 従来の選択肢 | 適応時に確認する項目 |",
+                "|---|---|---|",
+            ]
+            for opt in disease["options"]:
+                option_lines.append(f"| {opt['scene']} | {opt['conventional']} | {opt['necessity']} |")
+            st.markdown("\n".join(option_lines), unsafe_allow_html=True)
+        st.markdown("#### 評価・記録上の確認点")
+        _render_bullets(st, disease.get("contributions", []))
+
+    with tab_examples:
+        examples = disease.get("clinical_examples", [])
+        if not examples:
+            st.info("この疾患の具体例は未整備です。")
+        for idx, ex in enumerate(examples):
+            with st.expander(ex["title"], expanded=(idx == 0)):
+                for key, label in [
+                    ("background", "背景"),
+                    ("presentation", "主訴・経過"),
+                    ("vitals", "バイタル・身体所見"),
+                    ("labs", "検査所見"),
+                    ("score_calc", "スコア計算"),
+                    ("plan", "治療方針"),
+                    ("necessity_contrib", "評価・記録上の確認点"),
+                ]:
+                    if ex.get(key):
+                        st.markdown(f"**{label}**: {ex[key]}", unsafe_allow_html=True)
+
+    with tab_safety:
+        st.markdown("#### エビデンス")
+        for ev in disease.get("evidence", []):
+            st.markdown(
+                f"- **{ev['strength']}**: {ev['ref']} — {ev['summary']}",
+                unsafe_allow_html=True,
+            )
+        st.markdown("#### 疾患特異の倫理ガードレール")
+        _render_bullets(st, disease.get("guardrails", []))
+        st.markdown("#### オーダー例")
+        _render_bullets(st, disease.get("orders", []))
+
+    with tab_full:
+        st.markdown("#### 選択中の疾患全文")
+        st.markdown(_render_disease_md(disease), unsafe_allow_html=True)
+        with st.expander("17疾患すべての全文を開く", expanded=False):
+            st.markdown(DISEASE_MANUAL_MARKDOWN, unsafe_allow_html=True)
+
     st.markdown("---")
     try:
         docx_bytes = generate_docx()
