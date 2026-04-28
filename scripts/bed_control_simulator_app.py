@@ -10735,6 +10735,230 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     "中央値同士の差が診療科横断で顕著なら、ベッド計画の科別補正が有効。"
                 )
 
+            # ===== F+: 医師間分担分析（KJJ ケーススタディ、2026-04-28 追加） =====
+            st.divider()
+            _bc_section_title(
+                "医師間分担分析（KJJ ケーススタディ）",
+                icon="🤝",
+            )
+            st.caption(
+                "副院長の問題意識: 加治佐医師（KJJ、ペイン科）の入院受け持ちが多く、"
+                "保存的疼痛管理の症例（肋骨骨折・腰椎圧迫骨折等）について、"
+                "他科への分担可能性をデータで見える化。"
+                "**手術なし症例**を「分担候補のプロキシ」として扱う（傷病名データなしの近似）。"
+            )
+
+            try:
+                from doctor_collaboration_analysis import (
+                    compare_kjj_vs_alternatives,
+                    estimate_load_redistribution,
+                    summarize_doctor_monthly,
+                    summarize_recent_month,
+                )
+                _collab_available = True
+            except ImportError as e:
+                _collab_available = False
+                st.warning(f"⚠️ 医師間分担分析モジュール未利用可: {e}")
+
+            if _collab_available and not _pa_df.empty:
+                # ===== A. 直近月（2026-04）の KJJ サマリー =====
+                _recent = summarize_recent_month(_pa_df, target_ym="2026-04",
+                                                  focus_doctor="KJJ")
+                if _recent.get("total", 0) > 0:
+                    st.markdown(
+                        f"#### 📅 2026年4月 直近サマリー "
+                        f"(`{_recent.get('data_period_end','')}` までのデータ)"
+                    )
+                    _focus = _recent.get("focus", {})
+                    _ward = _focus.get("ward_breakdown", {})
+                    _cols_kjj = st.columns(5)
+                    _cols_kjj[0].metric(
+                        "KJJ 4月入院",
+                        f"{_focus.get('total', 0)} 件",
+                        help=f"4 月全体 {_recent['total']} 件中、KJJ 担当",
+                    )
+                    _cols_kjj[1].metric(
+                        "5F",
+                        f"{_ward.get('5F', 0)} 件",
+                    )
+                    _cols_kjj[2].metric(
+                        "6F",
+                        f"{_ward.get('6F', 0)} 件",
+                    )
+                    _cols_kjj[3].metric(
+                        "予定外入院",
+                        f"{_focus.get('unscheduled_count', 0)} 件",
+                        help="緊急入院（予定外）",
+                    )
+                    _cols_kjj[4].metric(
+                        "手術なし",
+                        f"{_focus.get('no_surgery', 0)} 件",
+                        help="保存的治療＝分担候補プロキシ",
+                    )
+
+                    if _focus.get("from_other_hospital", 0) > 0:
+                        st.caption(
+                            f"📌 4月の下り搬送（他病院から）{_focus['from_other_hospital']} 件 / "
+                            f"救急車搬送 {_focus.get('emergency_count', 0)} 件 / "
+                            f"家庭入院 {_focus.get('from_home', 0)} 件"
+                        )
+
+                    # 医師別ランキング
+                    with st.expander("📋 4月 医師別 入院件数ランキング", expanded=False):
+                        _rank_df = pd.DataFrame(_recent.get("doctor_ranking", []))
+                        if not _rank_df.empty:
+                            st.dataframe(_rank_df, use_container_width=True, hide_index=True)
+
+                # ===== B. 過去1年+4月 KJJ vs 他科 月別推移 =====
+                st.markdown("#### 📊 KJJ vs 他科 — 月別入院件数の推移")
+                _doctors_compare = ["KJJ", "OKUK", "HOKM", "HAYT", "TERUH"]
+                _monthly = summarize_doctor_monthly(_pa_df, doctor_codes=_doctors_compare)
+                if not _monthly.empty:
+                    try:
+                        import plotly.graph_objects as _go
+                        _fig = _go.Figure()
+                        _color_map = {
+                            "KJJ": "#DC2626",   # 赤（フォーカス医師）
+                            "OKUK": "#F59E0B",  # オレンジ（整形外科）
+                            "HOKM": "#7C3AED",  # 紫（脳神経外科）
+                            "HAYT": "#10B981",  # 緑（内科代表）
+                            "TERUH": "#2563EB", # 青（内科最多）
+                        }
+                        for col in _monthly.columns:
+                            _fig.add_trace(_go.Scatter(
+                                x=_monthly.index,
+                                y=_monthly[col],
+                                mode="lines+markers",
+                                name=f"{col} ({DOCTOR_SPECIALTY_GROUP.get(col, '?')})",
+                                line=dict(width=3 if col == "KJJ" else 1.8,
+                                          color=_color_map.get(col)),
+                                marker=dict(size=10 if col == "KJJ" else 7),
+                            ))
+                        _fig.update_layout(
+                            xaxis_title="年月",
+                            yaxis_title="入院件数 / 月",
+                            height=420,
+                            hovermode="x unified",
+                            margin=dict(l=40, r=20, t=20, b=40),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                        )
+                        st.plotly_chart(_fig, use_container_width=True)
+                        st.caption(
+                            "🔴 KJJ（ペイン科）/ 🟠 OKUK（整形外科）/ 🟣 HOKM（脳神経外科）/ "
+                            "🟢 HAYT（内科）/ 🔵 TERUH（内科最多）。"
+                            "KJJ は安定して月 10-15 件レンジ、整形外科 OKUK と同等以上。"
+                        )
+                    except Exception as e:
+                        st.warning(f"グラフ描画エラー: {e}")
+
+                # ===== C. 比較サマリー（年間ベース）=====
+                _comparison = compare_kjj_vs_alternatives(_pa_df)
+                if _comparison.get("donor"):
+                    st.markdown("#### 📊 年間ベース比較サマリー")
+                    _period = _comparison.get("period", {})
+                    st.caption(
+                        f"集計期間: {_period.get('from','')} 〜 {_period.get('to','')} "
+                        f"（約 {_period.get('months_span','?')} ヶ月分のデータ）"
+                    )
+
+                    # 個別医師比較
+                    _peer_rows = [{
+                        "医師": _comparison["donor"]["code"] + " (フォーカス)",
+                        "診療科": _comparison["donor"]["specialty"],
+                        "総件数": _comparison["donor"]["total"],
+                        "手術なし": _comparison["donor"]["no_surgery"],
+                        "月平均": _comparison["donor"]["monthly_avg"],
+                        "下り搬送候補": _comparison["donor"]["from_other_hospital"],
+                    }]
+                    for p in _comparison["peers"]:
+                        _peer_rows.append({
+                            "医師": p["code"],
+                            "診療科": p["specialty"],
+                            "総件数": p["total"],
+                            "手術なし": p["no_surgery"],
+                            "月平均": p["monthly_avg"],
+                            "下り搬送候補": p["from_other_hospital"],
+                        })
+                    st.dataframe(
+                        pd.DataFrame(_peer_rows),
+                        use_container_width=True, hide_index=True,
+                    )
+
+                    # 診療科グループ集計
+                    with st.expander("📋 診療科グループ別 集計", expanded=False):
+                        _sp_rows = []
+                        for sp in _comparison.get("specialty_summary", []):
+                            _sp_rows.append({
+                                "診療科": sp["group"],
+                                "総件数": sp["total"],
+                                "手術なし": sp["no_surgery"],
+                                "月平均": sp["monthly_avg"],
+                                "所属医師数": len(sp["doctors"]),
+                            })
+                        st.dataframe(
+                            pd.DataFrame(_sp_rows),
+                            use_container_width=True, hide_index=True,
+                        )
+
+                # ===== D. 分担シミュレーター =====
+                st.markdown("#### 🔧 分担シミュレーション（What-If）")
+                st.caption(
+                    "「KJJ の手術なし症例の N% を他科に振替えた場合、各科の月平均件数はどう変化するか」を試算。"
+                    "実際の分担可能性は、傷病名・患者像・各科のキャパシティで個別判断が必要。"
+                )
+
+                _sim_cols = st.columns(2)
+                with _sim_cols[0]:
+                    _target_sp = st.selectbox(
+                        "振替先 診療科",
+                        ["整形外科", "内科", "脳神経外科"],
+                        index=0,
+                        key="kjj_collab_target",
+                    )
+                with _sim_cols[1]:
+                    _transfer_pct = st.slider(
+                        "振替割合（%）",
+                        min_value=0, max_value=100, value=30, step=5,
+                        key="kjj_collab_pct",
+                    )
+
+                _sim = estimate_load_redistribution(
+                    _pa_df, donor_code="KJJ",
+                    transfer_pct=float(_transfer_pct),
+                    target_specialty=_target_sp,
+                )
+                if _sim:
+                    _r1, _r2, _r3 = st.columns(3)
+                    _r1.metric(
+                        "振替件数（年間）",
+                        f"{_sim['transferred_count']} 件",
+                        help=f"= {_sim['donor_before_after']['no_surgery']} 件（手術なし）× {_transfer_pct}%",
+                    )
+                    _r2.metric(
+                        f"KJJ 月平均（before → after）",
+                        f"{_sim['donor_before_after']['monthly_avg_after']:.1f} 件/月",
+                        delta=f"{_sim['donor_before_after']['monthly_avg_after'] - _sim['donor_before_after']['monthly_avg_before']:+.1f}",
+                        delta_color="inverse",
+                    )
+                    _r3.metric(
+                        f"{_target_sp} 月平均（before → after）",
+                        f"{_sim['target_before_after']['monthly_avg_after']:.1f} 件/月",
+                        delta=f"+{_sim['target_before_after']['monthly_avg_after'] - _sim['target_before_after']['monthly_avg_before']:.1f}",
+                        delta_color="off",
+                    )
+
+                # ===== E. 注意書き・解釈 =====
+                with st.expander("📖 解釈と注意点", expanded=False):
+                    st.markdown(
+                        "- 「手術なし症例」を分担候補として扱う近似は、傷病名データが事務システムに含まれないための代替策。"
+                        "副院長の関心事「肋骨骨折・腰椎圧迫骨折」を直接特定するには、主傷病名込みのデータ依頼が必要。\n"
+                        "- KJJ vs OKUK（整形外科）の比較は、保存的疼痛管理の典型ペアだが、"
+                        "OKUK は「手術あり」が中心の科のため、純粋な「手術なし症例の引き受け」キャパは限定的。\n"
+                        "- 内科グループへの分担は、件数キャパは大きい（年間 1,247 件）が、"
+                        "「ペイン科で診ている患者を内科に振る」ことの医学的妥当性は個別判断。\n"
+                        "- 4 月以降の継続観察で、KJJ の負担パターンが構造的か一時的かを判定可能。"
+                    )
+
         # ===== G: 看護必要度トレンド（Stage A, 2026-04-25 追加） =====
         # 地域包括医療病棟の看護必要度Ⅰ/Ⅱ 該当患者割合を 12 ヶ月時系列で可視化。
         # 2026-06-01 から新基準（Ⅰ16%→19%, Ⅱ14%→18%）が適用されるため、
