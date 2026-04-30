@@ -443,6 +443,408 @@ def make_figure_horizontal_ci(
 
 
 # ---------------------------------------------------------------------------
+# Figure 7: LOOCV 検証（散布図 + 月別 MAE バー）
+# ---------------------------------------------------------------------------
+
+
+def make_figure_loocv_validation(
+    cv_pred_I_csv: Path,
+    cv_pred_II_csv: Path,
+    output_path: Path,
+) -> None:
+    """LOOCV の予測値と実測値の散布図 + 月別 MAE バー."""
+    pred_I = pd.read_csv(cv_pred_I_csv)
+    pred_I["kind"] = "I"
+    pred_II = pd.read_csv(cv_pred_II_csv)
+    pred_II["kind"] = "II"
+    pred = pd.concat([pred_I, pred_II], ignore_index=True)
+    pred["year_month"] = pred["year_month"].astype(str)
+    pred["actual_pct"] = pred["actual"] * 100
+    pred["predicted_pct"] = pred["predicted"] * 100
+    pred["abs_error_pt"] = (pred["predicted_pct"] - pred["actual_pct"]).abs()
+
+    overall_mae = pred["abs_error_pt"].mean()
+    median_err = pred["abs_error_pt"].median()
+    max_err = pred["abs_error_pt"].max()
+    n_total = len(pred)
+
+    fig = plt.figure(figsize=(14, 6.5))
+    gs = fig.add_gridspec(2, 2, height_ratios=[14, 1.2], hspace=0.55, wspace=0.25)
+    ax_left = fig.add_subplot(gs[0, 0])
+    ax_right = fig.add_subplot(gs[0, 1])
+    ax_note = fig.add_subplot(gs[1, :])
+    ax_note.axis("off")
+
+    # ---- Left: 散布図 ----
+    marker_map = {
+        ("5F", "I"): {"marker": "o", "color": "#1F77B4", "label": "5F 必要度Ⅰ"},
+        ("5F", "II"): {"marker": "s", "color": "#5BA3D9", "label": "5F 必要度Ⅱ"},
+        ("6F", "I"): {"marker": "o", "color": "#D62728", "label": "6F 必要度Ⅰ"},
+        ("6F", "II"): {"marker": "s", "color": "#FF8B8B", "label": "6F 必要度Ⅱ"},
+    }
+    for (ward, kind), style in marker_map.items():
+        sub = pred[(pred["ward"] == ward) & (pred["kind"] == kind)]
+        ax_left.scatter(
+            sub["actual_pct"],
+            sub["predicted_pct"],
+            marker=style["marker"],
+            color=style["color"],
+            s=80,
+            alpha=0.75,
+            edgecolor="white",
+            linewidth=1,
+            label=style["label"],
+            zorder=3,
+        )
+
+    lim_min = max(0, min(pred["actual_pct"].min(), pred["predicted_pct"].min()) - 1.5)
+    lim_max = max(pred["actual_pct"].max(), pred["predicted_pct"].max()) + 1.5
+    ax_left.plot(
+        [lim_min, lim_max],
+        [lim_min, lim_max],
+        linestyle="--",
+        color="#888",
+        linewidth=1.2,
+        alpha=0.7,
+        label="理想線（実測 = 推定）",
+        zorder=1,
+    )
+    ax_left.set_xlim(lim_min, lim_max)
+    ax_left.set_ylim(lim_min, lim_max)
+    ax_left.set_xlabel("実測値 (%)", fontsize=11)
+    ax_left.set_ylabel("LOOCV 推定値 (%)", fontsize=11)
+    ax_left.set_title(f"散布図: 実測 vs 推定（n={n_total}）", fontsize=12, fontweight="bold")
+    ax_left.grid(alpha=0.25, zorder=0)
+    ax_left.legend(loc="lower right", fontsize=9, framealpha=0.95)
+
+    # 統計ボックス（左上）
+    stat_text = (
+        f"全体 MAE: {overall_mae:.2f} pt\n"
+        f"中央値: {median_err:.2f} pt\n"
+        f"最大: {max_err:.2f} pt"
+    )
+    ax_left.text(
+        0.04,
+        0.96,
+        stat_text,
+        transform=ax_left.transAxes,
+        ha="left",
+        va="top",
+        fontsize=10,
+        fontweight="bold",
+        bbox=dict(
+            boxstyle="round,pad=0.45",
+            facecolor="#E3F2FD",
+            edgecolor="#1F77B4",
+            linewidth=1.2,
+        ),
+    )
+
+    # ---- Right: 月別 MAE バー ----
+    months = sorted(pred["year_month"].unique())
+    n_months = len(months)
+    width = 0.38
+    x_pos = np.arange(n_months)
+
+    mae_5F = []
+    mae_6F = []
+    for ym in months:
+        m5 = pred[(pred["year_month"] == ym) & (pred["ward"] == "5F")]["abs_error_pt"].mean()
+        m6 = pred[(pred["year_month"] == ym) & (pred["ward"] == "6F")]["abs_error_pt"].mean()
+        mae_5F.append(m5)
+        mae_6F.append(m6)
+
+    ax_right.bar(
+        x_pos - width / 2,
+        mae_5F,
+        width,
+        color="#1F77B4",
+        edgecolor="#0F4C75",
+        linewidth=0.5,
+        label="5F",
+    )
+    ax_right.bar(
+        x_pos + width / 2,
+        mae_6F,
+        width,
+        color="#D62728",
+        edgecolor="#8B1A1B",
+        linewidth=0.5,
+        label="6F",
+    )
+    ax_right.axhline(
+        overall_mae,
+        color="#333",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.85,
+        label=f"全体 MAE = {overall_mae:.2f} pt",
+        zorder=1,
+    )
+    ax_right.set_xticks(x_pos)
+    ax_right.set_xticklabels(
+        [f"{ym[:4]}-{ym[4:]}" for ym in months], rotation=45, fontsize=8, ha="right"
+    )
+    ax_right.set_ylabel("絶対誤差 (pt)", fontsize=11)
+    ax_right.set_title("月別 平均絶対誤差（病棟別）", fontsize=12, fontweight="bold")
+    ax_right.legend(loc="upper left", fontsize=9, framealpha=0.95)
+    ax_right.grid(axis="y", alpha=0.25, zorder=0)
+
+    # ---- Title ----
+    fig.suptitle(
+        "LOOCV（リーブワンアウト）による推論精度の検証\n"
+        "過去 12 ヶ月の各月を「未知」と仮定し、残り 11 ヶ月から Ridge 回帰で推定 → 実測と比較",
+        fontsize=12,
+        fontweight="bold",
+        y=0.99,
+    )
+
+    # ---- Bottom note ----
+    if overall_mae <= 2.5:
+        verdict = f"✅ 高精度（MAE = {overall_mae:.1f}pt）— 推定値の信頼性は高い"
+        verdict_color = "#2CA02C"
+    elif overall_mae <= 3.5:
+        verdict = f"🟡 中精度（MAE = {overall_mae:.1f}pt）— 方向性把握には十分、判断には実測併用推奨"
+        verdict_color = "#FF9800"
+    else:
+        verdict = f"⚠️ 低精度（MAE = {overall_mae:.1f}pt）— 単なる推論、判断には実測データが必要"
+        verdict_color = "#D62728"
+    ax_note.text(
+        0.5,
+        0.5,
+        verdict,
+        transform=ax_note.transAxes,
+        ha="center",
+        va="center",
+        fontsize=11,
+        fontweight="bold",
+        color=verdict_color,
+        bbox=dict(
+            boxstyle="round,pad=0.5",
+            facecolor="white",
+            edgecolor=verdict_color,
+            linewidth=1.5,
+        ),
+    )
+
+    fig.savefig(output_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Figure 8: 手法比較（K/α grid の MAE + 採用された Ridge 係数）
+# ---------------------------------------------------------------------------
+
+
+def _compute_loocv_mae_for_config(
+    df: pd.DataFrame, target_col: str, target_name: str, k: int, alpha: float
+) -> float:
+    """指定 K, alpha で LOOCV MAE を計算する."""
+    from scripts.nursing_estimation.estimator import (
+        leave_one_month_out_cv,
+        select_top_k_features,
+    )
+
+    train_df = df.dropna(subset=[target_col]).reset_index(drop=True)
+    feat_pool = [
+        c
+        for c in train_df.columns
+        if c not in ("year_month", "ward", "I_actual_rate", "II_actual_rate")
+    ]
+    feats = select_top_k_features(train_df[feat_pool], train_df[target_col], k)
+    res = leave_one_month_out_cv(train_df, target_col, feats, alpha, target_name)
+    return res.mae * 100  # pt 換算
+
+
+def make_figure_method_comparison(
+    feature_csv: Path,
+    summary_json: Path,
+    output_path: Path,
+) -> None:
+    df = pd.read_csv(feature_csv)
+    with summary_json.open("r", encoding="utf-8") as f:
+        summary = json.load(f)
+
+    # 比較する手法構成
+    configs = [
+        ("ベースライン（K=3, α=10）", 3, 10.0),
+        ("特徴量増（K=8, α=10）", 8, 10.0),
+        ("正則化弱（K=5, α=0.1）", 5, 0.1),
+        ("正則化強（K=12, α=100）", 12, 100.0),
+        ("採用: 必要度Ⅰ（K=5, α=1.0）", 5, 1.0),
+        ("採用: 必要度Ⅱ（K=3, α=0.1）", 3, 0.1),
+    ]
+
+    rows = []
+    for label, k, alpha in configs:
+        mae_I = _compute_loocv_mae_for_config(df, "I_actual_rate", "I", k, alpha)
+        mae_II = _compute_loocv_mae_for_config(df, "II_actual_rate", "II", k, alpha)
+        avg = (mae_I + mae_II) / 2
+        rows.append({"label": label, "k": k, "alpha": alpha, "mae_I": mae_I, "mae_II": mae_II, "mae_avg": avg})
+    comp_df = pd.DataFrame(rows).sort_values("mae_avg", ascending=False).reset_index(drop=True)
+
+    baseline_mae = comp_df.iloc[0]["mae_avg"]
+    best_mae = comp_df.iloc[-1]["mae_avg"]
+    best_label = comp_df.iloc[-1]["label"]
+    improvement_pct = (1 - best_mae / baseline_mae) * 100
+
+    # ---- Figure ----
+    fig = plt.figure(figsize=(14, 7))
+    gs = fig.add_gridspec(2, 2, height_ratios=[10, 1], hspace=0.05, wspace=0.30)
+    ax_left = fig.add_subplot(gs[0, 0])
+    ax_right = fig.add_subplot(gs[0, 1])
+    ax_note = fig.add_subplot(gs[1, :])
+    ax_note.axis("off")
+
+    # ---- Left: 手法比較バー ----
+    y_positions = list(range(len(comp_df)))
+    colors = []
+    for label in comp_df["label"]:
+        if label.startswith("採用"):
+            colors.append("#2CA02C")  # 緑
+        elif "ベースライン" in label:
+            colors.append("#888888")  # 灰
+        else:
+            colors.append("#5BA3D9")  # 青
+
+    bars = ax_left.barh(
+        y_positions,
+        comp_df["mae_avg"],
+        color=colors,
+        edgecolor="white",
+        linewidth=0.8,
+    )
+    for i, (idx, row) in enumerate(comp_df.iterrows()):
+        ax_left.text(
+            row["mae_avg"] + 0.05,
+            i,
+            f"{row['mae_avg']:.2f} pt",
+            va="center",
+            ha="left",
+            fontsize=10,
+            fontweight="bold",
+        )
+    ax_left.axvline(
+        baseline_mae,
+        color="#888",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.7,
+        label=f"ベースライン MAE = {baseline_mae:.2f}",
+    )
+    ax_left.set_yticks(y_positions)
+    ax_left.set_yticklabels(comp_df["label"], fontsize=10)
+    ax_left.set_xlabel("LOOCV 平均絶対誤差（pt）※ 小さいほど良い", fontsize=11)
+    ax_left.set_title("各手法の精度比較", fontsize=12, fontweight="bold")
+    ax_left.legend(loc="lower right", fontsize=9, framealpha=0.95)
+    ax_left.grid(axis="x", alpha=0.25, zorder=0)
+    ax_left.invert_yaxis()
+    xlim_max = comp_df["mae_avg"].max() * 1.15
+    ax_left.set_xlim(0, xlim_max)
+
+    # ---- Right: 採用モデルの Ridge 標準化係数 ----
+    from scripts.nursing_estimation.estimator import fit_ridge
+
+    train_df = df.dropna(subset=["I_actual_rate"]).reset_index(drop=True)
+    feats_I = summary["necessity_I"]["selected_features"]
+    feats_II = summary["necessity_II"]["selected_features"]
+    model_I = fit_ridge(train_df, train_df["I_actual_rate"], feats_I,
+                        alpha=summary["necessity_I"]["best_alpha"], target="I")
+    model_II = fit_ridge(train_df, train_df["II_actual_rate"], feats_II,
+                         alpha=summary["necessity_II"]["best_alpha"], target="II")
+
+    feat_set = list(dict.fromkeys(feats_I + feats_II))  # 順序維持で uniq
+    coefs_I = []
+    coefs_II = []
+    for f in feat_set:
+        coefs_I.append(model_I.coefs[feats_I.index(f)] if f in feats_I else 0.0)
+        coefs_II.append(model_II.coefs[feats_II.index(f)] if f in feats_II else 0.0)
+
+    y2 = np.arange(len(feat_set))
+    width = 0.4
+    bars_I = ax_right.barh(
+        y2 - width / 2,
+        coefs_I,
+        width,
+        color="#1F77B4",
+        edgecolor="white",
+        linewidth=0.5,
+        label="必要度Ⅰ モデル",
+    )
+    bars_II = ax_right.barh(
+        y2 + width / 2,
+        coefs_II,
+        width,
+        color="#FF8B8B",
+        edgecolor="white",
+        linewidth=0.5,
+        label="必要度Ⅱ モデル",
+    )
+    for i, c in enumerate(coefs_I):
+        if c != 0:
+            ax_right.text(
+                c + (0.0003 if c > 0 else -0.0003),
+                i - width / 2,
+                f"{c:+.4f}",
+                va="center",
+                ha="left" if c > 0 else "right",
+                fontsize=8,
+            )
+    for i, c in enumerate(coefs_II):
+        if c != 0:
+            ax_right.text(
+                c + (0.0003 if c > 0 else -0.0003),
+                i + width / 2,
+                f"{c:+.4f}",
+                va="center",
+                ha="left" if c > 0 else "right",
+                fontsize=8,
+            )
+    ax_right.axvline(0, color="#444", linewidth=0.8)
+    ax_right.set_yticks(y2)
+    ax_right.set_yticklabels(feat_set, fontsize=9)
+    ax_right.set_xlabel("Ridge 標準化回帰係数 ※ 絶対値が大きいほど予測に効いている", fontsize=10)
+    ax_right.set_title("採用モデルの特徴量重み（標準化係数）", fontsize=12, fontweight="bold")
+    ax_right.legend(loc="lower right", fontsize=9, framealpha=0.95)
+    ax_right.grid(axis="x", alpha=0.25, zorder=0)
+    ax_right.invert_yaxis()
+
+    # ---- Title ----
+    fig.suptitle(
+        "ハイパーパラメータ探索を活用した推論精度の改善試行\n"
+        "サンプル数 n=24（12 ヶ月 × 2 病棟）の制約下で、特徴量数 K と正則化強度 α を変えて比較",
+        fontsize=12,
+        fontweight="bold",
+        y=0.99,
+    )
+
+    # ---- Bottom note ----
+    note_text = (
+        f"📊 改善幅: {baseline_mae:.2f} → {best_mae:.2f} pt（{improvement_pct:.0f}% 改善）  ｜  "
+        f"最良手法: {best_label}\n"
+        "⚠️ サンプル数 n=24 のため複雑モデルは過学習リスク。実測データ取得が依然 最優先。"
+    )
+    ax_note.text(
+        0.5,
+        0.5,
+        note_text,
+        transform=ax_note.transAxes,
+        ha="center",
+        va="center",
+        fontsize=10,
+        bbox=dict(
+            boxstyle="round,pad=0.5",
+            facecolor="#FFF8E1",
+            edgecolor="#E0C97F",
+            linewidth=1.2,
+        ),
+    )
+
+    fig.savefig(output_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -452,7 +854,7 @@ def main() -> None:
     fig_dir = base / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    print("[1/2] Generating monthly trend figure ...")
+    print("[1/4] Generating monthly trend figure ...")
     make_figure_monthly_trend(
         feature_csv=base / "feature_matrix.csv",
         estimate_csv=base / "estimate_2026apr.csv",
@@ -461,12 +863,30 @@ def main() -> None:
     )
     print(f"     -> {fig_dir / '5_monthly_trend_with_estimate.png'}")
 
-    print("[2/2] Generating horizontal CI summary figure ...")
+    print("[2/4] Generating horizontal CI summary figure ...")
     make_figure_horizontal_ci(
         estimate_csv=base / "estimate_2026apr.csv",
         summary_json=base / "cv_summary.json",
         output_path=fig_dir / "6_horizontal_ci_summary.png",
     )
+    print(f"     -> {fig_dir / '6_horizontal_ci_summary.png'}")
+
+    print("[3/4] Generating LOOCV validation figure ...")
+    make_figure_loocv_validation(
+        cv_pred_I_csv=base / "cv_predictions_I.csv",
+        cv_pred_II_csv=base / "cv_predictions_II.csv",
+        output_path=fig_dir / "7_loocv_validation.png",
+    )
+    print(f"     -> {fig_dir / '7_loocv_validation.png'}")
+
+    print("[4/4] Generating method comparison figure ...")
+    make_figure_method_comparison(
+        feature_csv=base / "feature_matrix.csv",
+        summary_json=base / "cv_summary.json",
+        output_path=fig_dir / "8_method_comparison.png",
+    )
+    print(f"     -> {fig_dir / '8_method_comparison.png'}")
+    print("\n✅ Done.")
     print(f"     -> {fig_dir / '6_horizontal_ci_summary.png'}")
     print("\n✅ Done.")
 
