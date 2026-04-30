@@ -1,0 +1,29 @@
+{
+  "necessity_I": {
+    "best_alpha": 1.0,
+    "best_K": 5,
+    "selected_features": [
+      "i_a_n_records",
+      "ii_a_n_records",
+      "denominator_days",
+      "b_n_records",
+      "ii_a_項目13_high_ratio"
+    ],
+    "loocv_mae": 0.029633201846552503,
+    "loocv_rmse": 0.033876863142486155
+  },
+  "necessity_II": {
+    "best_alpha": 0.1,
+    "best_K": 3,
+    "selected_features": [
+      "ii_a_項目13_high_ratio",
+      "i_a_n_records",
+      "ii_a_n_records"
+    ],
+    "loocv_mae": 0.025877807367449424,
+    "loocv_rmse": 0.030867634483236595
+  },
+  "bootstrap_n": 1000,
+  "target_month": "202604",
+  "emergency_response_coefficient_pct": 0.0148
+}
