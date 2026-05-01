@@ -3800,6 +3800,80 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
             )
             _is_demo_mode = st.session_state.data_mode == "🎮 デモモード（サンプルデータ）"
 
+            # ============================================================
+            # 🛡 データ純度ガード（院内LAN導入前の混入防止）
+            # 副院長指示 (2026-05-01): admission_details.csv の現状を可視化し、
+            # 本番初期化（デモ退避＋空スキーマ作成）を 1 クリックで実行可能に。
+            # ============================================================
+            try:
+                from data_purity_guard import (
+                    detect_data_kind, describe_data_kind, severity_for_kind,
+                    initialize_for_production,
+                )
+                _purity_available = True
+            except ImportError:
+                _purity_available = False
+
+            if _purity_available:
+                try:
+                    _details_for_check = dm.load_details()
+                except Exception:
+                    _details_for_check = pd.DataFrame()
+                _data_kind = detect_data_kind(_details_for_check)
+                _data_kind_label = describe_data_kind(_data_kind)
+                _data_kind_sev = severity_for_kind(_data_kind)
+                # data-testid 付きで E2E テスト用に hidden div 出力
+                st.markdown(
+                    f'<div data-testid="data-kind-banner" data-kind="{_data_kind}" '
+                    f'style="display:none;">{_data_kind}</div>',
+                    unsafe_allow_html=True,
+                )
+                # severity 別バナー
+                _kind_msg = (
+                    f"**現在のデータ種類**: {_data_kind_label}（行数: {len(_details_for_check)}）"
+                )
+                _bc_alert(_kind_msg, severity=_data_kind_sev)
+
+                if _data_kind in ("demo", "mixed"):
+                    with st.expander(
+                        "🛠 本番初期化（デモデータを退避 → 空スキーマを作成）",
+                        expanded=(_data_kind == "mixed"),
+                    ):
+                        st.markdown(
+                            "**院内LAN本番運用を始める前**に、デモデータを `data/archive/` に"
+                            "退避して、空の `admission_details.csv` を作成します。"
+                            "退避ファイルは `admission_details_demo_YYYYMMDD_HHMMSS.csv` として保存され、"
+                            "**いつでも復元可能** です。"
+                        )
+                        st.warning(
+                            "実行すると現在の `data/admission_details.csv` の中身は空になります。"
+                            "退避コピーは `data/archive/` に残ります。"
+                        )
+                        _confirm_init = st.checkbox(
+                            "現在の admission_details.csv を退避して空にすることに同意します",
+                            key="purity_init_confirm",
+                        )
+                        if st.button(
+                            "📦 本番初期化を実行",
+                            key="purity_init_button",
+                            type="primary",
+                            disabled=not _confirm_init,
+                        ):
+                            try:
+                                _result = initialize_for_production()
+                                st.success(
+                                    f"✅ 本番初期化が完了しました。\n\n"
+                                    f"- 退避: `{_result['archived_path']}`\n"
+                                    f"- 退避元の種類: {_result['previous_kind']}（{_result['row_count']} 行）\n"
+                                    f"- 新規空スキーマ: `{_result['created_path']}`"
+                                )
+                                st.info(
+                                    "今後の日次入力は実医師コード（KJJ / HAYT 等）で入力してください。"
+                                    "再読み込みは画面上部の「Rerun」ボタンを押してください。"
+                                )
+                            except Exception as exc:
+                                st.error(f"本番初期化に失敗しました: {exc}")
+
             st.markdown("---")
 
             # ============================================================
@@ -10746,6 +10820,122 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                 "看護必要度トレンド（地域包括医療病棟基準）",
                 icon="📊",
             )
+
+            # ============================================================
+            # 🌉 過去月シード入力ブリッジ（2026-05-01 副院長指示）
+            # 6/1 以降の rolling 3ヶ月評価のため、4月・5月など日次データが
+            # ない月を手入力でシード補完する。CSV があればそちらが優先される。
+            # ============================================================
+            try:
+                from nursing_necessity_seeds import (
+                    DEFAULT_SEED_YAML,
+                    SEED_REQUIRED_KEYS,
+                    SEED_WARDS,
+                    get_data_source_summary,
+                    load_seeds_from_yaml,
+                    merge_monthly_with_seeds,
+                    save_seed_to_yaml,
+                )
+                _seed_module_ok = True
+            except ImportError:
+                _seed_module_ok = False
+
+            if _seed_module_ok:
+                with st.expander(
+                    "🌉 看護必要度 月次シード入力（過去月の補完ブリッジ）",
+                    expanded=False,
+                ):
+                    st.markdown(
+                        "**目的**: 2026-06-01 以降の rolling 3ヶ月看護必要度評価を、運用初日から機能させる。\n\n"
+                        "**仕組み**: 日次CSV（`data/nursing_necessity_2025fy.csv`）がある月は CSV 優先。"
+                        "日次データがない月は本フォームで入力したシード値で補完されます。\n\n"
+                        f"**保存先**: `{DEFAULT_SEED_YAML}`（個人情報なし、集計値のみ）"
+                    )
+                    _existing_seeds = load_seeds_from_yaml(DEFAULT_SEED_YAML)
+
+                    # 入力フォーム
+                    _seed_col1, _seed_col2 = st.columns([1, 1])
+                    with _seed_col1:
+                        _seed_ym = st.text_input(
+                            "対象月（YYYY-MM 形式）",
+                            value="2026-04",
+                            key="nn_seed_ym",
+                        )
+                        _seed_ward = st.radio(
+                            "病棟",
+                            list(SEED_WARDS),
+                            key="nn_seed_ward",
+                            horizontal=True,
+                        )
+                    with _seed_col2:
+                        _seed_existing = _existing_seeds.get(_seed_ym, {}).get(_seed_ward, {})
+                        _i_total = st.number_input(
+                            "必要度Ⅰ 評価対象 患者日数（分母）",
+                            min_value=0, value=int(_seed_existing.get("I_total") or 0),
+                            key="nn_seed_i_total",
+                        )
+                        _i_pass = st.number_input(
+                            "必要度Ⅰ 該当 患者日数（分子）",
+                            min_value=0, value=int(_seed_existing.get("I_pass1") or 0),
+                            key="nn_seed_i_pass",
+                        )
+                        _ii_total = st.number_input(
+                            "必要度Ⅱ 評価対象 患者日数（分母）",
+                            min_value=0, value=int(_seed_existing.get("II_total") or 0),
+                            key="nn_seed_ii_total",
+                        )
+                        _ii_pass = st.number_input(
+                            "必要度Ⅱ 該当 患者日数（分子）",
+                            min_value=0, value=int(_seed_existing.get("II_pass1") or 0),
+                            key="nn_seed_ii_pass",
+                        )
+
+                    if st.button("💾 シードを保存", key="nn_seed_save", type="primary"):
+                        try:
+                            _saved_path = save_seed_to_yaml(
+                                _seed_ym,
+                                _seed_ward,
+                                {
+                                    "I_total": _i_total or None,
+                                    "I_pass1": _i_pass or None,
+                                    "II_total": _ii_total or None,
+                                    "II_pass1": _ii_pass or None,
+                                },
+                            )
+                            st.success(f"✅ シード保存完了: {_saved_path}")
+                            if _i_total > 0:
+                                _i_rate = _i_pass / _i_total * 100
+                                _ii_rate = (_ii_pass / _ii_total * 100) if _ii_total > 0 else 0
+                                st.info(
+                                    f"📊 計算結果: Ⅰ {_i_rate:.2f}% / Ⅱ {_ii_rate:.2f}%"
+                                )
+                        except Exception as exc:
+                            st.error(f"保存に失敗: {exc}")
+
+                    # 出典マトリクス（直近 6 ヶ月）
+                    st.markdown("---")
+                    st.markdown("##### 📑 月別データ出典マトリクス（直近 6 ヶ月 + 入力した月）")
+                    _csv_monthly = nn_calculate_monthly_summary(_nn_df)
+                    _merged = merge_monthly_with_seeds(_csv_monthly, _existing_seeds)
+                    # 直近 6 ヶ月 + シード月を表示対象に
+                    _all_ym = sorted({
+                        *_merged.get("ym", pd.Series([], dtype=str)).tolist(),
+                        *_existing_seeds.keys(),
+                    })[-12:] if len(_merged) > 0 else sorted(_existing_seeds.keys())
+                    _src_summary = get_data_source_summary(_merged, target_ym=_all_ym)
+                    if _src_summary:
+                        _src_label = {"csv": "✅ CSV", "monthly_seed": "🌉 シード", "no_data": "—"}
+                        _src_rows = []
+                        for _ym in sorted(_src_summary.keys()):
+                            _src_rows.append({
+                                "月": _ym,
+                                "5F": _src_label.get(_src_summary[_ym].get("5F", "no_data"), "—"),
+                                "6F": _src_label.get(_src_summary[_ym].get("6F", "no_data"), "—"),
+                            })
+                        st.dataframe(
+                            pd.DataFrame(_src_rows),
+                            use_container_width=True, hide_index=True,
+                        )
             st.caption(
                 "事務提供の **1,095 行**（12 ヶ月 × 3 病棟 × 365 日）から、地域包括医療病棟基準の達成状況を可視化。"
                 f"**経過措置終了まで残 {days_until_transitional_end()} 日**: "
@@ -12737,19 +12927,17 @@ if "📥 データエクスポート" in _tab_idx:
 
             with col1:
                 st.subheader("📋 病棟日次データ")
+                # 2026-05-01 副院長指示で関数名を修正:
+                #   旧: load_actual_data（存在しない関数）→ try/except で握りつぶされていた
+                #   新: load_daily_records（既に bed_data_manager.py で実装済の正しい関数）
                 _export_ward_df = None
+                _export_ward_err = None
                 if _DATA_MANAGER_AVAILABLE:
                     try:
-                        from bed_data_manager import load_actual_data
-                        for _ward in ["5F", "6F"]:
-                            _wdf = load_actual_data(_ward)
-                            if _wdf is not None and not _wdf.empty:
-                                if _export_ward_df is None:
-                                    _export_ward_df = _wdf.copy()
-                                else:
-                                    _export_ward_df = pd.concat([_export_ward_df, _wdf], ignore_index=True)
-                    except Exception:
-                        pass
+                        from bed_data_manager import load_daily_records
+                        _export_ward_df = load_daily_records()
+                    except Exception as exc:
+                        _export_ward_err = str(exc)
 
                 if _export_ward_df is not None and not _export_ward_df.empty:
                     st.write(f"レコード数: {len(_export_ward_df)}件")
@@ -12760,18 +12948,24 @@ if "📥 データエクスポート" in _tab_idx:
                         mime="text/csv",
                         key="dl_ward_data"
                     )
+                elif _export_ward_err:
+                    st.error(f"読込エラー: {_export_ward_err}")
                 else:
-                    st.info("病棟日次データがありません")
+                    st.info("病棟日次データがありません（日次入力タブで入力してください）")
 
             with col2:
                 st.subheader("📋 入退院詳細データ")
+                # 2026-05-01 副院長指示で関数名を修正:
+                #   旧: load_admission_details（存在しない関数）→ try/except で握りつぶされていた
+                #   新: load_details（既に bed_data_manager.py で実装済の正しい関数）
                 _export_detail_df = None
+                _export_detail_err = None
                 if _DATA_MANAGER_AVAILABLE:
                     try:
-                        from bed_data_manager import load_admission_details
-                        _export_detail_df = load_admission_details()
-                    except Exception:
-                        pass
+                        from bed_data_manager import load_details
+                        _export_detail_df = load_details()
+                    except Exception as exc:
+                        _export_detail_err = str(exc)
 
                 if _export_detail_df is not None and not _export_detail_df.empty:
                     st.write(f"レコード数: {len(_export_detail_df)}件")
@@ -12782,8 +12976,10 @@ if "📥 データエクスポート" in _tab_idx:
                         mime="text/csv",
                         key="dl_detail_data"
                     )
+                elif _export_detail_err:
+                    st.error(f"読込エラー: {_export_detail_err}")
                 else:
-                    st.info("入退院詳細データがありません")
+                    st.info("入退院詳細データがありません（日次入力タブで入力してください）")
 
             # Scenario export
             st.markdown("---")
