@@ -84,3 +84,7 @@ test-results/
 docs/admin/slides/weekend_holiday_kpi/package.json
 docs/admin/slides/weekend_holiday_kpi/package-lock.json
 docs/admin/slides/weekend_holiday_kpi/node_modules/
+
+# SE 向けオフライン配布 zip（wheels 込みで 69MB / GitHub LFS 不要、ビルドで再生成可能）
+# 生成方法: .venv/bin/python scripts/build_se_offline_package.py --platform win
+docs/admin/bed_control_simulator_offline_*.zip
