@@ -1745,15 +1745,40 @@ st.sidebar.markdown("---")
 st.sidebar.header("パラメータ設定")
 
 # 病床数は両モードで必要
+total_beds = TOTAL_BEDS if _DATA_MANAGER_AVAILABLE else 94
+
+# ---------------------------------------------------------------------------
+# 病棟セレクター（強調表示・最上部、2026-05-01 副院長指示）
+# 副院長が頻繁に切り替える要素のため、専用ボックスで目立たせる:
+#   - 左ボーダー（accent）+ 薄い影 + 角丸
+#   - 上部に「🏥 表示病棟（タップで切替）」見出し
+#   - radio 本体の label は collapsed（見出しと重複させない）
+#   - 下部に「📍 現在表示中：xxx」キャプション
+# ---------------------------------------------------------------------------
+st.sidebar.markdown(
+    '<div class="bc-ward-switcher">'
+    '<div class="bc-ward-switcher-title">🏥 表示病棟（タップで切替）</div>',
+    unsafe_allow_html=True,
+)
+_ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
+_selected_ward_label = st.sidebar.radio(
+    "表示病棟",
+    _ward_options,
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed",
+)
+_selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
+st.sidebar.markdown(
+    f'<div class="bc-ward-switcher-current">📍 現在表示中：{_selected_ward_label}</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+# 病棟構成（参考情報、セレクターより下に配置）
 st.sidebar.subheader("病棟基本条件")
 st.sidebar.markdown("**病棟構成**")
 st.sidebar.markdown("5F: 47床 / 6F: 47床 / 合計: 94床")
-total_beds = TOTAL_BEDS if _DATA_MANAGER_AVAILABLE else 94
-
-# 病棟セレクター（両モードで有効）
-_ward_options = ["全体 (94床)", "5F (47床)", "6F (47床)"]
-_selected_ward_label = st.sidebar.radio("表示病棟", _ward_options, index=0, horizontal=True)
-_selected_ward_key = {"全体 (94床)": "全体", "5F (47床)": "5F", "6F (47床)": "6F"}[_selected_ward_label]
 
 # _view_beds / _active_raw_df のデフォルト値（後で病棟選択・データ読込に応じて上書きされる）
 _view_beds = total_beds
