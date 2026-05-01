@@ -41,6 +41,7 @@
 - [ ] サイドバーバナーが **黄バナー**（warning）に変わる（残り 20 日を切った時点）
 - [ ] 「🛡️ 制度管理 > 📊 過去1年分析」タブを開き、rolling 推移グラフで直近 3 ヶ月が 15% ラインを越えていることを確認
 - [ ] manual_seed bridge 卒業通知バナー（過去 CSV で代替済のシード）があれば `settings/manual_seed_emergency_ratio.yaml` から該当月を削除
+- [ ] 看護必要度シードの卒業判定: 「📈 過去1年分析 > 看護必要度トレンド」の月別出典マトリクスで、過去 CSV 由来に置き換わったシード月があれば `settings/manual_seed_nursing_necessity.yaml` から該当月を削除（v3.5m / Phase 1〜1.8）
 
 ### 2.3 5/25〜5/31（残り 0〜6 日）
 

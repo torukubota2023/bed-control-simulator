@@ -150,3 +150,47 @@
 |--------|---------|------|
 | 2026-04-14 | C群候補一覧が「急ぎ退院必要」なのに需要吸収が「現状維持」 | `calculate_demand_absorption()` がLOS制約を見ていなかった |
 | 2026-04-14 | 退院近接度が「遠い(29日+)」で在院50日の患者に表示 | 近接度ラベルの定義が臨床的意味と逆だった |
+| 2026-05-01 | 救急15% シードを入れても制度余力ダッシュボード / 結論カード / v4 制度確認タブで反映されない（救急15% 専用タブとは表示乖離） | `calculate_guardrail_status()` の config に `manual_seeds` を渡していなかった（Phase 1.7 / 1.8 で 4 経路に揃えた） |
+| 2026-05-01 | 看護必要度シードを入れても 6F ストラテジーボードが変化しない（年間カードだけ反映） | `_nn_actual_gaps()` が seed-merged ではない `_nn_df` を参照していた（Phase 1.6 で `_nn_monthly` に統一） |
+
+## 8. シード経路の優先順位整合性（Phase 1〜1.8 で確立）
+
+救急 15% / 看護必要度の rolling 計算は **複数経路** で同じ計算関数を呼ぶ。
+変更時は以下の優先順位を全経路で保証すること:
+
+> **日次CSV > monthly_summary（過去CSV + 手動入力） > manual_seed > no_data**
+
+### 8.1 救急 15% rolling — 4 経路すべてで `manual_seeds` を渡す
+
+| # | 呼び出し元 | 関数 / config |
+|---|----------|--------------|
+| ① | 救急 15% 専用タブ | `_calc_emergency_ratio_with_gate()` （`bed_control_simulator_app.py:400-454`） |
+| ② | 制度余力ダッシュボード | `calculate_guardrail_status(_, _, _gr_config)` — `_gr_config["manual_seeds"]` |
+| ③ | 結論カード（今日の一手） | `calculate_guardrail_status(_, _, _ac_config)` — `_ac_config["manual_seeds"]` |
+| ④ | v4 制度確認タブ | `calculate_guardrail_status(_, _, gr_config)` — `scripts/tabs/regulation_tab.py` |
+
+各経路で `emergency_ratio.load_manual_seeds_from_yaml()` を try/except で読み、失敗時 None フォールバック。
+`calculate_guardrail_status` 自身は `config["manual_seeds"]` を `calculate_rolling_emergency_ratio` に転送。
+
+### 8.2 看護必要度 — 「seed-merged データを使え」原則
+
+| 利用箇所 | 必須入力 |
+|---------|---------|
+| 年間カード（過去1年分析タブ） | `_nn_monthly = merge_monthly_with_seeds(_nn_monthly_csv, seeds)` |
+| 5F / 6F ストラテジーボード | `_nn_actual_gaps(_nn_monthly, ...)` （**`_nn_df` ではなく `_nn_monthly`**） |
+| `_build_past_year_focus_payload()` | 内部で同じく `merge_monthly_with_seeds` を通す |
+
+### 8.3 初期状態（空 detail_df + シードのみ）の扱い
+
+`guardrail_engine.calculate_guardrail_status()` は `detail_df` が None / 空でも、
+`manual_seeds` か `monthly_summary` が config 経由で渡っていれば、最小スキーマの
+空 DataFrame を生成して `calculate_rolling_emergency_ratio` を呼ぶ。
+
+→ 院内LAN導入直後の純粋な初期状態でも、シードを入れた瞬間に `data_source="measured"` として表示される。
+
+### 8.4 変更時の確認手順
+
+1. `grep "calculate_rolling_emergency_ratio\|calculate_guardrail_status\|_nn_actual_gaps"` で全呼び出し箇所を列挙
+2. 各箇所で **同じ優先順位** が守られているか目視確認
+3. テスト: `tests/test_guardrail_engine.py::TestManualSeedIntegration` 等を実行し、優先順位を検証する 4 系統テストが PASS することを確認
+4. 動作確認: 4 経路（救急）/ 5 経路（看護必要度）すべてでシード反映が「現実の値」として表示されるか目視確認
