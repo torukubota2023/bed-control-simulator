@@ -46,9 +46,18 @@ def render(data: dict, config: dict):
         return
 
     # --- 計算 ---
+    # 救急 15% rolling: 手動シード + 月次サマリーを config 経由で注入
+    # （Phase 1.8 横展開: v3.5 と同じく daily > summary > manual_seed > no_data）
+    try:
+        from emergency_ratio import load_manual_seeds_from_yaml as _reg_seed_loader
+        _reg_manual_seeds = _reg_seed_loader()
+    except Exception:
+        _reg_manual_seeds = None
     gr_config = {
         "age_85_ratio": 0.25,
         "ward": None,
+        "monthly_summary": config.get("monthly_summary", {}) if isinstance(config, dict) else {},
+        "manual_seeds": _reg_manual_seeds,
     }
 
     try:

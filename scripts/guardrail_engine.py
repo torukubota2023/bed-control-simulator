@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import pandas as pd
+
 # ---------------------------------------------------------------------------
 # 外部モジュールのインポート（フォールバック付き）
 # ---------------------------------------------------------------------------
@@ -274,9 +276,29 @@ def calculate_guardrail_status(
     manual_seeds = config.get("manual_seeds") if config else None
     _emg_calculated = False
 
-    if _HAS_ROLLING_EMG and detail_df is not None and len(detail_df) > 0 and "route" in detail_df.columns:
+    # rolling 救急計算の起動条件（Phase 1.8 で初期状態対応）:
+    # (a) detail_df に日次データ（route 列含む）がある → 通常パス
+    # (b) detail_df は空でも manual_seeds か monthly_summary があれば
+    #     シード/サマリー由来で計算可能 → 空 DF を生成して関数に渡す
+    _has_daily_detail = (
+        detail_df is not None
+        and len(detail_df) > 0
+        and "route" in detail_df.columns
+    )
+    _has_seed_or_summary = bool(manual_seeds) or bool(monthly_summary)
+    _should_calc_emg = _HAS_ROLLING_EMG and (_has_daily_detail or _has_seed_or_summary)
+
+    if _should_calc_emg:
+        # 空 DF パス: rolling 関数のシグネチャに合わせて最小スキーマを作る
+        # （_filter_admissions は detail_df.empty を素通りさせるので OK）
+        if _has_daily_detail:
+            _emg_input_df = detail_df
+        else:
+            _emg_input_df = pd.DataFrame(
+                columns=["date", "ward", "event_type", "route"]
+            )
         rolling_emg = calculate_rolling_emergency_ratio(
-            detail_df, ward=config.get("ward") if config else None,
+            _emg_input_df, ward=config.get("ward") if config else None,
             monthly_summary=monthly_summary,
             manual_seeds=manual_seeds,
         )

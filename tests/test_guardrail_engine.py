@@ -232,6 +232,57 @@ class TestManualSeedIntegration:
         # summary 優先: 当該月は 10% 由来 → rolling 平均は 50% にならない
         assert emg_item["current_value"] < 40.0
 
+    def test_empty_detail_with_seeds_returns_measured(self):
+        """detail_df が空でも manual_seeds だけで救急 15% が measured になる（Phase 1.8）。
+
+        院内LAN導入直後の純粋な初期状態で、日次入院 0 行・シードのみの状態。
+        """
+        df = _make_daily_df(30)
+        # detail_df を渡さない（None）+ シードのみ
+        manual_seeds = {
+            self._prev_ym(0): {"5F": 20.0, "6F": 18.0, "all": 19.0},
+            self._prev_ym(1): {"5F": 25.0, "6F": 22.0, "all": 23.5},
+            self._prev_ym(2): {"5F": 30.0, "6F": 28.0, "all": 29.0},
+        }
+        results = calculate_guardrail_status(
+            df, detail_df=None,
+            config={"manual_seeds": manual_seeds, "ward": "5F"},
+        )
+        emg_item = [r for r in results if r["name"] == "救急搬送後患者割合"][0]
+        # シード採用: not_available にならず measured になる
+        assert emg_item["data_source"] == "measured"
+        assert emg_item["current_value"] >= 15.0
+        assert "シード混在" in emg_item["description"]
+
+    def test_empty_detail_with_summary_returns_measured(self):
+        """detail_df が空 DataFrame でも monthly_summary だけで measured になる。"""
+        df = _make_daily_df(30)
+        empty_detail = pd.DataFrame(columns=["date", "ward", "event_type", "route"])
+        # 過去 3 ヶ月の summary を入れる
+        monthly_summary = {
+            self._prev_ym(0): {"5F": {"admissions": 100, "emergency": 20}},
+            self._prev_ym(1): {"5F": {"admissions": 90, "emergency": 18}},
+            self._prev_ym(2): {"5F": {"admissions": 80, "emergency": 16}},
+        }
+        results = calculate_guardrail_status(
+            df, detail_df=empty_detail,
+            config={"monthly_summary": monthly_summary, "ward": "5F"},
+        )
+        emg_item = [r for r in results if r["name"] == "救急搬送後患者割合"][0]
+        assert emg_item["data_source"] == "measured"
+        # 20% 由来 → ratio_of_sums で計算されるはず
+        assert 18.0 <= emg_item["current_value"] <= 22.0
+
+    def test_empty_detail_no_seed_no_summary_returns_not_available(self):
+        """detail_df なし & seed/summary なしは従来通り not_available."""
+        df = _make_daily_df(30)
+        results = calculate_guardrail_status(
+            df, detail_df=None, config={"ward": "5F"},
+        )
+        emg_item = [r for r in results if r["name"] == "救急搬送後患者割合"][0]
+        # 救急ratio は計算できない
+        assert emg_item["data_source"] == "not_available"
+
     def test_manual_seeds_none_does_not_break_existing(self):
         """manual_seeds 未指定でも既存の挙動を壊さない（後方互換）。"""
         df = _make_daily_df(30)
