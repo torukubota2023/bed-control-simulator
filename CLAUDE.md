@@ -351,7 +351,7 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 ## ベッドコントロールシミュレーター（現行 v3.5）
 - **設計書:** [bed_control_evolution_design.md](docs/admin/bed_control_evolution_design.md)
 - **ビジョン:** 精神論を、数字に変える。
-- **現行バージョン:** v3.5j（2026-04-23、退院カレンダー新設・入院受入枠改名、全 Python テスト + Playwright E2E testid テスト通過）
+- **現行バージョン:** v3.5m（2026-05-01、院内LAN導入前 安全対策パック Phase 1〜1.8、pytest 1,519 passed + smoke + py_compile 通過）
 - **注意:** 以下の機能はすべて**実装済み**。再実装・再検討の必要はない。
 
 ### 実装済み機能一覧（変更不要 — 参照用）
@@ -368,6 +368,7 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 | v3.5j | 📅 退院カレンダー新設（月俯瞰 × 病棟別 × 当月/翌月、3 層カラー表示、枠超過警告、日曜推奨、動的枠調整インフラ）・既存「予約可能枠」を「入院受入枠」に改名 | `discharge_plan_store.py`, `discharge_slot_config.py`, `views/discharge_calendar_view.py` |
 | v3.5k | 経営者目線セクション分離（Phase 5, 2026-04-25）— 「📈 過去1年分析」を独立セクションに昇格（5→6 セクション）。医師別分析タブにデモデータ警告バナーを追加し実運用切替時の混乱を予防 | `bed_control_simulator_app.py` （セクション定義 + dispatch + バナー） |
 | v3.5l | 看護必要度トレンド分析 Stage A（2026-04-25）— 「📈 過去1年分析」セクションに看護必要度サブセクション追加。2026-06-01 新基準（Ⅰ16%→19%, Ⅱ14%→18%）対応 + 救急患者応需係数（年間救急 ÷ 病床数 × 0.005、上限10%）を該当割合に加算する判定ロジック。当院想定値 1.48% で実態判定可能に | `nursing_necessity_loader.py`, `nursing_necessity_thresholds.py`, `extract_nursing_necessity_from_xlsm.py`, `data/nursing_necessity_2025fy.csv` |
+| v3.5m | 院内LAN導入前 安全対策パック（Phase 1〜1.8, 2026-05-01, PR #42 マージ済）— ① デモ混入防止（17 実医師コード allowlist + データ種類バナー + 本番初期化UI）② 看護必要度月次シードブリッジ（年間カード + 6F ストラテジーボード両方で seed-merged データ）③ 救急15%手動シードを制度余力ダッシュボード / 結論カード / v4 制度確認タブに接続 ④ 初期状態対応（空 detail_df + シードのみで rolling 計算成立） ⑤ 副院長 SOP（SE 引渡し前 5 項目チェック）。優先順位「日次CSV > monthly_summary > manual_seed > no_data」を全経路で保証 | `data_purity_guard.py`, `nursing_necessity_seeds.py`, `guardrail_engine.py`, `tabs/regulation_tab.py`, `bed_data_manager.py`（`real_only=` safeguard）, `docs/admin/pre_lan_deployment_checklist.md` |
 
 ### 📅 退院カレンダー（v3.5j, 2026-04-23 副院長判断）
 副院長の「不在のベッドコントローラーの代理」要望に応える機能。木曜カンファで
