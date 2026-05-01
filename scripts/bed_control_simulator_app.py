@@ -5385,404 +5385,442 @@ if _active_cli_params:
             _active_cli_params["monthly_admissions"] * _bed_ratio_sync
         )
 
-# ===== タブ1: 日次推移 =====
-if "📊 日次推移" in _tab_idx and _data_ready:
-    with tabs[_tab_idx["📊 日次推移"]]:
-        st.subheader("日次推移")
-        if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
-            with st.expander("📖 このタブの見方と活用法"):
-                st.markdown(HELP_TEXTS["tab_daily"])
+# ===== 日次推移セクション関数化（B 案、2026-05-01）=====
+# 副院長指示: 「本日の詳細サマリー」内でも日次推移グラフを見られるように。
+# タブ（📊 日次推移）と詳細サマリーの両方から同じセクションを呼べるよう関数化。
+def _render_daily_trend_section():
+    """日次推移セクション（タブ・詳細サマリー両方から呼ばれる）.
 
-        # --- 日次推移タブでもモジュールレベルの共通スタイルを使う（エイリアス） ---
-        # `_apply_daily_axes_style` / `_style_daily_legend` は互換のため残すが、
-        # 実体はモジュールレベルの `_bc_apply_chart_style` / `_bc_style_legend` を参照する。
-        _apply_daily_axes_style = _bc_apply_chart_style
-        _style_daily_legend = _bc_style_legend
+    依存変数（モジュールレベルから global 参照）:
+        df, summary, target_lower, target_upper, _view_beds, days_in_month,
+        _calendar_month_days, _active_raw_df, _selected_ward_key, helper_cap,
+        _HELP_AVAILABLE, HELP_TEXTS, _bc_apply_chart_style, _bc_style_legend,
+        _DT_* 系カラートークン, plt, pd, etc.
+    """
+    if not _data_ready:
+        return
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return
 
-        # --- 曜日ラベル生成 ---
-        _weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
-        _day_weekdays = []
-        if "日付" in df.columns:
-            for _d in df["日付"]:
-                try:
-                    _day_weekdays.append(pd.Timestamp(_d).weekday())
-                except Exception:
-                    _day_weekdays.append((int(df[df["日付"] == _d]["日"].iloc[0]) - 1) % 7)
+    st.subheader("日次推移")
+    if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
+        with st.expander("📖 このタブの見方と活用法"):
+            st.markdown(HELP_TEXTS["tab_daily"])
+
+    # --- 日次推移タブでもモジュールレベルの共通スタイルを使う（エイリアス） ---
+    _apply_daily_axes_style = _bc_apply_chart_style
+    _style_daily_legend = _bc_style_legend
+
+    # --- 曜日ラベル生成 ---
+    _weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
+    _day_weekdays = []
+    if "日付" in df.columns:
+        for _d in df["日付"]:
+            try:
+                _day_weekdays.append(pd.Timestamp(_d).weekday())
+            except Exception:
+                _day_weekdays.append((int(df[df["日付"] == _d]["日"].iloc[0]) - 1) % 7)
+    else:
+        _day_weekdays = [(d - 1) % 7 for d in df["日"]]
+    _weekend_days = [df["日"].iloc[i] for i in range(len(df)) if _day_weekdays[i] >= 5]
+
+    def _add_weekend_bg(ax_obj, weekend_list):
+        """土日を極薄グレー背景で強調するヘルパー（新デザイン）."""
+        for _wd in weekend_list:
+            ax_obj.axvspan(_wd - 0.5, _wd + 0.5, alpha=0.06, color=_DT_TEXT_MUTED)
+
+    def _set_weekday_ticks(ax_obj, day_series, weekday_list):
+        """曜日ラベル付き目盛りを設定するヘルパー"""
+        _tpos = list(day_series)
+        _tlbl = [f"{d}\n{_weekday_names[weekday_list[i]]}" for i, d in enumerate(_tpos)]
+        if len(_tpos) > 15:
+            _step = max(1, len(_tpos) // 15)
+            _show = list(range(0, len(_tpos), _step))
+            ax_obj.set_xticks([_tpos[j] for j in _show])
+            ax_obj.set_xticklabels([_tlbl[j] for j in _show], fontsize=9, color=_DT_TEXT_SECONDARY)
         else:
-            _day_weekdays = [(d - 1) % 7 for d in df["日"]]
-        _weekend_days = [df["日"].iloc[i] for i in range(len(df)) if _day_weekdays[i] >= 5]
+            ax_obj.set_xticks(_tpos)
+            ax_obj.set_xticklabels(_tlbl, fontsize=9, color=_DT_TEXT_SECONDARY)
 
-        def _add_weekend_bg(ax_obj, weekend_list):
-            """土日を極薄グレー背景で強調するヘルパー（新デザイン）."""
-            for _wd in weekend_list:
-                ax_obj.axvspan(_wd - 0.5, _wd + 0.5, alpha=0.06, color=_DT_TEXT_MUTED)
+    # --- 今日の指標サマリー（KPIカード3列） ---
+    # 本日値 = データ最終日、月平均 = これまでの平均
+    try:
+        _today_occ_pct = float(df["稼働率"].iloc[-1]) * 100
+        _avg_occ_pct_kpi = float(df["稼働率"].mean()) * 100
+        _delta_occ = _today_occ_pct - _avg_occ_pct_kpi
 
-        def _set_weekday_ticks(ax_obj, day_series, weekday_list):
-            """曜日ラベル付き目盛りを設定するヘルパー"""
-            _tpos = list(day_series)
-            _tlbl = [f"{d}\n{_weekday_names[weekday_list[i]]}" for i, d in enumerate(_tpos)]
-            if len(_tpos) > 15:
-                _step = max(1, len(_tpos) // 15)
-                _show = list(range(0, len(_tpos), _step))
-                ax_obj.set_xticks([_tpos[j] for j in _show])
-                ax_obj.set_xticklabels([_tlbl[j] for j in _show], fontsize=9, color=_DT_TEXT_SECONDARY)
-            else:
-                ax_obj.set_xticks(_tpos)
-                ax_obj.set_xticklabels(_tlbl, fontsize=9, color=_DT_TEXT_SECONDARY)
+        _today_patients = float(df["在院患者数"].iloc[-1])
+        _avg_patients = float(df["在院患者数"].mean())
+        _delta_patients = _today_patients - _avg_patients
 
-        # --- 今日の指標サマリー（KPIカード3列） ---
-        # 本日値 = データ最終日、月平均 = これまでの平均
-        try:
-            _today_occ_pct = float(df["稼働率"].iloc[-1]) * 100
-            _avg_occ_pct_kpi = float(df["稼働率"].mean()) * 100
-            _delta_occ = _today_occ_pct - _avg_occ_pct_kpi
+        # ALOS: summary から月平均・rolling があれば本日の参考値として使う
+        _today_los = None
+        _avg_los = None
+        if isinstance(summary, dict):
+            # summary に "rolling_los" or "平均在院日数" が入っているパターンをカバー
+            for _k in ("平均在院日数", "rolling_los", "avg_los"):
+                if _k in summary and summary[_k] is not None:
+                    _avg_los = float(summary[_k])
+                    break
+        # df 内に在院日数列があれば最終日値を本日値として使用（無ければ avg と同値）
+        if "平均在院日数" in df.columns:
+            try:
+                _today_los = float(df["平均在院日数"].iloc[-1])
+            except Exception:
+                _today_los = None
+        if _today_los is None:
+            _today_los = _avg_los
 
-            _today_patients = float(df["在院患者数"].iloc[-1])
-            _avg_patients = float(df["在院患者数"].mean())
-            _delta_patients = _today_patients - _avg_patients
-
-            # ALOS: summary から月平均・rolling があれば本日の参考値として使う
-            _today_los = None
-            _avg_los = None
-            if isinstance(summary, dict):
-                # summary に "rolling_los" or "平均在院日数" が入っているパターンをカバー
-                for _k in ("平均在院日数", "rolling_los", "avg_los"):
-                    if _k in summary and summary[_k] is not None:
-                        _avg_los = float(summary[_k])
-                        break
-            # df 内に在院日数列があれば最終日値を本日値として使用（無ければ avg と同値）
-            if "平均在院日数" in df.columns:
-                try:
-                    _today_los = float(df["平均在院日数"].iloc[-1])
-                except Exception:
-                    _today_los = None
-            if _today_los is None:
-                _today_los = _avg_los
-
-            _bc_section_title("今日の指標サマリー", icon="📊")
-            _kpi_col1, _kpi_col2, _kpi_col3 = st.columns(3)
-            with _kpi_col1:
-                _sev = "success" if _today_occ_pct >= target_lower * 100 else ("warning" if _today_occ_pct >= (target_lower * 100 - 3) else "danger")
-                _delta_str = f"月平均比 {_delta_occ:+.1f} pt（月平均 {_avg_occ_pct_kpi:.1f}%）"
+        _bc_section_title("今日の指標サマリー", icon="📊")
+        _kpi_col1, _kpi_col2, _kpi_col3 = st.columns(3)
+        with _kpi_col1:
+            _sev = "success" if _today_occ_pct >= target_lower * 100 else ("warning" if _today_occ_pct >= (target_lower * 100 - 3) else "danger")
+            _delta_str = f"月平均比 {_delta_occ:+.1f} pt（月平均 {_avg_occ_pct_kpi:.1f}%）"
+            _bc_kpi_card(
+                label="稼働率（本日）",
+                value=f"{_today_occ_pct:.1f}",
+                unit="%",
+                delta=_delta_str,
+                severity=_sev,
+            )
+        with _kpi_col2:
+            _delta_p_str = f"月平均比 {_delta_patients:+.1f} 名（月平均 {_avg_patients:.1f} 名）"
+            _bc_kpi_card(
+                label="在院患者数（本日）",
+                value=f"{_today_patients:.0f}",
+                unit=" 名",
+                delta=_delta_p_str,
+                severity="neutral",
+            )
+        with _kpi_col3:
+            if _today_los is not None and _avg_los is not None:
+                _delta_los = _today_los - _avg_los
                 _bc_kpi_card(
-                    label="稼働率（本日）",
-                    value=f"{_today_occ_pct:.1f}",
-                    unit="%",
-                    delta=_delta_str,
-                    severity=_sev,
-                )
-            with _kpi_col2:
-                _delta_p_str = f"月平均比 {_delta_patients:+.1f} 名（月平均 {_avg_patients:.1f} 名）"
-                _bc_kpi_card(
-                    label="在院患者数（本日）",
-                    value=f"{_today_patients:.0f}",
-                    unit=" 名",
-                    delta=_delta_p_str,
+                    label="平均在院日数（直近）",
+                    value=f"{_today_los:.1f}",
+                    unit=" 日",
+                    delta=f"月平均 {_avg_los:.1f} 日",
                     severity="neutral",
                 )
-            with _kpi_col3:
-                if _today_los is not None and _avg_los is not None:
-                    _delta_los = _today_los - _avg_los
-                    _bc_kpi_card(
-                        label="平均在院日数（直近）",
-                        value=f"{_today_los:.1f}",
-                        unit=" 日",
-                        delta=f"月平均 {_avg_los:.1f} 日",
-                        severity="neutral",
-                    )
-                elif _avg_los is not None:
-                    _bc_kpi_card(
-                        label="平均在院日数（月平均）",
-                        value=f"{_avg_los:.1f}",
-                        unit=" 日",
-                        severity="neutral",
-                    )
-                else:
-                    _bc_kpi_card(
-                        label="平均在院日数",
-                        value="—",
-                        severity="neutral",
-                    )
-        except Exception as _kpi_err:
-            # KPI サマリーで失敗しても本体グラフは描画する
-            import traceback as _kpi_tb
-            st.caption(f"（KPI サマリー取得エラー: {type(_kpi_err).__name__}）")
+            elif _avg_los is not None:
+                _bc_kpi_card(
+                    label="平均在院日数（月平均）",
+                    value=f"{_avg_los:.1f}",
+                    unit=" 日",
+                    severity="neutral",
+                )
+            else:
+                _bc_kpi_card(
+                    label="平均在院日数",
+                    value="—",
+                    severity="neutral",
+                )
+    except Exception as _kpi_err:
+        # KPI サマリーで失敗しても本体グラフは描画する
+        import traceback as _kpi_tb
+        st.caption(f"（KPI サマリー取得エラー: {type(_kpi_err).__name__}）")
 
-        st.markdown("")  # 空行（セクション間の呼吸）
+    st.markdown("")  # 空行（セクション間の呼吸）
 
-        # --- 稼働率推移（Hero チャート） ---
-        _bc_section_title("稼働率の推移", icon="📊")
-        fig, ax = plt.subplots(figsize=(12, 3.2))
+    # --- 稼働率推移（Hero チャート） ---
+    _bc_section_title("稼働率の推移", icon="📊")
+    fig, ax = plt.subplots(figsize=(12, 3.2))
+    fig.patch.set_alpha(0.0)
+    _add_weekend_bg(ax, _weekend_days)
+    ax.plot(
+        df["日"], df["稼働率"] * 100,
+        color=_DT_ACCENT, linewidth=_DT_LW_PRIMARY, label="稼働率",
+        zorder=3,
+    )
+    ax.axhspan(
+        target_lower * 100, target_upper * 100,
+        alpha=0.10, color=_DT_WARNING,
+        label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%)",
+        zorder=1,
+    )
+    ax.set_xlabel("日")
+    ax.set_ylabel("稼働率 (%)")
+    _set_weekday_ticks(ax, df["日"], _day_weekdays)
+    _apply_daily_axes_style(ax)
+    _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
+    _style_daily_legend(_leg)
+    ax.set_xlim(1, days_in_month)
+
+    # --- 月平均ライン（常時表示）---
+    _avg_occ_pct = df["稼働率"].mean() * 100
+    ax.axhline(
+        y=_avg_occ_pct, color=_DT_TEXT_MUTED, linestyle=":",
+        linewidth=_DT_LW_AUX, alpha=0.8, zorder=2,
+    )
+    ax.annotate(
+        f'月平均 {_avg_occ_pct:.1f}%',
+        xy=(2, _avg_occ_pct),
+        fontsize=9, color=_DT_TEXT_SECONDARY, va="bottom",
+    )
+
+    # --- 残り日数の目標達成ライン（常時表示）---
+    # _calc_monthly_target で計算、失敗時はフォールバックで直接計算
+    _mt_chart = None
+    for _mt_src_df in [_active_raw_df, df]:
+        if _mt_chart is None and isinstance(_mt_src_df, pd.DataFrame) and len(_mt_src_df) > 0:
+            _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, _calendar_month_days, _view_beds)
+
+    # フォールバック: _calc_monthly_targetが失敗しても残り日数があれば直接計算
+    if _mt_chart is None and _calendar_month_days > days_in_month:
+        _fb_avg = _avg_occ_pct
+        _fb_elapsed = days_in_month
+        _fb_remaining = _calendar_month_days - _fb_elapsed
+        _fb_target = target_lower * 100
+        _fb_required = (_fb_target * _calendar_month_days - _fb_avg * _fb_elapsed) / _fb_remaining
+        _mt_chart = {
+            "avg_so_far": round(_fb_avg, 1),
+            "days_elapsed": _fb_elapsed,
+            "days_remaining": _fb_remaining,
+            "total_days": _calendar_month_days,
+            "required_occ": round(_fb_required, 1),
+            "monthly_target_pct": _fb_target,
+            "difficulty": "impossible" if _fb_required > 100 else "hard" if _fb_required > 95 else "moderate" if _fb_required > 90 else "easy",
+        }
+
+    if _mt_chart and _mt_chart["days_remaining"] > 0:
+        _chart_last_day = len(df["稼働率"])  # データの最終日番号
+        _chart_end_day = _mt_chart["total_days"]  # 月末日番号
+        _required_occ_pct = _mt_chart["required_occ"]
+        _occ_pct_values = (df["稼働率"] * 100).tolist()
+
+        # --- 全体主義計算（均等努力方式）---
+        # 病棟別表示時に、単体目標線に加えて均等努力目標線も表示する
+        _has_equal_effort = False
+        _ee_target = None
+        _ee_over_cap = False
+        _delta_chart = 0
+        if _selected_ward_key in ("5F", "6F"):
+            # _get_holistic_ward_dfs() がうまく動かない場合の3段階フォールバック
+            _holistic_ward_dfs = _get_holistic_ward_dfs()
+            if not _holistic_ward_dfs:
+                _holistic_ward_dfs = globals().get("_ward_raw_dfs", {})
+            if _holistic_ward_dfs and "5F" in _holistic_ward_dfs and "6F" in _holistic_ward_dfs:
+                try:
+                    _cw_chart = _calc_cross_ward_target(
+                        _holistic_ward_dfs, target_lower, _calendar_month_days,
+                        get_ward_beds, helper_cap * 100,
+                    )
+                    if _cw_chart and _cw_chart.get("equal_effort"):
+                        _ee_self_chart = _cw_chart["equal_effort"][_selected_ward_key]
+                        _delta_chart = _cw_chart.get("delta", 0)
+                        # Δ > 0 の場合のみ「均等努力目標」を描画する。
+                        # Δ ≤ 0 は「全体ペースが既に目標達成済 = 追加努力不要」を意味するため、
+                        # 現状より低い数値を「目標」として表示すると誤解を招く。
+                        if _delta_chart > 0:
+                            _ee_target = _ee_self_chart["target"]
+                            _has_equal_effort = True
+                            if not _ee_self_chart["within_cap"]:
+                                _ee_over_cap = True
+                except Exception:
+                    pass
+
+        # --- 目標ライン描画（単体目標を常時表示、均等努力目標を併記）---
+        # 1. 目標線（赤/オレンジ/緑の破線）を必ず表示
+        # 表示病棟に応じてラベル文言を切り替え
+        # - 「全体」選択時: 全体目標（94床ベース）
+        # - 「5F」「6F」選択時: 単体目標（各病棟ベース）
+        _label_scope = "全体目標" if _selected_ward_key == "全体" else "単体目標"
+        _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+        _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
+
+        if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
+            _target_color = _DT_SUCCESS
+            _target_label = f'{_label_scope} 維持\n{_required_occ_pct:.1f}%以上'
+        else:
+            _target_color = _DT_DANGER if _mt_chart["difficulty"] in ("hard", "impossible") else _DT_WARNING
+            _target_label = f'{_label_scope} 必要\n{_required_occ_pct:.1f}%'
+
+        ax.plot(_target_x, _target_y,
+                linestyle="--", linewidth=_DT_LW_TARGET, color=_target_color,
+                marker="", zorder=5, label=f"{_label_scope} {_required_occ_pct:.1f}%")
+        ax.annotate(
+            _target_label,
+            xy=(_chart_end_day - 2, _required_occ_pct),
+            fontsize=9, fontweight="bold", color=_target_color,
+            ha="right", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
+        )
+
+        # 2. 均等努力目標線（補助）— 全体主義での目標達成ライン
+        if _has_equal_effort and _ee_target is not None:
+            _ee_display = min(_ee_target, helper_cap * 100) if _ee_over_cap else _ee_target
+            _ee_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
+            _ee_y = [_occ_pct_values[-1], _ee_display, _ee_display]
+            _ee_line_color = _DT_WARNING if _ee_over_cap else _DT_INFO
+            ax.plot(_ee_x, _ee_y,
+                    linestyle=":", linewidth=_DT_LW_TARGET, color=_ee_line_color,
+                    marker="", zorder=4, alpha=0.85,
+                    label=f"助け合い {_ee_display:.1f}%")
+            if _ee_over_cap:
+                _ee_label = f'助け合い(上限到達)\n{helper_cap*100:.0f}%'
+            else:
+                _delta_sign = "+" if _delta_chart >= 0 else ""
+                _ee_label = f'助け合い目標\n{_ee_display:.1f}%（{_delta_sign}{_delta_chart:.1f}pt）'
+            # ラベル位置: 単体目標と被らないよう、下側に配置
+            _label_va = "top" if _ee_display < _required_occ_pct else "bottom"
+            ax.annotate(
+                _ee_label,
+                xy=(_chart_end_day - 6, _ee_display),
+                fontsize=9, fontweight="bold", color=_ee_line_color,
+                ha="right", va=_label_va,
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_ee_line_color, alpha=0.9),
+            )
+
+        # X軸の範囲を月末まで拡張
+        ax.set_xlim(1, _chart_end_day + 0.5)
+
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # --- 全体主義テーブル（グラフ下に表示） ---
+    _htc = st.session_state.get("_holistic_table_content")
+    if _htc:
+        _htc_type, _htc_body = _htc
+        if _htc_type == "info":
+            st.info(_htc_body)
+        elif _htc_type == "success":
+            st.success(_htc_body)
+        elif _htc_type == "warning":
+            st.warning(_htc_body)
+        elif _htc_type == "error":
+            st.error(_htc_body)
+
+    # 病棟別稼働率は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
+
+    # --- Secondary チャート（在院患者数・新規入院/退院数）---
+    col1, col2 = st.columns(2)
+    with col1:
+        _bc_section_title("在院患者数の推移", icon="🛏")
+        fig, ax = plt.subplots(figsize=(6, 3.2))
         fig.patch.set_alpha(0.0)
         _add_weekend_bg(ax, _weekend_days)
         ax.plot(
-            df["日"], df["稼働率"] * 100,
-            color=_DT_ACCENT, linewidth=_DT_LW_PRIMARY, label="稼働率",
-            zorder=3,
+            df["日"], df["在院患者数"],
+            color=_DT_WARD_6F, linewidth=_DT_LW_PRIMARY, zorder=3,
+            label="在院患者数",
         )
-        ax.axhspan(
-            target_lower * 100, target_upper * 100,
-            alpha=0.10, color=_DT_WARNING,
-            label=f"目標レンジ ({target_lower*100:.0f}-{target_upper*100:.0f}%)",
-            zorder=1,
+        ax.axhline(
+            y=_view_beds, color=_DT_DANGER, linestyle="--",
+            linewidth=_DT_LW_TARGET, alpha=0.6,
+            label=f"病床数 {_view_beds}",
         )
         ax.set_xlabel("日")
-        ax.set_ylabel("稼働率 (%)")
+        ax.set_ylabel("患者数（名）")
         _set_weekday_ticks(ax, df["日"], _day_weekdays)
         _apply_daily_axes_style(ax)
         _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
         _style_daily_legend(_leg)
         ax.set_xlim(1, days_in_month)
-
-        # --- 月平均ライン（常時表示）---
-        _avg_occ_pct = df["稼働率"].mean() * 100
-        ax.axhline(
-            y=_avg_occ_pct, color=_DT_TEXT_MUTED, linestyle=":",
-            linewidth=_DT_LW_AUX, alpha=0.8, zorder=2,
-        )
-        ax.annotate(
-            f'月平均 {_avg_occ_pct:.1f}%',
-            xy=(2, _avg_occ_pct),
-            fontsize=9, color=_DT_TEXT_SECONDARY, va="bottom",
-        )
-
-        # --- 残り日数の目標達成ライン（常時表示）---
-        # _calc_monthly_target で計算、失敗時はフォールバックで直接計算
-        _mt_chart = None
-        for _mt_src_df in [_active_raw_df, df]:
-            if _mt_chart is None and isinstance(_mt_src_df, pd.DataFrame) and len(_mt_src_df) > 0:
-                _mt_chart = _calc_monthly_target(_mt_src_df, target_lower, _calendar_month_days, _view_beds)
-
-        # フォールバック: _calc_monthly_targetが失敗しても残り日数があれば直接計算
-        if _mt_chart is None and _calendar_month_days > days_in_month:
-            _fb_avg = _avg_occ_pct
-            _fb_elapsed = days_in_month
-            _fb_remaining = _calendar_month_days - _fb_elapsed
-            _fb_target = target_lower * 100
-            _fb_required = (_fb_target * _calendar_month_days - _fb_avg * _fb_elapsed) / _fb_remaining
-            _mt_chart = {
-                "avg_so_far": round(_fb_avg, 1),
-                "days_elapsed": _fb_elapsed,
-                "days_remaining": _fb_remaining,
-                "total_days": _calendar_month_days,
-                "required_occ": round(_fb_required, 1),
-                "monthly_target_pct": _fb_target,
-                "difficulty": "impossible" if _fb_required > 100 else "hard" if _fb_required > 95 else "moderate" if _fb_required > 90 else "easy",
-            }
-
-        if _mt_chart and _mt_chart["days_remaining"] > 0:
-            _chart_last_day = len(df["稼働率"])  # データの最終日番号
-            _chart_end_day = _mt_chart["total_days"]  # 月末日番号
-            _required_occ_pct = _mt_chart["required_occ"]
-            _occ_pct_values = (df["稼働率"] * 100).tolist()
-
-            # --- 全体主義計算（均等努力方式）---
-            # 病棟別表示時に、単体目標線に加えて均等努力目標線も表示する
-            _has_equal_effort = False
-            _ee_target = None
-            _ee_over_cap = False
-            _delta_chart = 0
-            if _selected_ward_key in ("5F", "6F"):
-                # _get_holistic_ward_dfs() がうまく動かない場合の3段階フォールバック
-                _holistic_ward_dfs = _get_holistic_ward_dfs()
-                if not _holistic_ward_dfs:
-                    _holistic_ward_dfs = globals().get("_ward_raw_dfs", {})
-                if _holistic_ward_dfs and "5F" in _holistic_ward_dfs and "6F" in _holistic_ward_dfs:
-                    try:
-                        _cw_chart = _calc_cross_ward_target(
-                            _holistic_ward_dfs, target_lower, _calendar_month_days,
-                            get_ward_beds, helper_cap * 100,
-                        )
-                        if _cw_chart and _cw_chart.get("equal_effort"):
-                            _ee_self_chart = _cw_chart["equal_effort"][_selected_ward_key]
-                            _delta_chart = _cw_chart.get("delta", 0)
-                            # Δ > 0 の場合のみ「均等努力目標」を描画する。
-                            # Δ ≤ 0 は「全体ペースが既に目標達成済 = 追加努力不要」を意味するため、
-                            # 現状より低い数値を「目標」として表示すると誤解を招く。
-                            if _delta_chart > 0:
-                                _ee_target = _ee_self_chart["target"]
-                                _has_equal_effort = True
-                                if not _ee_self_chart["within_cap"]:
-                                    _ee_over_cap = True
-                    except Exception:
-                        pass
-
-            # --- 目標ライン描画（単体目標を常時表示、均等努力目標を併記）---
-            # 1. 目標線（赤/オレンジ/緑の破線）を必ず表示
-            # 表示病棟に応じてラベル文言を切り替え
-            # - 「全体」選択時: 全体目標（94床ベース）
-            # - 「5F」「6F」選択時: 単体目標（各病棟ベース）
-            _label_scope = "全体目標" if _selected_ward_key == "全体" else "単体目標"
-            _target_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-            _target_y = [_occ_pct_values[-1], _required_occ_pct, _required_occ_pct]
-
-            if _mt_chart["avg_so_far"] >= _mt_chart["monthly_target_pct"]:
-                _target_color = _DT_SUCCESS
-                _target_label = f'{_label_scope} 維持\n{_required_occ_pct:.1f}%以上'
-            else:
-                _target_color = _DT_DANGER if _mt_chart["difficulty"] in ("hard", "impossible") else _DT_WARNING
-                _target_label = f'{_label_scope} 必要\n{_required_occ_pct:.1f}%'
-
-            ax.plot(_target_x, _target_y,
-                    linestyle="--", linewidth=_DT_LW_TARGET, color=_target_color,
-                    marker="", zorder=5, label=f"{_label_scope} {_required_occ_pct:.1f}%")
-            ax.annotate(
-                _target_label,
-                xy=(_chart_end_day - 2, _required_occ_pct),
-                fontsize=9, fontweight="bold", color=_target_color,
-                ha="right", va="bottom",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_target_color, alpha=0.9),
-            )
-
-            # 2. 均等努力目標線（補助）— 全体主義での目標達成ライン
-            if _has_equal_effort and _ee_target is not None:
-                _ee_display = min(_ee_target, helper_cap * 100) if _ee_over_cap else _ee_target
-                _ee_x = [_chart_last_day, _chart_last_day + 1, _chart_end_day]
-                _ee_y = [_occ_pct_values[-1], _ee_display, _ee_display]
-                _ee_line_color = _DT_WARNING if _ee_over_cap else _DT_INFO
-                ax.plot(_ee_x, _ee_y,
-                        linestyle=":", linewidth=_DT_LW_TARGET, color=_ee_line_color,
-                        marker="", zorder=4, alpha=0.85,
-                        label=f"助け合い {_ee_display:.1f}%")
-                if _ee_over_cap:
-                    _ee_label = f'助け合い(上限到達)\n{helper_cap*100:.0f}%'
-                else:
-                    _delta_sign = "+" if _delta_chart >= 0 else ""
-                    _ee_label = f'助け合い目標\n{_ee_display:.1f}%（{_delta_sign}{_delta_chart:.1f}pt）'
-                # ラベル位置: 単体目標と被らないよう、下側に配置
-                _label_va = "top" if _ee_display < _required_occ_pct else "bottom"
-                ax.annotate(
-                    _ee_label,
-                    xy=(_chart_end_day - 6, _ee_display),
-                    fontsize=9, fontweight="bold", color=_ee_line_color,
-                    ha="right", va=_label_va,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=_ee_line_color, alpha=0.9),
-                )
-
-            # X軸の範囲を月末まで拡張
-            ax.set_xlim(1, _chart_end_day + 0.5)
-
         st.pyplot(fig)
         plt.close(fig)
 
-        # --- 全体主義テーブル（グラフ下に表示） ---
-        _htc = st.session_state.get("_holistic_table_content")
-        if _htc:
-            _htc_type, _htc_body = _htc
-            if _htc_type == "info":
-                st.info(_htc_body)
-            elif _htc_type == "success":
-                st.success(_htc_body)
-            elif _htc_type == "warning":
-                st.warning(_htc_body)
-            elif _htc_type == "error":
-                st.error(_htc_body)
-
-        # 病棟別稼働率は病棟セレクターで切り替え（比較ストリップで他病棟を表示）
-
-        # --- Secondary チャート（在院患者数・新規入院/退院数）---
-        col1, col2 = st.columns(2)
-        with col1:
-            _bc_section_title("在院患者数の推移", icon="🛏")
-            fig, ax = plt.subplots(figsize=(6, 3.2))
-            fig.patch.set_alpha(0.0)
-            _add_weekend_bg(ax, _weekend_days)
-            ax.plot(
-                df["日"], df["在院患者数"],
-                color=_DT_WARD_6F, linewidth=_DT_LW_PRIMARY, zorder=3,
-                label="在院患者数",
-            )
-            ax.axhline(
-                y=_view_beds, color=_DT_DANGER, linestyle="--",
-                linewidth=_DT_LW_TARGET, alpha=0.6,
-                label=f"病床数 {_view_beds}",
-            )
-            ax.set_xlabel("日")
-            ax.set_ylabel("患者数（名）")
-            _set_weekday_ticks(ax, df["日"], _day_weekdays)
-            _apply_daily_axes_style(ax)
-            _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
-            _style_daily_legend(_leg)
-            ax.set_xlim(1, days_in_month)
-            st.pyplot(fig)
-            plt.close(fig)
-
-        # --- 新規入院・退院数 ---
-        with col2:
-            _bc_section_title("新規入院・退院数", icon="🚪")
-            fig, ax = plt.subplots(figsize=(6, 3.2))
-            fig.patch.set_alpha(0.0)
-            _add_weekend_bg(ax, _weekend_days)
-            x = df["日"]
-            width = 0.38
-            ax.bar(
-                x - width/2, df["新規入院"], width,
-                label="新規入院", color=_DT_INFO, alpha=0.85, edgecolor="none",
-            )
-            ax.bar(
-                x + width/2, df["退院"], width,
-                label="退院", color=_DT_WARD_6F, alpha=0.85, edgecolor="none",
-            )
-            ax.set_xlabel("日")
-            ax.set_ylabel("人数")
-            _set_weekday_ticks(ax, df["日"], _day_weekdays)
-            _apply_daily_axes_style(ax)
-            _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
-            _style_daily_legend(_leg)
-            ax.set_xlim(0.5, days_in_month + 0.5)
-            st.pyplot(fig)
-            plt.close(fig)
-
-        # 病棟別在院患者数は病棟セレクターで切り替え
-
-        # --- 日次運営貢献額推移（Tertiary）---
-        _bc_section_title("日次運営貢献額の推移", icon="💴")
-        fig, ax = plt.subplots(figsize=(12, 2.8))
+    # --- 新規入院・退院数 ---
+    with col2:
+        _bc_section_title("新規入院・退院数", icon="🚪")
+        fig, ax = plt.subplots(figsize=(6, 3.2))
         fig.patch.set_alpha(0.0)
         _add_weekend_bg(ax, _weekend_days)
-        # 正 = 成功色（緑系）、負 = 危険色（赤系）
-        colors_profit = [_DT_SUCCESS if v >= 0 else _DT_DANGER for v in df["日次運営貢献額"]]
+        x = df["日"]
+        width = 0.38
         ax.bar(
-            df["日"], df["日次運営貢献額"] / 10000,
-            color=colors_profit, alpha=0.85, edgecolor="none",
+            x - width/2, df["新規入院"], width,
+            label="新規入院", color=_DT_INFO, alpha=0.85, edgecolor="none",
         )
-        ax.axhline(y=0, color=_DT_TEXT_MUTED, linewidth=0.8)
+        ax.bar(
+            x + width/2, df["退院"], width,
+            label="退院", color=_DT_WARD_6F, alpha=0.85, edgecolor="none",
+        )
         ax.set_xlabel("日")
-        ax.set_ylabel("運営貢献額（万円）")
+        ax.set_ylabel("人数")
         _set_weekday_ticks(ax, df["日"], _day_weekdays)
         _apply_daily_axes_style(ax)
+        _leg = ax.legend(loc="upper left", ncol=2, frameon=False)
+        _style_daily_legend(_leg)
         ax.set_xlim(0.5, days_in_month + 0.5)
         st.pyplot(fig)
         plt.close(fig)
 
-        # --- 今月のハイライト ---
-        _bc_section_title("今月のハイライト", icon="📌")
-        _occ_pct = df["稼働率"] * 100
-        _min_occ_idx = _occ_pct.idxmin()
-        _max_occ_idx = _occ_pct.idxmax()
-        _max_discharge_idx = df["退院"].idxmax()
-        _hl_c1, _hl_c2, _hl_c3 = st.columns(3)
-        with _hl_c1:
-            _min_day = int(df.loc[_min_occ_idx, "日"])
-            _min_wd = _weekday_names[_day_weekdays[_min_occ_idx]] if _min_occ_idx < len(_day_weekdays) else ""
-            st.metric(
-                f"稼働率最低日（{_min_day}日・{_min_wd}）",
-                f"{_occ_pct.iloc[_min_occ_idx]:.1f}%",
+    # 病棟別在院患者数は病棟セレクターで切り替え
+
+    # --- 日次運営貢献額推移（Tertiary）---
+    _bc_section_title("日次運営貢献額の推移", icon="💴")
+    fig, ax = plt.subplots(figsize=(12, 2.8))
+    fig.patch.set_alpha(0.0)
+    _add_weekend_bg(ax, _weekend_days)
+    # 正 = 成功色（緑系）、負 = 危険色（赤系）
+    colors_profit = [_DT_SUCCESS if v >= 0 else _DT_DANGER for v in df["日次運営貢献額"]]
+    ax.bar(
+        df["日"], df["日次運営貢献額"] / 10000,
+        color=colors_profit, alpha=0.85, edgecolor="none",
+    )
+    ax.axhline(y=0, color=_DT_TEXT_MUTED, linewidth=0.8)
+    ax.set_xlabel("日")
+    ax.set_ylabel("運営貢献額（万円）")
+    _set_weekday_ticks(ax, df["日"], _day_weekdays)
+    _apply_daily_axes_style(ax)
+    ax.set_xlim(0.5, days_in_month + 0.5)
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # --- 今月のハイライト ---
+    _bc_section_title("今月のハイライト", icon="📌")
+    _occ_pct = df["稼働率"] * 100
+    _min_occ_idx = _occ_pct.idxmin()
+    _max_occ_idx = _occ_pct.idxmax()
+    _max_discharge_idx = df["退院"].idxmax()
+    _hl_c1, _hl_c2, _hl_c3 = st.columns(3)
+    with _hl_c1:
+        _min_day = int(df.loc[_min_occ_idx, "日"])
+        _min_wd = _weekday_names[_day_weekdays[_min_occ_idx]] if _min_occ_idx < len(_day_weekdays) else ""
+        st.metric(
+            f"稼働率最低日（{_min_day}日・{_min_wd}）",
+            f"{_occ_pct.iloc[_min_occ_idx]:.1f}%",
+        )
+    with _hl_c2:
+        _max_day = int(df.loc[_max_occ_idx, "日"])
+        _max_wd = _weekday_names[_day_weekdays[_max_occ_idx]] if _max_occ_idx < len(_day_weekdays) else ""
+        st.metric(
+            f"稼働率最高日（{_max_day}日・{_max_wd}）",
+            f"{_occ_pct.iloc[_max_occ_idx]:.1f}%",
+        )
+    with _hl_c3:
+        _dc_day = int(df.loc[_max_discharge_idx, "日"])
+        _dc_wd = _weekday_names[_day_weekdays[_max_discharge_idx]] if _max_discharge_idx < len(_day_weekdays) else ""
+        st.metric(
+            f"最大退院日（{_dc_day}日・{_dc_wd}）",
+            f"{int(df.loc[_max_discharge_idx, '退院'])}名",
+        )
+
+
+# ===== タブ1: 日次推移 =====
+# 関数 _render_daily_trend_section() を呼び出すだけ
+if "📊 日次推移" in _tab_idx and _data_ready:
+    with tabs[_tab_idx["📊 日次推移"]]:
+        _render_daily_trend_section()
+
+
+# ===== 「本日の詳細サマリー」expander への日次推移セクション追記 =====
+# 副院長指示（2026-05-01）: 月平均稼働率の経過がサマリー内で見られるように。
+# 同じ expander を 2 回 with することで、L3309-3557 の既存中身に追記する形で
+# 日次推移グラフを統合する。
+if _data_ready and _selected_section == "📊 今日の運営":
+    try:
+        with _summary_expander:
+            st.markdown("---")
+            st.markdown("### 📈 月平均稼働率の経過（日次推移グラフ）")
+            st.caption(
+                "上のゲージで見た「現時点の月平均稼働率」が、"
+                "どのような日々の積み重ねでできているかをグラフで確認できます。"
             )
-        with _hl_c2:
-            _max_day = int(df.loc[_max_occ_idx, "日"])
-            _max_wd = _weekday_names[_day_weekdays[_max_occ_idx]] if _max_occ_idx < len(_day_weekdays) else ""
-            st.metric(
-                f"稼働率最高日（{_max_day}日・{_max_wd}）",
-                f"{_occ_pct.iloc[_max_occ_idx]:.1f}%",
-            )
-        with _hl_c3:
-            _dc_day = int(df.loc[_max_discharge_idx, "日"])
-            _dc_wd = _weekday_names[_day_weekdays[_max_discharge_idx]] if _max_discharge_idx < len(_day_weekdays) else ""
-            st.metric(
-                f"最大退院日（{_dc_day}日・{_dc_wd}）",
-                f"{int(df.loc[_max_discharge_idx, '退院'])}名",
-            )
+            _render_daily_trend_section()
+    except NameError:
+        # _summary_expander が未定義の場合（未対応セクション）はスキップ
+        pass
 
 
 # ===== タブ2: フェーズ構成 =====
