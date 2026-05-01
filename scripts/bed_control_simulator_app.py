@@ -3543,7 +3543,17 @@ if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
             _ac_detail_df = st.session_state.get("admission_details") if _DETAIL_DATA_AVAILABLE else None
             if isinstance(_ac_detail_df, pd.DataFrame) and len(_ac_detail_df) == 0:
                 _ac_detail_df = None
-            _ac_config = {"age_85_ratio": 0.25, "monthly_summary": st.session_state.get("monthly_summary", {})}
+            # 救急 15% rolling: 結論カードでも manual_seeds を参照
+            try:
+                from emergency_ratio import load_manual_seeds_from_yaml as _ac_seed_loader
+                _ac_manual_seeds = _ac_seed_loader()
+            except Exception:
+                _ac_manual_seeds = None
+            _ac_config = {
+                "age_85_ratio": 0.25,
+                "monthly_summary": st.session_state.get("monthly_summary", {}),
+                "manual_seeds": _ac_manual_seeds,
+            }
 
             if _ac_daily_df is not None:
                 _ac_occ_key = "occupancy_rate" if "occupancy_rate" in _ac_daily_df.columns else "稼働率"
@@ -12172,9 +12182,17 @@ if _GUARDRAIL_AVAILABLE and _DATA_MANAGER_AVAILABLE and "🛡️ 制度・需要
                 _gr_detail_df = st.session_state.get("admission_details")
 
         _gr_ward_selected = _selected_ward_key if _selected_ward_key in ("5F", "6F") else None
+        # 救急 15% rolling: 制度余力ダッシュボードでも manual_seeds を参照する
+        # （日次CSV > monthly_summary > manual_seed > no_data の優先順位は emergency_ratio 側で保証）
+        try:
+            from emergency_ratio import load_manual_seeds_from_yaml as _gr_seed_loader
+            _gr_manual_seeds = _gr_seed_loader()
+        except Exception:
+            _gr_manual_seeds = None
         _gr_config = {
             "age_85_ratio": 0.25,  # HOSPITAL_DEFAULTS参照
             "monthly_summary": st.session_state.get("monthly_summary", {}),
+            "manual_seeds": _gr_manual_seeds,
             "ward": _gr_ward_selected,
         }
 

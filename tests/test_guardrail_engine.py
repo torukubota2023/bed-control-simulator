@@ -130,6 +130,137 @@ class TestCalculateLosHeadroom:
 # TestFormatGuardrailDisplay
 # ---------------------------------------------------------------------------
 
+class TestManualSeedIntegration:
+    """救急 15% rolling における manual_seeds 経路のテスト（Phase 1.7）.
+
+    制度余力ダッシュボードと救急 15% 専用タブで表示が一致するように、
+    `calculate_guardrail_status()` も `config["manual_seeds"]` 経由で
+    シード値を採用できる必要がある。
+    優先順位: daily > summary > manual_seed > no_data。
+    """
+
+    def _make_detail_df_for_month(self, year_month: str, n_emg: int, n_other: int):
+        """指定月の詳細データ（救急/その他）を生成する。"""
+        y, m = year_month.split("-")
+        base = f"{y}-{m}-15"
+        rows = (
+            [
+                {"route": "救急", "event_type": "admission", "date": base, "ward": "5F"}
+                for _ in range(n_emg)
+            ]
+            + [
+                {"route": "紹介", "event_type": "admission", "date": base, "ward": "5F"}
+                for _ in range(n_other)
+            ]
+        )
+        return pd.DataFrame(rows)
+
+    def _today_ym(self):
+        return date.today().strftime("%Y-%m")
+
+    def _prev_ym(self, months: int = 1) -> str:
+        from dateutil.relativedelta import relativedelta
+        d = date.today() - relativedelta(months=months)
+        return d.strftime("%Y-%m")
+
+    def test_manual_seeds_used_when_no_daily_no_summary(self):
+        """日次データ・サマリーが無い月はシード値が採用される。"""
+        df = _make_daily_df(30)
+        # 当月のみ少量の日次データ（先月・先々月はデータ無し）
+        detail_df = self._make_detail_df_for_month(self._today_ym(), n_emg=2, n_other=8)
+
+        # 先月・先々月にシードを設定
+        manual_seeds = {
+            self._prev_ym(1): {"5F": 25.0, "6F": 18.0, "all": 22.0},
+            self._prev_ym(2): {"5F": 30.0, "6F": 20.0, "all": 25.0},
+        }
+        results = calculate_guardrail_status(
+            df, detail_df=detail_df,
+            config={"manual_seeds": manual_seeds, "ward": "5F"},
+        )
+        emg_item = [r for r in results if r["name"] == "救急搬送後患者割合"][0]
+        # シード値が採用された結果（rolling 平均が当月20%＋25%＋30%/3 ≈ 25%）
+        assert emg_item["data_source"] == "measured"
+        assert emg_item["current_value"] >= 15.0  # 15% 閾値以上
+        assert "シード混在" in emg_item["description"]
+        assert "🌉" in emg_item["description"]
+
+    def test_daily_takes_priority_over_seed(self):
+        """日次データがある月はシード値より優先される。"""
+        df = _make_daily_df(30)
+        # 当月に充実した日次データ（救急 5/全 100 = 5%）
+        detail_df = self._make_detail_df_for_month(self._today_ym(), n_emg=5, n_other=95)
+
+        # 当月に高いシード（採用されてはいけない）
+        manual_seeds = {
+            self._today_ym(): {"5F": 50.0, "6F": 50.0, "all": 50.0},
+        }
+        results_with_seed = calculate_guardrail_status(
+            df, detail_df=detail_df,
+            config={"manual_seeds": manual_seeds, "ward": "5F"},
+        )
+        results_without_seed = calculate_guardrail_status(
+            df, detail_df=detail_df, config={"ward": "5F"},
+        )
+        emg_with = [r for r in results_with_seed if r["name"] == "救急搬送後患者割合"][0]
+        emg_without = [r for r in results_without_seed if r["name"] == "救急搬送後患者割合"][0]
+        # 日次優先: 当月の値はシードに引きずられない
+        assert emg_with["current_value"] == emg_without["current_value"]
+
+    def test_summary_takes_priority_over_seed(self):
+        """monthly_summary がある月はシードより優先される。"""
+        df = _make_daily_df(30)
+        detail_df = self._make_detail_df_for_month(self._today_ym(), n_emg=2, n_other=8)
+        prev_ym = self._prev_ym(1)
+        # summary 値: 救急 10/100 = 10%
+        monthly_summary = {
+            prev_ym: {"5F": {"admissions": 100, "emergency": 10}}
+        }
+        # シード値: 50% (採用されてはいけない)
+        manual_seeds = {
+            prev_ym: {"5F": 50.0, "6F": 50.0, "all": 50.0},
+        }
+        results = calculate_guardrail_status(
+            df, detail_df=detail_df,
+            config={
+                "monthly_summary": monthly_summary,
+                "manual_seeds": manual_seeds,
+                "ward": "5F",
+            },
+        )
+        emg_item = [r for r in results if r["name"] == "救急搬送後患者割合"][0]
+        # summary 優先: 当該月は 10% 由来 → rolling 平均は 50% にならない
+        assert emg_item["current_value"] < 40.0
+
+    def test_manual_seeds_none_does_not_break_existing(self):
+        """manual_seeds 未指定でも既存の挙動を壊さない（後方互換）。"""
+        df = _make_daily_df(30)
+        detail_df = self._make_detail_df_for_month(self._today_ym(), n_emg=10, n_other=20)
+
+        # config なし
+        results_none = calculate_guardrail_status(df, detail_df=detail_df)
+        # config あるが manual_seeds なし
+        results_no_seed = calculate_guardrail_status(
+            df, detail_df=detail_df, config={"ward": None},
+        )
+        # config に manual_seeds=None
+        results_seed_none = calculate_guardrail_status(
+            df, detail_df=detail_df,
+            config={"ward": None, "manual_seeds": None},
+        )
+
+        emg_a = [r for r in results_none if r["name"] == "救急搬送後患者割合"][0]
+        emg_b = [r for r in results_no_seed if r["name"] == "救急搬送後患者割合"][0]
+        emg_c = [r for r in results_seed_none if r["name"] == "救急搬送後患者割合"][0]
+
+        assert emg_a["current_value"] == emg_b["current_value"] == emg_c["current_value"]
+        assert "シード混在" not in emg_a["description"]
+
+
+# ---------------------------------------------------------------------------
+# TestFormatGuardrailDisplay
+# ---------------------------------------------------------------------------
+
 class TestFormatGuardrailDisplay:
     def test_format_basic(self):
         results = calculate_guardrail_status(_make_daily_df(30))
