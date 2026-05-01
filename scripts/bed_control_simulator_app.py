@@ -1060,28 +1060,32 @@ def _get_top_kpi_snapshot(context: dict) -> dict | None:
         beds = int(context.get("_view_beds", 0) or 0)
         ward = str(context.get("_selected_ward_key", "全体"))
         sorted_raw = raw.sort_values("date") if "date" in raw.columns else raw
-        monthly = raw.copy()
-        if "date" in monthly.columns:
-            dates = pd.to_datetime(monthly["date"], errors="coerce")
-            latest = dates.max()
-            if pd.notna(latest):
-                monthly = monthly[
-                    (dates.dt.year == latest.year) & (dates.dt.month == latest.month)
-                ]
 
+        # 朝礼で「今いま」を即答するため、3 KPI すべて当日（最新日）スナップショットで揃える。
+        # 以前は稼働率だけ「当月の月平均」を返していたため、結論カード（90.4%）や
+        # 「今朝の病棟状況」（90.4%）と画面内で食い違って見える不整合があった（2026-05-01 修正）。
+        # 月平均が必要な場合はサイドバーの「月平均稼働率」または「日次推移」タブを参照する。
         occ_value = None
-        occ_col = "occupancy_rate" if "occupancy_rate" in monthly.columns else "稼働率"
-        if occ_col in monthly.columns and len(monthly) > 0:
-            occ_value = float(monthly[occ_col].mean())
-            if occ_value < 1.5:
-                occ_value *= 100
-        elif beds and "total_patients" in monthly.columns and len(monthly) > 0:
-            occ_value = float(monthly["total_patients"].mean()) / beds * 100
-
+        occ_col = "occupancy_rate" if "occupancy_rate" in sorted_raw.columns else "稼働率"
         tp_col = "total_patients" if "total_patients" in sorted_raw.columns else "在院患者数"
+
+        if len(sorted_raw) > 0:
+            latest_row = sorted_raw.iloc[-1]
+            if occ_col in sorted_raw.columns:
+                occ_raw = latest_row.get(occ_col)
+                if occ_raw is not None and pd.notna(occ_raw):
+                    occ_value = float(occ_raw)
+                    if occ_value < 1.5:
+                        occ_value *= 100
+            # occupancy 列が無い、または欠損なら patient/beds から再計算
+            if occ_value is None and beds and tp_col in sorted_raw.columns:
+                tp_raw = latest_row.get(tp_col)
+                if tp_raw is not None and pd.notna(tp_raw):
+                    occ_value = float(tp_raw) / beds * 100
+
         patients = None
         vacancy = None
-        if tp_col in sorted_raw.columns:
+        if tp_col in sorted_raw.columns and len(sorted_raw) > 0:
             patients = int(round(float(sorted_raw.iloc[-1][tp_col] or 0)))
             vacancy = max(0, int(round(beds - patients))) if beds else None
         return {
