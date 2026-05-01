@@ -1061,22 +1061,37 @@ def _get_top_kpi_snapshot(context: dict) -> dict | None:
         ward = str(context.get("_selected_ward_key", "全体"))
         sorted_raw = raw.sort_values("date") if "date" in raw.columns else raw
 
-        # 朝礼で「今いま」を即答するため、3 KPI すべて当日（最新日）スナップショットで揃える。
-        # 以前は稼働率だけ「当月の月平均」を返していたため、結論カード（90.4%）や
-        # 「今朝の病棟状況」（90.4%）と画面内で食い違って見える不整合があった（2026-05-01 修正）。
-        # 月平均が必要な場合はサイドバーの「月平均稼働率」または「日次推移」タブを参照する。
+        # 朝礼で「今いま」を即答するため、3 KPI の主値は当日（最新日）スナップショット。
+        # 加えて月平均（経営判断用）を `occupancy_month_avg` で併記返却し、
+        # ストリップ表示で「90.4%（月平均 88.8%）」のように同居させる。
+        # （2026-05-01 副院長指示: 当日値と月平均が同じ場所で見えるように）
         occ_value = None
+        occ_month_avg = None
         occ_col = "occupancy_rate" if "occupancy_rate" in sorted_raw.columns else "稼働率"
         tp_col = "total_patients" if "total_patients" in sorted_raw.columns else "在院患者数"
 
         if len(sorted_raw) > 0:
             latest_row = sorted_raw.iloc[-1]
             if occ_col in sorted_raw.columns:
+                # 当日値（主表示）
                 occ_raw = latest_row.get(occ_col)
                 if occ_raw is not None and pd.notna(occ_raw):
                     occ_value = float(occ_raw)
                     if occ_value < 1.5:
                         occ_value *= 100
+                # 当月の月平均（括弧併記用）
+                month_filtered = sorted_raw
+                if "date" in sorted_raw.columns:
+                    _dates = pd.to_datetime(sorted_raw["date"], errors="coerce")
+                    _latest_dt = _dates.max()
+                    if pd.notna(_latest_dt):
+                        month_filtered = sorted_raw[
+                            (_dates.dt.year == _latest_dt.year)
+                            & (_dates.dt.month == _latest_dt.month)
+                        ]
+                if len(month_filtered) > 0:
+                    _mean_raw = float(month_filtered[occ_col].mean())
+                    occ_month_avg = _mean_raw * 100 if _mean_raw < 1.5 else _mean_raw
             # occupancy 列が無い、または欠損なら patient/beds から再計算
             if occ_value is None and beds and tp_col in sorted_raw.columns:
                 tp_raw = latest_row.get(tp_col)
@@ -1091,6 +1106,7 @@ def _get_top_kpi_snapshot(context: dict) -> dict | None:
         return {
             "ward": ward,
             "occupancy": occ_value,
+            "occupancy_month_avg": occ_month_avg,
             "vacancy": vacancy,
             "patients": patients,
         }
@@ -1105,18 +1121,26 @@ def _render_admin_kpi_strip(context: dict) -> None:
         return
 
     occ = snapshot.get("occupancy")
+    occ_month_avg = snapshot.get("occupancy_month_avg")
     vacancy = snapshot.get("vacancy")
     patients = snapshot.get("patients")
     ward = escape(str(snapshot.get("ward", "全体")))
     occ_value = f"{float(occ):.1f}" if occ is not None else "—"
     vacancy_value = str(int(vacancy)) if vacancy is not None else "—"
     patients_value = str(int(patients)) if patients is not None else "—"
+    # 月平均稼働率を当日値の右に併記（副院長 2026-05-01 指示）
+    # 例: 「全体 稼働率 90.4 %（月平均 88.8%）」
+    month_avg_html = (
+        f"<span class=\"bc-admin-kpi-sub\" data-testid=\"occupancy-month-avg\">"
+        f"（月平均 {float(occ_month_avg):.1f}%）</span>"
+        if occ_month_avg is not None else ""
+    )
     st.markdown(
         f"""
 <div class="bc-admin-kpi-strip" data-testid="admin-kpi-strip" aria-label="管理者用即答KPI">
   <div class="bc-admin-kpi-item">
-    <div class="bc-admin-kpi-label">{ward} 稼働率</div>
-    <div class="bc-admin-kpi-value-row"><strong data-testid="occupancy">{occ_value}</strong><span>%</span></div>
+    <div class="bc-admin-kpi-label">{ward} 稼働率（直近）</div>
+    <div class="bc-admin-kpi-value-row"><strong data-testid="occupancy">{occ_value}</strong><span>%</span>{month_avg_html}</div>
   </div>
   <div class="bc-admin-kpi-item">
     <div class="bc-admin-kpi-label">今の空床</div>
@@ -1229,10 +1253,12 @@ def _build_section_focus_payload(section_label: str, context: dict) -> dict:
         chips = []
         if "_brief_empty" in context:
             chips.append(("空床", f"{int(context['_brief_empty'])}床"))
+        # _gauge_occ は本日の詳細サマリー内のゲージ値（現時点の月平均稼働率）。
+        # 当日値は別途 admin-kpi-strip で「90.4%（月平均 88.8%）」の形で併記済み。
         if "_gauge_occ" in context:
             chips.append(("月平均稼働", f"{float(context['_gauge_occ']):.1f}%"))
         if "_mt_txt" in context and context["_mt_txt"]:
-            chips.append(("月間ペース", _strip_status_prefix(context["_mt_txt"])))
+            chips.append(("月末目標ペース", _strip_status_prefix(context["_mt_txt"])))
         title = context.get("_action_title")
         action = context.get("_action_detail")
         if not title or not action:
@@ -3310,15 +3336,22 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
         _brief_cols = st.columns([1, 1, 1, 2])
 
         # 稼働率ゲージ（plotly gauge chart）
+        # 「現時点での月平均稼働率」を表示し、月末目標が 90% 以上であることをラベルで明示。
+        # 上段の Hero KPI（当日値 90.4%）とは別の概念であることを利用者に明確に伝える設計。
+        # （2026-05-01 副院長指示: 月末目標を併記して混乱を解消）
         with _brief_cols[0]:
             import plotly.graph_objects as go
             _gauge_occ_col = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
-            _gauge_occ = float(_active_raw_df[_gauge_occ_col].mean() * 100) if _active_raw_df[_gauge_occ_col].mean() < 1.5 else float(_active_raw_df[_gauge_occ_col].mean())
+            _gauge_occ_mean = float(_active_raw_df[_gauge_occ_col].mean())
+            _gauge_occ = _gauge_occ_mean * 100 if _gauge_occ_mean < 1.5 else _gauge_occ_mean
             _gauge_fig = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=_gauge_occ,
                 number={"suffix": "%", "font": {"size": 28}},
-                title={"text": f"月平均稼働率（{_selected_ward_key}）", "font": {"size": 11}},
+                title={
+                    "text": f"現時点の月平均稼働率（{_selected_ward_key}）<br><sub>月末目標 ≥ {target_lower*100:.0f}%</sub>",
+                    "font": {"size": 11},
+                },
                 gauge={
                     "axis": {"range": [75, 100], "tickwidth": 1},
                     "bar": {"color": "#1f77b4"},
@@ -3347,8 +3380,10 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                 _remaining_days = _calc_remaining_days(_active_raw_df) if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0 if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else 0
                 st.caption(f"⚠️ 空床{_brief_empty}床 = 空床の影響額 約{_brief_empty * int(_daily_rev_per_bed) // 10000:.0f}万円/日・今月残り{_remaining_days}日で約{_brief_empty * int(_daily_rev_per_bed) * _remaining_days // 10000:.0f}万円")
 
-        # 病棟比較ミニバッジ
+        # 病棟比較ミニバッジ（月平均ベース、月末目標達成判定）
+        # ゲージと同じく「現時点の月平均」を表示。月末目標 (target_lower) との比較で判定。
         with _brief_cols[2]:
+            st.caption(f"月平均（月末目標 ≥ {target_lower*100:.0f}%）")
             if _selected_ward_key == "全体":
                 for _bw in ["5F", "6F"]:
                     _bw_beds = get_ward_beds(_bw)
@@ -3362,22 +3397,25 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                     else:
                         _bw_occ = None
                     if _bw_occ is not None:
-                        _bw_status = "✅ 目標内" if target_lower * 100 <= _bw_occ <= target_upper * 100 else "⚠️ 要注意"
+                        _bw_status = "✅ 目標達成ペース" if _bw_occ >= target_lower * 100 else "⚠️ ペース未達"
                         st.markdown(f"**{_bw}**: {_bw_occ:.1f}% {_bw_status}")
             else:
                 st.markdown(f"**{_selected_ward_key}** を表示中")
                 _other = "6F" if _selected_ward_key == "5F" else "5F"
                 st.caption(f"他病棟 → サイドバーで切替")
 
-        # 今日のアクション（超簡潔版）
+        # 今日のアクション
+        # 「直近1日が目標レンジから外れているか」と「月末目標達成ペースか」の
+        # 2 軸で判定。ラベルは常に「直近 vs 月末目標」を明示して期間の混乱を防ぐ。
+        # （2026-05-01 副院長指示: 月末で目標90%以上が目標であることを分かりやすく）
         with _brief_cols[3]:
             _occ_col_brief = "occupancy_rate" if "occupancy_rate" in _active_raw_df.columns else "稼働率"
             _last_occ_brief = float(_active_raw_df[_occ_col_brief].iloc[-1])
             if _last_occ_brief < 1.5:
                 _last_occ_brief *= 100
 
-            # 月平均稼働率も取得（直近1日と月平均の両方で総合判定する）
-            _month_avg_brief = _gauge_occ  # ゲージ用に計算済みの月平均稼働率
+            # 月平均稼働率（ゲージと同じ）— 月末目標とのギャップ判定に使う
+            _month_avg_brief = _gauge_occ
 
             if _last_occ_brief < target_lower * 100:
                 # 直近1日が目標未達
@@ -3390,28 +3428,30 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
                         _is_recovering = True
                 if _is_recovering:
                     _action_icon = "📈"
-                    _action_title = "回復中 — 対策継続"
+                    _action_title = "直近は回復中 — 対策継続"
                     _action_detail = "入院受入施策が効果を発揮中"
                 else:
                     _action_icon = "🔴"
-                    _action_title = "稼働率低下 — 即対応"
+                    _action_title = f"直近稼働率が目標{target_lower*100:.0f}%未満 — 即対応"
                     _action_detail = "連携室→空床発信 / 予定入院前倒し"
             elif _last_occ_brief > target_upper * 100:
                 _action_icon = "🟡"
-                _action_title = "高稼働 — 退院調整"
+                _action_title = f"直近稼働率が目標{target_upper*100:.0f}%超過 — 退院調整"
                 _action_detail = "A→B群移行確認 / C群退院日確定"
             elif _month_avg_brief < target_lower * 100:
-                # 直近1日は目標レンジ内だが、月平均は目標未達
-                # → 「今日は良いが月全体では足りない」
+                # 直近1日は目標レンジ内だが、現時点の月平均は月末目標未達ペース
                 _action_icon = "📊"
-                _action_title = "月平均未達 — ペースアップ"
-                _action_detail = f"今日は目標内だが月平均{_month_avg_brief:.1f}%＜目標{target_lower*100:.0f}%"
+                _action_title = f"月末{target_lower*100:.0f}%目標 — ペースアップ必要"
+                _action_detail = (
+                    f"直近は目標内ですが、現時点の月平均{_month_avg_brief:.1f}% が "
+                    f"月末目標{target_lower*100:.0f}% に届いていません"
+                )
             else:
                 _action_icon = "🟢"
-                _action_title = "目標レンジ内 — 維持継続"
+                _action_title = f"月末{target_lower*100:.0f}%目標 — 達成ペース"
                 _action_detail = "退院タイミングを整え空床時間を最小化"
 
-            # 月平均達成見通し
+            # 月末目標達成見通し（残り日数と必要稼働率を提示）
             _brief_month_days = 31
             if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0:
                 _brief_date_ref = _active_raw_df["date"].iloc[-1] if "date" in _active_raw_df.columns else pd.Timestamp.now()
@@ -3422,9 +3462,16 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             _mt_txt = ""
             if _mt_brief:
                 if _mt_brief["avg_so_far"] >= _mt_brief["monthly_target_pct"]:
-                    _mt_txt = f"✅ 月平均{_mt_brief['avg_so_far']:.1f}%達成ペース"
+                    _mt_txt = (
+                        f"✅ 月末{_mt_brief['monthly_target_pct']:.0f}%目標 — 達成ペース "
+                        f"（現在の月平均 {_mt_brief['avg_so_far']:.1f}%）"
+                    )
                 else:
-                    _mt_txt = f"📊 月平均{_mt_brief['avg_so_far']:.1f}%→残り{_mt_brief['days_remaining']}日で{_mt_brief['required_occ']:.0f}%必要"
+                    _mt_txt = (
+                        f"📊 月末{_mt_brief['monthly_target_pct']:.0f}%目標 — "
+                        f"現在の月平均 {_mt_brief['avg_so_far']:.1f}%、"
+                        f"残り{_mt_brief['days_remaining']}日で平均{_mt_brief['required_occ']:.0f}%必要"
+                    )
 
             _mt_line = f'<br/><span style="color:#888;font-size:0.8em;">{_mt_txt}</span>' if _mt_txt else ''
             st.markdown(
@@ -3453,7 +3500,7 @@ if _actual_data_available or _sim_has_data or (_is_demo and isinstance(st.sessio
             f"<div style='padding:4px 8px;background:#F0F4F8;border-left:3px solid #5B9BD5;"
             f"border-radius:3px;margin:4px 0;font-size:0.85em;'>"
             f"💡 {_insight_msg}"
-            f" <span style='color:#999;font-size:0.8em;'>｜空床数＝今の判断 ・ 稼働率＝今月の成績</span>"
+            f" <span style='color:#999;font-size:0.8em;'>｜空床数＝今の判断 ・ 稼働率＝月末{target_lower*100:.0f}%目標の進捗</span>"
             f"</div>",
             unsafe_allow_html=True,
         )

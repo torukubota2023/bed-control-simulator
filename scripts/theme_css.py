@@ -337,6 +337,12 @@ def render_theme_css() -> str:
       color: {COLOR_TEXT_SECONDARY};
       font-size: {FONT_SIZE_BODY};
     }}
+    .bc-admin-kpi-sub {{
+      color: {COLOR_TEXT_SECONDARY};
+      font-size: {FONT_SIZE_CAPTION};
+      margin-left: {SPACE_2};
+      white-space: nowrap;
+    }}
     @media (max-width: 700px) {{
       .bc-action-focus-title {{
         font-size: 22px;
