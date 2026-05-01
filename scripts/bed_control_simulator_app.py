@@ -3723,7 +3723,7 @@ if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
                 selected_ward=_ac_selected,
             )
             with _summary_expander:
-                render_action_card(_ac_card)
+                render_action_card(_ac_card, allow_expanders=False)
 
                 # -----------------------------------------------------------
                 # 短手3 Day 5 到達アラート（本則完全適用後 = 2026-06-01 以降のみ）
@@ -3771,7 +3771,12 @@ if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
                 render_kpi_priority_strip(_ac_kpi_list)
 
                 if _ac_morning_capacity is not None:
-                    render_morning_capacity_card(_ac_morning_capacity, morning_5f=_ac_morning_5f, morning_6f=_ac_morning_6f)
+                    render_morning_capacity_card(
+                        _ac_morning_capacity,
+                        morning_5f=_ac_morning_5f,
+                        morning_6f=_ac_morning_6f,
+                        show_explanation=False,
+                    )
 
                 if _ac_c_capacity is not None:
                     _ac_tradeoff = generate_tradeoff_assessment(
@@ -3780,7 +3785,7 @@ if _selected_section in ["📊 今日の運営", "🔮 What-if・戦略"]:
                         morning_capacity=_ac_morning_capacity,
                         los_headroom=_ac_los_headroom,
                     )
-                    render_tradeoff_card(_ac_tradeoff)
+                    render_tradeoff_card(_ac_tradeoff, use_expander=False)
         except Exception as _render_err:
             st.error(f"結論カード描画エラー: {_render_err}")
             import traceback
@@ -3876,17 +3881,19 @@ elif _selected_section == "\u2699\ufe0f データ・設定":
 else:
     tab_names = ["\U0001f4ca 日次推移"]
 
-# タブナビゲーション（モード名 + 区切りバー）
+# タブナビゲーション（セクション名 + 詳細タブへの導線）
 _section_label = _selected_section if "_selected_section" in dir() else "📊 今日の運営"
-st.markdown(
-    f'<div style="background:linear-gradient(90deg,#1E88E5 0%,#42A5F5 100%);'
-    f'padding:8px 16px;border-radius:8px;margin:12px 0 4px 0;">'
-    f'<span style="color:white;font-weight:bold;font-size:1.0em;">'
-    f'{_section_label}</span>'
-    f'<span style="color:rgba(255,255,255,0.7);font-size:0.85em;margin-left:12px;">'
-    f'👇 タブで切り替え</span></div>',
-    unsafe_allow_html=True,
-)
+_section_hint = "必要なときだけ下の詳細タブを確認" if _section_label == "📊 今日の運営" else "下のタブで詳細を確認"
+if _section_label != "📊 今日の運営":
+    st.markdown(
+        f'<div style="background:linear-gradient(90deg,#1E88E5 0%,#42A5F5 100%);'
+        f'padding:8px 16px;border-radius:8px;margin:12px 0 4px 0;">'
+        f'<span style="color:white;font-weight:bold;font-size:1.0em;">'
+        f'{_section_label}</span>'
+        f'<span style="color:rgba(255,255,255,0.7);font-size:0.85em;margin-left:12px;">'
+        f'{_section_hint}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 # セクションの visible tabs だけを作成（hidden tab + CSS 方式を廃止）
 tabs = st.tabs(tab_names)
@@ -5411,9 +5418,8 @@ if _active_cli_params:
         )
 
 # ===== 日次推移セクション関数化（B 案、2026-05-01）=====
-# 副院長指示: 「本日の詳細サマリー」内でも日次推移グラフを見られるように。
-# タブ（📊 日次推移）と詳細サマリーの両方から同じセクションを呼べるよう関数化。
-def _render_daily_trend_section():
+# フルグラフはタブで表示し、詳細サマリー側は朝の確認用ミニ要約に留める。
+def _render_daily_trend_section(*, show_help: bool = True):
     """日次推移セクション（タブ・詳細サマリー両方から呼ばれる）.
 
     依存変数（モジュールレベルから global 参照）:
@@ -5428,7 +5434,7 @@ def _render_daily_trend_section():
         return
 
     st.subheader("日次推移")
-    if _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
+    if show_help and _HELP_AVAILABLE and "tab_daily" in HELP_TEXTS:
         with st.expander("📖 このタブの見方と活用法"):
             st.markdown(HELP_TEXTS["tab_daily"])
 
@@ -5829,20 +5835,41 @@ if "📊 日次推移" in _tab_idx and _data_ready:
         _render_daily_trend_section()
 
 
-# ===== 「本日の詳細サマリー」expander への日次推移セクション追記 =====
-# 副院長指示（2026-05-01）: 月平均稼働率の経過がサマリー内で見られるように。
-# 同じ expander を 2 回 with することで、L3309-3557 の既存中身に追記する形で
-# 日次推移グラフを統合する。
+# ===== 「本日の詳細サマリー」expander への日次推移ミニ要約 =====
+# 詳細サマリーは朝の確認用なので、フルグラフは下の「日次推移」タブへ分離する。
+# ここでは月平均・本日値・残り必要ペースだけを軽く出し、nested expander を避ける。
 if _data_ready and _selected_section == "📊 今日の運営":
     try:
         with _summary_expander:
             st.markdown("---")
-            st.markdown("### 📈 月平均稼働率の経過（日次推移グラフ）")
-            st.caption(
-                "上のゲージで見た「現時点の月平均稼働率」が、"
-                "どのような日々の積み重ねでできているかをグラフで確認できます。"
-            )
-            _render_daily_trend_section()
+            st.markdown("### 📈 月平均稼働率の経過")
+            _trend_occ_col = "稼働率" if "稼働率" in df.columns else None
+            if _trend_occ_col:
+                _trend_today = float(df[_trend_occ_col].iloc[-1]) * 100
+                _trend_avg = float(df[_trend_occ_col].mean()) * 100
+                _trend_first = float(df[_trend_occ_col].iloc[0]) * 100
+                _trend_delta = _trend_today - _trend_first
+                _trend_mt = _calc_monthly_target(
+                    _active_raw_df if isinstance(_active_raw_df, pd.DataFrame) and len(_active_raw_df) > 0 else df,
+                    target_lower,
+                    _calendar_month_days,
+                    _view_beds,
+                )
+                _trend_cols = st.columns(3)
+                with _trend_cols[0]:
+                    st.metric("本日", f"{_trend_today:.1f}%", delta=f"初日比 {_trend_delta:+.1f}pt")
+                with _trend_cols[1]:
+                    st.metric("月平均", f"{_trend_avg:.1f}%", delta=f"目標 {target_lower*100:.0f}%")
+                with _trend_cols[2]:
+                    if _trend_mt and _trend_mt.get("days_remaining", 0) > 0:
+                        st.metric(
+                            "残り必要平均",
+                            f"{_trend_mt['required_occ']:.1f}%",
+                            delta=f"残り{_trend_mt['days_remaining']}日",
+                        )
+                    else:
+                        st.metric("残り必要平均", "—")
+                st.caption("詳しい日ごとのグラフは下の「日次推移」タブで確認します。")
     except NameError:
         # _summary_expander が未定義の場合（未対応セクション）はスキップ
         pass

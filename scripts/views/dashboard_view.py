@@ -3,7 +3,7 @@
 import streamlit as st
 
 
-def render_action_card(card: dict) -> None:
+def render_action_card(card: dict, *, allow_expanders: bool = True) -> None:
     """結論カード（今日の一手）をダッシュボード最上段に描画する.
 
     card is the return value of generate_action_card():
@@ -45,7 +45,7 @@ def render_action_card(card: dict) -> None:
 
     # Cross-ward cooperation alerts
     _cross_alerts = card.get("cross_ward_alerts", [])
-    if _cross_alerts:
+    if _cross_alerts and allow_expanders:
         with st.expander("🤝 他病棟の状況（協力体制）", expanded=True):
             for _alert in _cross_alerts:
                 _alert_level = _alert.get("level", "info")
@@ -57,6 +57,18 @@ def render_action_card(card: dict) -> None:
                 else:
                     st.info(_alert_msg)
             st.caption("自病棟の問題でなくても、病院全体の施設基準達成に協力が必要です")
+    elif _cross_alerts:
+        st.markdown("##### 🤝 他病棟の状況")
+        for _alert in _cross_alerts:
+            _alert_level = _alert.get("level", "info")
+            _alert_msg = f"**{_alert.get('ward', '')}**: {_alert.get('message', '')}"
+            if _alert_level == "critical":
+                st.error(_alert_msg)
+            elif _alert_level == "warning":
+                st.warning(_alert_msg)
+            else:
+                st.info(_alert_msg)
+        st.caption("病院全体の基準達成に関わる場合のみ表示しています。")
 
 
 def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
@@ -116,7 +128,13 @@ def render_kpi_priority_strip(kpi_list: list[dict]) -> None:
                 st.caption(kpi["explanation"])
 
 
-def render_morning_capacity_card(morning_capacity: dict, morning_5f: dict = None, morning_6f: dict = None) -> None:
+def render_morning_capacity_card(
+    morning_capacity: dict,
+    morning_5f: dict = None,
+    morning_6f: dict = None,
+    *,
+    show_explanation: bool = True,
+) -> None:
     """翌診療日朝の受入余力を主要KPIとして描画する.
 
     morning_capacity from estimate_next_morning_capacity():
@@ -211,21 +229,24 @@ def render_morning_capacity_card(morning_capacity: dict, morning_5f: dict = None
         f"翌朝に昼間の救急搬送を何床受けられるかの目安"
     )
 
-    # 3診療日最小の解説
-    with st.expander("💡 「3診療日最小」とは？", expanded=False):
-        st.markdown(
-            "翌朝の空床数だけでは、**数日後に空床が急減するリスク**を見落とします。\n\n"
-            "「3診療日最小」は、**向こう3診療日の中で最も空床が少なくなる日の予測値**です。"
-            "過去の同じ曜日の入退院パターンから、日ごとの退院数・入院数を推計し、"
-            "累積の空床数を追跡して最小値を取っています。\n\n"
-            "**読み方の例:**\n"
-            "- 翌朝10床 / 3日最小9床 → 向こう3日間おおむね安定\n"
-            "- 翌朝10床 / 3日最小3床 → **明後日以降に急激に詰まる予兆**。今日のうちに退院調整を前倒しすべき\n\n"
-            "つまり「翌朝」は今日の判断、「3日最小」は**先手を打つための判断材料**です。"
-        )
+    # 3診療日最小の解説。サマリー内では nested expander を避けるため非表示にできる。
+    if show_explanation:
+        with st.expander("💡 「3診療日最小」とは？", expanded=False):
+            st.markdown(
+                "翌朝の空床数だけでは、**数日後に空床が急減するリスク**を見落とします。\n\n"
+                "「3診療日最小」は、**向こう3診療日の中で最も空床が少なくなる日の予測値**です。"
+                "過去の同じ曜日の入退院パターンから、日ごとの退院数・入院数を推計し、"
+                "累積の空床数を追跡して最小値を取っています。\n\n"
+                "**読み方の例:**\n"
+                "- 翌朝10床 / 3日最小9床 → 向こう3日間おおむね安定\n"
+                "- 翌朝10床 / 3日最小3床 → **明後日以降に急激に詰まる予兆**。今日のうちに退院調整を前倒しすべき\n\n"
+                "つまり「翌朝」は今日の判断、「3日最小」は**先手を打つための判断材料**です。"
+            )
+    else:
+        st.caption("3診療日最小は、向こう3診療日の中で最も空床が少ない予測値です。")
 
 
-def render_tradeoff_card(tradeoff: dict) -> None:
+def render_tradeoff_card(tradeoff: dict, *, use_expander: bool = True) -> None:
     """C群/制度/受入余力のトレードオフ評価を描画する.
 
     tradeoff from generate_tradeoff_assessment():
@@ -244,10 +265,7 @@ def render_tradeoff_card(tradeoff: dict) -> None:
         "neutral": "\u26aa 個別判断",
     }
 
-    with st.expander(
-        f"\u2696\ufe0f C群トレードオフ評価: {rec_labels.get(rec, '—')}",
-        expanded=tradeoff.get("emergency_priority", False),
-    ):
+    def _render_tradeoff_body() -> None:
         st.markdown(f"**総合判断**: {tradeoff.get('reasoning', '')}")
         st.caption(
             "C群（15日目以降）は院内運用ラベルであり、制度上の公式区分ではありません。"
@@ -260,7 +278,6 @@ def render_tradeoff_card(tradeoff: dict) -> None:
                 "C群の延長よりも退院→空床確保→救急受入を優先してください。"
             )
 
-        # Impact table
         impacts = tradeoff.get("impacts", [])
         if impacts:
             st.markdown("**各指標への影響:**")
@@ -273,3 +290,11 @@ def render_tradeoff_card(tradeoff: dict) -> None:
                 else:
                     icon = "\u2796"
                 st.markdown(f"- {icon} **{imp.get('metric', '')}**: {imp.get('effect', '')}")
+
+    label = f"\u2696\ufe0f C群トレードオフ評価: {rec_labels.get(rec, '—')}"
+    if use_expander:
+        with st.expander(label, expanded=tradeoff.get("emergency_priority", False)):
+            _render_tradeoff_body()
+    else:
+        st.markdown(f"##### {label}")
+        _render_tradeoff_body()
