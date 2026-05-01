@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import pandas as pd
+
 # ---------------------------------------------------------------------------
 # 外部モジュールのインポート（フォールバック付き）
 # ---------------------------------------------------------------------------
@@ -205,6 +207,11 @@ def calculate_guardrail_status(
             - home_discharge_rate (float): 手動入力の在宅復帰率
             - adl_decline (float): 手動入力のADL低下割合
             - nursing_necessity_i (float): 手動入力の重症度・医療看護必要度I
+            - ward (str|None): "5F" / "6F" / None（全体）
+            - monthly_summary (dict): 月別サマリー（過去CSV + 手動入力）
+            - manual_seeds (dict|None): emergency_ratio.load_manual_seeds_from_yaml()
+              の戻り値。daily > summary > manual_seed > no_data の優先順位で
+              rolling 救急 15% 計算に注入する。
 
     Returns:
         指標ごとの充足状況を表す dict のリスト。
@@ -266,23 +273,69 @@ def calculate_guardrail_status(
     # ---------------------------------------------------------------
     emg_threshold = DEFAULT_GUARDRAIL_THRESHOLDS["emergency_ratio"]["threshold"]
     monthly_summary = config.get("monthly_summary") if config else None
+    manual_seeds = config.get("manual_seeds") if config else None
     _emg_calculated = False
 
-    if _HAS_ROLLING_EMG and detail_df is not None and len(detail_df) > 0 and "route" in detail_df.columns:
+    # rolling 救急計算の起動条件（Phase 1.8 で初期状態対応）:
+    # (a) detail_df に日次データ（route 列含む）がある → 通常パス
+    # (b) detail_df は空でも manual_seeds か monthly_summary があれば
+    #     シード/サマリー由来で計算可能 → 空 DF を生成して関数に渡す
+    _has_daily_detail = (
+        detail_df is not None
+        and len(detail_df) > 0
+        and "route" in detail_df.columns
+    )
+    _has_seed_or_summary = bool(manual_seeds) or bool(monthly_summary)
+    _should_calc_emg = _HAS_ROLLING_EMG and (_has_daily_detail or _has_seed_or_summary)
+
+    if _should_calc_emg:
+        # 空 DF パス: rolling 関数のシグネチャに合わせて最小スキーマを作る
+        # （_filter_admissions は detail_df.empty を素通りさせるので OK）
+        if _has_daily_detail:
+            _emg_input_df = detail_df
+        else:
+            _emg_input_df = pd.DataFrame(
+                columns=["date", "ward", "event_type", "route"]
+            )
         rolling_emg = calculate_rolling_emergency_ratio(
-            detail_df, ward=config.get("ward") if config else None,
+            _emg_input_df, ward=config.get("ward") if config else None,
             monthly_summary=monthly_summary,
+            manual_seeds=manual_seeds,
         )
-        if rolling_emg["denominator"] > 0:
+        # シード利用時は denominator/numerator が None になる（mean_of_ratios_with_seeds 方式）
+        _emg_seed_used = rolling_emg.get("calculation_method") == "mean_of_ratios_with_seeds"
+        _emg_denom = rolling_emg.get("denominator")
+        _emg_has_data = (_emg_denom is not None and _emg_denom > 0) or _emg_seed_used
+
+        if _emg_has_data:
             current_emg = rolling_emg["ratio_pct"]
             margin = current_emg - emg_threshold
             status = _margin_to_status(margin, safe_threshold=5.0)
-            # 月別内訳テキスト
-            months_info = " / ".join(
-                f"{mb['year_month']}:{mb['numerator']}/{mb['denominator']}"
-                for mb in rolling_emg["monthly_breakdown"]
-                if mb["denominator"] > 0
-            )
+            # 月別内訳テキスト（source に応じて表示分岐）
+            _breakdown_parts = []
+            for mb in rolling_emg["monthly_breakdown"]:
+                _src = mb.get("source", "")
+                _mb_denom = mb.get("denominator")
+                if _src == "manual_seed":
+                    _breakdown_parts.append(
+                        f"{mb['year_month']}:🌉{mb['ratio_pct']:.1f}%"
+                    )
+                elif _mb_denom is not None and _mb_denom > 0:
+                    _breakdown_parts.append(
+                        f"{mb['year_month']}:{mb['numerator']}/{mb['denominator']}"
+                    )
+            months_info = " / ".join(_breakdown_parts)
+            # description: シード混在か通常かで分岐
+            if _emg_seed_used:
+                description = (
+                    f"直近3ヶ月rolling平均（シード混在） {current_emg:.1f}%（{months_info}）"
+                )
+            else:
+                description = (
+                    f"直近3ヶ月rolling平均 "
+                    f"{rolling_emg['numerator']}/{rolling_emg['denominator']}件"
+                    f"（{months_info}）"
+                )
             results.append({
                 "name": "救急搬送後患者割合",
                 "current_value": round(current_emg, 1),
@@ -291,11 +344,7 @@ def calculate_guardrail_status(
                 "margin": round(margin, 1),
                 "status": status,
                 "data_source": "measured",
-                "description": (
-                    f"直近3ヶ月rolling平均 "
-                    f"{rolling_emg['numerator']}/{rolling_emg['denominator']}件"
-                    f"（{months_info}）"
-                ),
+                "description": description,
             })
             _emg_calculated = True
 

@@ -1,0 +1,51 @@
+# 看護必要度 月次手動シード（過去月補完用）
+#
+# 用途:
+# 2026-06-01 以降の rolling 3ヶ月 看護必要度評価を、運用開始直後から機能させるための
+# 過去月（2026-04 / 2026-05 等）の手入力ブリッジ。
+#
+# 優先順位（nursing_necessity_loader.py で実装）:
+#   1. 日次データ (data/nursing_necessity_2025fy.csv) があればそれを優先
+#   2. 日次データがない月は、本ファイルのシード値で補完
+#   3. シードもない月は no_data
+#
+# 構造:
+#   seeds:
+#     "YYYY-MM":
+#       "5F" or "6F":
+#         I_total:    必要度Ⅰ評価対象 患者日数（分母）
+#         I_pass1:    必要度Ⅰ該当 患者日数（分子）
+#         II_total:   必要度Ⅱ評価対象 患者日数（分母）
+#         II_pass1:   必要度Ⅱ該当 患者日数（分子）
+#       "合計":  # 任意。ない場合は 5F + 6F から自動計算可
+#
+# 入力例（2026-04 5F の場合）:
+#   "2026-04":
+#     "5F":
+#       I_total: 1280
+#       I_pass1: 240
+#       II_total: 1280
+#       II_pass1: 215
+#
+# 注:
+# - 個人情報を入れない（集計値のみ）
+# - 副院長が事務担当 諸見里さんの月次データシートから手入力する想定
+# - 値が null のままだと「シードなし = no_data」扱いになる
+
+seeds: {}
+
+# テンプレ（必要に応じてコピペして使う）:
+#  "2026-04":
+#    "5F":
+#      I_total: null
+#      I_pass1: null
+#      II_total: null
+#      II_pass1: null
+#    "6F":
+#      I_total: null
+#      I_pass1: null
+#      II_total: null
+#      II_pass1: null
+#  "2026-05":
+#    "5F": {I_total: null, I_pass1: null, II_total: null, II_pass1: null}
+#    "6F": {I_total: null, I_pass1: null, II_total: null, II_pass1: null}

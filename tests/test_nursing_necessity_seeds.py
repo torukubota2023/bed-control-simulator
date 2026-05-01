@@ -1,0 +1,507 @@
+"""nursing_necessity_seeds のテスト."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+from nursing_necessity_seeds import (
+    DEFAULT_SEED_YAML,
+    SEED_REQUIRED_KEYS,
+    get_data_source_summary,
+    is_seed_valid,
+    load_seeds_from_yaml,
+    merge_monthly_with_seeds,
+    save_seed_to_yaml,
+    summarize_yearly_from_monthly,
+)
+
+
+# ---------------------------------------------------------------------------
+# load_seeds_from_yaml
+# ---------------------------------------------------------------------------
+
+class TestLoadSeeds:
+    def test_missing_file_returns_empty(self, tmp_path):
+        result = load_seeds_from_yaml(tmp_path / "nonexistent.yaml")
+        assert result == {}
+
+    def test_template_with_only_nulls(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        p.write_text("seeds: {}\n", encoding="utf-8")
+        result = load_seeds_from_yaml(p)
+        assert result == {}
+
+    def test_partial_seed_kept(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        p.write_text(
+            "seeds:\n"
+            "  '2026-04':\n"
+            "    '5F':\n"
+            "      I_total: 1280\n"
+            "      I_pass1: 240\n"
+            "      II_total: 1280\n"
+            "      II_pass1: 215\n",
+            encoding="utf-8",
+        )
+        result = load_seeds_from_yaml(p)
+        assert "2026-04" in result
+        assert "5F" in result["2026-04"]
+        assert result["2026-04"]["5F"]["I_total"] == 1280.0
+        assert result["2026-04"]["5F"]["I_pass1"] == 240.0
+
+    def test_invalid_ward_filtered(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        p.write_text(
+            "seeds:\n"
+            "  '2026-04':\n"
+            "    '5F':\n"
+            "      I_total: 1000\n"
+            "      I_pass1: 200\n"
+            "      II_total: 1000\n"
+            "      II_pass1: 180\n"
+            "    'invalid_ward':\n"
+            "      I_total: 999\n",
+            encoding="utf-8",
+        )
+        result = load_seeds_from_yaml(p)
+        assert "5F" in result["2026-04"]
+        assert "invalid_ward" not in result["2026-04"]
+
+    def test_all_null_skipped(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        p.write_text(
+            "seeds:\n"
+            "  '2026-04':\n"
+            "    '5F':\n"
+            "      I_total: null\n"
+            "      I_pass1: null\n"
+            "      II_total: null\n"
+            "      II_pass1: null\n",
+            encoding="utf-8",
+        )
+        result = load_seeds_from_yaml(p)
+        # 全部 null なら採用しない
+        assert "2026-04" not in result
+
+    def test_invalid_yaml_returns_empty(self, tmp_path):
+        p = tmp_path / "broken.yaml"
+        p.write_text("seeds: : [\n", encoding="utf-8")
+        result = load_seeds_from_yaml(p)
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# is_seed_valid
+# ---------------------------------------------------------------------------
+
+class TestIsSeedValid:
+    def test_complete(self):
+        seed = {"I_total": 1000, "I_pass1": 200, "II_total": 1000, "II_pass1": 180}
+        assert is_seed_valid(seed) is True
+
+    def test_partial_with_null(self):
+        seed = {"I_total": 1000, "I_pass1": None, "II_total": 1000, "II_pass1": 180}
+        assert is_seed_valid(seed) is False
+
+    def test_empty(self):
+        assert is_seed_valid({}) is False
+
+
+# ---------------------------------------------------------------------------
+# merge_monthly_with_seeds
+# ---------------------------------------------------------------------------
+
+class TestMerge:
+    def _make_csv_df(self):
+        # 既存の月次サマリー（CSV 由来）— 2025-04 の 5F/6F のみ
+        return pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F",
+             "I_total": 1303, "I_pass1": 295,
+             "II_total": 1303, "II_pass1": 261,
+             "I_rate1": 0.226, "II_rate1": 0.200,
+             "I_meets_legacy": True, "I_meets_new": True,
+             "II_meets_legacy": True, "II_meets_new": True},
+            {"ym": "2025-04", "ward": "6F",
+             "I_total": 1312, "I_pass1": 282,
+             "II_total": 1312, "II_pass1": 250,
+             "I_rate1": 0.215, "II_rate1": 0.190,
+             "I_meets_legacy": True, "I_meets_new": True,
+             "II_meets_legacy": True, "II_meets_new": True},
+        ])
+
+    def test_csv_only_no_seeds(self):
+        df = self._make_csv_df()
+        out = merge_monthly_with_seeds(df, seeds={})
+        assert len(out) == 2
+        assert (out["data_source"] == "csv").all()
+
+    def test_seeds_added_for_missing_months(self):
+        df = self._make_csv_df()
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1200, "I_pass1": 240, "II_total": 1200, "II_pass1": 216},
+                "6F": {"I_total": 1180, "I_pass1": 200, "II_total": 1180, "II_pass1": 180},
+            },
+        }
+        out = merge_monthly_with_seeds(df, seeds=seeds)
+        # 既存 2 + シード 2 = 4 行
+        assert len(out) == 4
+        # 2025-04 = csv
+        csv_rows = out[out["ym"] == "2025-04"]
+        assert (csv_rows["data_source"] == "csv").all()
+        # 2026-04 = monthly_seed
+        seed_rows = out[out["ym"] == "2026-04"]
+        assert (seed_rows["data_source"] == "monthly_seed").all()
+        # rate が正しく計算されている
+        sf_seed = seed_rows[seed_rows["ward"] == "5F"].iloc[0]
+        assert abs(sf_seed["I_rate1"] - 0.20) < 0.001  # 240/1200
+
+    def test_csv_takes_priority_over_seed(self):
+        df = self._make_csv_df()
+        # 同じ 2025-04 5F のシードを定義しても CSV が優先
+        seeds = {
+            "2025-04": {
+                "5F": {"I_total": 999, "I_pass1": 999, "II_total": 999, "II_pass1": 999},
+            },
+        }
+        out = merge_monthly_with_seeds(df, seeds=seeds)
+        # 2 行のまま（重複追加されない）
+        assert len(out) == 2
+        # CSV 値が残る
+        sf = out[(out["ym"] == "2025-04") & (out["ward"] == "5F")].iloc[0]
+        assert sf["I_total"] == 1303
+        assert sf["data_source"] == "csv"
+
+    def test_invalid_seed_skipped(self):
+        df = self._make_csv_df()
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1200, "I_pass1": None, "II_total": 1200, "II_pass1": 216},
+                # I_pass1 が null なので採用されない
+            },
+        }
+        out = merge_monthly_with_seeds(df, seeds=seeds)
+        assert len(out) == 2  # CSV 2 行のみ、シード追加なし
+
+    def test_empty_input(self):
+        out = merge_monthly_with_seeds(pd.DataFrame(), seeds=None)
+        assert len(out) == 0
+
+    def test_seed_threshold_judgment(self):
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1000, "I_pass1": 200, "II_total": 1000, "II_pass1": 180},
+                # I 20% (新基準19%以上で達成)、II 18% (新基準18%でちょうど達成)
+                "6F": {"I_total": 1000, "I_pass1": 150, "II_total": 1000, "II_pass1": 120},
+                # I 15% (新基準19% に未達)、II 12% (新基準18% に未達)
+            },
+        }
+        out = merge_monthly_with_seeds(pd.DataFrame(), seeds=seeds)
+        sf = out[out["ward"] == "5F"].iloc[0]
+        # numpy bool / Python bool の差異を吸収して bool() で比較
+        assert bool(sf["I_meets_new"]) is True   # 20% >= 19%
+        assert bool(sf["II_meets_new"]) is True  # 18% >= 18%
+
+        ssf = out[out["ward"] == "6F"].iloc[0]
+        assert bool(ssf["I_meets_new"]) is False    # 15% < 19%
+        assert bool(ssf["II_meets_new"]) is False   # 12% < 18%
+
+
+# ---------------------------------------------------------------------------
+# get_data_source_summary
+# ---------------------------------------------------------------------------
+
+class TestSourceSummary:
+    def test_basic(self):
+        df = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "data_source": "csv"},
+            {"ym": "2025-04", "ward": "6F", "data_source": "csv"},
+            {"ym": "2026-04", "ward": "5F", "data_source": "monthly_seed"},
+        ])
+        s = get_data_source_summary(df, target_ym=["2025-04", "2026-04", "2026-05"])
+        assert s["2025-04"]["5F"] == "csv"
+        assert s["2025-04"]["6F"] == "csv"
+        assert s["2026-04"]["5F"] == "monthly_seed"
+        # 6F 2026-04 / 5F+6F 2026-05 → no_data
+        assert s["2026-04"]["6F"] == "no_data"
+        assert s["2026-05"]["5F"] == "no_data"
+        assert s["2026-05"]["6F"] == "no_data"
+
+
+# ---------------------------------------------------------------------------
+# save_seed_to_yaml
+# ---------------------------------------------------------------------------
+
+class TestSaveSeed:
+    def test_save_new_seed(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        out = save_seed_to_yaml(
+            "2026-04", "5F",
+            {"I_total": 1200, "I_pass1": 240, "II_total": 1200, "II_pass1": 216},
+            path=p,
+        )
+        assert out == p
+        assert p.exists()
+        loaded = load_seeds_from_yaml(p)
+        assert loaded["2026-04"]["5F"]["I_total"] == 1200.0
+
+    def test_save_overwrites_existing(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        save_seed_to_yaml(
+            "2026-04", "5F",
+            {"I_total": 1000, "I_pass1": 200, "II_total": 1000, "II_pass1": 180},
+            path=p,
+        )
+        save_seed_to_yaml(
+            "2026-04", "5F",
+            {"I_total": 1500, "I_pass1": 300, "II_total": 1500, "II_pass1": 270},
+            path=p,
+        )
+        loaded = load_seeds_from_yaml(p)
+        assert loaded["2026-04"]["5F"]["I_total"] == 1500.0
+
+    def test_save_preserves_other_wards(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        save_seed_to_yaml(
+            "2026-04", "5F",
+            {"I_total": 1000, "I_pass1": 200, "II_total": 1000, "II_pass1": 180},
+            path=p,
+        )
+        save_seed_to_yaml(
+            "2026-04", "6F",
+            {"I_total": 1100, "I_pass1": 220, "II_total": 1100, "II_pass1": 198},
+            path=p,
+        )
+        loaded = load_seeds_from_yaml(p)
+        # 両方残っている
+        assert "5F" in loaded["2026-04"]
+        assert "6F" in loaded["2026-04"]
+
+    def test_invalid_ward_raises(self, tmp_path):
+        p = tmp_path / "seed.yaml"
+        with pytest.raises(ValueError):
+            save_seed_to_yaml("2026-04", "X棟", {}, path=p)
+
+
+# ---------------------------------------------------------------------------
+# 既存 YAML テンプレが load 可能か（リグレッション）
+# ---------------------------------------------------------------------------
+
+def test_default_yaml_template_is_loadable():
+    """settings/manual_seed_nursing_necessity.yaml がコメントのみ・seeds: {} の状態でも読める."""
+    if not DEFAULT_SEED_YAML.exists():
+        pytest.skip("デフォルト YAML がまだ存在しない")
+    result = load_seeds_from_yaml(DEFAULT_SEED_YAML)
+    # 空辞書（seeds: {}）が期待値
+    assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# summarize_yearly_from_monthly (Codex Finding 2 対応)
+# ---------------------------------------------------------------------------
+
+class TestYearlyFromMonthly:
+    def test_empty_input(self):
+        out = summarize_yearly_from_monthly(pd.DataFrame())
+        assert len(out) == 0
+
+    def test_csv_only_aggregation(self):
+        # CSV 由来の 2 ヶ月分のデータを ward 別に合計
+        monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 180, "data_source": "csv"},
+            {"ym": "2025-05", "ward": "5F", "I_total": 1100, "I_pass1": 220,
+             "II_total": 1100, "II_pass1": 198, "data_source": "csv"},
+            {"ym": "2025-04", "ward": "6F", "I_total": 1000, "I_pass1": 150,
+             "II_total": 1000, "II_pass1": 130, "data_source": "csv"},
+        ])
+        out = summarize_yearly_from_monthly(monthly)
+        # 2 病棟分が出る
+        assert len(out) == 2
+        sf = out[out["ward"] == "5F"].iloc[0]
+        # 5F: I 合計 1000+1100=2100, pass 200+220=420, rate ≈ 20%
+        assert sf["I_total"] == 2100
+        assert sf["I_pass1"] == 420
+        assert abs(sf["I_rate1_avg"] - 0.20) < 0.001
+
+    def test_seed_rows_change_yearly_average(self):
+        # CSV のみのときと、シードを足したときの yearly 平均が変わることを確認
+        csv_monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 180, "data_source": "csv"},
+        ])
+        only_csv = summarize_yearly_from_monthly(csv_monthly)
+        only_csv_rate = only_csv[only_csv["ward"] == "5F"].iloc[0]["I_rate1_avg"]
+        assert abs(only_csv_rate - 0.20) < 0.001  # 200/1000
+
+        # シード追加: 2026-04 で I 高め (300/1000=30%) → yearly 平均が上がるはず
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1000, "I_pass1": 300, "II_total": 1000, "II_pass1": 270},
+            }
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds)
+        with_seed = summarize_yearly_from_monthly(merged)
+        with_seed_rate = with_seed[with_seed["ward"] == "5F"].iloc[0]["I_rate1_avg"]
+        # 2 ヶ月合計 = (200+300)/(1000+1000) = 25% にシフト
+        assert abs(with_seed_rate - 0.25) < 0.001
+        # シード反映で 5pt 増加することを確認（Codex Finding 2 の核心テスト）
+        assert with_seed_rate > only_csv_rate
+
+    def test_excludes_total_rows(self):
+        # 「合計」行は重複集計を防ぐため除外される
+        monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 180},
+            {"ym": "2025-04", "ward": "合計", "I_total": 2000, "I_pass1": 400,
+             "II_total": 2000, "II_pass1": 360},
+        ])
+        out = summarize_yearly_from_monthly(monthly)
+        wards = out["ward"].tolist()
+        assert "合計" not in wards
+        assert "5F" in wards
+
+
+# ---------------------------------------------------------------------------
+# 看護必要度シード経路全体の統合テスト
+# ---------------------------------------------------------------------------
+
+class TestSeedIntegration:
+    def test_full_pipeline_csv_plus_seed(self):
+        """CSV → merge → yearly の一連の流れで、シードが yearly に反映されることを確認."""
+        # CSV 由来の月次サマリー（1ヶ月分のみ）
+        csv_monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 180,
+             "II_total": 1000, "II_pass1": 160, "data_source": "csv"},
+            {"ym": "2025-04", "ward": "6F", "I_total": 1000, "I_pass1": 150,
+             "II_total": 1000, "II_pass1": 130, "data_source": "csv"},
+        ])
+        # 4 月・5 月の手動シード（運用開始前の補完）
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1200, "I_pass1": 240, "II_total": 1200, "II_pass1": 216},
+                "6F": {"I_total": 1180, "I_pass1": 200, "II_total": 1180, "II_pass1": 180},
+            },
+            "2026-05": {
+                "5F": {"I_total": 1250, "I_pass1": 260, "II_total": 1250, "II_pass1": 230},
+                "6F": {"I_total": 1200, "I_pass1": 210, "II_total": 1200, "II_pass1": 195},
+            },
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds)
+        # CSV 2 行 + シード 4 行 = 6 行
+        assert len(merged) == 6
+        # 出典が正しく付与されている
+        assert (merged[merged["ym"].str.startswith("2025")]["data_source"] == "csv").all()
+        assert (merged[merged["ym"].str.startswith("2026")]["data_source"] == "monthly_seed").all()
+
+        # yearly がシード込みで集計されている
+        yearly = summarize_yearly_from_monthly(merged)
+        sf = yearly[yearly["ward"] == "5F"].iloc[0]
+        # 5F I_total: 1000 + 1200 + 1250 = 3450
+        assert sf["I_total"] == 3450
+        assert sf["I_pass1"] == 180 + 240 + 260
+        # シード卒業前のため、CSV のみの 18% より高い値（≈ 20%）になる
+        assert sf["I_rate1_avg"] > 0.18
+
+
+# ---------------------------------------------------------------------------
+# Codex 再レビュー (2026-05-01): 6F ストラテジーボードへのシード反映保証
+# ---------------------------------------------------------------------------
+
+class TestStrategyBoardSeedIntegration:
+    """summarize_actual_necessity_gaps がシード混在の月次データを正しく扱うかの保証.
+
+    観点:
+    - merge_monthly_with_seeds の出力をそのまま渡しても動作する
+    - シード行が ward="6F" として扱われ、ギャップ計算に影響する
+    - CSV と シードで同じ月の場合、CSV が優先される（merge 段階で保証）
+    """
+
+    def test_seed_changes_strategy_board_gap(self):
+        """シード追加で 6F の必要該当日数（required_days_per_month）が変化することを確認."""
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+            from nursing_necessity_strategy import summarize_actual_necessity_gaps
+        except ImportError:
+            pytest.skip("nursing_necessity_strategy が import できない環境")
+
+        # CSV 由来の 6F 月次データ（達成率高）
+        csv_monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "6F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 195, "data_source": "csv"},
+            {"ym": "2025-05", "ward": "6F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 195, "data_source": "csv"},
+        ])
+
+        # CSV のみで計算（gap 小）
+        gaps_csv_only = summarize_actual_necessity_gaps(
+            csv_monthly, ward="6F", emergency_coefficient_pct=1.48,
+        )
+        gap_ii_csv = next(
+            (r for r in gaps_csv_only if r["scope"] == "12ヶ月平均" and r["necessity_type"] == "II"),
+            None,
+        )
+        assert gap_ii_csv is not None
+        gap_pct_csv = gap_ii_csv["gap_pct"]
+
+        # 直近月にシード追加（達成率低 → ギャップ増）
+        seeds = {
+            "2026-04": {
+                "6F": {"I_total": 1000, "I_pass1": 80, "II_total": 1000, "II_pass1": 60},
+            },
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds)
+        gaps_with_seed = summarize_actual_necessity_gaps(
+            merged, ward="6F", emergency_coefficient_pct=1.48,
+        )
+        gap_ii_seed = next(
+            (r for r in gaps_with_seed if r["scope"] == "12ヶ月平均" and r["necessity_type"] == "II"),
+            None,
+        )
+        assert gap_ii_seed is not None
+        gap_pct_seed = gap_ii_seed["gap_pct"]
+
+        # シードで悪い月が追加されたので、12ヶ月平均のギャップは大きくなる
+        assert gap_pct_seed > gap_pct_csv, (
+            f"シード追加で gap_pct が増えるはず: csv_only={gap_pct_csv:.2f} vs with_seed={gap_pct_seed:.2f}"
+        )
+
+    def test_csv_priority_preserved_in_merged_data(self):
+        """同月で CSV とシード両方ある場合、CSV が優先されシードは追加されない."""
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+            from nursing_necessity_strategy import summarize_actual_necessity_gaps
+        except ImportError:
+            pytest.skip("nursing_necessity_strategy が import できない環境")
+
+        # CSV: 達成率高（200/1000 = 20%）
+        csv_monthly = pd.DataFrame([
+            {"ym": "2026-04", "ward": "6F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 200, "data_source": "csv"},
+        ])
+        # 同月のシード: 達成率極低（仮にシードが優先されたら結果が大きく変わる値）
+        seeds_same_month = {
+            "2026-04": {
+                "6F": {"I_total": 1000, "I_pass1": 10, "II_total": 1000, "II_pass1": 10},
+            },
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds_same_month)
+        # CSV 1 行のまま（シードは無視される）
+        assert len(merged) == 1
+        assert (merged["data_source"] == "csv").all()
+
+        gaps = summarize_actual_necessity_gaps(
+            merged, ward="6F", emergency_coefficient_pct=1.48,
+        )
+        gap_ii = next(
+            (r for r in gaps if r["scope"] == "12ヶ月平均" and r["necessity_type"] == "II"),
+            None,
+        )
+        assert gap_ii is not None
+        # CSV の rate (20%) で計算されているか（シード値は使われない）
+        assert abs(gap_ii["rate_pct"] - 20.0) < 0.5

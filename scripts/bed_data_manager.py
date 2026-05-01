@@ -2127,8 +2127,17 @@ def save_details(
 
 def load_details(
     filepath: str = "data/admission_details.csv",
+    *,
+    real_only: bool = False,
 ) -> pd.DataFrame:
-    """CSVファイルから入退院詳細レコードを読み込む。ファイルがなければ空DataFrameを返す。"""
+    """CSVファイルから入退院詳細レコードを読み込む。ファイルがなければ空DataFrameを返す。
+
+    Args:
+        filepath: CSV ファイルパス
+        real_only: True の場合、デモ医師（A医師〜J医師）行を除外し実医師コード行のみ返す。
+                   院内LAN 本番運用での safeguard。デフォルト False は後方互換のため。
+                   2026-05-01 副院長指示による追加（data_purity_guard 連携）。
+    """
     import os
     if not os.path.exists(filepath):
         return create_empty_detail_dataframe()
@@ -2154,6 +2163,16 @@ def load_details(
             raw[col] = pd.NA
 
     raw = raw[[c for c in ADMISSION_DETAIL_COLUMNS if c in raw.columns]]
+
+    # safeguard: real_only=True ならデモ行を除外
+    if real_only:
+        try:
+            from data_purity_guard import filter_real_only
+            raw = filter_real_only(raw).reset_index(drop=True)
+        except ImportError:
+            # data_purity_guard が import できない環境では何もしない（既存挙動を維持）
+            pass
+
     return raw
 
 
