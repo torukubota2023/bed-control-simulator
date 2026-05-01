@@ -369,6 +369,7 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 | v3.5k | 経営者目線セクション分離（Phase 5, 2026-04-25）— 「📈 過去1年分析」を独立セクションに昇格（5→6 セクション）。医師別分析タブにデモデータ警告バナーを追加し実運用切替時の混乱を予防 | `bed_control_simulator_app.py` （セクション定義 + dispatch + バナー） |
 | v3.5l | 看護必要度トレンド分析 Stage A（2026-04-25）— 「📈 過去1年分析」セクションに看護必要度サブセクション追加。2026-06-01 新基準（Ⅰ16%→19%, Ⅱ14%→18%）対応 + 救急患者応需係数（年間救急 ÷ 病床数 × 0.005、上限10%）を該当割合に加算する判定ロジック。当院想定値 1.48% で実態判定可能に | `nursing_necessity_loader.py`, `nursing_necessity_thresholds.py`, `extract_nursing_necessity_from_xlsm.py`, `data/nursing_necessity_2025fy.csv` |
 | v3.5m | 院内LAN導入前 安全対策パック（Phase 1〜1.8, 2026-05-01, PR #42 マージ済）— ① デモ混入防止（17 実医師コード allowlist + データ種類バナー + 本番初期化UI）② 看護必要度月次シードブリッジ（年間カード + 6F ストラテジーボード両方で seed-merged データ）③ 救急15%手動シードを制度余力ダッシュボード / 結論カード / v4 制度確認タブに接続 ④ 初期状態対応（空 detail_df + シードのみで rolling 計算成立） ⑤ 副院長 SOP（SE 引渡し前 5 項目チェック）。優先順位「日次CSV > monthly_summary > manual_seed > no_data」を全経路で保証 | `data_purity_guard.py`, `nursing_necessity_seeds.py`, `guardrail_engine.py`, `tabs/regulation_tab.py`, `bed_data_manager.py`（`real_only=` safeguard）, `docs/admin/pre_lan_deployment_checklist.md` |
+| v3.5m.1 | 表示整合性の総ざらい（2026-05-01 同日、PR #47-49）— ① 管理者 3 KPI ストリップの稼働率を当日値に統一（PR #47）② 当日値の右に「（月平均 X.X%）」を括弧併記、ゲージは「現時点の月平均稼働率／月末目標 ≥ 90%」を明示（PR #48）③ 「📊 日次推移」タブを関数化し、「本日の詳細サマリー」expander にも統合表示（PR #49）。副院長スクリーンショット指摘を契機に、画面内の同一指標が異なる期間で並ぶ混乱をすべて「ラベル設計＋当日値・月平均の併記」で解消 | `bed_control_simulator_app.py` (_get_top_kpi_snapshot, _render_admin_kpi_strip, _render_daily_trend_section), `theme_css.py`, `tests/test_admin_kpi_consistency.py` |
 
 ### 📅 退院カレンダー（v3.5j, 2026-04-23 副院長判断）
 副院長の「不在のベッドコントローラーの代理」要望に応える機能。木曜カンファで
@@ -473,6 +474,27 @@ _bc_alert("救急搬送後割合が危険域 — 受入最優先モードへ", s
 ## 運用ルール（必ず守ること）
 - **アプリ修正時の品質保証:** [app-quality-assurance.md](.claude/rules/app-quality-assurance.md) の固定ルールに従い、詳細手順は [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) を参照する。リリース前は `/qa` コマンドで最終確認を行う
 - **Claude Code でのベッドコントロール開発:** 実装は `scripts/` と `tests/` を優先し、可変の運用メモや教訓は [bed_control_claude_code_workflow.md](docs/admin/bed_control_claude_code_workflow.md) と [bed_control_app_quality_assurance.md](docs/admin/bed_control_app_quality_assurance.md) に集約する。`.claude` は固定ルールとコマンド定義を中心に保つ
+
+### 📦 アプリ修正後の連動更新ルール（2026-05-01 副院長決定、必須）
+
+**原則:** `scripts/bed_control_simulator_app.py` または `scripts/views/`・`scripts/tabs/` 配下を修正した PR をマージしたら、**配布物・関連ドキュメントを 1 つでも忘れずに連動更新する**。これを怠ると院内 SE / 副院長の手元と GitHub main の状態が乖離する。
+
+**マージ後（同 PR か続く PR で）必ず確認・更新する 5 項目:**
+
+| # | 対象 | 更新が必要な条件 | 更新コマンド |
+|---|---|---|---|
+| 1 | **SE 配布 zip**（`docs/admin/bed_control_simulator_offline_win_*.zip`）| 常に（zip にアプリ本体を含むため）| `.venv/bin/python scripts/build_se_offline_package.py --platform win` |
+| 2 | **SE マニュアル DOCX**（`docs/admin/SE_install_manual_*.docx`）の Rev 番号・変更履歴 | アプリの**動作・UI**が変わった場合 | `scripts/generate_se_install_manual.py` の変更履歴セクションを編集 → `.venv/bin/python scripts/generate_se_install_manual.py` |
+| 3 | **リグレッションテストチェックリスト**（`docs/admin/regression_test_checklist.md`）| 新しい UI 要素・KPI 表示・タブ統合などを追加した場合 | 該当セクション（A〜I）に追記 |
+| 4 | **QA ドキュメント矛盾事例**（`docs/admin/bed_control_app_quality_assurance.md` § 過去の矛盾事例）| 表示不整合・セクション間矛盾を修正した場合 | 該当の表に発見日 / 矛盾内容 / 原因を追記 |
+| 5 | **CLAUDE.md** のバージョン記述（v3.5x 行）| 表示や仕様の意味的変更があった場合 | 該当バージョン行の説明文を拡張 |
+
+**判断基準:**
+- バグ修正のみ → 1, 4 は必須、2, 3, 5 は影響に応じて
+- UI 改善・新機能 → 1, 2, 3, 5 は必須、4 は該当する場合のみ
+- 内部リファクタのみ（表示変わらず）→ 1 は必須、他はスキップ可
+
+**運用の流れ:** アプリ修正の PR をマージしたら、**docs ブランチを別途切って 1 PR にまとめる**（複数の修正を同 docs ブランチでバンドル可）。これは PR 履歴を「実装」と「文書」で分離する目的。Phase 1〜1.8 → PR #43、PR #47-49 → PR #50 のように。
 
 ## 🔀 ブランチ・PR 運用ルール（2026-04-22 副院長決定、2PC 運用対応）
 

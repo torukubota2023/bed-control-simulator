@@ -209,7 +209,7 @@ def build():
     p7 = doc.add_paragraph()
     p7.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p7.paragraph_format.space_before = Pt(8)
-    run7 = p7.add_run("作成日：2026年5月1日")
+    run7 = p7.add_run("作成日：2026年5月1日 / Rev. 2")
     _set_jp_font(run7, size_pt=11, color=C_FAINT)
 
     doc.add_page_break()
@@ -861,6 +861,49 @@ def build():
             ["参考ドキュメント", "本パッケージ内 docs/admin/pre_lan_deployment_checklist.md"],
         ],
         col_widths_cm=[4.0, 11.0],
+    )
+    add_para(doc, "")
+
+    # ====================================================================
+    # 15. 変更履歴
+    # ====================================================================
+    add_heading(doc, "15. 変更履歴", level=1)
+    add_para(
+        doc,
+        "本マニュアルおよび配布 zip の改訂履歴です。SE はご自身が持つファイルの "
+        "Rev 番号と下記表を照合し、最新版かをご確認ください。",
+    )
+    add_para(doc, "")
+    add_table(
+        doc,
+        ["Rev", "日付", "内容", "SE 作業への影響"],
+        [
+            [
+                "1",
+                "2026-05-01",
+                "初版（Phase 1〜1.8 / PR #42 マージ）。デモ混入防止・看護必要度月次シードブリッジ・"
+                "救急15%手動シード・本番初期化UI・副院長 SOP を統合。",
+                "なし（初版）",
+            ],
+            [
+                "2",
+                "2026-05-01",
+                "表示整合性の総ざらい（PR #47-49）。① 管理者 3 KPI ストリップの稼働率を当日値に統一 "
+                "② 当日値の右に「（月平均 X.X%）」を併記、ゲージは「現時点の月平均稼働率／月末目標 ≥ 90%」を明示 "
+                "③ 「📊 日次推移」タブを関数化し、「本日の詳細サマリー」expander にも統合表示。",
+                "なし（設置手順は変わらず、内部の表示改善のみ）",
+            ],
+        ],
+        col_widths_cm=[1.0, 2.5, 8.5, 3.5],
+    )
+    add_para(doc, "")
+    add_callout(
+        doc,
+        "💡 補足",
+        "Rev 2 は Rev 1 と比べて「SE が行う設置作業」は何も変わりません。"
+        "アプリ画面上の表示・整合性の改善のみで、サーバー設置・LAN 公開・自動起動・"
+        "Chrome Portable 配布などの手順はすべて Rev 1 と同じです。",
+        color=C_OK,
     )
     add_para(doc, "")
 
