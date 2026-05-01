@@ -407,3 +407,101 @@ class TestSeedIntegration:
         assert sf["I_pass1"] == 180 + 240 + 260
         # シード卒業前のため、CSV のみの 18% より高い値（≈ 20%）になる
         assert sf["I_rate1_avg"] > 0.18
+
+
+# ---------------------------------------------------------------------------
+# Codex 再レビュー (2026-05-01): 6F ストラテジーボードへのシード反映保証
+# ---------------------------------------------------------------------------
+
+class TestStrategyBoardSeedIntegration:
+    """summarize_actual_necessity_gaps がシード混在の月次データを正しく扱うかの保証.
+
+    観点:
+    - merge_monthly_with_seeds の出力をそのまま渡しても動作する
+    - シード行が ward="6F" として扱われ、ギャップ計算に影響する
+    - CSV と シードで同じ月の場合、CSV が優先される（merge 段階で保証）
+    """
+
+    def test_seed_changes_strategy_board_gap(self):
+        """シード追加で 6F の必要該当日数（required_days_per_month）が変化することを確認."""
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+            from nursing_necessity_strategy import summarize_actual_necessity_gaps
+        except ImportError:
+            pytest.skip("nursing_necessity_strategy が import できない環境")
+
+        # CSV 由来の 6F 月次データ（達成率高）
+        csv_monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "6F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 195, "data_source": "csv"},
+            {"ym": "2025-05", "ward": "6F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 195, "data_source": "csv"},
+        ])
+
+        # CSV のみで計算（gap 小）
+        gaps_csv_only = summarize_actual_necessity_gaps(
+            csv_monthly, ward="6F", emergency_coefficient_pct=1.48,
+        )
+        gap_ii_csv = next(
+            (r for r in gaps_csv_only if r["scope"] == "12ヶ月平均" and r["necessity_type"] == "II"),
+            None,
+        )
+        assert gap_ii_csv is not None
+        gap_pct_csv = gap_ii_csv["gap_pct"]
+
+        # 直近月にシード追加（達成率低 → ギャップ増）
+        seeds = {
+            "2026-04": {
+                "6F": {"I_total": 1000, "I_pass1": 80, "II_total": 1000, "II_pass1": 60},
+            },
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds)
+        gaps_with_seed = summarize_actual_necessity_gaps(
+            merged, ward="6F", emergency_coefficient_pct=1.48,
+        )
+        gap_ii_seed = next(
+            (r for r in gaps_with_seed if r["scope"] == "12ヶ月平均" and r["necessity_type"] == "II"),
+            None,
+        )
+        assert gap_ii_seed is not None
+        gap_pct_seed = gap_ii_seed["gap_pct"]
+
+        # シードで悪い月が追加されたので、12ヶ月平均のギャップは大きくなる
+        assert gap_pct_seed > gap_pct_csv, (
+            f"シード追加で gap_pct が増えるはず: csv_only={gap_pct_csv:.2f} vs with_seed={gap_pct_seed:.2f}"
+        )
+
+    def test_csv_priority_preserved_in_merged_data(self):
+        """同月で CSV とシード両方ある場合、CSV が優先されシードは追加されない."""
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+            from nursing_necessity_strategy import summarize_actual_necessity_gaps
+        except ImportError:
+            pytest.skip("nursing_necessity_strategy が import できない環境")
+
+        # CSV: 達成率高（200/1000 = 20%）
+        csv_monthly = pd.DataFrame([
+            {"ym": "2026-04", "ward": "6F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 200, "data_source": "csv"},
+        ])
+        # 同月のシード: 達成率極低（仮にシードが優先されたら結果が大きく変わる値）
+        seeds_same_month = {
+            "2026-04": {
+                "6F": {"I_total": 1000, "I_pass1": 10, "II_total": 1000, "II_pass1": 10},
+            },
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds_same_month)
+        # CSV 1 行のまま（シードは無視される）
+        assert len(merged) == 1
+        assert (merged["data_source"] == "csv").all()
+
+        gaps = summarize_actual_necessity_gaps(
+            merged, ward="6F", emergency_coefficient_pct=1.48,
+        )
+        gap_ii = next(
+            (r for r in gaps if r["scope"] == "12ヶ月平均" and r["necessity_type"] == "II"),
+            None,
+        )
+        assert gap_ii is not None
+        # CSV の rate (20%) で計算されているか（シード値は使われない）
+        assert abs(gap_ii["rate_pct"] - 20.0) < 0.5

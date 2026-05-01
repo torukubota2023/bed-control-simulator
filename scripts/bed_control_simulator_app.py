@@ -1159,8 +1159,24 @@ def _build_past_year_focus_payload() -> dict:
                 bed_count=94,
             )["coefficient"]
 
+        # Codex Finding 5 (2026-05-01) 修正:
+        # 旧: 生の日次 _nn_df_focus を渡していたためシード未反映。
+        # 新: 看護必要度シードをマージしてからギャップ計算へ渡す。
+        #     失敗時は旧来の挙動 (CSV のみ) に fallback。
+        _focus_input_df = _nn_df_focus
+        try:
+            from nursing_necessity_seeds import (
+                load_seeds_from_yaml as _focus_seed_loader,
+                merge_monthly_with_seeds as _focus_merge_seeds,
+            )
+            _focus_csv_monthly = nn_calculate_monthly_summary(_nn_df_focus)
+            _focus_seeds = _focus_seed_loader()
+            _focus_input_df = _focus_merge_seeds(_focus_csv_monthly, _focus_seeds)
+        except Exception:
+            pass
+
         _gap_rows = _nn_actual_gaps(
-            _nn_df_focus,
+            _focus_input_df,
             ward="6F",
             emergency_coefficient_pct=_coef * 100,
         )
@@ -11109,8 +11125,16 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     except Exception:
                         _nn_doc_group = {}
 
+                    # Codex Finding 5 (2026-05-01) 修正:
+                    # 旧: `_nn_actual_gaps(_nn_df, ...)` — 生の日次 CSV を渡しており、
+                    #     Phase 1.5 で追加した看護必要度シードが 6F ボードに反映されていなかった。
+                    # 新: シード反映済みの月次データ `_nn_monthly` を渡す。
+                    #     summarize_actual_necessity_gaps は内部で sum() 集計しているため、
+                    #     日次 → 月次 でも同じ結果になる（粒度が違っても合計値は同じ）。
+                    #     優先順位（CSV > monthly_seed > no_data）は merge_monthly_with_seeds で
+                    #     既に適用済（同月の CSV が優先されてシードは追加されない）。
                     _nn_gap_rows = _nn_actual_gaps(
-                        _nn_df,
+                        _nn_monthly,
                         ward="6F",
                         emergency_coefficient_pct=_nn_coef * 100,
                     )
