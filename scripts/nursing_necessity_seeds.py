@@ -204,6 +204,61 @@ def merge_monthly_with_seeds(
     return out
 
 
+def summarize_yearly_from_monthly(
+    monthly_df: pd.DataFrame,
+    *,
+    threshold_i_legacy: float = THRESHOLD_I_LEGACY,
+    threshold_i_new: float = THRESHOLD_I_NEW,
+    threshold_ii_legacy: float = THRESHOLD_II_LEGACY,
+    threshold_ii_new: float = THRESHOLD_II_NEW,
+) -> pd.DataFrame:
+    """月次サマリー（CSV + シード混在）から ward 別の yearly average を計算.
+
+    Codex Finding 2 (2026-05-01) 対応:
+    既存の calculate_yearly_average() は **日次データ** を groupby するため、
+    シード行（月次粒度）を直接渡せない。本 adapter は monthly_df から
+    分母・分子を ward 別に合計して同じ列構成を返す。
+
+    Args:
+        monthly_df: merge_monthly_with_seeds() の出力 (ym, ward, I_total, I_pass1, II_total, II_pass1)
+        threshold_*: 基準値（テスト用に上書き可能）
+
+    Returns:
+        DataFrame with columns: ward, I_total, I_pass1, II_total, II_pass1,
+            I_rate1_avg, II_rate1_avg, gap_I_legacy, gap_I_new, gap_II_legacy, gap_II_new
+    """
+    if monthly_df is None or len(monthly_df) == 0:
+        return pd.DataFrame(columns=[
+            "ward", "I_total", "I_pass1", "II_total", "II_pass1",
+            "I_rate1_avg", "II_rate1_avg",
+            "gap_I_legacy", "gap_I_new", "gap_II_legacy", "gap_II_new",
+        ])
+
+    df = monthly_df.copy()
+    # 「合計」行は重複集計を避けるため除外（5F + 6F のみ集計）
+    df = df[df["ward"].isin(SEED_WARDS)] if "ward" in df.columns else df
+    if len(df) == 0:
+        return pd.DataFrame(columns=[
+            "ward", "I_total", "I_pass1", "II_total", "II_pass1",
+            "I_rate1_avg", "II_rate1_avg",
+            "gap_I_legacy", "gap_I_new", "gap_II_legacy", "gap_II_new",
+        ])
+
+    yearly = df.groupby("ward", as_index=False).agg(
+        I_total=("I_total", "sum"),
+        I_pass1=("I_pass1", "sum"),
+        II_total=("II_total", "sum"),
+        II_pass1=("II_pass1", "sum"),
+    )
+    yearly["I_rate1_avg"] = yearly["I_pass1"] / yearly["I_total"].replace(0, pd.NA)
+    yearly["II_rate1_avg"] = yearly["II_pass1"] / yearly["II_total"].replace(0, pd.NA)
+    yearly["gap_I_legacy"] = yearly["I_rate1_avg"] - threshold_i_legacy
+    yearly["gap_I_new"] = yearly["I_rate1_avg"] - threshold_i_new
+    yearly["gap_II_legacy"] = yearly["II_rate1_avg"] - threshold_ii_legacy
+    yearly["gap_II_new"] = yearly["II_rate1_avg"] - threshold_ii_new
+    return yearly
+
+
 def get_data_source_summary(
     merged_df: pd.DataFrame,
     target_ym: list[str] | None = None,

@@ -1379,3 +1379,99 @@ class TestSeedSupersededByPastCsv:
         }
         result = get_superseded_seed_months(seeds, past)
         assert result == ["2026-01", "2026-02", "2026-03"]
+
+
+# ---------------------------------------------------------------------------
+# Codex Finding 4 (2026-05-01) 対応:
+# `calculate_rolling_emergency_ratio` に manual_seeds= が正しく渡されると
+# monthly_breakdown に source: "manual_seed" が出ることを担保する。
+# 優先順位（daily > summary > manual_seed）も検証。
+# ---------------------------------------------------------------------------
+
+class TestManualSeedIntegration:
+    """Phase 1.5 Finding 4: 手動救急シードが rolling 計算に正しく渡されている保証."""
+
+    def _ts(self, ym: str, day: int = 15) -> pd.Timestamp:
+        return pd.Timestamp(f"{ym}-{day:02d}")
+
+    def test_manual_seed_appears_in_monthly_breakdown(self):
+        """detail_df も summary もない月で、manual_seed が source として採用される."""
+        # 空の detail_df（過去 3 ヶ月にデータなし）
+        empty_df = _make_empty_df()
+        target = self._ts("2026-06", 30)
+        manual_seeds = {
+            "2026-04": {"5F": 16.5},
+            "2026-05": {"5F": 17.2},
+            "2026-06": {"5F": 18.0},
+        }
+        result = calculate_rolling_emergency_ratio(
+            empty_df, ward="5F", target_date=target, window_months=3,
+            manual_seeds=manual_seeds,
+        )
+        breakdown = result.get("monthly_breakdown", [])
+        seed_months = [m["year_month"] for m in breakdown if m["source"] == "manual_seed"]
+        assert set(seed_months) == {"2026-04", "2026-05", "2026-06"}
+        # rolling 比率は 3 シードの平均 ≈ (16.5 + 17.2 + 18.0) / 3 = 17.23%
+        assert abs(result["ratio_pct"] - 17.23) < 0.05
+
+    def test_daily_takes_priority_over_seed(self):
+        """日次データがある月は manual_seed より優先される."""
+        # 2026-06 に日次レコードを 1 件入れる
+        df = _make_detail_df([
+            {"date": "2026-06-15", "ward": "5F", "event_type": "admission",
+             "route": "救急車（自院救急）"},
+            {"date": "2026-06-15", "ward": "5F", "event_type": "admission",
+             "route": "家庭"},  # 通常入院
+        ])
+        target = self._ts("2026-06", 30)
+        manual_seeds = {
+            "2026-04": {"5F": 99.0},  # ありえない値（採用されないことを確認）
+            "2026-05": {"5F": 99.0},
+            "2026-06": {"5F": 99.0},
+        }
+        result = calculate_rolling_emergency_ratio(
+            df, ward="5F", target_date=target, window_months=3,
+            manual_seeds=manual_seeds,
+        )
+        breakdown = result.get("monthly_breakdown", [])
+        # 2026-06 は daily ソース（detail_df があるため）
+        b_jun = [m for m in breakdown if m["year_month"] == "2026-06"][0]
+        assert b_jun["source"] == "daily"
+        # 4-5 月はデータがないので manual_seed
+        b_apr = [m for m in breakdown if m["year_month"] == "2026-04"][0]
+        b_may = [m for m in breakdown if m["year_month"] == "2026-05"][0]
+        assert b_apr["source"] == "manual_seed"
+        assert b_may["source"] == "manual_seed"
+
+    def test_summary_takes_priority_over_seed(self):
+        """monthly_summary がある月は manual_seed より優先される."""
+        empty_df = _make_empty_df()
+        target = self._ts("2026-06", 30)
+        monthly_summary = {
+            "2026-04": {"5F": {"admissions": 100, "emergency": 20}},  # 20%
+        }
+        manual_seeds = {
+            "2026-04": {"5F": 99.0},  # 採用されない
+            "2026-05": {"5F": 17.0},
+            "2026-06": {"5F": 18.0},
+        }
+        result = calculate_rolling_emergency_ratio(
+            empty_df, ward="5F", target_date=target, window_months=3,
+            monthly_summary=monthly_summary, manual_seeds=manual_seeds,
+        )
+        breakdown = result.get("monthly_breakdown", [])
+        b_apr = [m for m in breakdown if m["year_month"] == "2026-04"][0]
+        # summary が優先 → manual_seed の 99% ではなく 20% が採用される
+        assert b_apr["source"] == "summary"
+        assert b_apr["ratio_pct"] == 20.0
+
+    def test_no_data_when_no_source(self):
+        """detail_df, summary, manual_seed のいずれもない月は no_data."""
+        empty_df = _make_empty_df()
+        target = self._ts("2026-06", 30)
+        result = calculate_rolling_emergency_ratio(
+            empty_df, ward="5F", target_date=target, window_months=3,
+        )
+        breakdown = result.get("monthly_breakdown", [])
+        sources = {m["source"] for m in breakdown}
+        assert sources == {"no_data"}

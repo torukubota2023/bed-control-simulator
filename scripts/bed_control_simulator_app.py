@@ -436,9 +436,23 @@ def _calc_emergency_ratio_with_gate(detail_df, ward, year_month, target_date,
     # 日次データ > summary > manual_seed の優先順位は emergency_ratio 側で解決。
     _eff_summary = _build_effective_monthly_summary()
 
+    # Codex Finding 4 (2026-05-01) 修正:
+    # 旧: manual_seeds= を渡していなかったため、settings/manual_seed_emergency_ratio.yaml
+    #     に値があっても rolling 計算で利用されない潜在バグがあった。
+    # 新: load_manual_seeds_from_yaml() を呼び manual_seeds= で必ず渡す。
+    #     優先順位（daily > summary > manual_seed > no_data）は
+    #     calculate_rolling_emergency_ratio 内部で実装済なので、ここでは
+    #     全ソースを揃えて渡すだけでよい。
+    try:
+        from emergency_ratio import load_manual_seeds_from_yaml as _er_seed_loader
+        _er_manual_seeds = _er_seed_loader()
+    except Exception:
+        _er_manual_seeds = None
+
     rolling = calculate_rolling_emergency_ratio(
         detail_df, ward=ward, target_date=target_date, window_months=3,
         monthly_summary=_eff_summary,
+        manual_seeds=_er_manual_seeds,
     )
 
     # rolling の分子/分母/比率/ステータスで単月の値を上書き
@@ -3815,8 +3829,12 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                 _purity_available = False
 
             if _purity_available:
+                # Codex Finding 1 (2026-05-01) 修正:
+                # 旧: `dm.load_details()` — `dm` が未定義のため必ず except に落ち
+                #     データ種類が常に "empty" 判定され、本番初期化導線が機能しなかった
+                # 新: `load_details()` — L174 で import 済の正しい関数を直接呼ぶ
                 try:
-                    _details_for_check = dm.load_details()
+                    _details_for_check = load_details()
                 except Exception:
                     _details_for_check = pd.DataFrame()
                 _data_kind = detect_data_kind(_details_for_check)
@@ -3861,6 +3879,11 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                         ):
                             try:
                                 _result = initialize_for_production()
+                                # Codex Finding 1 (2026-05-01) 追加:
+                                # ファイル更新だけでなく session_state も即座に空 DataFrame に
+                                # 更新し、st.rerun() でバナーが即時切り替わるようにする
+                                # （create_empty_detail_dataframe は L166 で import 済）
+                                st.session_state.admission_details = create_empty_detail_dataframe()
                                 st.success(
                                     f"✅ 本番初期化が完了しました。\n\n"
                                     f"- 退避: `{_result['archived_path']}`\n"
@@ -3869,8 +3892,9 @@ if _DATA_MANAGER_AVAILABLE and "📋 日次データ入力" in _tab_idx:
                                 )
                                 st.info(
                                     "今後の日次入力は実医師コード（KJJ / HAYT 等）で入力してください。"
-                                    "再読み込みは画面上部の「Rerun」ボタンを押してください。"
                                 )
+                                # 即時再描画でバナーを更新
+                                st.rerun()
                             except Exception as exc:
                                 st.error(f"本番初期化に失敗しました: {exc}")
 
@@ -10912,12 +10936,13 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                         except Exception as exc:
                             st.error(f"保存に失敗: {exc}")
 
-                    # 出典マトリクス（直近 6 ヶ月）
+                    # 出典マトリクス（直近 12 ヶ月 + 入力した月）
+                    # Codex Finding 2 補足: シード入力後にこの直下の看護必要度トレンドが
+                    # シード反映版に切り替わる旨を明示する。
                     st.markdown("---")
-                    st.markdown("##### 📑 月別データ出典マトリクス（直近 6 ヶ月 + 入力した月）")
+                    st.markdown("##### 📑 月別データ出典マトリクス（直近 12 ヶ月 + 入力した月）")
                     _csv_monthly = nn_calculate_monthly_summary(_nn_df)
                     _merged = merge_monthly_with_seeds(_csv_monthly, _existing_seeds)
-                    # 直近 6 ヶ月 + シード月を表示対象に
                     _all_ym = sorted({
                         *_merged.get("ym", pd.Series([], dtype=str)).tolist(),
                         *_existing_seeds.keys(),
@@ -10936,6 +10961,16 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                             pd.DataFrame(_src_rows),
                             use_container_width=True, hide_index=True,
                         )
+                        # シード反映が yearly に効いている旨を明示
+                        if any(
+                            _src_summary[_ym].get(_w) == "monthly_seed"
+                            for _ym in _src_summary
+                            for _w in SEED_WARDS
+                        ):
+                            st.success(
+                                "✅ シード入力月は **下の 12ヶ月通算平均カードと 6F ストラテジーボード** に"
+                                "自動反映されます（CSV がある月は CSV 優先）。"
+                            )
             st.caption(
                 "事務提供の **1,095 行**（12 ヶ月 × 3 病棟 × 365 日）から、地域包括医療病棟基準の達成状況を可視化。"
                 f"**経過措置終了まで残 {days_until_transitional_end()} 日**: "
@@ -10981,8 +11016,35 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
             try:
                 import plotly.graph_objects as go
 
-                _nn_monthly = nn_calculate_monthly_summary(_nn_df)
-                _nn_yearly = nn_calculate_yearly_average(_nn_df)
+                _nn_monthly_csv = nn_calculate_monthly_summary(_nn_df)
+
+                # Codex Finding 2 (2026-05-01) 修正:
+                # 旧: _nn_yearly = nn_calculate_yearly_average(_nn_df) — シード未反映
+                # 新: monthly_df を merge_monthly_with_seeds でシード補完し、
+                #     summarize_yearly_from_monthly でシードを yearly に反映する。
+                #     UI（出典マトリクス）は引き続き merged を使う。
+                try:
+                    from nursing_necessity_seeds import (
+                        load_seeds_from_yaml as _nn_seed_loader,
+                        merge_monthly_with_seeds as _nn_merge_seeds,
+                        summarize_yearly_from_monthly as _nn_yearly_from_monthly,
+                    )
+                    _nn_seeds_for_analysis = _nn_seed_loader()
+                    _nn_monthly = _nn_merge_seeds(_nn_monthly_csv, _nn_seeds_for_analysis)
+                    _nn_yearly_seeded = _nn_yearly_from_monthly(_nn_monthly)
+                    # シード行が 1 件でも追加されていたら yearly もシード反映版を使う
+                    _has_seed_rows = (
+                        "data_source" in _nn_monthly.columns
+                        and (_nn_monthly["data_source"] == "monthly_seed").any()
+                    )
+                    if _has_seed_rows and not _nn_yearly_seeded.empty:
+                        _nn_yearly = _nn_yearly_seeded
+                    else:
+                        _nn_yearly = nn_calculate_yearly_average(_nn_df)
+                except Exception:
+                    # シード機構が使えなくても旧来の経路で動くよう fallback
+                    _nn_monthly = _nn_monthly_csv
+                    _nn_yearly = nn_calculate_yearly_average(_nn_df)
 
                 # ===== 救急患者応需係数の計算（過去 1 年実データから）=====
                 # 令和8改定で新設。年間救急搬送 ÷ 病床数 × 0.005（上限 10%）を
@@ -12927,14 +12989,15 @@ if "📥 データエクスポート" in _tab_idx:
 
             with col1:
                 st.subheader("📋 病棟日次データ")
-                # 2026-05-01 副院長指示で関数名を修正:
-                #   旧: load_actual_data（存在しない関数）→ try/except で握りつぶされていた
-                #   新: load_daily_records（既に bed_data_manager.py で実装済の正しい関数）
+                # Codex Finding 3 (2026-05-01) 修正:
+                #   旧 (Phase 1): `from bed_data_manager import load_daily_records` →
+                #     bed_data_manager.py には load_daily_records がなく ImportError で握り潰されていた
+                #   新 (Phase 1.5): `load_daily_records` は L112 で db_manager から既に import 済
+                #     重複 import せず、トップレベルの関数を直接使う
                 _export_ward_df = None
                 _export_ward_err = None
-                if _DATA_MANAGER_AVAILABLE:
+                if _DB_AVAILABLE:
                     try:
-                        from bed_data_manager import load_daily_records
                         _export_ward_df = load_daily_records()
                     except Exception as exc:
                         _export_ward_err = str(exc)

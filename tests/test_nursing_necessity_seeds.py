@@ -17,6 +17,7 @@ from nursing_necessity_seeds import (
     load_seeds_from_yaml,
     merge_monthly_with_seeds,
     save_seed_to_yaml,
+    summarize_yearly_from_monthly,
 )
 
 
@@ -298,3 +299,111 @@ def test_default_yaml_template_is_loadable():
     result = load_seeds_from_yaml(DEFAULT_SEED_YAML)
     # 空辞書（seeds: {}）が期待値
     assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# summarize_yearly_from_monthly (Codex Finding 2 対応)
+# ---------------------------------------------------------------------------
+
+class TestYearlyFromMonthly:
+    def test_empty_input(self):
+        out = summarize_yearly_from_monthly(pd.DataFrame())
+        assert len(out) == 0
+
+    def test_csv_only_aggregation(self):
+        # CSV 由来の 2 ヶ月分のデータを ward 別に合計
+        monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 180, "data_source": "csv"},
+            {"ym": "2025-05", "ward": "5F", "I_total": 1100, "I_pass1": 220,
+             "II_total": 1100, "II_pass1": 198, "data_source": "csv"},
+            {"ym": "2025-04", "ward": "6F", "I_total": 1000, "I_pass1": 150,
+             "II_total": 1000, "II_pass1": 130, "data_source": "csv"},
+        ])
+        out = summarize_yearly_from_monthly(monthly)
+        # 2 病棟分が出る
+        assert len(out) == 2
+        sf = out[out["ward"] == "5F"].iloc[0]
+        # 5F: I 合計 1000+1100=2100, pass 200+220=420, rate ≈ 20%
+        assert sf["I_total"] == 2100
+        assert sf["I_pass1"] == 420
+        assert abs(sf["I_rate1_avg"] - 0.20) < 0.001
+
+    def test_seed_rows_change_yearly_average(self):
+        # CSV のみのときと、シードを足したときの yearly 平均が変わることを確認
+        csv_monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 180, "data_source": "csv"},
+        ])
+        only_csv = summarize_yearly_from_monthly(csv_monthly)
+        only_csv_rate = only_csv[only_csv["ward"] == "5F"].iloc[0]["I_rate1_avg"]
+        assert abs(only_csv_rate - 0.20) < 0.001  # 200/1000
+
+        # シード追加: 2026-04 で I 高め (300/1000=30%) → yearly 平均が上がるはず
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1000, "I_pass1": 300, "II_total": 1000, "II_pass1": 270},
+            }
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds)
+        with_seed = summarize_yearly_from_monthly(merged)
+        with_seed_rate = with_seed[with_seed["ward"] == "5F"].iloc[0]["I_rate1_avg"]
+        # 2 ヶ月合計 = (200+300)/(1000+1000) = 25% にシフト
+        assert abs(with_seed_rate - 0.25) < 0.001
+        # シード反映で 5pt 増加することを確認（Codex Finding 2 の核心テスト）
+        assert with_seed_rate > only_csv_rate
+
+    def test_excludes_total_rows(self):
+        # 「合計」行は重複集計を防ぐため除外される
+        monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 200,
+             "II_total": 1000, "II_pass1": 180},
+            {"ym": "2025-04", "ward": "合計", "I_total": 2000, "I_pass1": 400,
+             "II_total": 2000, "II_pass1": 360},
+        ])
+        out = summarize_yearly_from_monthly(monthly)
+        wards = out["ward"].tolist()
+        assert "合計" not in wards
+        assert "5F" in wards
+
+
+# ---------------------------------------------------------------------------
+# 看護必要度シード経路全体の統合テスト
+# ---------------------------------------------------------------------------
+
+class TestSeedIntegration:
+    def test_full_pipeline_csv_plus_seed(self):
+        """CSV → merge → yearly の一連の流れで、シードが yearly に反映されることを確認."""
+        # CSV 由来の月次サマリー（1ヶ月分のみ）
+        csv_monthly = pd.DataFrame([
+            {"ym": "2025-04", "ward": "5F", "I_total": 1000, "I_pass1": 180,
+             "II_total": 1000, "II_pass1": 160, "data_source": "csv"},
+            {"ym": "2025-04", "ward": "6F", "I_total": 1000, "I_pass1": 150,
+             "II_total": 1000, "II_pass1": 130, "data_source": "csv"},
+        ])
+        # 4 月・5 月の手動シード（運用開始前の補完）
+        seeds = {
+            "2026-04": {
+                "5F": {"I_total": 1200, "I_pass1": 240, "II_total": 1200, "II_pass1": 216},
+                "6F": {"I_total": 1180, "I_pass1": 200, "II_total": 1180, "II_pass1": 180},
+            },
+            "2026-05": {
+                "5F": {"I_total": 1250, "I_pass1": 260, "II_total": 1250, "II_pass1": 230},
+                "6F": {"I_total": 1200, "I_pass1": 210, "II_total": 1200, "II_pass1": 195},
+            },
+        }
+        merged = merge_monthly_with_seeds(csv_monthly, seeds)
+        # CSV 2 行 + シード 4 行 = 6 行
+        assert len(merged) == 6
+        # 出典が正しく付与されている
+        assert (merged[merged["ym"].str.startswith("2025")]["data_source"] == "csv").all()
+        assert (merged[merged["ym"].str.startswith("2026")]["data_source"] == "monthly_seed").all()
+
+        # yearly がシード込みで集計されている
+        yearly = summarize_yearly_from_monthly(merged)
+        sf = yearly[yearly["ward"] == "5F"].iloc[0]
+        # 5F I_total: 1000 + 1200 + 1250 = 3450
+        assert sf["I_total"] == 3450
+        assert sf["I_pass1"] == 180 + 240 + 260
+        # シード卒業前のため、CSV のみの 18% より高い値（≈ 20%）になる
+        assert sf["I_rate1_avg"] > 0.18

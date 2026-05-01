@@ -14,8 +14,8 @@
 | 短手3 Day 5 アラート | ✅ | | | — |
 | 退院カレンダー（月俯瞰） | ✅ | | | — |
 | 結論カード（今日の一手） | ✅ | | | — |
-| LOS rolling 90 日 | | | ✅ | `manual_seed_emergency_ratio.yaml` の `monthly_summary` で 4-5 月補完 |
-| **救急15% rolling 3 ヶ月** | | | ✅ | `settings/manual_seed_emergency_ratio.yaml`（既存）|
+| LOS rolling 90 日 | | | ✅ | **過去月サマリー**（入院件数・退院件数・在院延日数・救急＋下り搬送件数）で 4-5 月補完 |
+| **救急15% rolling 3 ヶ月** | | | ✅ | `settings/manual_seed_emergency_ratio.yaml`（手動シード／救急専用） + 過去月サマリー |
 | **看護必要度 rolling 3 ヶ月** | | | ✅ | **`settings/manual_seed_nursing_necessity.yaml`（2026-05-01 新設）** |
 | 退院曜日分析（過去 1 年） | ✅ | | | `data/past_admissions_2025fy.csv` 統合済 |
 | 医師別分析（過去 1 年） | ✅ | | | 同上 |
@@ -163,6 +163,48 @@ cp data/archive/admission_details_demo_YYYYMMDD_HHMMSS.csv data/admission_detail
 | `data/archive/` | デモデータ退避先（自動作成） |
 | `tests/test_data_purity_guard.py` | 25 テスト |
 | `tests/test_nursing_necessity_seeds.py` | 21 テスト |
+
+---
+
+## 🌐 院内LAN運用上の追加注意（Codex レビュー 2026-05-01 反映）
+
+### 1. 複数端末同時入力の制約
+
+Streamlit 単体 + CSV / YAML / SQLite 混在運用では、**複数端末から同時に保存すると競合する可能性** があります。
+初期運用では以下を厳守：
+
+- **日次入力担当端末を 1 台に限定**（複数の看護師ステーションから同時入力は不可）
+- どうしても複数端末が必要な場合は、**入力時間帯を分ける**（午前 = 5F端末、午後 = 6F端末 など）
+- 副院長の閲覧端末（読み取り専用利用）は同時に何台でも OK
+
+### 2. バックアップ対象（手動 or cron）
+
+`data/` フォルダだけではなく、以下も必ずバックアップ対象に含めてください：
+
+```bash
+# 例: 毎日 22:00 に院内バックアップサーバーへコピー
+cp -r data/        /path/to/backup/$(date +%Y%m%d)/
+cp -r settings/    /path/to/backup/$(date +%Y%m%d)/    # 手動シード YAML 群を含む
+cp -r data/archive/ /path/to/backup/$(date +%Y%m%d)/
+```
+
+特に `settings/manual_seed_emergency_ratio.yaml` と `settings/manual_seed_nursing_necessity.yaml` は副院長の手入力データであり、消失すると 1〜2 時間の作業が失われます。
+
+### 3. 「本番初期化」誤操作からの復旧
+
+万が一、誤って「📦 本番初期化を実行」を押した場合の復旧手順：
+
+```bash
+# (a) 退避ファイルの確認（最新のもの = いちばん下に出る）
+ls -lt data/archive/admission_details_*.csv | head -5
+
+# (b) 最新の退避ファイル名を確認後、admission_details.csv に戻す
+cp data/archive/admission_details_demo_YYYYMMDD_HHMMSS.csv data/admission_details.csv
+
+# (c) Streamlit を再起動 or「Rerun」を押してバナーが正しい状態に戻ることを確認
+```
+
+退避ファイルは **タイムスタンプ降順で並べる** と最新が上に来ます。`ls -lt` の `-t` オプションが時刻順ソート、`head -5` で上位 5 件のみ表示。
 
 ---
 
