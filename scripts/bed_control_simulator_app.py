@@ -1606,25 +1606,26 @@ if _NN_LECTURE_MD or (_NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not
     def _show_nn_lecture_dialog():
         st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
         # レクチャーに続けて疾患別マニュアル + 参考エビデンス
+        # key_prefix: ダイアログとタブの同時描画時の Streamlit widget key 衝突を防ぐ
         if _NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not None:
             st.markdown("---")
             with st.expander(
                 "🏥 疾患別マニュアル — 医師担当部分の判断・処置リファレンス（17 疾患）",
                 expanded=False,
             ):
-                _nn_render_disease_manual(st)
+                _nn_render_disease_manual(st, key_prefix="nn_disease_manual_lecture_dlg")
         if _nn_render_references is not None:
             import os as _nn_dlg_os
             _nn_dlg_root = _nn_dlg_os.path.normpath(
                 _nn_dlg_os.path.join(_nn_dlg_os.path.dirname(_nn_dlg_os.path.abspath(__file__)), "..")
             )
             st.markdown("---")
-            _nn_render_references(st, _nn_dlg_root)
+            _nn_render_references(st, _nn_dlg_root, key_prefix="nn_dl_lecture_dlg")
 
     if _NN_DISEASE_MANUAL_MD and _nn_render_disease_manual is not None:
         @st.dialog("🏥 看護必要度 疾患別マニュアル — 医師担当部分", width="large")
         def _show_nn_disease_manual_dialog():
-            _nn_render_disease_manual(st)
+            _nn_render_disease_manual(st, key_prefix="nn_disease_manual_dlg")
 
     # サイドバー: 最小限のクイックリファレンス
     with st.sidebar.expander("📚 看護必要度クイックリファレンス", expanded=False):
@@ -11028,14 +11029,15 @@ if _PAST_ADMISSIONS_AVAILABLE and "\U0001f4ca 過去1年分析" in _tab_idx:
                     st.markdown(_NN_LECTURE_MD, unsafe_allow_html=True)
                     # レクチャー直下に参考エビデンス・出典をオフライン対応で描画
                     # 公式 PDF（厚労省・日循）+ 要約 markdown を統一管理
+                    # key_prefix: ダイアログ側との衝突防止（タブ側は "_tab" suffix）
                     if _nn_render_references is not None:
                         st.markdown("---")
-                        _nn_render_references(st, _nn_project_root)
+                        _nn_render_references(st, _nn_project_root, key_prefix="nn_dl_tab")
                     st.markdown("---")
                 if _NN_DISEASE_MANUAL_MD:
                     st.markdown("##### 🏥 疾患別マニュアル — 医師担当部分の判断・処置リファレンス（17 疾患）")
                     if _nn_render_disease_manual is not None:
-                        _nn_render_disease_manual(st)
+                        _nn_render_disease_manual(st, key_prefix="nn_disease_manual_tab")
                     else:
                         st.markdown(_NN_DISEASE_MANUAL_MD, unsafe_allow_html=True)
 

@@ -2217,11 +2217,14 @@ def generate_docx() -> bytes:
 # Streamlit 描画ヘルパー
 # ---------------------------------------------------------------------------
 
-def render_in_streamlit(streamlit_module) -> None:
+def render_in_streamlit(streamlit_module, *, key_prefix: str = "nn_disease_manual") -> None:
     """Streamlit でマニュアルを描画 + DOCX ダウンロードボタンを提供.
 
     Args:
         streamlit_module: ``streamlit`` モジュール
+        key_prefix: Streamlit widget の key prefix。同一 run 内で本関数を
+            複数箇所（例: ダイアログ + タブ）から呼ぶ場合に重複防止のため
+            別値を渡す。デフォルトは ``"nn_disease_manual"``。
     """
     st = streamlit_module
     st.markdown(
@@ -2293,12 +2296,12 @@ def render_in_streamlit(streamlit_module) -> None:
     group_filter = st.selectbox(
         "領域",
         group_names,
-        key="nn_disease_manual_group_filter",
+        key=f"{key_prefix}_group_filter",
     )
     query = st.text_input(
         "疾患名・症状・処置で絞り込み",
         placeholder="例: 心不全、PTCD、酸素、輸血、ペイン",
-        key="nn_disease_manual_query",
+        key=f"{key_prefix}_query",
     )
 
     matches = _search_diseases(query, group_filter)
@@ -2310,7 +2313,7 @@ def render_in_streamlit(streamlit_module) -> None:
     selected_label = st.selectbox(
         "表示する疾患",
         labels,
-        key="nn_disease_manual_selected_disease",
+        key=f"{key_prefix}_selected_disease",
     )
     selected_index = labels.index(selected_label)
     selected_group, disease = matches[selected_index]
@@ -2418,7 +2421,7 @@ def render_in_streamlit(streamlit_module) -> None:
             data=docx_bytes,
             file_name="看護必要度_疾患別マニュアル.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="nn_disease_manual_docx",
+            key=f"{key_prefix}_docx",
         )
     except Exception as e:
         st.warning(f"⚠️ DOCX 生成中にエラー: {e}（python-docx の依存関係を確認してください）")

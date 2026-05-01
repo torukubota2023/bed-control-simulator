@@ -467,7 +467,12 @@ REFERENCES: list[dict] = [
 ]
 
 
-def render_references(streamlit_module, project_root: str) -> None:
+def render_references(
+    streamlit_module,
+    project_root: str,
+    *,
+    key_prefix: str = "nn_dl",
+) -> None:
     """参考エビデンス・出典を Streamlit で描画する.
 
     各参考資料はエキスパンダーで開閉可能、PDF はダウンロードボタン、
@@ -476,6 +481,10 @@ def render_references(streamlit_module, project_root: str) -> None:
     Args:
         streamlit_module: ``streamlit`` モジュール（``import streamlit as st`` で渡す）
         project_root: プロジェクトルートの絶対パス（CSV/PDF 解決の起点）
+        key_prefix: ダウンロードボタン等の Streamlit widget key の prefix。
+            同一 run 内で本関数を 2 箇所以上から呼ぶ場合
+            （例: ダイアログ側とタブ側）に重複防止のため別値を渡す。
+            デフォルトは ``"nn_dl"``。
     """
     import os
 
@@ -551,7 +560,7 @@ def render_references(streamlit_module, project_root: str) -> None:
                         data=f.read(),
                         file_name=os.path.basename(local_path_abs),
                         mime="application/pdf",
-                        key=f"nn_dl_{os.path.basename(local_path_abs)}",
+                        key=f"{key_prefix}_{os.path.basename(local_path_abs)}",
                     )
                 st.caption(
                     f"📍 ローカル: `{local_path_rel}`／"
