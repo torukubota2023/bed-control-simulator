@@ -343,6 +343,31 @@ def render_theme_css() -> str:
       margin-left: {SPACE_2};
       white-space: nowrap;
     }}
+
+    /* --- サイドバー: 表示病棟切替の強調ボックス（2026-05-01 副院長指示）--- */
+    .bc-ward-switcher {{
+      background: {COLOR_SURFACE};
+      border: 1px solid {COLOR_BORDER};
+      border-left: 4px solid {COLOR_ACCENT};
+      border-radius: {RADIUS_MD};
+      padding: {SPACE_3} {SPACE_3} {SPACE_2} {SPACE_3};
+      margin: {SPACE_2} 0 {SPACE_4} 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }}
+    .bc-ward-switcher-title {{
+      font-size: 15px;
+      font-weight: {FONT_WEIGHT_BOLD};
+      color: {COLOR_TEXT_PRIMARY};
+      margin-bottom: {SPACE_1};
+      letter-spacing: 0.02em;
+    }}
+    .bc-ward-switcher-current {{
+      color: {COLOR_ACCENT};
+      font-size: {FONT_SIZE_CAPTION};
+      font-weight: {FONT_WEIGHT_BOLD};
+      margin-top: {SPACE_2};
+    }}
+
     @media (max-width: 700px) {{
       .bc-action-focus-title {{
         font-size: 22px;
