@@ -209,7 +209,7 @@ def build():
     p7 = doc.add_paragraph()
     p7.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p7.paragraph_format.space_before = Pt(8)
-    run7 = p7.add_run("作成日：2026年5月1日 / Rev. 2")
+    run7 = p7.add_run("作成日：2026年5月1日 / Rev. 3")
     _set_jp_font(run7, size_pt=11, color=C_FAINT)
 
     doc.add_page_break()
@@ -892,6 +892,13 @@ def build():
                 "② 当日値の右に「（月平均 X.X%）」を併記、ゲージは「現時点の月平均稼働率／月末目標 ≥ 90%」を明示 "
                 "③ 「📊 日次推移」タブを関数化し、「本日の詳細サマリー」expander にも統合表示。",
                 "なし（設置手順は変わらず、内部の表示改善のみ）",
+            ],
+            [
+                "3",
+                "2026-05-01",
+                "サイドバーの表示病棟切替を強調表示（PR #51）。左サイドの「🏥 表示病棟（タップで切替）」を専用ボックス "
+                "（左 4px accent ボーダー + 軽い影 + 角丸）で囲み、下部に「📍 現在表示中：xxx」キャプションを追加。",
+                "なし（UI 強調のみ、設置手順は変わらず）",
             ],
         ],
         col_widths_cm=[1.0, 2.5, 8.5, 3.5],
