@@ -16,3 +16,10 @@ streamlit>=1.28.0
 plotly>=5.15.0
 jpholiday>=1.0.0
 PyYAML>=6.0
+
+# 医師別 病棟運営パターン分析（scripts/generate_doctor_kpi_*.py）の依存
+# Rev. 4.1 で追記（2026-05-04 Codex チェック対応）
+scipy>=1.10.0
+squarify>=0.4.4
+python-docx>=1.0.0
+python-pptx>=0.6.23

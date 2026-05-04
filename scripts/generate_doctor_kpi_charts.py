@@ -83,6 +83,42 @@ COLOR_PHASE_C = '#FDE08A'  # 薄黄（粗利中）
 COLOR_MUTED = '#6B7280'
 COLOR_DANGER = COLOR_RED
 
+# ====================================================================
+# Layer 4: 医師運営パターンの 5+1 類型（2026-05-04 抜本改訂で追加）
+# 個人の優劣ではなく、地域包括医療病棟をどのような形で支えているかを類型化
+# ====================================================================
+TYPE_SURGERY = "手術・処置型"
+TYPE_EMERGENCY = "救急・予定外受入基盤型"
+TYPE_LONG_STABLE = "長期安定型"
+TYPE_REHAB = "リハ・在宅復帰型"
+TYPE_TURNOVER = "回転供給型"
+TYPE_MIXED = "混合型"
+
+TYPE_ORDER = [TYPE_SURGERY, TYPE_EMERGENCY, TYPE_LONG_STABLE,
+              TYPE_REHAB, TYPE_TURNOVER, TYPE_MIXED]
+
+TYPE_COLORS = {
+    TYPE_SURGERY: '#EC4899',       # ピンク
+    TYPE_EMERGENCY: '#DC2626',     # 赤
+    TYPE_LONG_STABLE: '#3B82F6',   # 青
+    TYPE_REHAB: '#10B981',         # 緑
+    TYPE_TURNOVER: '#F59E0B',      # 黄
+    TYPE_MIXED: '#6B7280',         # 灰
+}
+
+TYPE_DESCRIPTIONS = {
+    TYPE_SURGERY: "在院は短〜中等でも、手術関連の出来高上乗せが大きい可能性",
+    TYPE_EMERGENCY: "救急車入院・予定外入院を多く担当、地域包括医療病棟の受入機能を支える",
+    TYPE_LONG_STABLE: "長めの在院日数で病床日数を支え、稼働率維持に効く",
+    TYPE_REHAB: "適切な在院後に高い在宅復帰率、施設基準・退院支援に効く",
+    TYPE_TURNOVER: "短期入院を多く回し、入退院の流れを作る",
+    TYPE_MIXED: "上記類型に強く該当せず、複数の役割を担う",
+}
+
+# 制度・施設基準の参考閾値
+EMERGENCY_RATIO_THRESHOLD = 15.0     # 救急搬送後 15%（病棟 rolling 3 ヶ月、2026-06-01 本則）
+HOME_DISCHARGE_THRESHOLD = 70.0      # 在宅復帰 70%（地域包括医療病棟 施設基準）
+
 
 def phase_breakdown(d):
     return min(d, 5), min(max(d - 5, 0), 9), max(d - 14, 0)
@@ -100,6 +136,37 @@ def profit_range_per_admission(d):
     low = a * PROFIT_A_LOW + b * PROFIT_B_LOW + c * PROFIT_C_LOW
     high = a * PROFIT_A_HIGH + b * PROFIT_B_HIGH + c * PROFIT_C_HIGH
     return low, high
+
+
+def classify_doctor_type(row):
+    """医師の運営パターンを 5+1 類型に分類する.
+
+    優先順位（高いほど早く判定）:
+      1. 手術・処置型: 手術あり比率 ≥ 40%
+      2. 救急・予定外受入基盤型: 救急車入院比率 ≥ 25% かつ 手術あり比率 < 30%
+      3. 長期安定型: 平均在院日数 ≥ 14
+      4. リハ・在宅復帰型: 在宅復帰率 ≥ 95% かつ 平均在院日数 8〜13
+      5. 回転供給型: 平均在院日数 ≤ 8
+      6. 混合型: 上記いずれにも該当せず
+
+    閾値は 2026-05-04 副院長判断（全体平均との相対位置を踏まえた値）。
+    """
+    surgery = row.get('手術あり比率', 0) or 0
+    emergency = row.get('救急搬送後比率', 0) or 0
+    los = row.get('平均在院日数', 0) or 0
+    home = row.get('在宅復帰率', 0) or 0
+
+    if surgery >= 40:
+        return TYPE_SURGERY
+    if emergency >= 25 and surgery < 30:
+        return TYPE_EMERGENCY
+    if los >= 14:
+        return TYPE_LONG_STABLE
+    if home >= 95 and 8 <= los <= 13:
+        return TYPE_REHAB
+    if los <= 8:
+        return TYPE_TURNOVER
+    return TYPE_MIXED
 
 
 def load_and_compute():
@@ -140,6 +207,44 @@ def load_and_compute():
     for w in ['5F', '6F']:
         agg[f'{w}_延日数'] = agg['医師'].map(crosstab[w].to_dict()).fillna(0).astype(int)
         agg[f'{w}_寄与率'] = agg[f'{w}_延日数'] / ward_total_days[w] * 100
+
+    # ============= Layer 2: 出来高上乗せ可能性（手術あり症例） =============
+    # 注: 手術料・麻酔料・リハ単位の点数は CSV に未収録。本指標は入口指標のみ
+    df['has_surgery'] = (df['手術'] == '○').astype(int)
+    surgery_per_doc = df.groupby('医師')['has_surgery'].sum()
+    agg['手術あり件数'] = agg['医師'].map(surgery_per_doc).fillna(0).astype(int)
+    agg['手術あり比率'] = agg['手術あり件数'] / agg['入院件数'] * 100
+
+    # ============= Layer 3a: 救急搬送後（救急車「有り」） =============
+    df['has_ambulance'] = (df['救急車'] == '有り').astype(int)
+    amb_per_doc = df.groupby('医師')['has_ambulance'].sum()
+    agg['救急搬送後件数'] = agg['医師'].map(amb_per_doc).fillna(0).astype(int)
+    agg['救急搬送後比率'] = agg['救急搬送後件数'] / agg['入院件数'] * 100
+
+    # ============= Layer 3b: 予定外入院 =============
+    df['is_unplanned'] = df['緊急'].astype(str).str.contains('予定外', na=False).astype(int)
+    unp_per_doc = df.groupby('医師')['is_unplanned'].sum()
+    agg['予定外件数'] = agg['医師'].map(unp_per_doc).fillna(0).astype(int)
+    agg['予定外比率'] = agg['予定外件数'] / agg['入院件数'] * 100
+
+    # ============= Layer 3c: 在宅復帰（自宅 + 居住系。地域包括医療病棟 施設基準準拠） =============
+    df['is_home_discharge'] = df['退経路'].isin(['自宅', '居住系']).astype(int)
+    home_per_doc = df.groupby('医師')['is_home_discharge'].sum()
+    agg['在宅復帰件数'] = agg['医師'].map(home_per_doc).fillna(0).astype(int)
+    agg['在宅復帰率'] = agg['在宅復帰件数'] / agg['入院件数'] * 100
+
+    # ============= 主たる診療科 =============
+    dept_mode = (
+        df.groupby(['医師', '診療科']).size()
+          .reset_index(name='cnt')
+          .sort_values(['医師', 'cnt'], ascending=[True, False])
+          .drop_duplicates('医師')
+          .set_index('医師')['診療科']
+    )
+    agg['主たる診療科'] = agg['医師'].map(dept_mode).fillna('-')
+
+    # ============= Layer 4: タイプ分類 =============
+    agg['タイプ分類'] = agg.apply(classify_doctor_type, axis=1)
 
     agg = agg[agg['入院件数'] >= 10].sort_values('総粗利', ascending=False).reset_index(drop=True)
     return df, agg, ward_total_days, total_hospital_days
@@ -387,8 +492,9 @@ def chart_treemap(agg, mode, anon_map):
     ax.axis('off')
     total = agg2['総粗利'].sum() / 1e8
     ax.set_title(
-        f'経営シェア（粗利ベース）：全体年間粗利 {total:.2f} 億円 のうち各医師の占有面積',
-        fontsize=14, fontweight='bold', pad=14, color=COLOR_ACCENT)
+        '病床日数シェア — 各医師の占有面積\n'
+        f'（参考：管理用スコア合計 {total:.2f} 億円相当 — コスト ±20% の業界目安に基づく仮定）',
+        fontsize=13, fontweight='bold', pad=14, color=COLOR_ACCENT)
     plt.tight_layout()
     out_path = OUT_DIR / f'04_treemap_{mode}.png'
     plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
@@ -599,6 +705,187 @@ def chart_cost_uncertainty(mode, anon_map):
     return out_path
 
 
+# ====================================================================
+# Chart 8: Layer 2 — 医師別 手術あり症例比率
+# ====================================================================
+def chart_layer2_surgery(agg, mode, anon_map):
+    """Layer 2: 医師別 手術あり症例比率（横棒）.
+    出来高上乗せ可能性の入口指標。手術料・麻酔料の正確な点数は本資料未反映。"""
+    agg2 = apply_label(agg, mode, anon_map).sort_values('手術あり比率', ascending=True)
+    fig, ax = plt.subplots(figsize=(13, 8))
+
+    y_pos = np.arange(len(agg2))
+    ratios = agg2['手術あり比率'].values
+    counts = agg2['手術あり件数'].values
+    totals = agg2['入院件数'].values
+    overall_ratio = agg['手術あり件数'].sum() / agg['入院件数'].sum() * 100
+
+    colors = [TYPE_COLORS[TYPE_SURGERY] if r >= 40 else '#FBCFE8' for r in ratios]
+    ax.barh(y_pos, ratios, color=colors, alpha=0.85,
+            edgecolor=COLOR_ACCENT, linewidth=0.8)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(agg2['表示名'].tolist(), fontsize=11)
+    ax.axvline(overall_ratio, color=COLOR_RED, linestyle='--', linewidth=1.5,
+               label=f'全体平均 {overall_ratio:.1f}%')
+    ax.axvline(40, color=TYPE_COLORS[TYPE_SURGERY], linestyle=':', linewidth=1.2, alpha=0.7,
+               label='「手術・処置型」閾値 40%')
+
+    for i, (r, c, t) in enumerate(zip(ratios, counts, totals)):
+        ax.text(r + 0.5, i, f'{r:.1f}%（{int(c)}/{int(t)} 件）',
+                va='center', fontsize=10, color=COLOR_ACCENT)
+
+    ax.set_xlabel('手術あり症例 比率 (%)', fontsize=13)
+    ax.set_title(
+        'Layer 2: 医師別 手術あり症例比率 — 出来高上乗せ可能性の入口指標\n'
+        '※ 手術料・麻酔料・リハ単位・処置加算の点数は本資料未反映',
+        fontsize=13, fontweight='bold', pad=12, color=COLOR_ACCENT)
+    ax.set_xlim(0, max(max(ratios) * 1.30, 55))
+    ax.grid(True, axis='x', alpha=0.2)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(loc='lower right', fontsize=10, frameon=False)
+
+    plt.tight_layout()
+    out_path = OUT_DIR / f'08_layer2_surgery_{mode}.png'
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    return out_path
+
+
+# ====================================================================
+# Chart 9: Layer 3 — 医師別 制度適合（救急車入院 proxy / 在宅復帰 / 予定外）
+# ====================================================================
+def chart_layer3_compliance(agg, mode, anon_map):
+    """Layer 3: 医師別 制度適合貢献の 3 指標を横棒併置."""
+    agg2 = apply_label(agg, mode, anon_map).sort_values('救急搬送後比率', ascending=True)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 8), sharey=True)
+
+    y_pos = np.arange(len(agg2))
+    overall_emerg = agg['救急搬送後件数'].sum() / agg['入院件数'].sum() * 100
+    overall_home = agg['在宅復帰件数'].sum() / agg['入院件数'].sum() * 100
+    overall_unp = agg['予定外件数'].sum() / agg['入院件数'].sum() * 100
+
+    # ---- 1. 救急車入院（医師別 proxy。制度上の救急搬送後 15% は病棟別 rolling 3 ヶ月で判定） ----
+    ax = axes[0]
+    ax.barh(y_pos, agg2['救急搬送後比率'], color=COLOR_RED, alpha=0.7,
+            edgecolor=COLOR_ACCENT, linewidth=0.6)
+    ax.axvline(overall_emerg, color=COLOR_ACCENT, linestyle='--', linewidth=1.2,
+               label=f'全体平均 {overall_emerg:.1f}%')
+    ax.axvline(EMERGENCY_RATIO_THRESHOLD, color=COLOR_FAINT if False else '#9CA3AF', linestyle=':',
+               linewidth=1.0, alpha=0.6,
+               label=f'病棟別 rolling 制度線 {EMERGENCY_RATIO_THRESHOLD:.0f}%（参考）')
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(agg2['表示名'].tolist(), fontsize=10)
+    ax.set_xlabel('救急車入院 比率 (%)（参考 proxy）', fontsize=11)
+    ax.set_title('救急車入院（参考 proxy）\n※ 制度判定は病棟別 rolling 3 ヶ月、医師別比較とは別物',
+                 fontsize=11, fontweight='bold', color=COLOR_RED)
+    ax.legend(loc='lower right', fontsize=9, frameon=False)
+    ax.grid(True, axis='x', alpha=0.2)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    for i, r in enumerate(agg2['救急搬送後比率']):
+        ax.text(r + 0.4, i, f'{r:.1f}%', va='center', fontsize=9)
+    ax.set_xlim(0, max(agg2['救急搬送後比率'].max() * 1.25, 30))
+
+    # ---- 2. 在宅復帰 ----
+    ax = axes[1]
+    ax.barh(y_pos, agg2['在宅復帰率'], color=COLOR_GREEN, alpha=0.7,
+            edgecolor=COLOR_ACCENT, linewidth=0.6)
+    ax.axvline(overall_home, color=COLOR_ACCENT, linestyle='--', linewidth=1.2,
+               label=f'全体平均 {overall_home:.1f}%')
+    ax.axvline(HOME_DISCHARGE_THRESHOLD, color=COLOR_GOLD, linestyle=':',
+               linewidth=1.4, label=f'施設基準 {HOME_DISCHARGE_THRESHOLD:.0f}%')
+    ax.set_xlabel('在宅復帰率 (%)（自宅+居住系）', fontsize=11)
+    ax.set_title('在宅復帰（地域包括病棟 施設基準）',
+                 fontsize=12, fontweight='bold', color=COLOR_GREEN)
+    ax.legend(loc='lower left', fontsize=9, frameon=False)
+    ax.grid(True, axis='x', alpha=0.2)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    for i, r in enumerate(agg2['在宅復帰率']):
+        ax.text(r + 0.4, i, f'{r:.1f}%', va='center', fontsize=9)
+    ax.set_xlim(0, 105)
+
+    # ---- 3. 予定外入院 ----
+    ax = axes[2]
+    ax.barh(y_pos, agg2['予定外比率'], color=COLOR_GOLD, alpha=0.7,
+            edgecolor=COLOR_ACCENT, linewidth=0.6)
+    ax.axvline(overall_unp, color=COLOR_ACCENT, linestyle='--', linewidth=1.2,
+               label=f'全体平均 {overall_unp:.1f}%')
+    ax.set_xlabel('予定外入院 比率 (%)', fontsize=11)
+    ax.set_title('予定外入院（緊急入院全般）',
+                 fontsize=12, fontweight='bold', color=COLOR_GOLD)
+    ax.legend(loc='lower right', fontsize=9, frameon=False)
+    ax.grid(True, axis='x', alpha=0.2)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    for i, r in enumerate(agg2['予定外比率']):
+        ax.text(r + 0.6, i, f'{r:.1f}%', va='center', fontsize=9)
+    ax.set_xlim(0, 105)
+
+    plt.suptitle(
+        'Layer 3: 医師別 制度適合貢献 — 救急車入院 / 在宅復帰 / 予定外入院\n'
+        '※ 救急車入院は医師別 proxy、制度上の救急搬送後 15% は病棟別 rolling 3 ヶ月で判定',
+        fontsize=13, fontweight='bold', y=1.005, color=COLOR_ACCENT)
+    plt.tight_layout()
+    out_path = OUT_DIR / f'09_layer3_compliance_{mode}.png'
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    return out_path
+
+
+# ====================================================================
+# Chart 10: Layer 4 — 医師運営パターン分類（5+1 類型 散布図）
+# ====================================================================
+def chart_layer4_typing(agg, mode, anon_map):
+    """Layer 4: 医師運営パターンを 5+1 類型に分類した散布図."""
+    agg2 = apply_label(agg, mode, anon_map)
+    fig, ax = plt.subplots(figsize=(14, 8.5))
+
+    # 散布図: x = 平均在院日数, y = 手術あり比率, color = タイプ, size = 入院件数
+    plotted_types = []
+    for type_name in TYPE_ORDER:
+        sub = agg2[agg2['タイプ分類'] == type_name]
+        if sub.empty:
+            continue
+        plotted_types.append(type_name)
+        ax.scatter(sub['平均在院日数'], sub['手術あり比率'],
+                   s=sub['入院件数'] * 4, c=TYPE_COLORS[type_name],
+                   alpha=0.72, edgecolor=COLOR_ACCENT, linewidth=1.5,
+                   label=f'{type_name}（{len(sub)} 名）', zorder=3)
+        for _, r in sub.iterrows():
+            ax.annotate(r['表示名'],
+                        xy=(r['平均在院日数'], r['手術あり比率']),
+                        xytext=(7, 4), textcoords='offset points',
+                        fontsize=10, fontweight='bold', color=COLOR_ACCENT, zorder=4)
+
+    # 閾値ガイド線
+    ax.axhline(40, color=TYPE_COLORS[TYPE_SURGERY], linestyle=':', alpha=0.4,
+               linewidth=0.9)
+    ax.axvline(14, color=TYPE_COLORS[TYPE_LONG_STABLE], linestyle=':', alpha=0.4,
+               linewidth=0.9)
+    ax.axvline(8, color=TYPE_COLORS[TYPE_TURNOVER], linestyle=':', alpha=0.4,
+               linewidth=0.9)
+
+    ax.set_xlabel('平均在院日数（日）', fontsize=13)
+    ax.set_ylabel('手術あり症例 比率 (%)', fontsize=13)
+    ax.set_title(
+        'Layer 4: 医師運営パターン分類（5+1 類型）\n'
+        '個人の優劣ではなく「病棟をどのような形で支えているか」を類型化',
+        fontsize=13, fontweight='bold', pad=12, color=COLOR_ACCENT)
+    ax.grid(True, alpha=0.2)
+    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.legend(loc='upper right', fontsize=10, frameon=True, framealpha=0.92)
+
+    # 類型の説明を画面下部に小さく
+    desc_lines = "  /  ".join(
+        f'■ {t}: {TYPE_DESCRIPTIONS[t]}' for t in plotted_types
+    )
+    fig.text(0.5, -0.04, desc_lines, ha='center', fontsize=9, color=COLOR_MUTED, wrap=True)
+
+    plt.tight_layout()
+    out_path = OUT_DIR / f'10_layer4_typing_{mode}.png'
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    return out_path
+
+
 def main(mode: str):
     df, agg, ward_total_days, total_hospital_days = load_and_compute()
     anon_map = make_anonymous_map(agg)
@@ -617,6 +904,9 @@ def main(mode: str):
     paths.append(chart_correlation(agg, total_hospital_days, mode, anon_map))
     paths.append(chart_misconception(mode, anon_map))
     paths.append(chart_cost_uncertainty(mode, anon_map))
+    paths.append(chart_layer2_surgery(agg, mode, anon_map))
+    paths.append(chart_layer3_compliance(agg, mode, anon_map))
+    paths.append(chart_layer4_typing(agg, mode, anon_map))
 
     print(f"✅ Generated {len(paths)} charts (mode={mode}):")
     for p in paths:
@@ -632,6 +922,23 @@ def main(mode: str):
     for i, (_, r) in enumerate(agg.sort_values('ベッド粗利単価', ascending=False).iterrows(), 1):
         label = r['医師'] if mode == 'named' else anon_map.get(r['医師'], '?')
         print(f"{i:>3} {label:<8} {r['ベッド粗利単価']:>10,.0f} {r['B群比率']:>5.1f}% {r['C群比率']:>5.1f}% {r['A群比率']:>5.1f}% {r['総粗利']/10000:>9,.0f}万")
+
+    # ============= 4 層追加指標サマリ =============
+    print()
+    print("Layer 2/3 主要指標（医師別）:")
+    print(f"{'医師':<8} {'手術%':>6} {'救急車%':>7} {'予定外%':>7} {'在宅復帰%':>8} {'タイプ':<14} {'主科':<6}")
+    for _, r in agg.iterrows():
+        label = r['医師'] if mode == 'named' else anon_map.get(r['医師'], '?')
+        print(f"{label:<8} {r['手術あり比率']:>5.1f}% {r['救急搬送後比率']:>6.1f}% "
+              f"{r['予定外比率']:>6.1f}% {r['在宅復帰率']:>7.1f}% "
+              f"{r['タイプ分類']:<14} {r['主たる診療科']:<6}")
+
+    print()
+    print("Layer 4 タイプ分類 内訳:")
+    for t in TYPE_ORDER:
+        n = (agg['タイプ分類'] == t).sum()
+        if n > 0:
+            print(f"  {t:<14}: {n} 名")
 
     return paths, agg, anon_map
 
