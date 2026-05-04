@@ -52,10 +52,22 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 # 順序: B > C > A（副院長指摘 2026-05-04）
 # ====================================================================
 REV_A, REV_B, REV_C = 38500, 38500, 35500       # 日次診療報酬
-COST_A, COST_B, COST_C = 12000, 6000, 4500       # 日次変動費
+COST_A, COST_B, COST_C = 12000, 6000, 4500       # 日次変動費（業界目安、当院 DPC 未検証）
 PROFIT_A = REV_A - COST_A   # 26,500 円
 PROFIT_B = REV_B - COST_B   # 32,500 円（最高）
 PROFIT_C = REV_C - COST_C   # 31,000 円
+
+# コスト見積もりの不確実性レンジ（副院長指示 2026-05-04）
+# 当院 DPC データでの検証は未実施。業界目安として ±20% の幅を持たせる。
+COST_UNCERTAINTY = 0.20  # ±20%
+
+# コスト幅の上限・下限から導かれる粗利の上限・下限
+PROFIT_A_LOW  = REV_A - COST_A * (1 + COST_UNCERTAINTY)   # コスト高く見積→粗利低下
+PROFIT_A_HIGH = REV_A - COST_A * (1 - COST_UNCERTAINTY)   # コスト低く見積→粗利上昇
+PROFIT_B_LOW  = REV_B - COST_B * (1 + COST_UNCERTAINTY)
+PROFIT_B_HIGH = REV_B - COST_B * (1 - COST_UNCERTAINTY)
+PROFIT_C_LOW  = REV_C - COST_C * (1 + COST_UNCERTAINTY)
+PROFIT_C_HIGH = REV_C - COST_C * (1 - COST_UNCERTAINTY)
 
 # 配色
 COLOR_5F = '#3B82F6'
@@ -68,6 +80,8 @@ COLOR_BLUE = '#2563EB'
 COLOR_PHASE_A = '#FECACA'  # 薄赤（コスト高い）
 COLOR_PHASE_B = '#BBF7D0'  # 薄緑（粗利最高 ★）
 COLOR_PHASE_C = '#FDE08A'  # 薄黄（粗利中）
+COLOR_MUTED = '#6B7280'
+COLOR_DANGER = COLOR_RED
 
 
 def phase_breakdown(d):
@@ -80,12 +94,23 @@ def profit_per_admission(d):
     return a * PROFIT_A + b * PROFIT_B + c * PROFIT_C
 
 
+def profit_range_per_admission(d):
+    """コスト ±20% 幅で粗利の下限・上限を返す."""
+    a, b, c = phase_breakdown(d)
+    low = a * PROFIT_A_LOW + b * PROFIT_B_LOW + c * PROFIT_C_LOW
+    high = a * PROFIT_A_HIGH + b * PROFIT_B_HIGH + c * PROFIT_C_HIGH
+    return low, high
+
+
 def load_and_compute():
     df = pd.read_csv(DATA_PATH)
     df[['A_days', 'B_days', 'C_days']] = df['日数'].apply(
         lambda x: pd.Series(phase_breakdown(x))
     )
     df['粗利貢献額'] = df['日数'].apply(profit_per_admission)
+    df[['粗利下限', '粗利上限']] = df['日数'].apply(
+        lambda x: pd.Series(profit_range_per_admission(x))
+    )
 
     crosstab = df.groupby(['医師', '病棟'])['日数'].sum().unstack(fill_value=0)
     crosstab.columns.name = None
@@ -95,12 +120,16 @@ def load_and_compute():
         入院件数=('患者番号', 'count'),
         総延日数=('日数', 'sum'),
         総粗利=('粗利貢献額', 'sum'),
+        総粗利下限=('粗利下限', 'sum'),
+        総粗利上限=('粗利上限', 'sum'),
         A群延日数=('A_days', 'sum'),
         B群延日数=('B_days', 'sum'),
         C群延日数=('C_days', 'sum'),
     ).reset_index()
     agg['月平均受持数'] = agg['総延日数'] / 365
     agg['ベッド粗利単価'] = agg['総粗利'] / agg['総延日数']
+    agg['ベッド粗利単価_下限'] = agg['総粗利下限'] / agg['総延日数']
+    agg['ベッド粗利単価_上限'] = agg['総粗利上限'] / agg['総延日数']
     agg['平均在院日数'] = agg['総延日数'] / agg['入院件数']
     agg['A群比率'] = agg['A群延日数'] / agg['総延日数'] * 100
     agg['B群比率'] = agg['B群延日数'] / agg['総延日数'] * 100
@@ -233,6 +262,14 @@ def chart_scatter(agg, mode, anon_map):
 
     for ward, color in [('5F', COLOR_5F), ('6F', COLOR_6F)]:
         sub = agg2[agg2['主たる病棟'] == ward]
+        # エラーバー（コスト ±20% に伴う粗利単価レンジ）を描画
+        for _, r in sub.iterrows():
+            yerr_low = r['ベッド粗利単価'] - r['ベッド粗利単価_下限']
+            yerr_high = r['ベッド粗利単価_上限'] - r['ベッド粗利単価']
+            ax.errorbar(r['病院全体寄与率'], r['ベッド粗利単価'],
+                        yerr=[[yerr_low], [yerr_high]],
+                        fmt='none', ecolor=color, alpha=0.4, capsize=5,
+                        elinewidth=1.5, capthick=1.5, zorder=2)
         ax.scatter(sub['病院全体寄与率'], sub['ベッド粗利単価'],
                     s=sub['入院件数'] * 4, c=color, alpha=0.7,
                     edgecolor=COLOR_ACCENT, linewidth=1.5,
@@ -248,21 +285,24 @@ def chart_scatter(agg, mode, anon_map):
     ax.axvline(median_x, color='#9CA3AF', linestyle='--', linewidth=0.6, alpha=0.5)
     ax.axhline(median_y, color='#9CA3AF', linestyle='--', linewidth=0.6, alpha=0.5)
 
-    # 参照線: フェーズ別粗利単価
-    for y_ref, label, c in [
-        (PROFIT_A, f'A 群 単価 {PROFIT_A:,}', '#F87171'),
-        (PROFIT_B, f'B 群 単価 {PROFIT_B:,}（最高）', '#10B981'),
-        (PROFIT_C, f'C 群 単価 {PROFIT_C:,}', '#D97706'),
+    # 参照線: フェーズ別粗利単価（コスト ±20% のバンド付き）
+    for y_ref, y_low, y_high, label, c in [
+        (PROFIT_A, PROFIT_A_LOW, PROFIT_A_HIGH, f'A 群 {PROFIT_A:,}（{PROFIT_A_LOW:,.0f}〜{PROFIT_A_HIGH:,.0f}）', '#F87171'),
+        (PROFIT_B, PROFIT_B_LOW, PROFIT_B_HIGH, f'B 群 {PROFIT_B:,}（{PROFIT_B_LOW:,.0f}〜{PROFIT_B_HIGH:,.0f}）★', '#10B981'),
+        (PROFIT_C, PROFIT_C_LOW, PROFIT_C_HIGH, f'C 群 {PROFIT_C:,}（{PROFIT_C_LOW:,.0f}〜{PROFIT_C_HIGH:,.0f}）', '#D97706'),
     ]:
+        # バンド（コスト不確実性）
+        ax.axhspan(y_low, y_high, color=c, alpha=0.07, zorder=0)
+        # 中央線
         ax.axhline(y_ref, color=c, linestyle=':', linewidth=1.2, alpha=0.5, zorder=1)
-        ax.text(ax.get_xlim()[1] * 0.98, y_ref + 50, label,
-                ha='right', va='bottom', fontsize=9, color=c, alpha=0.8)
+        ax.text(ax.get_xlim()[1] * 0.98, y_ref + 80, label,
+                ha='right', va='bottom', fontsize=9, color=c, alpha=0.85)
 
     ax.set_xlabel('病院全体 稼働率寄与率（%）— 量の貢献', fontsize=13)
     ax.set_ylabel('ベッド粗利単価（円 / 床日）— 質の貢献', fontsize=13)
     ax.set_title(
         '医師別 ポジショニング: 稼働率寄与（横）× ベッド粗利単価（縦）\n'
-        '点線: A・B・C 群理論単価（B 32,500 ＞ C 31,000 ＞ A 26,500）',
+        f'エラーバー＝コスト ±{COST_UNCERTAINTY*100:.0f}% の不確実性 ／ 順位は揺らがず B 群中心管理が優位',
         fontsize=13, fontweight='bold', pad=12)
     ax.grid(True, alpha=0.2)
     ax.spines['top'].set_visible(False)
@@ -475,6 +515,90 @@ def chart_misconception(mode, anon_map):
     return out_path
 
 
+def chart_cost_uncertainty(mode, anon_map):
+    """コスト見積もりの位置づけと ±20% 不確実性レンジの可視化（新規, 2026-05-04）."""
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5))
+
+    # --- 左: コスト構造の不確実性（業界目安、当院 DPC 未検証）---
+    ax_l = axes[0]
+    phases = ['A 群\n(急性期)', 'B 群\n(回復期)', 'C 群\n(退院準備)']
+    costs_mid = [COST_A, COST_B, COST_C]
+    costs_low = [c * (1 - COST_UNCERTAINTY) for c in costs_mid]
+    costs_high = [c * (1 + COST_UNCERTAINTY) for c in costs_mid]
+    yerr_low = [m - l for m, l in zip(costs_mid, costs_low)]
+    yerr_high = [h - m for h, m in zip(costs_high, costs_mid)]
+    bars = ax_l.bar(phases, costs_mid,
+                    color=[COLOR_PHASE_A, COLOR_PHASE_B, COLOR_PHASE_C],
+                    alpha=0.85, edgecolor=COLOR_ACCENT, linewidth=1.5,
+                    yerr=[yerr_low, yerr_high], capsize=10,
+                    error_kw={'ecolor': COLOR_DANGER, 'elinewidth': 2,
+                              'capthick': 2})
+    for b, m, l, h in zip(bars, costs_mid, costs_low, costs_high):
+        ax_l.text(b.get_x() + b.get_width()/2, m, f'{m:,}',
+                  ha='center', va='center', fontsize=14, fontweight='bold',
+                  color=COLOR_ACCENT)
+        ax_l.text(b.get_x() + b.get_width()/2, h + 500,
+                  f'{l:,.0f}〜{h:,.0f}',
+                  ha='center', fontsize=10, color=COLOR_MUTED if False else '#6B7280')
+    ax_l.set_ylabel('日次変動費（円/床日）', fontsize=12)
+    ax_l.set_ylim(0, 16000)
+    ax_l.set_title(
+        '① コスト見積もりの不確実性（業界目安 ±20%）\n'
+        '当院 DPC データでの直接検証は未実施',
+        fontsize=12, fontweight='bold', color=COLOR_GOLD, pad=10)
+    ax_l.grid(True, axis='y', alpha=0.2)
+    ax_l.spines['top'].set_visible(False)
+    ax_l.spines['right'].set_visible(False)
+    ax_l.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{int(x):,}'))
+
+    # --- 右: 粗利のレンジ（B > C > A の順位は不変）---
+    ax_r = axes[1]
+    profits_mid = [PROFIT_A, PROFIT_B, PROFIT_C]
+    profits_low = [PROFIT_A_LOW, PROFIT_B_LOW, PROFIT_C_LOW]
+    profits_high = [PROFIT_A_HIGH, PROFIT_B_HIGH, PROFIT_C_HIGH]
+    yerr_low_p = [m - l for m, l in zip(profits_mid, profits_low)]
+    yerr_high_p = [h - m for h, m in zip(profits_high, profits_mid)]
+    bars = ax_r.bar(phases, profits_mid,
+                    color=[COLOR_PHASE_A, COLOR_PHASE_B, COLOR_PHASE_C],
+                    alpha=0.85, edgecolor=COLOR_ACCENT, linewidth=1.5,
+                    yerr=[yerr_low_p, yerr_high_p], capsize=10,
+                    error_kw={'ecolor': COLOR_GREEN, 'elinewidth': 2,
+                              'capthick': 2})
+    rank_marks = ['3位', '★ 1位', '2位']
+    rank_colors = [COLOR_RED, COLOR_GREEN, COLOR_GOLD]
+    for b, m, l, h, rk, rc in zip(bars, profits_mid, profits_low, profits_high,
+                                    rank_marks, rank_colors):
+        ax_r.text(b.get_x() + b.get_width()/2, m/2, rk,
+                  ha='center', va='center', fontsize=18, fontweight='bold',
+                  color=rc)
+        ax_r.text(b.get_x() + b.get_width()/2, h + 600,
+                  f'{l:,.0f}〜{h:,.0f}',
+                  ha='center', fontsize=10, color='#6B7280')
+        ax_r.text(b.get_x() + b.get_width()/2, m, f'{m:,}',
+                  ha='center', va='top', fontsize=12, fontweight='bold',
+                  color=COLOR_ACCENT)
+    ax_r.set_ylabel('粗利＝運営貢献額（円/床日）', fontsize=12)
+    ax_r.set_ylim(0, 38000)
+    ax_r.set_title(
+        '② 粗利レンジ（コスト ±20% を反映）\n'
+        '★ B 群 ＞ C 群 ＞ A 群 の順位は揺らがず',
+        fontsize=12, fontweight='bold', color=COLOR_GREEN, pad=10)
+    ax_r.grid(True, axis='y', alpha=0.2)
+    ax_r.spines['top'].set_visible(False)
+    ax_r.spines['right'].set_visible(False)
+    ax_r.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{int(x):,}'))
+
+    plt.suptitle(
+        '【コスト見積もりの位置づけ】業界目安 ±20%。'
+        '本解析の結論「B 群中心管理が優位」は、レンジ内でも揺らがない。',
+        fontsize=14, fontweight='bold', y=1.02, color=COLOR_ACCENT)
+    plt.tight_layout()
+    out_path = OUT_DIR / f'07_cost_uncertainty_{mode}.png'
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    return out_path
+
+
 def main(mode: str):
     df, agg, ward_total_days, total_hospital_days = load_and_compute()
     anon_map = make_anonymous_map(agg)
@@ -492,6 +616,7 @@ def main(mode: str):
     paths.append(chart_treemap(agg, mode, anon_map))
     paths.append(chart_correlation(agg, total_hospital_days, mode, anon_map))
     paths.append(chart_misconception(mode, anon_map))
+    paths.append(chart_cost_uncertainty(mode, anon_map))
 
     print(f"✅ Generated {len(paths)} charts (mode={mode}):")
     for p in paths:

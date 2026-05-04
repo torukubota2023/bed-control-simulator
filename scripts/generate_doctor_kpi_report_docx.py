@@ -20,8 +20,12 @@ from docx.shared import Cm, Pt, RGBColor
 from generate_doctor_kpi_charts import (
     OUT_DIR as CHART_DIR,
     PROFIT_A, PROFIT_B, PROFIT_C,
+    PROFIT_A_LOW, PROFIT_A_HIGH,
+    PROFIT_B_LOW, PROFIT_B_HIGH,
+    PROFIT_C_LOW, PROFIT_C_HIGH,
     REV_A, REV_B, REV_C,
     COST_A, COST_B, COST_C,
+    COST_UNCERTAINTY,
     load_and_compute,
     make_anonymous_map,
 )
@@ -348,6 +352,58 @@ def build(mode: str):
     )
     doc.add_page_break()
 
+    add_heading(doc, "2.6 コスト見積もりの位置づけ（重要な但し書き）", level=2)
+    add_para(
+        doc,
+        "本資料の数値の信頼性について、重要な但し書きを明示します。",
+        bold=True,
+    )
+    add_para(doc, "")
+    add_image(doc, CHART_DIR / f"07_cost_uncertainty_{mode}.png", width_cm=15.5)
+    add_para(doc, "")
+    add_callout(
+        doc,
+        "⚠️ 但し書き",
+        f"本資料のコスト見積もり（A {COST_A:,} / B {COST_B:,} / C {COST_C:,} 円）は "
+        "**業界一般的な目安**であり、当院 DPC データでの直接検証は未実施です。"
+        f"アプリ実装の `_FEE_PRESETS`（2026 年度プリセット）に基づきますが、設計文書"
+        "（bed_control_simulator_design.md）でも「**平均値で代替**」「**相対比較に活用**」と"
+        f"明記されています。コストには **±{COST_UNCERTAINTY*100:.0f}% の不確実性** があると考えてください。",
+        color=C_DANGER,
+    )
+    add_para(doc, "")
+
+    add_heading(doc, "コスト ±20% を反映した粗利レンジ", level=3)
+    add_table(
+        doc,
+        ["フェーズ", "中央値", "下限（コスト +20%）", "上限（コスト −20%）", "順位"],
+        [
+            ["A 群（急性期）",  f"{PROFIT_A:,} 円", f"{PROFIT_A_LOW:,.0f} 円", f"{PROFIT_A_HIGH:,.0f} 円", "3 位"],
+            ["B 群（回復期）",  f"★ {PROFIT_B:,} 円", f"{PROFIT_B_LOW:,.0f} 円", f"{PROFIT_B_HIGH:,.0f} 円", "★ 1 位"],
+            ["C 群（退院準備）", f"{PROFIT_C:,} 円", f"{PROFIT_C_LOW:,.0f} 円", f"{PROFIT_C_HIGH:,.0f} 円", "2 位"],
+        ],
+        col_widths_cm=[3, 2.5, 4, 4, 2.5],
+    )
+    add_para(doc, "")
+    add_callout(
+        doc,
+        "💡 重要なポイント",
+        "コストが ±20% 動いても、**B 群 ＞ C 群 ＞ A 群 の順位は揺らぎません**。"
+        "本解析の結論「B 群中心管理が運営貢献を最大化する」という方向性は、"
+        "コスト見積もりの精度に大きく依存しないということです。"
+        "ただし絶対値（年間粗利の総額）は ±10〜20% の幅があります。",
+        color=C_OK,
+    )
+    add_para(doc, "")
+    add_callout(
+        doc,
+        "📌 Stage 2 計画（提言 4）",
+        "このコスト不確実性は、**事務（医事課・経理）から DPC 患者別変動費を取り寄せて"
+        "1 ヶ月のサンプル検証** で解消できます。Stage 2 として 1〜2 週間で実施予定。",
+        color=C_ACCENT,
+    )
+    doc.add_page_break()
+
     # ====================================================================
     # 3. データ概要
     # ====================================================================
@@ -578,16 +634,30 @@ def build(mode: str):
     add_para(doc, "  ・既存のベッドコントロールシミュレーターに月次自動更新機能を組込み")
     add_para(doc, "")
 
-    add_heading(doc, "提言 4: Stage 2 — リハ加算・処置加算で精緻化", level=2)
+    add_heading(doc, "提言 4: Stage 2 — コスト実測 + 加算追加で精緻化", level=2)
     add_para(
         doc,
-        "現状はフェーズ別粗利のみで概算しています。事務から下記データを追加取得し、"
-        "より実態に近い粗利単価を算出すれば、リハビリ強化や処置加算の積極化など"
-        "具体的な改善余地が見える化できます。",
+        "現状の解析は **業界目安のコスト見積もり ±20% の幅** を持ちます（§2.6 参照）。"
+        "事務（医事課・経理）から下記データを追加取得し、当院実測値で再計算することを提言します。",
     )
+    add_para(doc, "")
+    add_para(doc, "【優先度 1】コスト実測（業界目安 → 当院実データへ）", bold=True)
+    add_para(doc, "  ・DPC 患者別 1 日あたり変動費（薬剤費・処置費・検査費・材料費・給食費）")
+    add_para(doc, "  ・1 ヶ月サンプル（150 件）で検証可能、所要 1〜2 週間")
+    add_para(doc, "  ・→ A・B・C 群別の **当院実コスト** が確定し、粗利単価の精度が ±20% → ±数 % に向上")
+    add_para(doc, "")
+    add_para(doc, "【優先度 2】加算情報（粗利単価のさらなる精緻化）", bold=True)
     add_para(doc, "  ・患者別 月次リハビリ単位数（PT / OT / ST）")
     add_para(doc, "  ・処置加算（中心静脈、人工呼吸器、ドレーン管理等）")
     add_para(doc, "  ・検査加算・手術料の患者別月次集計")
+    add_para(doc, "")
+    add_callout(
+        doc,
+        "💡 Stage 2 完成後の効果",
+        "「実際にどの加算で単価を上げられるか」が見え、診療科横断のベストプラクティス共有が可能に。"
+        "コスト実測により、本解析の結論の絶対値も理事会で「業界目安」ではなく「当院実測」として示せます。",
+        color=C_OK,
+    )
     doc.add_page_break()
 
     # ====================================================================
