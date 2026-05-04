@@ -18,8 +18,12 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from generate_doctor_kpi_charts import (
     OUT_DIR as CHART_DIR,
     PROFIT_A, PROFIT_B, PROFIT_C,
+    PROFIT_A_LOW, PROFIT_A_HIGH,
+    PROFIT_B_LOW, PROFIT_B_HIGH,
+    PROFIT_C_LOW, PROFIT_C_HIGH,
     REV_A, REV_B, REV_C,
     COST_A, COST_B, COST_C,
+    COST_UNCERTAINTY,
     load_and_compute,
     make_anonymous_map,
 )
@@ -306,7 +310,25 @@ def build(mode: str):
     ], color=C_TITLE)
 
     # ====================================================================
-    # Slide 7: 計算の考え方（概念図）
+    # Slide 7（新規）: コスト見積もりの位置づけ（重要な但し書き）
+    # ====================================================================
+    s = prs.slides.add_slide(blank_layout)
+    add_bg_rect(s, 0, 0, SW, Inches(1.0), C_BG_GOLD)
+    add_textbox(s, Inches(0.5), Inches(0.2), Inches(12.3), Inches(0.7),
+                "重要: コスト見積もりの位置づけ（業界目安 ±20%）",
+                size=26, bold=True, color=C_GOLD)
+    add_image_to_slide(s, CHART_DIR / f"07_cost_uncertainty_{mode}.png",
+                       Inches(0.4), Inches(1.1), Inches(12.5))
+
+    add_bg_rect(s, Inches(0.5), Inches(6.4), Inches(12.3), Inches(0.9), C_BG_GREEN)
+    add_multi_para_textbox(s, Inches(0.7), Inches(6.5), Inches(12.0), Inches(0.8), [
+        ("✅ コストが ±20% 動いても、B 群 ＞ C 群 ＞ A 群 の順位は揺らがず", 14, True),
+        ("→ 結論「B 群中心管理が運営貢献を最大化」の方向性は精度に依らず確固。Stage 2 で当院 DPC データ検証予定。",
+         12, False),
+    ], color=C_OK)
+
+    # ====================================================================
+    # Slide 8: 計算の考え方（概念図）
     # ====================================================================
     s = prs.slides.add_slide(blank_layout)
     add_bg_rect(s, 0, 0, SW, Inches(1.0), C_BG_BLUE)
@@ -506,25 +528,28 @@ def build(mode: str):
     ], color=C_TITLE)
 
     # ====================================================================
-    # Slide 18: 提言 4 — Stage 2 精緻化
+    # Slide 19 (旧18): 提言 4 — コスト実測 + 加算追加で精緻化
     # ====================================================================
     s = prs.slides.add_slide(blank_layout)
     add_bg_rect(s, 0, 0, SW, Inches(1.0), C_BG_BLUE)
     add_textbox(s, Inches(0.5), Inches(0.2), Inches(12.3), Inches(0.7),
-                "提言 4:  Stage 2 — リハ加算・処置加算で精緻化",
-                size=26, bold=True, color=C_TITLE)
-    add_multi_para_textbox(s, Inches(0.7), Inches(1.6), Inches(12.0), Inches(5.5), [
+                "提言 4:  Stage 2 — コスト実測 + 加算追加で精緻化",
+                size=24, bold=True, color=C_TITLE)
+    add_multi_para_textbox(s, Inches(0.7), Inches(1.4), Inches(12.0), Inches(5.7), [
         ("現状（Stage 1）の限界:", 20, True),
-        ("    フェーズ別粗利のみで概算", 18, False),
-        ("", 12, False),
-        ("Stage 2 追加データ要求（事務へ）:", 20, True),
-        ("    ● 患者別 月次リハビリ単位数（PT / OT / ST）", 18, False),
-        ("    ● 処置加算（中心静脈、人工呼吸器、ドレーン等）", 18, False),
-        ("    ● 検査加算・手術料の患者別月次集計", 18, False),
-        ("", 14, False),
-        ("Stage 2 完成後の効果:", 20, True),
-        ("    ● 「実際にどの加算で単価を上げられるか」が見える", 18, False),
-        ("    ● 診療科横断のベストプラクティス共有が可能に", 18, False),
+        ("    フェーズ別粗利は業界目安 ±20% の幅", 18, False),
+        ("", 10, False),
+        ("【優先度 1】コスト実測（業界目安 → 当院実データ）", 20, True),
+        ("    ● DPC 患者別 1 日あたり変動費（薬剤・処置・検査・材料・給食）", 16, False),
+        ("    ● 1 ヶ月サンプル（150 件）で検証可能、所要 1〜2 週間", 16, False),
+        ("    ● → 粗利単価の精度が ±20% → ±数 % に向上", 16, False),
+        ("", 10, False),
+        ("【優先度 2】加算情報（粗利単価のさらなる精緻化）", 20, True),
+        ("    ● 患者別 月次リハビリ単位数（PT / OT / ST）", 16, False),
+        ("    ● 処置加算（中心静脈、人工呼吸器、ドレーン等）", 16, False),
+        ("    ● 検査加算・手術料の患者別月次集計", 16, False),
+        ("", 10, False),
+        ("Stage 2 完成後の効果: 当院実測値で理事会・運営会議に再提示可", 18, True),
     ], color=C_TITLE)
 
     # ====================================================================
