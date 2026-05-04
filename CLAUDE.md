@@ -4,6 +4,57 @@
 実装（コード編集）を行う前に、必ず最初に plan モード（/plan または Shift+Tab）
 で設計・計画を提示し、私が承認してから実装を始めてください。
 
+## 🧠 Obsidian AI 共有記憶（2026-05-04 設定完了）
+
+**目的:** Claude Code・Codex・通常チャット間で記憶を共有する。会話の文脈が
+切れても、次の AI が再開できるよう、現在地・決定・判断理由・次にやることを残す。
+
+**保存先:** Obsidian vault `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/臨床/AI共有記憶/`
+- `00_入口.md` — ナビゲーション
+- `10_運用ルール.md` — AI 切替時のプロンプト集
+- `20_プロジェクト一覧.md` — 進行中プロジェクトのリンク集
+- `30_判断ログ.md` — 主要な判断の記録
+- `40_未解決課題.md` — 残課題
+- `projects/` — プロジェクトごとの独立ノート
+
+**接続経路:** Obsidian「Local REST API」プラグイン経由（HTTPS, port 27124）
+- API キーは `~/.claude.json`（Git 管理外）と環境変数 `OBSIDIAN_API_KEY` に格納
+- MCP server `obsidian` (`uvx mcp-obsidian`) で Claude Code から双方向アクセス可能
+
+**運用ルール（10_運用ルール.md より、副院長定義）:**
+- 「現在地・決定事項・判断理由・次にやること」だけを保存
+- **会話全文・一時的な試行錯誤・個人情報は保存しない**
+- セッション末に「該当プロジェクトノートを更新」して次の AI が再開できるように
+- 未解決課題は `40_未解決課題.md` にも追記
+
+**Claude Code 側からの操作（curl ベース・MCP server 未起動時の代替）:**
+```bash
+# 一覧
+curl -sk "https://localhost:27124/vault/AI共有記憶/" \
+  -H "Authorization: Bearer $OBSIDIAN_API_KEY"
+
+# 読込
+curl -sk "https://localhost:27124/vault/AI共有記憶/projects/医師別KPI解析.md" \
+  -H "Authorization: Bearer $OBSIDIAN_API_KEY" -H "Accept: text/markdown"
+
+# 新規作成 / 上書き
+curl -sk -X PUT "https://localhost:27124/vault/AI共有記憶/projects/xxx.md" \
+  -H "Authorization: Bearer $OBSIDIAN_API_KEY" \
+  -H "Content-Type: text/markdown" --data-binary "@/tmp/xxx.md"
+
+# 末尾追記
+curl -sk -X POST "https://localhost:27124/vault/AI共有記憶/40_未解決課題.md" \
+  -H "Authorization: Bearer $OBSIDIAN_API_KEY" \
+  -H "Content-Type: text/markdown" --data-binary $'\n## 新しいタスク\n- [ ] xxx\n'
+```
+
+**ヘルパースクリプト:** [scripts/obsidian_sync.sh](scripts/obsidian_sync.sh)
+
+**⚠️ セキュリティ:**
+- API キーは絶対に Git にコミットしない（`.gitignore` で `*.key` `*secret*` 除外）
+- `~/.claude.json` は個人設定（git 管理外）なので API キー直書き OK
+- スクリプト内では必ず環境変数 `$OBSIDIAN_API_KEY` 経由で参照
+
 
 ## プロジェクト概要
 おもろまちメディカルセンター（総病床数94床、月間入院数約150件）の臨床・教育・経営業務を支援するワークスペース。副院長・内科/呼吸器内科医としての実務をClaude Codeで効率化する。
